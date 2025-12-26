@@ -1,0 +1,39 @@
+{
+    "name": "lensy-documentation-auditor",
+    "version": "1.0.0",
+    "description": "AI-powered documentation quality auditor with real-time analysis and transparency",
+    "main": "index.js",
+    "scripts": {
+        "build": "npm run build:frontend && npm run build:backend",
+        "build:frontend": "cd frontend && npm run build",
+        "build:backend": "cd backend && npm run build",
+        "dev:frontend": "cd frontend && npm start",
+        "dev:backend": "cd backend && npm run watch",
+        "deploy": "cd backend && npm run deploy",
+        "test": "npm run test:frontend && npm run test:backend",
+        "test:frontend": "cd frontend && npm test",
+        "test:backend": "cd backend && npm test",
+        "setup": "npm install && cd frontend && npm install && cd ../backend && npm install"
+    },
+    "keywords": [
+        "documentation",
+        "quality",
+        "ai",
+        "aws",
+        "bedrock",
+        "typescript"
+    ],
+    "author": "Lensy Team",
+    "license": "MIT",
+    "devDependencies": {
+        "@types/node": "^20.0.0",
+        "typescript": "^4.9.5"
+    },
+    "dependencies": {
+        "@aws-sdk/client-lambda": "^3.958.0",
+        "@aws-sdk/client-s3": "^3.958.0",
+        "jsdom": "^27.0.1",
+        "turndown": "^7.2.2",
+        "turndown-plugin-gfm": "^1.0.2"
+    }
+}

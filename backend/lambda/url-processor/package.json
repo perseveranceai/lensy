@@ -1,0 +1,10 @@
+{
+    "name": "url-processor",
+    "version": "1.0.0",
+    "main": "index.js",
+    "dependencies": {
+        "jsdom": "^23.0.0",
+        "turndown": "^7.1.2",
+        "turndown-plugin-gfm": "^1.0.2"
+    }
+}

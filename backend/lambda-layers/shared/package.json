@@ -1,0 +1,12 @@
+{
+    "name": "lensy-shared-layer",
+    "version": "1.0.0",
+    "description": "Shared dependencies for Lensy Lambda functions",
+    "main": "nodejs/node_modules",
+    "dependencies": {
+        "jsdom": "^23.0.0",
+        "turndown": "^7.1.2",
+        "@aws-sdk/client-bedrock-runtime": "^3.450.0",
+        "@aws-sdk/client-sfn": "^3.450.0"
+    }
+}
