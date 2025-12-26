@@ -17,7 +17,7 @@ This implementation plan creates a comprehensive documentation quality auditor u
 - [ ]* 1.1 Write unit tests for project configuration
   - Test AWS CDK stack deployment
   - Test environment variable configuration
-  - _Requirements: 10.1, 10.2_
+  - _Requirements: 11.1, 11.2_
 
 - [x] 2. Core Data Models and Interfaces
   - [x] 2.1 Implement TypeScript interfaces for all data models
@@ -143,7 +143,7 @@ This implementation plan creates a comprehensive documentation quality auditor u
     - **Phase 2**: Implement as periodic background job (every 3 hours)
     - **Phase 2**: Create admin dashboard for validation results
     - **Phase 2**: Sample ~10% of analyses for quality monitoring
-    - _Requirements: Requirement 11 (Phase 2)_
+    - _Requirements: Requirement 12 (Phase 2)_
     - **Status: DEFERRED TO PHASE 2**
 
   - [ ]* 6.2 Write property test for quality validation consistency
@@ -240,13 +240,13 @@ This implementation plan creates a comprehensive documentation quality auditor u
     - ✅ Implement dimension-specific prompts
     - ✅ Add response parsing for Claude (working)
     - ⚠️ Titan and Llama response parsing needs Phase 2 work
-    - _Requirements: 10.2, 10.4, 10.5_
+    - _Requirements: 11.2, 11.4, 11.5_
     - **Status: COMPLETE for Claude, Phase 2 for Titan/Llama**
 
   - [ ]* 10.2 Write unit tests for Bedrock integration
     - Test API client error handling
     - Test prompt formatting for different models
-    - _Requirements: 10.2, 10.4_
+    - _Requirements: 11.2, 11.4_
 
   - [x] 10.3 Create prompt templates and response parsers
     - ✅ Design dimension-specific prompt templates for all 5 dimensions
@@ -254,13 +254,13 @@ This implementation plan creates a comprehensive documentation quality auditor u
     - ✅ Create JSON extraction from Claude responses (working)
     - ⚠️ Llama JSON extraction needs debugging (Phase 2)
     - ⚠️ Titan JSON extraction needs testing (Phase 2)
-    - _Requirements: 10.4, 10.5_
+    - _Requirements: 11.4, 11.5_
     - **Status: COMPLETE for Claude, Phase 2 for Titan/Llama**
 
   - [ ]* 10.4 Write integration tests for multi-model support
     - Test analysis consistency across different models
     - Test model fallback mechanisms
-    - _Requirements: 9.2, 10.2_
+    - _Requirements: 13.2, 11.2_
 
 - [ ] 11. Checkpoint - Core Functionality Complete
   - Ensure all core analysis functionality works end-to-end
@@ -284,14 +284,14 @@ This implementation plan creates a comprehensive documentation quality auditor u
     - Test system performance with large documentation sites
     - Test concurrent analysis requests
     - Verify AWS Lambda scaling and cost optimization
-    - _Requirements: 10.1, 10.3_
+    - _Requirements: 11.1, 11.3_
 
 - [ ] 13. Deployment and Production Readiness
   - [ ] 13.1 Create production deployment configuration
     - Set up AWS CDK production stack
     - Configure monitoring and alerting
     - Add security configurations and IAM roles
-    - _Requirements: 10.1, 10.2_
+    - _Requirements: 11.1, 11.2_
 
   - [ ] 13.2 Create documentation and user guides
     - Write API documentation
@@ -310,7 +310,42 @@ This implementation plan creates a comprehensive documentation quality auditor u
     - **Confirm model auto-selection works correctly for different content types**
     - Verify all dimension analysis works with WordPress documentation structure
 
-- [ ] 14. Final Checkpoint - Production Ready
+- [ ] 15. Context-Aware Analysis Implementation
+  - [ ] 15.1 Implement context page discovery and UI
+    - Create context page identification logic (parent/child/sibling detection)
+    - Add UI toggle for enabling/disabling context analysis
+    - Display identified context pages with relationship indicators
+    - Add analysis scope indicator showing target + context pages
+    - _Requirements: 10.1, 10.2, 10.3, 10.9_
+
+  - [ ] 15.2 Implement context page fetching and processing
+    - Extend URLProcessor to handle multiple related URLs
+    - Add context page content extraction with same noise reduction
+    - Implement controlled crawling limits (max 5 additional pages)
+    - Add error handling for failed context page loads
+    - _Requirements: 10.3, 10.4, 10.5, 10.8_
+
+  - [ ] 15.3 Enhance AI analysis with context awareness
+    - Update dimension analysis prompts to include context information
+    - Modify analysis logic to consider broader documentation structure
+    - Add context relevance scoring and reporting
+    - Implement context-aware completeness and accuracy evaluation
+    - _Requirements: 10.6, 10.10_
+
+  - [ ]* 15.4 Write property tests for context analysis
+    - **Property 14: Context Analysis Completeness**
+    - Test that context pages are correctly identified and analyzed
+    - Test that analysis quality improves with context inclusion
+    - **Validates: Requirements 10.1, 10.6, 10.10**
+
+  - [ ] 15.5 Add context analysis metrics and reporting
+    - Track context analysis usage and effectiveness
+    - Add context page analysis results to final report
+    - Implement context analysis performance monitoring
+    - Display context contribution to analysis quality
+    - _Requirements: 10.4, 10.9, 10.10_
+
+- [ ] 16. Final Checkpoint - Production Ready
   - Ensure all tests pass and system is production ready
   - Verify transparency, observability, and quality validation work correctly
   - Confirm 24-hour implementation timeline met

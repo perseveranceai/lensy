@@ -132,7 +132,24 @@ Lensy is a Documentation Quality Auditor that analyzes developer documentation U
 4. WHEN a specific model is selected, THE System SHALL use that model consistently across all dimensions
 5. THE System SHALL display the selected model name in the progress updates and final report
 
-### Requirement 10: AWS Integration and Scalability
+### Requirement 10: Context-Aware Analysis
+
+**User Story:** As a documentation analyst, I want the system to analyze related pages (parent, child, sibling) when they provide essential context, so that the quality assessment considers the broader documentation structure and dependencies.
+
+#### Acceptance Criteria
+
+1. WHEN analyzing a target page, THE System SHALL identify potential context pages (parent, children, siblings) based on URL structure and internal links
+2. WHEN context pages are identified, THE System SHALL display them to the user with clear indication of their relationship to the target page
+3. WHERE the user enables context analysis, THE System SHALL fetch and analyze up to 5 additional pages to provide comprehensive context
+4. WHEN including context pages, THE System SHALL clearly indicate in the analysis report which pages were analyzed beyond the target URL
+5. THE System SHALL limit context expansion to prevent infinite crawling (maximum 1 level up for parent, 1 level down for children)
+6. WHEN context analysis is enabled, THE AI analysis SHALL consider the broader context when evaluating completeness, accuracy, and clarity
+7. THE System SHALL provide a toggle option allowing users to choose between single-page analysis and context-aware analysis
+8. WHEN context pages fail to load, THE System SHALL continue with available content and note which context pages were unavailable
+9. THE System SHALL display the analysis scope prominently in the UI showing "Analyzing: [target] + [N] context pages"
+10. THE System SHALL track and report context analysis metrics (pages analyzed, context relevance, analysis improvement)
+
+### Requirement 11: AWS Integration and Scalability
 
 **User Story:** As a system administrator, I want the application to leverage AWS services for reliable and scalable analysis, so that it can handle varying loads efficiently.
 
@@ -147,7 +164,7 @@ Lensy is a Documentation Quality Auditor that analyzes developer documentation U
 
 ## Phase 2 Requirements (Future Enhancements)
 
-### Requirement 11: Async LLM-as-Judge Quality Validation
+### Requirement 12: Async LLM-as-Judge Quality Validation
 
 **User Story:** As a system administrator, I want periodic quality validation of analysis results using LLM-as-Judge methodology, so that I can monitor and improve the accuracy of the documentation auditor over time.
 
@@ -165,7 +182,7 @@ Lensy is a Documentation Quality Auditor that analyzes developer documentation U
 
 **Note:** This requirement is for system quality assurance and monitoring, not for real-time user-facing validation. Results are intended for the application builder/administrator to improve the system.
 
-### Requirement 12: Multi-Model Support (Phase 2)
+### Requirement 13: Multi-Model Support (Phase 2)
 
 **User Story:** As a user, I want to choose between multiple AI models for analysis, so that I can compare results and select the model that works best for my documentation type.
 
