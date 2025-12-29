@@ -4,9 +4,11 @@ exports.handler = void 0;
 const client_s3_1 = require("@aws-sdk/client-s3");
 const s3Client = new client_s3_1.S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
 const handler = async (event) => {
-    console.log('Generating final report');
+    console.log('Report generator received event:', JSON.stringify(event, null, 2));
+    // Extract original parameters from Step Functions input
+    const { url, selectedModel, sessionId, analysisStartTime } = event;
+    console.log('Generating final report for session:', sessionId);
     try {
-        const { sessionId, url, selectedModel, analysisStartTime } = event;
         const bucketName = process.env.ANALYSIS_BUCKET;
         if (!bucketName) {
             throw new Error('ANALYSIS_BUCKET environment variable not set');
@@ -64,16 +66,22 @@ const handler = async (event) => {
         const linkAnalysis = processedContent ?
             processedContent.linkAnalysis :
             generateDefaultLinkAnalysis();
+        // Generate context analysis summary from processed content if available
+        const contextAnalysis = processedContent?.contextAnalysis ?
+            generateContextAnalysisFromContent(processedContent) :
+            undefined;
         const finalReport = {
             overallScore,
             dimensionsAnalyzed: validScores.length,
             dimensionsTotal: 5,
             confidence: validScores.length === 5 ? 'high' : validScores.length >= 3 ? 'medium' : 'low',
             modelUsed: selectedModel === 'auto' ? 'Claude 3.5 Sonnet' : selectedModel,
+            cacheStatus: processedContent?.cacheMetadata?.wasFromCache ? 'hit' : 'miss',
             dimensions: finalDimensionResults,
             codeAnalysis,
             mediaAnalysis,
             linkAnalysis,
+            contextAnalysis,
             analysisTime: Date.now() - analysisStartTime,
             retryCount: 0
         };
@@ -169,6 +177,18 @@ function generateMediaAnalysisFromContent(processedContent) {
         missingAltText: mediaElements.filter((m) => m.type === 'image' && !m.alt).length
     };
 }
+function generateContextAnalysisFromContent(processedContent) {
+    if (!processedContent.contextAnalysis) {
+        return undefined;
+    }
+    const contextAnalysis = processedContent.contextAnalysis;
+    return {
+        enabled: true,
+        contextPages: contextAnalysis.contextPages || [],
+        analysisScope: contextAnalysis.analysisScope || 'single-page',
+        totalPagesAnalyzed: contextAnalysis.totalPagesAnalyzed || 1
+    };
+}
 function generateDefaultCodeAnalysis() {
     return {
         snippetsFound: 8,
@@ -216,6 +236,7 @@ function createEmptyReport() {
         dimensionsTotal: 5,
         confidence: 'low',
         modelUsed: 'unknown',
+        cacheStatus: 'miss',
         dimensions: {
             relevance: emptyDimensionResult('relevance'),
             freshness: emptyDimensionResult('freshness'),

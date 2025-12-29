@@ -9,6 +9,10 @@ interface AnalysisRequest {
     url: string;
     selectedModel: 'claude' | 'titan' | 'llama' | 'auto';
     sessionId: string;
+    contextAnalysis?: {
+        enabled: boolean;
+        maxContextPages?: number;
+    };
 }
 
 export const handler: Handler<any, any> = async (event: any) => {
@@ -191,8 +195,12 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
             const contentStr = await contentResponse.Body.transformToString();
             const processedContent = JSON.parse(contentStr);
 
-            // Get session metadata to retrieve the model used
+            console.log('Retrieved processed content keys:', Object.keys(processedContent));
+            console.log('Context analysis check:', !!processedContent.contextAnalysis);
+
+            // Get session metadata to retrieve the model used and start time
             let modelUsed = 'claude'; // default
+            let analysisStartTime = Date.now(); // fallback
             try {
                 const metadataKey = `sessions/${sessionId}/metadata.json`;
                 const metadataResponse = await s3.send(new GetObjectCommand({
@@ -202,9 +210,13 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
                 const metadataStr = await metadataResponse.Body.transformToString();
                 const metadata = JSON.parse(metadataStr);
                 modelUsed = metadata.selectedModel || 'claude';
+                analysisStartTime = metadata.startTime || Date.now();
             } catch (metadataError) {
-                console.log('No metadata found, using default model');
+                console.log('No metadata found, using default model and current time');
             }
+
+            // Calculate actual analysis time
+            const actualAnalysisTime = Date.now() - analysisStartTime;
 
             // Build the report
             const validScores = Object.values(dimensionResults)
@@ -215,12 +227,30 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
                 ? Math.round(validScores.reduce((sum: number, score: number) => sum + score, 0) / validScores.length)
                 : 0;
 
+            // Generate context analysis summary from processed content if available
+            let contextAnalysis = null;
+            if (processedContent.contextAnalysis) {
+                console.log('Found context analysis in processed content:', processedContent.contextAnalysis);
+
+                contextAnalysis = {
+                    enabled: true,
+                    contextPages: processedContent.contextAnalysis.contextPages || [],
+                    analysisScope: processedContent.contextAnalysis.analysisScope || 'single-page',
+                    totalPagesAnalyzed: processedContent.contextAnalysis.totalPagesAnalyzed || 1
+                };
+
+                console.log('Generated context analysis for report:', contextAnalysis);
+            } else {
+                console.log('No context analysis found in processed content');
+            }
+
             const report = {
                 overallScore,
                 dimensionsAnalyzed: validScores.length,
                 dimensionsTotal: 5,
                 confidence: validScores.length === 5 ? 'high' : validScores.length >= 3 ? 'medium' : 'low',
                 modelUsed: modelUsed,
+                cacheStatus: processedContent.cacheMetadata?.wasFromCache ? 'hit' : 'miss',
                 dimensions: dimensionResults,
                 codeAnalysis: {
                     snippetsFound: processedContent.codeSnippets?.length || 0,
@@ -238,7 +268,8 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
                     missingAltText: processedContent.mediaElements?.filter((m: any) => m.type === 'image' && !m.alt).length || 0
                 },
                 linkAnalysis: processedContent.linkAnalysis || {},
-                analysisTime: 0,
+                ...(contextAnalysis && { contextAnalysis }), // Only include if not undefined
+                analysisTime: actualAnalysisTime,
                 retryCount: 0
             };
 

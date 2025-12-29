@@ -16,6 +16,8 @@ graph TB
     B --> E[Lambda: Dimension Analyzer]
     
     C --> F[Content Extractor]
+    C --> CA[Context Analyzer]
+    C --> CC[Content Cache]
     D --> G[Topic Identifier]
     E --> H[AWS Bedrock Models]
     
@@ -26,6 +28,9 @@ graph TB
     
     E --> M[Progress Streamer]
     E --> N[Report Generator]
+    
+    CC --> DDB[DynamoDB Index]
+    CC --> S3C[S3 Cache Storage]
     
     subgraph "Quality Dimensions"
         O[Relevance Analyzer]
@@ -40,17 +45,28 @@ graph TB
     E --> Q
     E --> R
     E --> S
+    
+    subgraph "Context Analysis"
+        CT[Context Discovery]
+        CF[Context Fetching]
+        CR[Context Relevance]
+    end
+    
+    CA --> CT
+    CA --> CF
+    CA --> CR
 ```
 
 ### Component Architecture
 
 The system follows a microservices pattern with distinct Lambda functions for each major operation:
 
-1. **Frontend Layer**: React SPA with real-time WebSocket connections
+1. **Frontend Layer**: React SPA with context analysis UI and real-time WebSocket connections
 2. **API Layer**: AWS API Gateway with WebSocket support for streaming
-3. **Processing Layer**: Multiple Lambda functions for parallel processing
+3. **Processing Layer**: Multiple Lambda functions for parallel processing with intelligent caching
 4. **AI Layer**: AWS Bedrock integration with model selection logic
 5. **Streaming Layer**: WebSocket connections for real-time progress updates
+6. **Caching Layer**: DynamoDB index with S3 storage for processed content optimization
 
 ### Step Functions Workflow (Current Implementation)
 
@@ -215,6 +231,7 @@ interface StepFunctionState {
 - **Logging**: Detailed logs for debugging noise reduction effectiveness
 - **Result**: Typically 90-95% size reduction (176KB → 15KB → 5KB markdown)
 - **Storage**: Clean content stored in S3 at `sessions/{sessionId}/processed-content.json`
+- **Format Support**: Handles various documentation formats including HTML, Markdown-based sites, and API references as specified in Requirements 1.4
 
 #### StructureDetector (Lambda)
 - **Purpose**: Analyzes content structure and identifies topics
@@ -290,15 +307,51 @@ interface AnalysisRequest {
   url: string;
   selectedModel: 'claude' | 'titan' | 'llama' | 'auto';
   sessionId: string;
+  contextAnalysis?: {
+    enabled: boolean;
+    maxContextPages?: number;
+  };
 }
 
 interface ProcessedContent {
+  url: string;
   markdownContent: string;
   htmlContent: string; // Cleaned HTML, not raw
   mediaElements: MediaElement[];
   codeSnippets: CodeSnippet[];
   contentType: 'api-docs' | 'tutorial' | 'reference' | 'mixed';
+  linkAnalysis: LinkAnalysisSummary;
+  contextAnalysis?: ContextAnalysisResult;
+  processedAt: string;
   noiseReduction: NoiseReductionMetrics;
+}
+
+interface ProcessedContentIndex {
+  url: string;                    // Partition key
+  processedAt: string;            // Sort key
+  contentHash: string;            // Content hash for validation
+  s3Location: string;             // S3 path to processed content
+  ttl: number;                    // TTL for automatic cleanup
+  contentType: string;            // 'api-docs' | 'tutorial' | 'reference'
+  noiseReductionMetrics: NoiseReductionMetrics;
+  contextAnalysis?: {
+    contextPages: ContextPage[];
+    analysisScope: string;
+  };
+}
+
+interface ContextPage {
+  url: string;
+  title: string;
+  relationship: 'parent' | 'child' | 'sibling';
+  confidence: number;
+  contentHash?: string;
+}
+
+interface ContextAnalysisResult {
+  contextPages: ContextPage[];
+  analysisScope: 'single-page' | 'with-context';
+  totalPagesAnalyzed: number;
 }
 
 interface NoiseReductionMetrics {
@@ -409,7 +462,24 @@ interface LinkAnalysisSummary {
   brokenLinks: number;
   subPagesIdentified: string[];
   linkContext: 'single-page' | 'multi-page-referenced';
-  analysisScope: 'current-page-only' | 'with-subpages';
+  analysisScope: 'current-page-only' | 'with-context';
+}
+
+interface CacheMetrics {
+  hitRate: number;              // Cache hit percentage
+  avgProcessingTime: number;    // Average processing time
+  cacheSize: number;            // Current cache entries
+  s3StorageUsed: number;        // S3 storage in bytes
+  costSavings: number;          // Estimated cost savings from cache hits
+}
+
+interface ContextAnalysisStrategy {
+  enabled: boolean;
+  maxContextPages: number;      // Default: 5
+  includeParent: boolean;       // Default: true (immediate parent only)
+  includeChildren: boolean;     // Default: true (direct children only)
+  includeSiblings: boolean;     // Default: false (too broad by default)
+  relevanceThreshold: number;   // Default: 0.6
 }
 ```
 
@@ -437,7 +507,11 @@ const MODEL_CONFIGS: Record<string, ModelConfig> = {
     strengths: ['accuracy', 'clarity', 'relevance', 'freshness', 'completeness'],
     reasoning: 'Excellent at code analysis, technical writing evaluation, and structured reasoning',
     status: '✅ FULLY WORKING'
-  },
+  }
+};
+
+// Phase 2 Model Configurations (Future Enhancement)
+const PHASE_2_MODEL_CONFIGS: Record<string, ModelConfig> = {
   titan: {
     name: 'Amazon Titan Text Premier',
     provider: 'bedrock',
@@ -473,53 +547,104 @@ Now I need to use the prework tool to analyze the acceptance criteria before wri
 *For any* valid documentation URL, the system should successfully fetch and extract content, and for any invalid URL, the system should return a descriptive error message without crashing.
 **Validates: Requirements 1.1, 1.2**
 
-### Property 2: Content Structure Detection
+### Property 2: Noise Reduction Effectiveness
+*For any* HTML content processed, the system should achieve at least 90% noise reduction by removing scripts, styles, navigation, headers, footers, forms, and media embeds while preserving main documentation content.
+**Validates: Requirements 1.5, 1.6, 1.7, 1.8, 1.9, 1.10**
+
+### Property 3: Content Structure Detection
 *For any* extracted documentation content, the system should identify the structure and topics, and require explicit user confirmation before proceeding to analysis.
 **Validates: Requirements 1.3, 2.1, 2.2, 2.3**
 
-### Property 3: Progress Streaming Completeness
+### Property 4: Progress Streaming Completeness
 *For any* dimension analysis session, the progress streamer should emit status updates for each phase, report specific findings as they occur, and mark completion or failure with appropriate details.
 **Validates: Requirements 3.1, 3.2, 3.4, 3.5**
 
-### Property 4: Code Validation Thoroughness
+### Property 5: Code Validation Thoroughness
 *For any* code snippet found in documentation, the code validator should detect the programming language, check syntax errors with line numbers, identify deprecated methods, and flag missing version specifications.
 **Validates: Requirements 3.3, 5.1, 5.2, 5.3, 5.4, 5.5**
 
-### Property 5: Dimension Analysis Isolation
+### Property 6: Dimension Analysis Isolation
 *For any* set of quality dimensions being analyzed, if one dimension fails, the remaining dimensions should continue processing and complete successfully.
 **Validates: Requirements 4.7, 6.3**
 
-### Property 6: Graceful Degradation Behavior
+### Property 7: Graceful Degradation Behavior
 *For any* analysis session where some dimensions fail, the system should display results for successful dimensions, clearly mark failed ones with reasons, and never show empty dashboards or undefined scores.
 **Validates: Requirements 6.1, 6.3, 6.4, 6.5**
 
-### Property 7: Report Generation Accuracy
+### Property 8: Report Generation Accuracy
 *For any* completed analysis, the report generator should calculate overall scores only from successful dimensions, provide specific actionable recommendations, and prioritize them by impact level.
 **Validates: Requirements 7.1, 7.2, 7.3, 7.5**
 
-### Property 8: Model Selection Consistency
+### Property 9: Model Selection Consistency
 *For any* selected AI model, the system should use that model consistently across all dimensions, and when "Auto" is selected, should choose appropriate models for each dimension type.
 **Validates: Requirements 9.3, 9.4, 9.5**
 
-### Property 9: Timeout Handling
+### Property 10: Timeout Handling
 *For any* dimension analysis that exceeds the 30-second timeout, the system should gracefully terminate that dimension and continue with others, showing partial results.
-**Validates: Requirements 6.4, 10.3**
+**Validates: Requirements 6.4, 13.3**
 
-### Property 10: API Response Structure
+### Property 11: API Response Structure
 *For any* API response from the system, the response should follow the defined JSON structure and include all required fields for the response type.
-**Validates: Requirements 10.5**
+**Validates: Requirements 13.5**
 
-### Property 11: Quality Validation Consistency
-*For any* analysis result, when validated by a different model, the system should calculate confidence scores, identify disagreements, and flag low-confidence results for review.
-**Validates: Requirements 9.2, 9.3**
+### Property 12: Context Analysis Completeness
+*For any* context-aware analysis session, the system should correctly identify immediate parent and direct children pages, process them individually with caching, and improve analysis quality compared to single-page analysis.
+**Validates: Requirements 10.1, 10.6, 10.10**
 
-### Property 12: Transparency Completeness  
-*For any* analysis session, the system should log all model decisions, prompts used, processing steps, and confidence metrics for full auditability.
-**Validates: Requirements 7.3, 9.5**
+### Property 13: Cache Consistency and Performance
+*For any* documentation URL, when processed content is cached, subsequent requests should return identical results from cache, and when content changes, the cache should be invalidated and updated with fresh processing.
+**Validates: Requirements 11.2, 11.3, 11.7**
 
-### Property 13: Observability Real-time Updates
-*For any* ongoing analysis, the system should provide real-time metrics on model performance, confidence levels, and validation status.
-**Validates: Requirements 3.1, 8.2**
+### Property 14: Modern UI Responsiveness
+*For any* user interface interaction, the system should provide smooth animations, proper visual hierarchy, and responsive design that works across desktop, tablet, and mobile devices.
+**Validates: Requirements 12.1, 12.2, 12.3, 12.6**
+
+### Property 16: Content Type Detection Accuracy
+*For any* documentation URL processed, the system should correctly identify the content type based on URL patterns, content structure, and textual indicators, and when uncertain, should default to 'mixed' type.
+**Validates: Requirements 16.1, 16.2, 16.8**
+
+### Property 17: Adaptive Scoring Fairness
+*For any* documentation content, when scoring criteria are not applicable to the detected content type, the system should mark them as not-applicable and redistribute weights to applicable criteria, ensuring no document type is unfairly penalized.
+**Validates: Requirements 16.3, 16.4, 16.5**
+
+### Property 15: AWS Integration Scalability
+*For any* analysis request load, the system should handle varying loads efficiently using AWS Lambda scaling, maintain 30-second timeouts per dimension, and return structured JSON responses consistently.
+**Validates: Requirements 13.1, 13.2, 13.3, 13.5**
+
+### Property 16: Smart Content Type Detection Efficiency
+*For any* documentation URL processed, the system should first attempt keyword-based detection, and only use AI fallback when keywords are insufficient, achieving 90% keyword detection rate and minimal AI costs.
+**Validates: Requirements 16.1, 16.3, 16.4**
+
+### Property 17: Adaptive Scoring Fairness
+*For any* documentation content, when scoring criteria are not applicable to the detected content type, the system should mark them as not-applicable and redistribute weights to applicable criteria, ensuring no document type is unfairly penalized.
+**Validates: Requirements 16.5, 16.6, 16.7**
+
+### Property 18: Scoring Transparency and Cost Efficiency
+*For any* completed analysis, the system should provide clear explanations of which scoring criteria were applied and which were skipped, while minimizing AI costs through smart detection caching.
+**Validates: Requirements 16.7, 16.8, 16.9**
+
+## Phase 1 vs Phase 2 Feature Separation
+
+### Phase 1 Features (Current Implementation)
+The core documentation quality auditor with the following capabilities:
+- **Single Model Support**: Claude 3.5 Sonnet only
+- **Core Analysis**: All 5 quality dimensions (Relevance, Freshness, Clarity, Accuracy, Completeness)
+- **Context-Aware Analysis**: Parent/child page discovery and analysis
+- **Intelligent Caching**: DynamoDB index with S3 storage and TTL management
+- **Modern UI**: React frontend with Material-UI components
+- **AWS Integration**: Lambda functions, Step Functions, API Gateway, Bedrock
+- **Graceful Degradation**: Partial results when some dimensions fail
+- **Real-time Progress**: Polling-based status updates (WebSocket deferred to Phase 2)
+
+### Phase 2 Features (Future Enhancements)
+Extended capabilities planned for future releases:
+- **Multi-Model Support**: Amazon Titan Text Premier and Meta Llama 3.1 70B
+- **LLM-as-Judge Validation**: Async background quality validation using different models
+- **Advanced WebSocket Streaming**: Real-time progress updates via WebSocket connections
+- **Enhanced Observability**: Comprehensive transparency dashboard and model comparison views
+- **Admin Quality Dashboard**: System-wide quality metrics and validation results monitoring
+
+This separation allows for incremental development while maintaining a stable core system in Phase 1.
 
 ## Error Handling
 
@@ -568,13 +693,15 @@ const ERROR_RECOVERY: Record<string, ErrorRecoveryConfig> = {
 };
 ```
 
-## Transparency, Observability, and Quality Evaluation
+## Phase 2: Transparency, Observability, and Quality Evaluation
 
-### LLM-as-Judge Quality Validation
+**Note: This entire section represents Phase 2 functionality and is not part of the initial implementation.**
 
-The system implements a multi-layered quality assurance approach to ensure audit reliability:
+### LLM-as-Judge Quality Validation (Phase 2 Only)
 
-#### 1. **Dual Model Validation (LLM-as-Judge)**
+The system will implement a multi-layered quality assurance approach in Phase 2 to ensure audit reliability through async background validation:
+
+#### 1. **Async Dual Model Validation (LLM-as-Judge)**
 ```typescript
 interface QualityValidation {
   primaryAnalysis: DimensionResult;
@@ -585,8 +712,8 @@ interface QualityValidation {
   validationModel: string;
 }
 
-// Example validation workflow
-async function validateAnalysisQuality(
+// Phase 2: Async validation workflow (not real-time)
+async function validateAnalysisQualityAsync(
   primaryResult: DimensionResult,
   content: ProcessedContent,
   primaryModel: string
@@ -607,7 +734,7 @@ async function validateAnalysisQuality(
 }
 ```
 
-#### 2. **Transparency Dashboard**
+#### 2. **Admin-Only Transparency Dashboard (Phase 2)**
 ```typescript
 interface TransparencyReport {
   modelDecisions: ModelDecisionLog[];
@@ -636,7 +763,7 @@ interface PromptLog {
 }
 ```
 
-#### 3. **Real-time Observability**
+#### 3. **Background Quality Monitoring (Phase 2)**
 ```typescript
 interface ObservabilityMetrics {
   analysisId: string;
@@ -666,64 +793,62 @@ interface ModelPerformanceMetrics {
 }
 ```
 
-### Quality Assurance Components
+### Phase 2 Quality Assurance Components
 
-#### QualityValidator (Lambda) - REMOVED FROM PHASE 1
+#### QualityValidator (Lambda) - Phase 2 Background Process
 
-**Note:** This component was removed from the initial workflow based on user feedback. LLM-as-Judge validation should be async/periodic for system monitoring, not real-time user-facing.
+**Implementation Strategy**: 
+- **Async Background Job**: Runs every 3 hours to validate ~10% of completed analyses
+- **Admin Dashboard Only**: Results visible to system administrators, not end users
+- **System Quality Monitoring**: Used to improve prompts, model selection, and analysis quality
+- **No User-Facing Conflicts**: Never shows conflicting scores to end users
 
-**Original Purpose**: Validates primary analysis using different model for cross-verification
-**Phase 2 Implementation**: Will be implemented as an async background process that runs periodically (e.g., every 3 hours) to validate a sample of analyses for system quality assurance. Results will be visible to administrators only, not end users.
+**Purpose**: Validates primary analysis using different model for cross-verification
+**Scope**: System quality assurance and monitoring, not real-time user-facing validation
 
-**See Requirement 11 for Phase 2 async validation design.**
-
-#### TransparencyLogger
+#### TransparencyLogger (Phase 2)
 - **Purpose**: Logs all model decisions, prompts, and reasoning for audit trail
 - **Storage**: CloudWatch Logs with structured JSON for queryability
-- **Real-time**: Stream transparency data to frontend for live inspection
+- **Admin Access**: Transparency data available to administrators for system improvement
 - **Retention**: 30-day retention for analysis and debugging
 
-#### ObservabilityDashboard (Frontend Component)
-- **Purpose**: Real-time monitoring of analysis quality and system performance
+#### ObservabilityDashboard (Phase 2 Admin Component)
+- **Purpose**: Admin monitoring of analysis quality and system performance
 - **Features**:
   - Live model performance metrics
-  - Confidence score tracking
+  - Confidence score tracking across analyses
   - Disagreement alerts between models
   - Token usage and cost tracking
   - Error rate monitoring
+- **Access**: Administrator-only interface
 
-### Quality Evaluation Workflow
+### Phase 2 Quality Evaluation Workflow
 
 ```mermaid
 sequenceDiagram
     participant U as User
     participant F as Frontend
     participant P as Primary Analysis
-    participant V as Validation Analysis
-    participant Q as Quality Validator
-    participant T as Transparency Logger
+    participant BG as Background Validator
+    participant A as Admin Dashboard
     
     U->>F: Submit URL for analysis
     F->>P: Start primary analysis
-    P->>T: Log model decisions
-    P->>F: Stream progress updates
+    P->>P: Analyze with Claude (Phase 1)
+    P->>F: Return results to user
+    F->>U: Display results (Phase 1 complete)
     
-    par Primary Analysis
-        P->>P: Analyze with selected model
-    and Validation Analysis
-        P->>V: Trigger validation analysis
-        V->>V: Analyze with different model
-    end
+    Note over BG: Phase 2: Async validation (every 3 hours)
+    BG->>BG: Sample ~10% of analyses
+    BG->>BG: Validate with different model
+    BG->>A: Store validation results
     
-    P->>Q: Send both results for validation
-    Q->>Q: Compare results & calculate consensus
-    Q->>T: Log validation metrics
-    Q->>F: Return validated results with confidence
-    
-    F->>U: Display results with transparency data
+    Note over A: Admin reviews validation results
+    A->>A: Identify systematic issues
+    A->>A: Improve prompts/models
 ```
 
-### Confidence Scoring Algorithm
+### Phase 2 Confidence Scoring Algorithm
 
 ```typescript
 function calculateConfidenceScore(
@@ -750,9 +875,9 @@ function determineValidationAction(confidence: number): 'accept' | 'retry' | 'fl
 }
 ```
 
-### User-Facing Transparency Features
+### Phase 2 User-Facing Transparency Features
 
-#### 1. **Confidence Indicators**
+#### 1. **Confidence Indicators (Phase 2)**dicators**
 - Visual confidence meters for each dimension
 - Explanation of why confidence is high/medium/low
 - Model agreement/disagreement indicators
@@ -801,19 +926,360 @@ This comprehensive quality assurance system ensures that:
 4. **System performance is monitored** in real-time
 5. **Users can inspect the reasoning** behind every recommendation
 
+## Context-Aware Analysis Architecture
+
+### Context Discovery and Caching Strategy
+
+The system implements intelligent context analysis with selective page inclusion and comprehensive caching to avoid re-processing content.
+
+#### Context Discovery Logic
+
+```typescript
+interface ContextPage {
+  url: string;
+  title: string;
+  relationship: 'parent' | 'child' | 'sibling';
+  confidence: number;
+  contentHash?: string; // For cache validation
+}
+
+interface ContextAnalysisStrategy {
+  enabled: boolean;
+  maxContextPages: number; // Default: 5
+  includeParent: boolean;   // Default: true (immediate parent only)
+  includeChildren: boolean; // Default: true (direct children only)
+  includeSiblings: boolean; // Default: false (too broad by default)
+  relevanceThreshold: number; // Default: 0.6
+}
+
+// Selective context inclusion - avoid rabbit holes
+function discoverContextPages(
+  document: Document, 
+  baseUrl: string, 
+  strategy: ContextAnalysisStrategy
+): ContextPage[] {
+  const contextPages: ContextPage[] = [];
+  
+  // Strategy 1: Immediate parent (1 level up)
+  if (strategy.includeParent) {
+    const parentPage = findImmediateParent(baseUrl);
+    if (parentPage) contextPages.push(parentPage);
+  }
+  
+  // Strategy 2: Direct children (linked from current page)
+  if (strategy.includeChildren) {
+    const childPages = findDirectChildren(document, baseUrl);
+    contextPages.push(...childPages.slice(0, 3)); // Max 3 children
+  }
+  
+  // Strategy 3: Siblings (same parent, different endpoint) - SELECTIVE
+  if (strategy.includeSiblings) {
+    const siblingPages = findSiblingPages(document, baseUrl);
+    contextPages.push(...siblingPages.slice(0, 2)); // Max 2 siblings
+  }
+  
+  return contextPages
+    .filter(page => page.confidence >= strategy.relevanceThreshold)
+    .slice(0, strategy.maxContextPages);
+}
+```
+
+#### DynamoDB Caching Layer
+
+```typescript
+interface ProcessedContentIndex {
+  url: string;                    // Partition key
+  contentHash: string;            // Content hash for validation
+  s3Location: string;             // S3 path to processed content
+  processedAt: string;            // ISO timestamp
+  ttl: number;                    // TTL for automatic cleanup
+  contentType: string;            // 'api-docs' | 'tutorial' | 'reference'
+  noiseReductionMetrics: {
+    originalSize: number;
+    cleanedSize: number;
+    reductionPercent: number;
+  };
+  contextAnalysis?: {
+    contextPages: ContextPage[];
+    analysisScope: string;
+  };
+}
+
+// Cache check workflow
+async function processUrlWithCache(
+  url: string, 
+  contextAnalysis: ContextAnalysisStrategy
+): Promise<ProcessedContent> {
+  
+  // 1. Check DynamoDB index for existing processed content
+  const cacheEntry = await checkProcessedContentCache(url);
+  
+  if (cacheEntry && !isCacheExpired(cacheEntry)) {
+    console.log(`Cache hit for ${url}, retrieving from S3`);
+    
+    // 2. Retrieve processed content from S3
+    const cachedContent = await retrieveFromS3(cacheEntry.s3Location);
+    
+    // 3. Validate content hash (optional integrity check)
+    const currentHash = await calculateContentHash(url);
+    if (currentHash === cacheEntry.contentHash) {
+      return cachedContent;
+    } else {
+      console.log(`Content changed for ${url}, re-processing`);
+    }
+  }
+  
+  // 4. Process content fresh (cache miss or expired/invalid)
+  const processedContent = await processContentFresh(url, contextAnalysis);
+  
+  // 5. Store in cache (DynamoDB + S3)
+  await storeInCache(url, processedContent);
+  
+  return processedContent;
+}
+```
+
+#### Cache Management
+
+```typescript
+interface CacheConfig {
+  ttlDays: number;              // Default: 7 days
+  maxCacheSize: number;         // Max entries in DynamoDB
+  s3BucketName: string;         // S3 bucket for processed content
+  compressionEnabled: boolean;   // Gzip compression for S3 storage
+}
+
+// DynamoDB Table Schema
+const ProcessedContentTable = {
+  TableName: 'LensyProcessedContent',
+  KeySchema: [
+    { AttributeName: 'url', KeyType: 'HASH' }  // Partition key
+  ],
+  AttributeDefinitions: [
+    { AttributeName: 'url', AttributeType: 'S' },
+    { AttributeName: 'processedAt', AttributeType: 'S' }
+  ],
+  GlobalSecondaryIndexes: [
+    {
+      IndexName: 'ProcessedAtIndex',
+      KeySchema: [
+        { AttributeName: 'processedAt', KeyType: 'HASH' }
+      ],
+      Projection: { ProjectionType: 'ALL' }
+    }
+  ],
+  TimeToLiveSpecification: {
+    AttributeName: 'ttl',
+    Enabled: true
+  }
+};
+```
+
+### Context Analysis Integration
+
+#### Enhanced URLProcessor with Caching
+
+```typescript
+// Updated URLProcessor workflow
+export const handler: Handler<URLProcessorEvent, URLProcessorResponse> = async (event) => {
+  try {
+    // 1. Check cache first
+    const cachedContent = await checkProcessedContentCache(event.url);
+    
+    if (cachedContent && !isCacheExpired(cachedContent)) {
+      console.log('Using cached content');
+      return {
+        success: true,
+        sessionId: event.sessionId,
+        message: 'Retrieved from cache',
+        fromCache: true
+      };
+    }
+    
+    // 2. Process content fresh
+    const processedContent = await processContentWithContext(event);
+    
+    // 3. Store in cache
+    await storeProcessedContent(event.url, processedContent);
+    
+    return {
+      success: true,
+      sessionId: event.sessionId,
+      message: 'Content processed and cached'
+    };
+    
+  } catch (error) {
+    console.error('URL processing failed:', error);
+    return {
+      success: false,
+      sessionId: event.sessionId,
+      message: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+};
+
+async function processContentWithContext(event: URLProcessorEvent): Promise<ProcessedContent> {
+  // Process main content
+  const mainContent = await processMainContent(event.url);
+  
+  // Process context pages if enabled
+  let contextContent: ProcessedContent[] = [];
+  
+  if (event.contextAnalysis?.enabled) {
+    const contextPages = discoverContextPages(
+      mainContent.document, 
+      event.url,
+      {
+        enabled: true,
+        maxContextPages: event.contextAnalysis.maxContextPages || 5,
+        includeParent: true,
+        includeChildren: true,
+        includeSiblings: false, // Selective by default
+        relevanceThreshold: 0.6
+      }
+    );
+    
+    // Process context pages (with their own cache checks)
+    for (const contextPage of contextPages) {
+      try {
+        const contextProcessed = await processUrlWithCache(
+          contextPage.url,
+          { enabled: false } // Don't recurse context analysis
+        );
+        contextContent.push(contextProcessed);
+      } catch (error) {
+        console.log(`Failed to process context page ${contextPage.url}:`, error);
+        // Continue with other context pages
+      }
+    }
+  }
+  
+  return {
+    ...mainContent,
+    contextAnalysis: {
+      contextPages: contextContent.map(c => ({
+        url: c.url,
+        title: c.title || 'Context Page',
+        relationship: determineRelationship(c.url, event.url),
+        confidence: 0.8
+      })),
+      analysisScope: contextContent.length > 0 ? 'with-context' : 'single-page',
+      totalPagesAnalyzed: 1 + contextContent.length
+    }
+  };
+}
+```
+
+### Performance and Cost Optimization
+
+#### Smart Detection Strategy
+- **Layer 1 (90% of cases)**: Keyword matching on URL and title (free, <5ms)
+- **Layer 2 (10% of cases)**: AI classification using metadata (~50 tokens, $0.0001)
+- **Caching**: AI results stored in DynamoDB, never re-computed
+- **Cost**: ~$0.01 per 1000 URLs analyzed
+
+#### Detection Accuracy
+- **High confidence**: URL patterns and function signatures
+- **Medium confidence**: AI classification of unclear cases
+- **Fallback**: 'mixed' type uses balanced scoring criteria
+
+#### Parallel Context Processing
+
+```typescript
+// Process context pages in parallel for better performance
+async function processContextPagesParallel(
+  contextPages: ContextPage[]
+): Promise<ProcessedContent[]> {
+  const contextPromises = contextPages.map(async (page) => {
+    try {
+      return await processUrlWithCache(page.url, { enabled: false });
+    } catch (error) {
+      console.log(`Context page failed: ${page.url}`, error);
+      return null;
+    }
+  });
+  
+  const results = await Promise.allSettled(contextPromises);
+  
+  return results
+    .filter((result): result is PromiseFulfilledResult<ProcessedContent> => 
+      result.status === 'fulfilled' && result.value !== null
+    )
+    .map(result => result.value);
+}
+```
+
+#### Cache Warming Strategy
+
+```typescript
+// Optional: Pre-warm cache for popular documentation sites
+interface CacheWarmingConfig {
+  enabled: boolean;
+  popularUrls: string[];
+  warmingSchedule: string; // Cron expression
+}
+
+async function warmCache(config: CacheWarmingConfig): Promise<void> {
+  if (!config.enabled) return;
+  
+  for (const url of config.popularUrls) {
+    try {
+      await processUrlWithCache(url, { enabled: true });
+      console.log(`Cache warmed for ${url}`);
+    } catch (error) {
+      console.log(`Cache warming failed for ${url}:`, error);
+    }
+  }
+}
+```
+
+### Monitoring and Observability
+
+#### Cache Performance Metrics
+
+```typescript
+interface CacheMetrics {
+  hitRate: number;              // Cache hit percentage
+  avgProcessingTime: number;    // Average processing time
+  cacheSize: number;            // Current cache entries
+  s3StorageUsed: number;        // S3 storage in bytes
+  costSavings: number;          // Estimated cost savings from cache hits
+}
+
+// CloudWatch metrics for cache performance
+async function publishCacheMetrics(metrics: CacheMetrics): Promise<void> {
+  await cloudWatch.putMetricData({
+    Namespace: 'Lensy/Cache',
+    MetricData: [
+      {
+        MetricName: 'CacheHitRate',
+        Value: metrics.hitRate,
+        Unit: 'Percent'
+      },
+      {
+        MetricName: 'ProcessingTime',
+        Value: metrics.avgProcessingTime,
+        Unit: 'Milliseconds'
+      }
+    ]
+  }).promise();
+}
+```
+
 ## Future AI Agent Architecture
 
 The current design is architected to support future expansion into an AI agent system that handles:
 
 1. **Content Creation**: Generate documentation based on analysis findings
-2. **Content Review**: Current audit functionality 
+2. **Content Review**: Current audit functionality with context awareness
 3. **Content Publishing**: Automated publishing workflows
+4. **Content Maintenance**: Automated updates based on cache invalidation
 
 ### Agent-Ready Design Patterns
 
 ```typescript
 interface AgentAction {
-  type: 'analyze' | 'generate' | 'publish' | 'review';
+  type: 'analyze' | 'generate' | 'publish' | 'review' | 'maintain';
   input: any;
   context: AgentContext;
 }
@@ -822,15 +1288,17 @@ interface AgentContext {
   previousActions: AgentAction[];
   userPreferences: UserPreferences;
   projectContext: ProjectContext;
+  cacheContext: CacheContext;
 }
 
-// Future agent orchestrator
+// Future agent orchestrator with caching awareness
 class DocumentationAgent {
   async executeAction(action: AgentAction): Promise<AgentResult> {
     switch (action.type) {
-      case 'analyze': return this.currentAnalysisFlow(action);
+      case 'analyze': return this.contextAwareAnalysisFlow(action);
       case 'generate': return this.futureGenerationFlow(action);
       case 'publish': return this.futurePublishingFlow(action);
+      case 'maintain': return this.cacheMaintenanceFlow(action);
     }
   }
 }
@@ -839,50 +1307,259 @@ class DocumentationAgent {
 ### Migration Strategy
 
 The current architecture can be extended without breaking changes:
-- **Phase 1**: Current audit system (24-hour implementation)
-- **Phase 2**: Add content generation capabilities
-- **Phase 3**: Add publishing workflows
-- **Phase 4**: Full AI agent orchestration
+- **Phase 1**: Context-aware audit system with DynamoDB caching (current implementation)
+- **Phase 2**: Add content generation capabilities with cache-aware workflows
+- **Phase 3**: Add publishing workflows with cache invalidation
+- **Phase 4**: Full AI agent with proactive cache management agent orchestration
 
 This modular approach allows incremental development while maintaining the core audit functionality.
 
 ## Model Selection Rationale
 
-Based on AWS Bedrock documentation and performance characteristics:
+### Phase 1: Claude-Only Implementation
 
-### Claude 3.5 Sonnet
-- **Strengths**: Superior code analysis, technical writing evaluation, structured reasoning
-- **Use Cases**: Accuracy and Clarity dimensions, code snippet validation
-- **Evidence**: [Anthropic documentation](https://docs.anthropic.com) shows excellent performance on technical content analysis
+For the initial implementation, the system uses only Claude 3.5 Sonnet based on:
 
-### Amazon Titan Text Premier  
+**Claude 3.5 Sonnet Advantages:**
+- **Superior Code Analysis**: Excellent at detecting syntax errors, deprecated methods, and version compatibility issues
+- **Technical Writing Evaluation**: Strong performance on documentation clarity and accuracy assessment
+- **Structured Reasoning**: Reliable JSON response formatting and consistent scoring methodology
+- **Proven Performance**: [Anthropic documentation](https://docs.anthropic.com) demonstrates excellent technical content analysis capabilities
+
+**Single Model Strategy Benefits:**
+- **Consistency**: All dimensions analyzed with the same model for coherent scoring
+- **Reliability**: Proven working implementation with stable JSON parsing
+- **Simplicity**: Reduced complexity for initial deployment and testing
+- **Cost Efficiency**: Single model reduces token usage and API costs
+
+### Phase 2: Multi-Model Support
+
+Future expansion will include additional models based on AWS Bedrock capabilities:
+
+**Amazon Titan Text Premier** (Phase 2):
 - **Strengths**: Information extraction, summarization, comprehensive analysis
 - **Use Cases**: Completeness and Freshness dimensions
 - **Evidence**: [AWS documentation](https://aws.amazon.com/bedrock/titan/) highlights optimization for text analysis tasks
 
-### Meta Llama 3.1 70B
+**Meta Llama 3.1 70B** (Phase 2):
 - **Strengths**: Context understanding, balanced assessments
 - **Use Cases**: Relevance dimension, general content evaluation
 - **Evidence**: Strong performance on reasoning tasks per [AWS Bedrock model comparison](https://aws.amazon.com/bedrock/llama/)
 
-### Auto Selection Logic
+### Phase 1 Model Selection Logic
 ```typescript
-// Simplified: One model per entire analysis (Claude-only for MVP)
-const AUTO_MODEL_SELECTION = {
+// Simplified: Claude-only for Phase 1 reliability
+function selectModelForAnalysis(contentType: string, userPreference: string): string {
+  // Phase 1: Always use Claude regardless of preference
+  return 'claude';
+}
+
+// Phase 2: Full auto-selection logic (future)
+const PHASE_2_AUTO_MODEL_SELECTION = {
   'api-docs': 'claude',              // Technical documentation - best code analysis
-  'tutorial': 'claude-balanced',     // Educational content - more creative analysis
-  'reference': 'claude-analytical',  // Reference material - systematic analysis
+  'tutorial': 'llama',               // Educational content - balanced assessment
+  'reference': 'titan',              // Reference material - comprehensive analysis
   'mixed': 'claude'                  // Default for mixed content types
 };
+```
 
-// Model selection is per-analysis, NOT per-dimension
-function selectModelForAnalysis(contentType: string, userPreference: string): string {
-  if (userPreference !== 'auto') {
-    return userPreference; // User choice always wins
-  }
-  return AUTO_MODEL_SELECTION[contentType] || 'claude';
+**Migration Strategy:**
+- Phase 1: Establish reliable Claude-based analysis pipeline
+- Phase 2: Add Titan and Llama with proper response parsing and validation
+- Phase 3: Enable intelligent auto-selection based on content type and user preferences
+
+## Content-Type-Aware Scoring Framework
+
+### Problem: One-Size-Fits-All Scoring Doesn't Work
+
+Different documentation types have different quality expectations:
+
+| Doc Type | Code Expected? | What Matters Most |
+|----------|---------------|-------------------|
+| API Reference | ✅ Yes, lots | Syntax accuracy, complete examples |
+| Tutorial | ✅ Yes | Step-by-step flow, runnable code |
+| Conceptual Guide | ❌ No | Clear explanations, diagrams |
+| Overview | ❌ No | Navigation, scope definition |
+| Troubleshooting | ❌ Maybe | Problem coverage, solutions |
+
+### Solution: Adaptive Scoring Based on Document Type
+
+#### Smart Content Type Detection: Keyword-First + AI-Fallback
+
+```typescript
+type DocumentationType = 
+  | 'api-reference'      // Function/class docs, needs code
+  | 'tutorial'           // Step-by-step guide, needs code
+  | 'conceptual'         // Explains concepts, may not need code
+  | 'how-to'             // Task-focused, usually needs code
+  | 'reference'          // Tables, lists, specs
+  | 'troubleshooting'    // Problem/solution format
+  | 'overview'           // High-level intro, rarely needs code
+  | 'changelog'          // Version history
+  | 'mixed';             // Combination
+
+// Layer 1: Fast keyword matching (90% of cases, free)
+function detectByKeywords(url: string, title: string): DocumentationType | null {
+    const urlLower = url.toLowerCase();
+    const titleLower = title.toLowerCase();
+    const searchText = `${urlLower} ${titleLower}`;
+    
+    // High-confidence keyword matches
+    if (searchText.includes('/reference/functions/') || 
+        searchText.includes('/reference/classes/') ||
+        titleLower.includes('()') || 
+        titleLower.includes('function')) {
+        return 'api-reference';
+    }
+    
+    if (searchText.includes('getting-started') || 
+        searchText.includes('tutorial') ||
+        titleLower.includes('tutorial')) {
+        return 'tutorial';
+    }
+    
+    if (searchText.includes('/explanations/') || 
+        searchText.includes('architecture') ||
+        titleLower.includes('architecture') ||
+        titleLower.includes('understanding')) {
+        return 'conceptual';
+    }
+    
+    if (searchText.includes('how-to') || 
+        titleLower.includes('how to') ||
+        titleLower.includes('create') ||
+        titleLower.includes('build')) {
+        return 'how-to';
+    }
+    
+    if (searchText.includes('/intro') || 
+        searchText.includes('introduction') ||
+        titleLower.includes('introduction')) {
+        return 'overview';
+    }
+    
+    if (searchText.includes('/reference-guides/') ||
+        titleLower.includes('reference')) {
+        return 'reference';
+    }
+    
+    return null; // No clear match - need AI fallback
+}
+
+// Layer 2: AI fallback for unclear cases (10% of cases, small cost)
+async function detectByAI(url: string, title: string, description?: string): Promise<DocumentationType> {
+    const prompt = `Classify this documentation page type:
+
+URL: ${url}
+Title: ${title}
+Description: ${description || 'N/A'}
+
+Classify as ONE of: api-reference, tutorial, conceptual, how-to, overview, reference, troubleshooting, mixed
+
+Respond with just the type name.`;
+
+    const response = await callBedrockModel(prompt);
+    return response.trim() as DocumentationType;
+}
+
+// Complete detection with caching
+async function detectContentTypeEnhanced(
+    document: Document, 
+    markdownContent: string, 
+    url: string
+): Promise<DocumentationType> {
+    
+    // Layer 1: Fast keyword detection (90% of cases)
+    const keywordType = detectByKeywords(url, document.title);
+    if (keywordType) {
+        console.log(`✅ Detected by keywords: ${keywordType}`);
+        return keywordType;
+    }
+    
+    // Layer 2: AI fallback for unclear cases (10% of cases)
+    console.log(`🤖 Using AI fallback for: ${url}`);
+    
+    const metaDescription = document.querySelector('meta[name="description"]')?.getAttribute('content');
+    const aiType = await detectByAI(url, document.title, metaDescription);
+    
+    console.log(`🎯 AI detected: ${aiType}`);
+    return aiType;
 }
 ```
+
+#### Type-Specific Scoring Rubrics
+
+```typescript
+interface AdaptiveCriteria {
+  criterion: string;
+  applicability: Record<DocumentationType, 'required' | 'optional' | 'not-applicable'>;
+  weight: Record<DocumentationType, number>;
+}
+
+const codeExamplesCriteria: AdaptiveCriteria = {
+  criterion: 'Code Examples Quality',
+  applicability: {
+    'api-reference': 'required',
+    'tutorial': 'required',
+    'how-to': 'required',
+    'conceptual': 'optional',      // Nice to have, not required
+    'overview': 'not-applicable',  // Don't penalize for no code
+    'changelog': 'not-applicable',
+    'troubleshooting': 'optional',
+    'reference': 'optional',
+    'mixed': 'optional'
+  },
+  weight: {
+    'api-reference': 30,  // Heavy weight - code is critical
+    'tutorial': 25,
+    'how-to': 25,
+    'conceptual': 10,     // Light weight - code is bonus
+    'overview': 0,        // Zero weight - don't count
+    'changelog': 0,
+    'troubleshooting': 15,
+    'reference': 10,
+    'mixed': 15
+  }
+};
+```
+
+#### Graceful Handling of Non-Applicable Criteria
+
+```typescript
+function calculateDimensionScore(results: CriterionResult[]): number {
+  // Filter out not-applicable criteria
+  const applicableResults = results.filter(r => r.status === 'evaluated');
+  
+  // Redistribute weights among applicable criteria
+  const totalOriginalWeight = applicableResults.reduce((sum, r) => sum + r.weight, 0);
+  
+  applicableResults.forEach(r => {
+    r.adjustedWeight = (r.weight / totalOriginalWeight) * 100;
+  });
+  
+  // Calculate weighted score
+  const weightedScore = applicableResults.reduce(
+    (sum, r) => sum + (r.score! * r.adjustedWeight / 100), 
+    0
+  );
+  
+  return Math.round(weightedScore);
+}
+```
+
+### Example: Fair Scoring Across Document Types
+
+**Conceptual Guide**: "Understanding WordPress Block Architecture"
+- **Without Adaptive Scoring**: 64/100 (penalized for no code examples)
+- **With Adaptive Scoring**: 86/100 (code examples marked N/A, weights redistributed)
+
+**API Reference**: "wp_insert_post() Function"
+- **Code Examples Weight**: 30% (critical for API docs)
+- **Explanation Weight**: 20% (less critical than examples)
+
+**Overview Page**: "WordPress Developer Resources"
+- **Code Examples Weight**: 0% (not applicable)
+- **Navigation Weight**: 40% (critical for overview pages)
 
 ## Testing Strategy
 

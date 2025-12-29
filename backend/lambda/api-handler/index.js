@@ -159,8 +159,11 @@ async function handleStatusRequest(path, corsHeaders) {
             }));
             const contentStr = await contentResponse.Body.transformToString();
             const processedContent = JSON.parse(contentStr);
-            // Get session metadata to retrieve the model used
+            console.log('Retrieved processed content keys:', Object.keys(processedContent));
+            console.log('Context analysis check:', !!processedContent.contextAnalysis);
+            // Get session metadata to retrieve the model used and start time
             let modelUsed = 'claude'; // default
+            let analysisStartTime = Date.now(); // fallback
             try {
                 const metadataKey = `sessions/${sessionId}/metadata.json`;
                 const metadataResponse = await s3.send(new GetObjectCommand({
@@ -170,10 +173,13 @@ async function handleStatusRequest(path, corsHeaders) {
                 const metadataStr = await metadataResponse.Body.transformToString();
                 const metadata = JSON.parse(metadataStr);
                 modelUsed = metadata.selectedModel || 'claude';
+                analysisStartTime = metadata.startTime || Date.now();
             }
             catch (metadataError) {
-                console.log('No metadata found, using default model');
+                console.log('No metadata found, using default model and current time');
             }
+            // Calculate actual analysis time
+            const actualAnalysisTime = Date.now() - analysisStartTime;
             // Build the report
             const validScores = Object.values(dimensionResults)
                 .filter((d) => d.score !== null && d.status === 'complete')
@@ -181,12 +187,28 @@ async function handleStatusRequest(path, corsHeaders) {
             const overallScore = validScores.length > 0
                 ? Math.round(validScores.reduce((sum, score) => sum + score, 0) / validScores.length)
                 : 0;
+            // Generate context analysis summary from processed content if available
+            let contextAnalysis = null;
+            if (processedContent.contextAnalysis) {
+                console.log('Found context analysis in processed content:', processedContent.contextAnalysis);
+                contextAnalysis = {
+                    enabled: true,
+                    contextPages: processedContent.contextAnalysis.contextPages || [],
+                    analysisScope: processedContent.contextAnalysis.analysisScope || 'single-page',
+                    totalPagesAnalyzed: processedContent.contextAnalysis.totalPagesAnalyzed || 1
+                };
+                console.log('Generated context analysis for report:', contextAnalysis);
+            }
+            else {
+                console.log('No context analysis found in processed content');
+            }
             const report = {
                 overallScore,
                 dimensionsAnalyzed: validScores.length,
                 dimensionsTotal: 5,
                 confidence: validScores.length === 5 ? 'high' : validScores.length >= 3 ? 'medium' : 'low',
                 modelUsed: modelUsed,
+                cacheStatus: processedContent.cacheMetadata?.wasFromCache ? 'hit' : 'miss',
                 dimensions: dimensionResults,
                 codeAnalysis: {
                     snippetsFound: processedContent.codeSnippets?.length || 0,
@@ -204,7 +226,8 @@ async function handleStatusRequest(path, corsHeaders) {
                     missingAltText: processedContent.mediaElements?.filter((m) => m.type === 'image' && !m.alt).length || 0
                 },
                 linkAnalysis: processedContent.linkAnalysis || {},
-                analysisTime: 0,
+                ...(contextAnalysis && { contextAnalysis }),
+                analysisTime: actualAnalysisTime,
                 retryCount: 0
             };
             return {
