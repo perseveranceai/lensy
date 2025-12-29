@@ -31,8 +31,13 @@ interface DocumentStructure {
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
 const bedrockClient = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'us-east-1' });
 
-export const handler: Handler<StructureDetectorEvent, StructureDetectorResponse> = async (event) => {
-    console.log('Detecting document structure for:', event.url);
+export const handler: Handler<any, StructureDetectorResponse> = async (event) => {
+    console.log('Structure detector received event:', JSON.stringify(event, null, 2));
+
+    // Extract original parameters from Step Functions input
+    const { url, selectedModel, sessionId, analysisStartTime } = event;
+
+    console.log('Detecting document structure for:', url);
 
     try {
         const bucketName = process.env.ANALYSIS_BUCKET;
@@ -41,7 +46,7 @@ export const handler: Handler<StructureDetectorEvent, StructureDetectorResponse>
         }
 
         // Retrieve processed content from S3
-        const s3Key = `sessions/${event.sessionId}/processed-content.json`;
+        const s3Key = `sessions/${sessionId}/processed-content.json`;
         const getResponse = await s3Client.send(new GetObjectCommand({
             Bucket: bucketName,
             Key: s3Key
@@ -61,7 +66,7 @@ export const handler: Handler<StructureDetectorEvent, StructureDetectorResponse>
         );
 
         // Store structure analysis in S3
-        const structureKey = `sessions/${event.sessionId}/structure.json`;
+        const structureKey = `sessions/${sessionId}/structure.json`;
         await s3Client.send(new PutObjectCommand({
             Bucket: bucketName,
             Key: structureKey,
@@ -73,7 +78,7 @@ export const handler: Handler<StructureDetectorEvent, StructureDetectorResponse>
 
         return {
             success: true,
-            sessionId: event.sessionId,
+            sessionId: sessionId,
             message: `Document structure analyzed: ${structure.type}`
         };
 
@@ -81,7 +86,7 @@ export const handler: Handler<StructureDetectorEvent, StructureDetectorResponse>
         console.error('Structure detection failed:', error);
         return {
             success: false,
-            sessionId: event.sessionId,
+            sessionId: sessionId,
             message: error instanceof Error ? error.message : 'Unknown error'
         };
     }

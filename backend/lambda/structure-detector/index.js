@@ -6,14 +6,17 @@ const client_bedrock_runtime_1 = require("@aws-sdk/client-bedrock-runtime");
 const s3Client = new client_s3_1.S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
 const bedrockClient = new client_bedrock_runtime_1.BedrockRuntimeClient({ region: process.env.AWS_REGION || 'us-east-1' });
 const handler = async (event) => {
-    console.log('Detecting document structure for:', event.url);
+    console.log('Structure detector received event:', JSON.stringify(event, null, 2));
+    // Extract original parameters from Step Functions input
+    const { url, selectedModel, sessionId, analysisStartTime } = event;
+    console.log('Detecting document structure for:', url);
     try {
         const bucketName = process.env.ANALYSIS_BUCKET;
         if (!bucketName) {
             throw new Error('ANALYSIS_BUCKET environment variable not set');
         }
         // Retrieve processed content from S3
-        const s3Key = `sessions/${event.sessionId}/processed-content.json`;
+        const s3Key = `sessions/${sessionId}/processed-content.json`;
         const getResponse = await s3Client.send(new client_s3_1.GetObjectCommand({
             Bucket: bucketName,
             Key: s3Key
@@ -24,7 +27,7 @@ const handler = async (event) => {
         // Use AI to analyze document structure
         const structure = await analyzeStructure(processedContent.markdownContent, processedContent.contentType, processedContent.linkAnalysis, event.selectedModel);
         // Store structure analysis in S3
-        const structureKey = `sessions/${event.sessionId}/structure.json`;
+        const structureKey = `sessions/${sessionId}/structure.json`;
         await s3Client.send(new client_s3_1.PutObjectCommand({
             Bucket: bucketName,
             Key: structureKey,
@@ -34,7 +37,7 @@ const handler = async (event) => {
         console.log('Structure detection completed:', structure.type);
         return {
             success: true,
-            sessionId: event.sessionId,
+            sessionId: sessionId,
             message: `Document structure analyzed: ${structure.type}`
         };
     }
@@ -42,7 +45,7 @@ const handler = async (event) => {
         console.error('Structure detection failed:', error);
         return {
             success: false,
-            sessionId: event.sessionId,
+            sessionId: sessionId,
             message: error instanceof Error ? error.message : 'Unknown error'
         };
     }

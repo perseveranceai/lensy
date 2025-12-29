@@ -5,34 +5,31 @@
         "lib": [
             "es2020"
         ],
-        "declaration": true,
         "strict": true,
         "noImplicitAny": true,
         "strictNullChecks": true,
         "noImplicitThis": true,
         "alwaysStrict": true,
-        "noUnusedLocals": false,
-        "noUnusedParameters": false,
         "noImplicitReturns": true,
-        "noFallthroughCasesInSwitch": false,
         "inlineSourceMap": true,
         "inlineSources": true,
-        "experimentalDecorators": true,
-        "strictPropertyInitialization": false,
         "typeRoots": [
-            "./node_modules/@types",
-            "./types"
+            "../node_modules/@types",
+            "../types"
         ],
-        "outDir": "./lib",
-        "rootDir": "./",
+        "outDir": "./lambda",
+        "rootDir": "./lambda",
         "resolveJsonModule": true,
         "esModuleInterop": true,
         "skipLibCheck": true,
-        "forceConsistentCasingInFileNames": true
+        "forceConsistentCasingInFileNames": true,
+        "noEmit": false
     },
+    "include": [
+        "lambda/**/*.ts"
+    ],
     "exclude": [
         "node_modules",
-        "cdk.out",
-        "lib"
+        "lambda/**/node_modules"
     ]
 }

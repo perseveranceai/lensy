@@ -18,13 +18,21 @@ import {
     Chip,
     LinearProgress,
     AppBar,
-    Toolbar
+    Toolbar,
+    Switch,
+    FormControlLabel
 } from '@mui/material';
+import LinkIcon from '@mui/icons-material/Link';
+import AnalyticsIcon from '@mui/icons-material/Analytics';
 
 interface AnalysisRequest {
     url: string;
     selectedModel: 'claude' | 'titan' | 'llama' | 'auto';
     sessionId: string;
+    contextAnalysis?: {
+        enabled: boolean;
+        maxContextPages?: number;
+    };
 }
 
 interface DimensionResult {
@@ -72,6 +80,20 @@ interface FinalReport {
         linkContext: 'single-page' | 'multi-page-referenced';
         analysisScope: 'current-page-only' | 'with-subpages';
     };
+    cacheStatus: 'hit' | 'miss';  // Simple cache status for main page
+    contextAnalysis?: {
+        enabled: boolean;
+        contextPages: Array<{
+            url: string;
+            title: string;
+            relationship: 'parent' | 'child' | 'sibling';
+            confidence: number;
+            cached?: boolean;
+        }>;
+        analysisScope: 'single-page' | 'with-context';
+        totalPagesAnalyzed: number;
+        // Removed cacheHits and cacheMisses - moved to top level
+    };
     analysisTime: number;
     retryCount: number;
 }
@@ -88,6 +110,7 @@ const API_BASE_URL = 'https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com';
 function App() {
     const [url, setUrl] = useState('');
     const [selectedModel, setSelectedModel] = useState<'claude' | 'titan' | 'llama' | 'auto'>('auto');
+    const [contextAnalysisEnabled, setContextAnalysisEnabled] = useState(false);
     const [analysisState, setAnalysisState] = useState<AnalysisState>({ status: 'idle' });
 
     const pollForResults = async (executionArn: string, sessionId: string) => {
@@ -190,7 +213,11 @@ function App() {
         const analysisRequest: AnalysisRequest = {
             url,
             selectedModel,
-            sessionId
+            sessionId,
+            contextAnalysis: contextAnalysisEnabled ? {
+                enabled: true,
+                maxContextPages: 5
+            } : undefined
         };
 
         try {
@@ -297,6 +324,43 @@ function App() {
                             </Select>
                         </FormControl>
 
+                        {/* Context Analysis Section */}
+                        <Card sx={{ mb: 3, bgcolor: 'grey.50' }}>
+                            <CardContent>
+                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                                    <AnalyticsIcon sx={{ mr: 1, color: 'primary.main' }} />
+                                    <Typography variant="h6">
+                                        Context Analysis
+                                    </Typography>
+                                </Box>
+
+                                <FormControlLabel
+                                    control={
+                                        <Switch
+                                            checked={contextAnalysisEnabled}
+                                            onChange={(e) => setContextAnalysisEnabled(e.target.checked)}
+                                            disabled={analysisState.status === 'analyzing'}
+                                        />
+                                    }
+                                    label="Include related pages for better analysis"
+                                />
+
+                                <Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 2 }}>
+                                    When enabled, the system will analyze parent, child, and sibling pages to provide better context for quality assessment.
+                                </Typography>
+
+                                {contextAnalysisEnabled && (
+                                    <Alert severity="info" sx={{ mt: 2 }}>
+                                        <Typography variant="body2">
+                                            <strong>Analysis Scope:</strong> Target page + up to 5 related pages
+                                            <br />
+                                            <strong>Discovery:</strong> Parent (1 level up), Children (direct links), Siblings (same level)
+                                        </Typography>
+                                    </Alert>
+                                )}
+                            </CardContent>
+                        </Card>
+
                         <Button
                             variant="contained"
                             size="large"
@@ -320,6 +384,11 @@ function App() {
                             <Typography variant="body2" color="text.secondary" gutterBottom>
                                 Real AI analysis in progress... This may take a few minutes.
                             </Typography>
+                            {contextAnalysisEnabled && (
+                                <Typography variant="body2" color="primary.main" gutterBottom>
+                                    📄 Context analysis enabled - analyzing related pages for better insights
+                                </Typography>
+                            )}
                             {analysisState.executionArn && (
                                 <Typography variant="body2" color="text.secondary" gutterBottom>
                                     Execution: {analysisState.executionArn.split(':').pop()}
@@ -428,7 +497,7 @@ function App() {
                         </Typography>
 
                         <Grid container spacing={2}>
-                            <Grid item xs={12} md={4}>
+                            <Grid item xs={12} md={6}>
                                 <Card>
                                     <CardContent>
                                         <Typography variant="subtitle1" gutterBottom>Code Analysis</Typography>
@@ -440,7 +509,19 @@ function App() {
                                     </CardContent>
                                 </Card>
                             </Grid>
-                            <Grid item xs={12} md={4}>
+                            <Grid item xs={12} md={6}>
+                                <Card>
+                                    <CardContent>
+                                        <Typography variant="subtitle1" gutterBottom>Cache Status</Typography>
+                                        <Typography variant="body2">
+                                            Main Page: <strong>{analysisState.report.cacheStatus === 'hit' ? '✅ Cached' : '🔄 Fresh Analysis'}</strong><br />
+                                            Analysis Time: {Math.round(analysisState.report.analysisTime / 1000)}s<br />
+                                            Performance: {analysisState.report.cacheStatus === 'hit' ? 'Fast (cached)' : 'Normal (fresh)'}
+                                        </Typography>
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+                            <Grid item xs={12} md={6}>
                                 <Card>
                                     <CardContent>
                                         <Typography variant="subtitle1" gutterBottom>Media Analysis</Typography>
@@ -452,7 +533,7 @@ function App() {
                                     </CardContent>
                                 </Card>
                             </Grid>
-                            <Grid item xs={12} md={4}>
+                            <Grid item xs={12} md={6}>
                                 <Card>
                                     <CardContent>
                                         <Typography variant="subtitle1" gutterBottom>Link Analysis</Typography>
@@ -465,6 +546,76 @@ function App() {
                                 </Card>
                             </Grid>
                         </Grid>
+
+                        {/* Context Analysis Results */}
+                        {analysisState.report.contextAnalysis && (
+                            <>
+                                <Typography variant="h6" gutterBottom sx={{ mt: 4 }}>
+                                    Context Analysis
+                                </Typography>
+
+                                <Card sx={{ mb: 3 }}>
+                                    <CardContent>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                                            <AnalyticsIcon sx={{ mr: 1, color: 'primary.main' }} />
+                                            <Typography variant="h6">
+                                                Related Pages Analysis
+                                            </Typography>
+                                        </Box>
+
+                                        <Grid container spacing={2} sx={{ mb: 2 }}>
+                                            <Grid item xs={12} md={6}>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    Analysis Scope
+                                                </Typography>
+                                                <Typography variant="body1">
+                                                    {analysisState.report.contextAnalysis.analysisScope === 'with-context' ?
+                                                        'Multi-page analysis' : 'Single page only'}
+                                                </Typography>
+                                            </Grid>
+                                            <Grid item xs={12} md={6}>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    Pages Analyzed
+                                                </Typography>
+                                                <Typography variant="body1">
+                                                    {analysisState.report.contextAnalysis.totalPagesAnalyzed}
+                                                </Typography>
+                                            </Grid>
+                                        </Grid>
+
+                                        {analysisState.report.contextAnalysis.contextPages.length > 0 && (
+                                            <Box>
+                                                <Typography variant="subtitle2" gutterBottom>
+                                                    Related pages discovered:
+                                                </Typography>
+                                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                                                    {analysisState.report.contextAnalysis.contextPages.map((page, index) => (
+                                                        <Chip
+                                                            key={index}
+                                                            icon={<LinkIcon />}
+                                                            label={`${page.relationship === 'parent' ? '↗️' : page.relationship === 'child' ? '↘️' : '↔️'} ${page.title}`}
+                                                            variant={page.cached ? 'filled' : 'outlined'}
+                                                            color={page.cached ? 'success' : 'default'}
+                                                            size="small"
+                                                            title={`${page.relationship} page (confidence: ${Math.round(page.confidence * 100)}%)${page.cached ? ' - cached' : ' - fresh'}`}
+                                                        />
+                                                    ))}
+                                                </Box>
+                                                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                                    Green chips indicate cached content, outlined chips were processed fresh
+                                                </Typography>
+                                            </Box>
+                                        )}
+
+                                        {analysisState.report.contextAnalysis.contextPages.length === 0 && (
+                                            <Alert severity="info">
+                                                No related pages were discovered for this documentation page.
+                                            </Alert>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            </>
+                        )}
 
                         <Box sx={{ mt: 3, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
                             <Typography variant="body2" color="text.secondary">

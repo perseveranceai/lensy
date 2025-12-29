@@ -4,11 +4,13 @@
     "description": "AWS CDK backend for Lensy documentation auditor",
     "main": "lib/index.js",
     "scripts": {
-        "build": "tsc",
+        "clean": "find lib -name '*.js' -delete 2>/dev/null; find lib -name '*.d.ts' -delete 2>/dev/null; true",
+        "build": "npm run clean && tsc",
+        "build:lambdas": "cd lambda/url-processor && npx tsc index.ts --target ES2020 --module commonjs --skipLibCheck --esModuleInterop --resolveJsonModule; cd ../structure-detector && npx tsc index.ts --target ES2020 --module commonjs --skipLibCheck --esModuleInterop; cd ../dimension-analyzer && npx tsc index.ts --target ES2020 --module commonjs --skipLibCheck --esModuleInterop; cd ../report-generator && npx tsc index.ts --target ES2020 --module commonjs --skipLibCheck --esModuleInterop; cd ../api-handler && npx tsc index.ts --target ES2020 --module commonjs --skipLibCheck --esModuleInterop",
         "watch": "tsc -w",
         "test": "jest",
         "cdk": "cdk",
-        "deploy": "npm run build && cdk deploy",
+        "deploy": "npm run build && npm run build:lambdas && cdk deploy",
         "synth": "cdk synth",
         "diff": "cdk diff",
         "destroy": "cdk destroy"
@@ -16,8 +18,10 @@
     "dependencies": {
         "@aws-sdk/client-apigatewayv2": "^3.450.0",
         "@aws-sdk/client-bedrock-runtime": "^3.450.0",
+        "@aws-sdk/client-dynamodb": "^3.958.0",
         "@aws-sdk/client-s3": "^3.958.0",
         "@aws-sdk/client-sfn": "^3.450.0",
+        "@aws-sdk/util-dynamodb": "^3.958.0",
         "@mozilla/readability": "^0.6.0",
         "@types/jsdom": "^21.1.6",
         "@types/turndown": "^5.0.4",
