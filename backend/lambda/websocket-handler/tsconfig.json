@@ -1,0 +1,10 @@
+{
+    "extends": "../../tsconfig.lambda.json",
+    "compilerOptions": {
+        "outDir": ".",
+        "rootDir": "."
+    },
+    "include": [
+        "*.ts"
+    ]
+}

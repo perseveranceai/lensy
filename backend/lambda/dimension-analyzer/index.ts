@@ -4,6 +4,7 @@ import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedroc
 import { DynamoDBClient, GetItemCommand, PutItemCommand, UpdateItemCommand } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import * as crypto from 'crypto';
+import { ProgressPublisher } from './progress-publisher';
 
 interface DimensionAnalyzerEvent {
     url: string;
@@ -142,6 +143,9 @@ export const handler: Handler<any, DimensionAnalyzerResponse> = async (event) =>
 
     console.log('Starting dimension analysis with model:', selectedModel);
 
+    // Initialize progress publisher
+    const progress = new ProgressPublisher(sessionId);
+
     try {
         const bucketName = process.env.ANALYSIS_BUCKET;
         if (!bucketName) {
@@ -167,6 +171,9 @@ export const handler: Handler<any, DimensionAnalyzerResponse> = async (event) =>
         if (cachedResults) {
             console.log('✅ Dimension analysis cache hit! Using cached results');
 
+            // Send cache hit message for dimensions
+            await progress.cacheHit('Retrieved: 5/5 dimensions from cache');
+
             // Store cached results in session location
             const resultsKey = `sessions/${sessionId}/dimension-results.json`;
             await s3Client.send(new PutObjectCommand({
@@ -185,11 +192,22 @@ export const handler: Handler<any, DimensionAnalyzerResponse> = async (event) =>
 
         console.log('❌ Dimension analysis cache miss - running fresh analysis');
 
+        // Send structure detection complete message
+        await progress.success('Structure detected: Topics identified', {
+            phase: 'structure-detection'
+        });
+
         // Analyze all dimensions IN PARALLEL for speed
         console.log('Starting parallel dimension analysis...');
-        const dimensionPromises = DIMENSIONS.map(async (dimension) => {
+
+        const dimensionPromises = DIMENSIONS.map(async (dimension, index) => {
             const startTime = Date.now();
             console.log(`Starting ${dimension} analysis`);
+
+            // Send progress message for this dimension
+            await progress.progress(`Analyzing ${dimension.charAt(0).toUpperCase() + dimension.slice(1)} (${index + 1}/5)...`, 'dimension-analysis', {
+                dimension
+            });
 
             try {
                 const result = await analyzeDimension(
@@ -198,16 +216,31 @@ export const handler: Handler<any, DimensionAnalyzerResponse> = async (event) =>
                     selectedModel
                 );
 
+                const processingTime = Date.now() - startTime;
                 console.log(`${dimension} complete: score ${result.score}`);
+
+                // Send success message with score
+                await progress.success(`${dimension.charAt(0).toUpperCase() + dimension.slice(1)}: ${result.score}/100 (${(processingTime / 1000).toFixed(1)}s)`, {
+                    dimension,
+                    score: result.score || undefined,
+                    processingTime
+                });
+
                 return {
                     dimension,
                     result: {
                         ...result,
-                        processingTime: Date.now() - startTime
+                        processingTime
                     }
                 };
             } catch (error) {
                 console.error(`${dimension} failed:`, error);
+
+                // Send error message
+                await progress.error(`${dimension.charAt(0).toUpperCase() + dimension.slice(1)} failed: ${error instanceof Error ? error.message : 'Unknown error'}`, {
+                    dimension
+                });
+
                 return {
                     dimension,
                     result: {

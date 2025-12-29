@@ -49,17 +49,20 @@ Lensy is a Documentation Quality Auditor that analyzes developer documentation U
 4. WHERE structure confirmation is provided, THE System SHALL proceed with dimension analysis
 5. IF the user rejects the structure, THE System SHALL allow manual editing of the topic breakdown
 
-### Requirement 3: Real-time Progress Streaming
+### Requirement 3: Real-Time Progress Streaming
 
 **User Story:** As a user, I want to see live progress updates during analysis, so that I understand what the system is doing and can track completion.
 
 #### Acceptance Criteria
 
-1. WHEN dimension analysis begins, THE Progress_Streamer SHALL display real-time status updates
+1. WHEN dimension analysis begins, THE Progress_Streamer SHALL display real-time status updates via WebSocket connection
 2. WHEN analyzing each dimension, THE Progress_Streamer SHALL show specific findings as they are discovered
 3. WHEN code snippets are found, THE Progress_Streamer SHALL report syntax errors and deprecated methods immediately
 4. WHEN a dimension completes, THE Progress_Streamer SHALL display the final score and mark completion
 5. WHEN a dimension fails, THE Progress_Streamer SHALL explain the failure reason and continue with remaining dimensions
+6. WHEN analysis completes, THE Progress_Streamer SHALL automatically collapse to show results while preserving access to logs
+7. WHEN cache status is determined, THE Progress_Streamer SHALL clearly indicate cache HIT or MISS with appropriate icons
+8. THE Progress_Streamer SHALL provide collapsible progress logs that remain accessible after analysis completion
 
 ### Requirement 4: Quality Dimension Analysis
 
@@ -262,3 +265,20 @@ Lensy is a Documentation Quality Auditor that analyzes developer documentation U
 - Test and debug Titan response format and JSON extraction
 - Re-enable Auto-select feature once all models are validated
 - Add model-specific prompt optimization for better JSON compliance
+
+### Requirement 19: Real-Time WebSocket Progress Streaming
+
+**User Story:** As a user, I want to see live progress updates via WebSocket during analysis, so that I can track real-time progress without polling delays.
+
+#### Acceptance Criteria
+
+1. WHEN analysis starts, THE System SHALL establish a WebSocket connection for real-time progress updates
+2. WHEN WebSocket connection fails, THE System SHALL gracefully fallback to polling-based status updates
+3. WHEN progress events occur, THE System SHALL stream them immediately via WebSocket with appropriate message types
+4. WHEN analysis completes, THE Progress_Streamer SHALL automatically collapse logs while preserving expandable access
+5. WHEN cache status is determined, THE System SHALL stream cache HIT/MISS indicators with lightning bolt icons
+6. THE System SHALL support WebSocket message types including info, success, error, progress, cache-hit, and cache-miss
+7. THE System SHALL provide auto-scroll functionality during active analysis with manual expand/collapse control
+8. THE System SHALL maintain WebSocket connections with auto-reconnect capability for reliability
+9. THE System SHALL display progress message counts and timestamps for user reference
+10. THE System SHALL ensure progress logs don't interfere with results display through smart UI management

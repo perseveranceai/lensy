@@ -29,6 +29,7 @@ const client_bedrock_runtime_1 = require("@aws-sdk/client-bedrock-runtime");
 const client_dynamodb_1 = require("@aws-sdk/client-dynamodb");
 const util_dynamodb_1 = require("@aws-sdk/util-dynamodb");
 const crypto = __importStar(require("crypto"));
+const progress_publisher_1 = require("./progress-publisher");
 // Content-type-specific scoring weights (must sum to 1.0)
 const CONTENT_TYPE_WEIGHTS = {
     'api-reference': {
@@ -103,6 +104,8 @@ const handler = async (event) => {
     // Extract original parameters from Step Functions input
     const { url, selectedModel, sessionId, analysisStartTime } = event;
     console.log('Starting dimension analysis with model:', selectedModel);
+    // Initialize progress publisher
+    const progress = new progress_publisher_1.ProgressPublisher(sessionId);
     try {
         const bucketName = process.env.ANALYSIS_BUCKET;
         if (!bucketName) {
@@ -122,6 +125,8 @@ const handler = async (event) => {
         const cachedResults = await checkDimensionCache(bucketName, processedContent, contextualSetting, selectedModel);
         if (cachedResults) {
             console.log('✅ Dimension analysis cache hit! Using cached results');
+            // Send cache hit message for dimensions
+            await progress.cacheHit('Retrieved: 5/5 dimensions from cache');
             // Store cached results in session location
             const resultsKey = `sessions/${sessionId}/dimension-results.json`;
             await s3Client.send(new client_s3_1.PutObjectCommand({
@@ -137,24 +142,43 @@ const handler = async (event) => {
             };
         }
         console.log('❌ Dimension analysis cache miss - running fresh analysis');
+        // Send structure detection complete message
+        await progress.success('Structure detected: Topics identified', {
+            phase: 'structure-detection'
+        });
         // Analyze all dimensions IN PARALLEL for speed
         console.log('Starting parallel dimension analysis...');
-        const dimensionPromises = DIMENSIONS.map(async (dimension) => {
+        const dimensionPromises = DIMENSIONS.map(async (dimension, index) => {
             const startTime = Date.now();
             console.log(`Starting ${dimension} analysis`);
+            // Send progress message for this dimension
+            await progress.progress(`Analyzing ${dimension.charAt(0).toUpperCase() + dimension.slice(1)} (${index + 1}/5)...`, 'dimension-analysis', {
+                dimension
+            });
             try {
                 const result = await analyzeDimension(dimension, processedContent, selectedModel);
+                const processingTime = Date.now() - startTime;
                 console.log(`${dimension} complete: score ${result.score}`);
+                // Send success message with score
+                await progress.success(`${dimension.charAt(0).toUpperCase() + dimension.slice(1)}: ${result.score}/100 (${(processingTime / 1000).toFixed(1)}s)`, {
+                    dimension,
+                    score: result.score || undefined,
+                    processingTime
+                });
                 return {
                     dimension,
                     result: {
                         ...result,
-                        processingTime: Date.now() - startTime
+                        processingTime
                     }
                 };
             }
             catch (error) {
                 console.error(`${dimension} failed:`, error);
+                // Send error message
+                await progress.error(`${dimension.charAt(0).toUpperCase() + dimension.slice(1)} failed: ${error instanceof Error ? error.message : 'Unknown error'}`, {
+                    dimension
+                });
                 return {
                     dimension,
                     result: {

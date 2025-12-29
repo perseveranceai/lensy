@@ -65,7 +65,7 @@ The system follows a microservices pattern with distinct Lambda functions for ea
 2. **API Layer**: AWS API Gateway with WebSocket support for streaming
 3. **Processing Layer**: Multiple Lambda functions for parallel processing with intelligent caching
 4. **AI Layer**: AWS Bedrock integration with model selection logic
-5. **Streaming Layer**: WebSocket connections for real-time progress updates
+5. **Streaming Layer**: WebSocket connections for real-time progress updates (IMPLEMENTED)
 6. **Caching Layer**: DynamoDB index with S3 storage for processed content optimization
 
 ### Step Functions Workflow (Current Implementation)
@@ -137,10 +137,13 @@ interface StepFunctionState {
 - **Interface**: Shows topic breakdown with edit capabilities
 
 #### ProgressStreamComponent
-- **Purpose**: Real-time progress display with streaming updates
-- **Props**: `progressEvents[]`, `isComplete`
-- **State**: `events`, `autoScroll`
-- **Interface**: Scrollable progress log with status icons
+- **Purpose**: Real-time progress display with WebSocket streaming updates (IMPLEMENTED)
+- **Props**: `progressEvents[]`, `isComplete`, `progressExpanded`
+- **State**: `events`, `autoScroll`, `progressExpanded`
+- **Interface**: Collapsible progress log with status icons, auto-scroll, and expand/collapse functionality
+- **WebSocket Integration**: Real-time message streaming with fallback to polling
+- **Cache Indicators**: Visual cache HIT/MISS status with lightning bolt icons
+- **Auto-Collapse**: Automatically collapses after analysis completion while preserving access
 
 #### QualityDashboardComponent
 - **Purpose**: Final results display with scores and recommendations
@@ -250,6 +253,27 @@ interface StepFunctionState {
   - **Graceful Degradation**: Partial results available even if some dimensions timeout
 - **Architecture Change**: Use Step Functions Express Workflows for sub-15-minute executions with retry
 - **Storage**: Temporary state in Step Functions, results streamed via WebSocket
+
+#### WebSocketHandler (Lambda) - IMPLEMENTED
+- **Purpose**: Manages WebSocket connections for real-time progress streaming
+- **Input**: `{ action: 'subscribe' | 'unsubscribe', sessionId: string }`
+- **Output**: WebSocket connection management and message routing
+- **Features**:
+  - Connection lifecycle management (connect, disconnect, subscribe)
+  - Session-based message routing to specific clients
+  - DynamoDB connection tracking with TTL cleanup
+  - Error handling and connection validation
+- **Integration**: Works with ProgressPublisher utility for message broadcasting
+
+#### ProgressPublisher (Utility) - IMPLEMENTED
+- **Purpose**: Utility for publishing progress messages via WebSocket
+- **Input**: `{ sessionId: string, message: ProgressMessage }`
+- **Output**: Real-time message delivery to connected clients
+- **Features**:
+  - Message type support (info, success, error, progress, cache-hit, cache-miss)
+  - Automatic timestamp and metadata handling
+  - Graceful error handling for disconnected clients
+  - Integration with all Lambda functions for progress streaming
 
 #### ModelSelector
 - **Purpose**: Manages AI model selection at the analysis level (not per-dimension)
@@ -634,13 +658,13 @@ The core documentation quality auditor with the following capabilities:
 - **Modern UI**: React frontend with Material-UI components
 - **AWS Integration**: Lambda functions, Step Functions, API Gateway, Bedrock
 - **Graceful Degradation**: Partial results when some dimensions fail
-- **Real-time Progress**: Polling-based status updates (WebSocket deferred to Phase 2)
+- **Real-time Progress**: WebSocket streaming with collapsible progress logs (IMPLEMENTED)
+- **Content-Type-Aware Scoring**: Smart detection and adaptive scoring rubrics
 
 ### Phase 2 Features (Future Enhancements)
 Extended capabilities planned for future releases:
 - **Multi-Model Support**: Amazon Titan Text Premier and Meta Llama 3.1 70B
 - **LLM-as-Judge Validation**: Async background quality validation using different models
-- **Advanced WebSocket Streaming**: Real-time progress updates via WebSocket connections
 - **Enhanced Observability**: Comprehensive transparency dashboard and model comparison views
 - **Admin Quality Dashboard**: System-wide quality metrics and validation results monitoring
 

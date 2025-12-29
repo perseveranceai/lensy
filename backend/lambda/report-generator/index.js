@@ -2,13 +2,18 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.handler = void 0;
 const client_s3_1 = require("@aws-sdk/client-s3");
+const progress_publisher_1 = require("./progress-publisher");
 const s3Client = new client_s3_1.S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
 const handler = async (event) => {
     console.log('Report generator received event:', JSON.stringify(event, null, 2));
     // Extract original parameters from Step Functions input
     const { url, selectedModel, sessionId, analysisStartTime } = event;
     console.log('Generating final report for session:', sessionId);
+    // Initialize progress publisher
+    const progress = new progress_publisher_1.ProgressPublisher(sessionId);
     try {
+        // Send report generation progress
+        await progress.progress('Generating report...', 'report-generation');
         const bucketName = process.env.ANALYSIS_BUCKET;
         if (!bucketName) {
             throw new Error('ANALYSIS_BUCKET environment variable not set');
@@ -70,6 +75,7 @@ const handler = async (event) => {
         const contextAnalysis = processedContent?.contextAnalysis ?
             generateContextAnalysisFromContent(processedContent) :
             undefined;
+        const totalTime = Date.now() - analysisStartTime;
         const finalReport = {
             overallScore,
             dimensionsAnalyzed: validScores.length,
@@ -82,10 +88,16 @@ const handler = async (event) => {
             mediaAnalysis,
             linkAnalysis,
             contextAnalysis,
-            analysisTime: Date.now() - analysisStartTime,
+            analysisTime: totalTime,
             retryCount: 0
         };
         console.log(`Report generated: ${overallScore}/100 overall score (${validScores.length}/5 dimensions)`);
+        // Send final completion message
+        await progress.success(`Analysis complete! Overall: ${overallScore}/100 (${(totalTime / 1000).toFixed(1)}s)`, {
+            overallScore,
+            totalTime,
+            dimensionsAnalyzed: validScores.length
+        });
         return {
             finalReport,
             success: true

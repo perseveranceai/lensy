@@ -7,8 +7,9 @@ import { JSDOM } from 'jsdom';
 import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
 import * as crypto from 'crypto';
+import { ProgressPublisher } from './progress-publisher';
 
-// Force rebuild - cache fix deployment
+// Force rebuild - cache fix deployment with progress streaming
 
 interface URLProcessorEvent {
     url: string;
@@ -110,7 +111,13 @@ function normalizeUrl(url: string): string {
 export const handler: Handler<URLProcessorEvent, URLProcessorResponse> = async (event) => {
     console.log('Processing URL:', event.url);
 
+    // Initialize progress publisher
+    const progress = new ProgressPublisher(event.sessionId);
+
     try {
+        // Send initial progress
+        await progress.progress('Processing URL...', 'url-processing');
+
         // Generate consistent session ID based on URL + context setting
         const contextEnabled = event.contextAnalysis?.enabled || false;
         const contextualSetting = contextEnabled ? 'with-context' : 'without-context';
@@ -123,6 +130,12 @@ export const handler: Handler<URLProcessorEvent, URLProcessorResponse> = async (
 
         if (cachedContent && !isCacheExpired(cachedContent)) {
             console.log(`Cache hit! Using cached content from session: ${consistentSessionId}`);
+
+            // Send cache hit message
+            await progress.cacheHit(`Cache HIT! ⚡ Using cached analysis from ${new Date(cachedContent.processedAt).toLocaleDateString()}`, {
+                cacheStatus: 'hit',
+                contentType: cachedContent.contentType
+            });
 
             // Copy cached content to current session location (if different)
             if (consistentSessionId !== event.sessionId) {
@@ -144,7 +157,13 @@ export const handler: Handler<URLProcessorEvent, URLProcessorResponse> = async (
 
         console.log('Cache miss or expired, processing fresh content...');
 
+        // Send cache miss message
+        await progress.cacheMiss('Cache MISS - Running fresh analysis', {
+            cacheStatus: 'miss'
+        });
         // Fetch HTML content
+        await progress.info('Fetching and cleaning content...');
+
         const response = await fetch(event.url, {
             headers: {
                 'User-Agent': 'Lensy Documentation Quality Auditor/1.0'
@@ -172,7 +191,16 @@ export const handler: Handler<URLProcessorEvent, URLProcessorResponse> = async (
         const mainContent = extractMainContent(document);
         const cleanHtml = mainContent.innerHTML;
         console.log(`After content extraction: ${cleanHtml.length} chars`);
-        console.log(`Total reduction: ${Math.round((1 - cleanHtml.length / htmlContent.length) * 100)}%`);
+
+        const reductionPercent = Math.round((1 - cleanHtml.length / htmlContent.length) * 100);
+        console.log(`Total reduction: ${reductionPercent}%`);
+
+        // Send content processed message
+        await progress.success(`Content processed: ${Math.round(htmlContent.length / 1024)}KB → ${Math.round(cleanHtml.length / 1024)}KB (${reductionPercent}% reduction)`, {
+            originalSize: htmlContent.length,
+            cleanedSize: cleanHtml.length,
+            reductionPercent
+        });
 
         // Extract minimal data for analysis from cleaned content
         const mediaElements = extractMediaElements(document, event.url);
@@ -183,6 +211,8 @@ export const handler: Handler<URLProcessorEvent, URLProcessorResponse> = async (
         let contextAnalysisResult: ContextAnalysisResult | null = null;
         if (event.contextAnalysis?.enabled) {
             console.log('Context analysis enabled, discovering related pages...');
+            await progress.info('Discovering related pages...');
+
             const contextPages = discoverContextPages(document, event.url);
             console.log(`Found ${contextPages.length} potential context pages`);
 
@@ -196,6 +226,13 @@ export const handler: Handler<URLProcessorEvent, URLProcessorResponse> = async (
             contextPages.forEach(page => {
                 console.log(`Context page (${page.relationship}): ${page.title} - ${page.url}`);
             });
+
+            // Send context discovery message
+            if (contextPages.length > 0) {
+                await progress.success(`Context: ${contextPages.length} related pages discovered`, {
+                    contextPages: contextPages.length
+                });
+            }
         }
 
         // Convert to Markdown with aggressive noise removal
@@ -205,6 +242,11 @@ export const handler: Handler<URLProcessorEvent, URLProcessorResponse> = async (
         console.log(`Converted to ${markdownContent.length} characters of clean Markdown`);
 
         const contentType = await detectContentTypeEnhanced(document, markdownContent, event.url);
+
+        // Send content type detection message
+        await progress.success(`Content type: ${contentType}`, {
+            contentType
+        });
 
         // Create processed content object
         const processedContent = {

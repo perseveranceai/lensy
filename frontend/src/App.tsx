@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     Container,
     Paper,
@@ -16,14 +16,26 @@ import {
     CardContent,
     Grid,
     Chip,
-    LinearProgress,
     AppBar,
     Toolbar,
     Switch,
-    FormControlLabel
+    FormControlLabel,
+    List,
+    ListItem,
+    ListItemText,
+    ListItemIcon,
+    Collapse,
+    IconButton
 } from '@mui/material';
-import LinkIcon from '@mui/icons-material/Link';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ErrorIcon from '@mui/icons-material/Error';
+import InfoIcon from '@mui/icons-material/Info';
+import CachedIcon from '@mui/icons-material/Cached';
+import FlashOnIcon from '@mui/icons-material/FlashOn';
+import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 
 interface AnalysisRequest {
     url: string;
@@ -80,7 +92,7 @@ interface FinalReport {
         linkContext: 'single-page' | 'multi-page-referenced';
         analysisScope: 'current-page-only' | 'with-subpages';
     };
-    cacheStatus: 'hit' | 'miss';  // Simple cache status for main page
+    cacheStatus: 'hit' | 'miss';
     contextAnalysis?: {
         enabled: boolean;
         contextPages: Array<{
@@ -92,10 +104,25 @@ interface FinalReport {
         }>;
         analysisScope: 'single-page' | 'with-context';
         totalPagesAnalyzed: number;
-        // Removed cacheHits and cacheMisses - moved to top level
     };
     analysisTime: number;
     retryCount: number;
+}
+
+interface ProgressMessage {
+    type: 'info' | 'success' | 'error' | 'progress' | 'cache-hit' | 'cache-miss';
+    message: string;
+    timestamp: number;
+    phase?: 'url-processing' | 'structure-detection' | 'dimension-analysis' | 'report-generation';
+    metadata?: {
+        dimension?: string;
+        score?: number;
+        processingTime?: number;
+        cacheStatus?: 'hit' | 'miss';
+        contentType?: string;
+        contextPages?: number;
+        [key: string]: any;
+    };
 }
 
 interface AnalysisState {
@@ -103,111 +130,157 @@ interface AnalysisState {
     report?: FinalReport;
     error?: string;
     executionArn?: string;
+    progressMessages: ProgressMessage[];
 }
 
 const API_BASE_URL = 'https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com';
+const WEBSOCKET_URL = 'wss://g2l57hb9ak.execute-api.us-east-1.amazonaws.com/prod';
 
 function App() {
     const [url, setUrl] = useState('');
-    const [selectedModel, setSelectedModel] = useState<'claude' | 'titan' | 'llama' | 'auto'>('auto');
+    const [selectedModel, setSelectedModel] = useState<'claude' | 'titan' | 'llama' | 'auto'>('claude');
     const [contextAnalysisEnabled, setContextAnalysisEnabled] = useState(false);
-    const [analysisState, setAnalysisState] = useState<AnalysisState>({ status: 'idle' });
+    const [analysisState, setAnalysisState] = useState<AnalysisState>({
+        status: 'idle',
+        progressMessages: []
+    });
+    const [progressExpanded, setProgressExpanded] = useState(true);
+    const wsRef = useRef<WebSocket | null>(null);
+    const progressEndRef = useRef<HTMLDivElement>(null);
 
-    const pollForResults = async (executionArn: string, sessionId: string) => {
-        const maxAttempts = 60; // 5 minutes max (5 second intervals)
+    // Auto-scroll to latest progress message
+    useEffect(() => {
+        if (progressEndRef.current && analysisState.status === 'analyzing') {
+            progressEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [analysisState.progressMessages, analysisState.status]);
+
+    // Auto-collapse progress when analysis completes
+    useEffect(() => {
+        if (analysisState.status === 'completed' || analysisState.status === 'error') {
+            setProgressExpanded(false);
+        } else if (analysisState.status === 'analyzing') {
+            setProgressExpanded(true);
+        }
+    }, [analysisState.status]);
+
+    // Cleanup WebSocket on unmount
+    useEffect(() => {
+        return () => {
+            if (wsRef.current) {
+                wsRef.current.close();
+            }
+        };
+    }, []);
+
+    const connectWebSocket = (sessionId: string): Promise<WebSocket> => {
+        return new Promise((resolve, reject) => {
+            const ws = new WebSocket(WEBSOCKET_URL);
+            let subscribed = false;
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                // Subscribe to session updates
+                ws.send(JSON.stringify({
+                    action: 'subscribe',
+                    sessionId
+                }));
+                subscribed = true;
+                resolve(ws);
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                if (!subscribed) {
+                    reject(error);
+                }
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const message: ProgressMessage = JSON.parse(event.data);
+                    console.log('Progress update:', message);
+
+                    setAnalysisState(prev => ({
+                        ...prev,
+                        progressMessages: [...prev.progressMessages, message]
+                    }));
+                } catch (error) {
+                    console.error('Error parsing WebSocket message:', error);
+                }
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket disconnected');
+            };
+
+            wsRef.current = ws;
+        });
+    };
+
+    const pollForResults = async (sessionId: string) => {
+        const maxAttempts = 60;
         let attempts = 0;
 
         const poll = async () => {
             try {
                 attempts++;
-                console.log(`Polling attempt ${attempts}/${maxAttempts} for execution: ${executionArn}`);
+                console.log(`Polling attempt ${attempts}/${maxAttempts}`);
 
-                // Call AWS Step Functions API to check execution status
-                // Note: This requires CORS to be enabled on the API Gateway
-                // For now, we'll use a workaround by calling the status endpoint
+                const statusResponse = await fetch(`${API_BASE_URL}/status/${sessionId}`, {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' }
+                });
 
-                try {
-                    const statusResponse = await fetch(`${API_BASE_URL}/status/${sessionId}`, {
-                        method: 'GET',
-                        headers: {
-                            'Content-Type': 'application/json',
+                if (statusResponse.ok) {
+                    const statusData = await statusResponse.json();
+
+                    if (statusData.report) {
+                        if (wsRef.current) {
+                            wsRef.current.close();
                         }
-                    });
 
-                    if (statusResponse.ok) {
-                        const statusData = await statusResponse.json();
-                        console.log('Status response:', statusData);
-
-                        // Check if we have a complete report
-                        if (statusData.report) {
-                            setAnalysisState({
-                                status: 'completed',
-                                report: statusData.report,
-                                executionArn: executionArn
-                            });
-                            return;
-                        }
+                        setAnalysisState(prev => ({
+                            ...prev,
+                            status: 'completed',
+                            report: statusData.report
+                        }));
+                        return;
                     }
-                } catch (statusError) {
-                    console.log('Status endpoint not yet implemented, will use direct Step Functions check');
-                }
-
-                // Fallback: Since status endpoint isn't fully implemented yet,
-                // we'll wait a fixed time and then try to retrieve results from S3
-                if (attempts === 12) { // After ~60 seconds (12 * 5 seconds)
-                    console.log('Analysis should be complete, attempting to retrieve results...');
-
-                    // Try to get results directly from the execution
-                    // In production, this would be handled by the status endpoint
-                    // For now, we'll show a message that analysis is complete
-                    setAnalysisState({
-                        status: 'error',
-                        error: 'Analysis completed successfully! However, the results retrieval endpoint is not yet fully implemented. Check AWS Step Functions console for results.',
-                        executionArn: executionArn
-                    });
-                    return;
                 }
 
                 if (attempts >= maxAttempts) {
-                    setAnalysisState({
+                    setAnalysisState(prev => ({
+                        ...prev,
                         status: 'error',
-                        error: 'Analysis timed out. Please try again.',
-                        executionArn: executionArn
-                    });
+                        error: 'Analysis timed out'
+                    }));
                     return;
                 }
 
-                // Continue polling
                 setTimeout(poll, 5000);
-
             } catch (error) {
                 console.error('Polling error:', error);
-                setAnalysisState({
-                    status: 'error',
-                    error: 'Failed to check analysis status',
-                    executionArn: executionArn
-                });
             }
         };
 
-        // Start polling
         setTimeout(poll, 5000);
     };
 
     const handleAnalyze = async () => {
         if (!url.trim()) {
-            setAnalysisState({ status: 'error', error: 'Please enter a URL' });
+            setAnalysisState({ status: 'error', error: 'Please enter a URL', progressMessages: [] });
             return;
         }
 
         try {
-            new URL(url); // Validate URL format
+            new URL(url);
         } catch {
-            setAnalysisState({ status: 'error', error: 'Please enter a valid URL' });
+            setAnalysisState({ status: 'error', error: 'Please enter a valid URL', progressMessages: [] });
             return;
         }
 
-        setAnalysisState({ status: 'analyzing' });
+        setAnalysisState({ status: 'analyzing', progressMessages: [] });
 
         const sessionId = `session-${Date.now()}`;
         const analysisRequest: AnalysisRequest = {
@@ -221,59 +294,73 @@ function App() {
         };
 
         try {
-            console.log('Starting real analysis:', analysisRequest);
+            // Connect WebSocket
+            try {
+                await connectWebSocket(sessionId);
+            } catch (wsError) {
+                console.warn('WebSocket failed, using polling only:', wsError);
+            }
 
-            // Call the real API
+            // Start analysis
             const response = await fetch(`${API_BASE_URL}/analyze`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(analysisRequest)
             });
 
             if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`HTTP ${response.status}: ${errorText}`);
+                throw new Error(`HTTP ${response.status}`);
             }
 
             const result = await response.json();
-            console.log('Analysis started:', result);
 
-            if (result.executionArn) {
-                setAnalysisState({
-                    status: 'analyzing',
-                    executionArn: result.executionArn
-                });
+            setAnalysisState(prev => ({
+                ...prev,
+                executionArn: result.executionArn
+            }));
 
-                // Start polling for results
-                pollForResults(result.executionArn, sessionId);
-            } else {
-                throw new Error('No execution ARN returned from API');
-            }
+            pollForResults(sessionId);
 
         } catch (error) {
-            console.error('Analysis failed:', error);
+            if (wsRef.current) wsRef.current.close();
             setAnalysisState({
                 status: 'error',
-                error: error instanceof Error ? error.message : 'Analysis failed'
+                error: error instanceof Error ? error.message : 'Analysis failed',
+                progressMessages: []
             });
         }
     };
 
-    const getScoreColor = (score: number | null): "default" | "primary" | "secondary" | "error" | "info" | "success" | "warning" => {
+    const getScoreColor = (score: number | null): "default" | "success" | "warning" | "error" => {
         if (score === null) return 'default';
         if (score >= 80) return 'success';
         if (score >= 60) return 'warning';
         return 'error';
     };
 
-    const getConfidenceColor = (confidence: string): "default" | "primary" | "secondary" | "error" | "info" | "success" | "warning" => {
+    const getConfidenceColor = (confidence: string): "default" | "success" | "warning" | "error" => {
         switch (confidence) {
             case 'high': return 'success';
             case 'medium': return 'warning';
             case 'low': return 'error';
             default: return 'default';
+        }
+    };
+
+    const getProgressIcon = (type: ProgressMessage['type']) => {
+        switch (type) {
+            case 'success':
+                return <CheckCircleIcon sx={{ color: 'success.main' }} />;
+            case 'error':
+                return <ErrorIcon sx={{ color: 'error.main' }} />;
+            case 'cache-hit':
+                return <FlashOnIcon sx={{ color: 'success.main' }} />;
+            case 'cache-miss':
+                return <CachedIcon sx={{ color: 'info.main' }} />;
+            case 'progress':
+                return <HourglassEmptyIcon sx={{ color: 'action.active' }} />;
+            default:
+                return <InfoIcon sx={{ color: 'info.main' }} />;
         }
     };
 
@@ -293,7 +380,7 @@ function App() {
                 </Typography>
 
                 <Typography variant="subtitle1" align="center" color="text.secondary" sx={{ mb: 4 }}>
-                    Analyze WordPress developer documentation with multiple AI models
+                    Real-time analysis with cache-aware streaming
                 </Typography>
 
                 <Paper elevation={3} sx={{ p: 4, mb: 4 }}>
@@ -320,20 +407,16 @@ function App() {
                                 onChange={(e) => setSelectedModel(e.target.value as any)}
                                 disabled={analysisState.status === 'analyzing'}
                             >
-                                <MenuItem value="claude">Claude 3.5 Sonnet (Working)</MenuItem>
+                                <MenuItem value="claude">Claude 3.5 Sonnet</MenuItem>
                             </Select>
                         </FormControl>
 
-                        {/* Context Analysis Section */}
                         <Card sx={{ mb: 3, bgcolor: 'grey.50' }}>
                             <CardContent>
                                 <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                                     <AnalyticsIcon sx={{ mr: 1, color: 'primary.main' }} />
-                                    <Typography variant="h6">
-                                        Context Analysis
-                                    </Typography>
+                                    <Typography variant="h6">Context Analysis</Typography>
                                 </Box>
-
                                 <FormControlLabel
                                     control={
                                         <Switch
@@ -342,22 +425,11 @@ function App() {
                                             disabled={analysisState.status === 'analyzing'}
                                         />
                                     }
-                                    label="Include related pages for better analysis"
+                                    label="Include related pages"
                                 />
-
-                                <Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 2 }}>
-                                    When enabled, the system will analyze parent, child, and sibling pages to provide better context for quality assessment.
+                                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                                    Analyze parent, child, and sibling pages for better context
                                 </Typography>
-
-                                {contextAnalysisEnabled && (
-                                    <Alert severity="info" sx={{ mt: 2 }}>
-                                        <Typography variant="body2">
-                                            <strong>Analysis Scope:</strong> Target page + up to 5 related pages
-                                            <br />
-                                            <strong>Discovery:</strong> Parent (1 level up), Children (direct links), Siblings (same level)
-                                        </Typography>
-                                    </Alert>
-                                )}
                             </CardContent>
                         </Card>
 
@@ -366,7 +438,7 @@ function App() {
                             size="large"
                             onClick={handleAnalyze}
                             disabled={analysisState.status === 'analyzing'}
-                            sx={{ mb: 2 }}
+                            fullWidth
                         >
                             {analysisState.status === 'analyzing' ? (
                                 <>
@@ -379,25 +451,6 @@ function App() {
                         </Button>
                     </Box>
 
-                    {analysisState.status === 'analyzing' && (
-                        <Box sx={{ mt: 2 }}>
-                            <Typography variant="body2" color="text.secondary" gutterBottom>
-                                Real AI analysis in progress... This may take a few minutes.
-                            </Typography>
-                            {contextAnalysisEnabled && (
-                                <Typography variant="body2" color="primary.main" gutterBottom>
-                                    📄 Context analysis enabled - analyzing related pages for better insights
-                                </Typography>
-                            )}
-                            {analysisState.executionArn && (
-                                <Typography variant="body2" color="text.secondary" gutterBottom>
-                                    Execution: {analysisState.executionArn.split(':').pop()}
-                                </Typography>
-                            )}
-                            <LinearProgress />
-                        </Box>
-                    )}
-
                     {analysisState.status === 'error' && (
                         <Alert severity="error" sx={{ mt: 2 }}>
                             {analysisState.error}
@@ -405,6 +458,51 @@ function App() {
                     )}
                 </Paper>
 
+                {/* Progress Messages */}
+                {analysisState.progressMessages.length > 0 && (
+                    <Paper elevation={3} sx={{ p: 3, mb: 4 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                            <Typography variant="h6">
+                                Real-time Progress ({analysisState.progressMessages.length} messages)
+                            </Typography>
+                            <IconButton
+                                onClick={() => setProgressExpanded(!progressExpanded)}
+                                size="small"
+                            >
+                                {progressExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                            </IconButton>
+                        </Box>
+
+                        <Collapse in={progressExpanded}>
+                            <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
+                                <List>
+                                    {analysisState.progressMessages.map((msg, index) => (
+                                        <ListItem key={index} sx={{ py: 0.5 }}>
+                                            <ListItemIcon sx={{ minWidth: 40 }}>
+                                                {getProgressIcon(msg.type)}
+                                            </ListItemIcon>
+                                            <ListItemText
+                                                primary={msg.message}
+                                                secondary={new Date(msg.timestamp).toLocaleTimeString()}
+                                                primaryTypographyProps={{
+                                                    sx: {
+                                                        color: msg.type === 'error' ? 'error.main' :
+                                                            msg.type === 'success' ? 'success.main' :
+                                                                msg.type === 'cache-hit' ? 'success.main' :
+                                                                    'text.primary'
+                                                    }
+                                                }}
+                                            />
+                                        </ListItem>
+                                    ))}
+                                    <div ref={progressEndRef} />
+                                </List>
+                            </Box>
+                        </Collapse>
+                    </Paper>
+                )}
+
+                {/* Results */}
                 {analysisState.status === 'completed' && analysisState.report && (
                     <Paper elevation={3} sx={{ p: 4 }}>
                         <Typography variant="h5" gutterBottom>
@@ -428,7 +526,7 @@ function App() {
                                         <Typography variant="h4">
                                             {analysisState.report.dimensionsAnalyzed}/{analysisState.report.dimensionsTotal}
                                         </Typography>
-                                        <Typography variant="h6">Dimensions Analyzed</Typography>
+                                        <Typography variant="h6">Dimensions</Typography>
                                     </CardContent>
                                 </Card>
                             </Grid>
@@ -438,7 +536,6 @@ function App() {
                                         <Chip
                                             label={analysisState.report.confidence.toUpperCase()}
                                             color={getConfidenceColor(analysisState.report.confidence)}
-                                            size="medium"
                                         />
                                         <Typography variant="h6" sx={{ mt: 1 }}>Confidence</Typography>
                                     </CardContent>
@@ -446,16 +543,13 @@ function App() {
                             </Grid>
                         </Grid>
 
-                        <Typography variant="h6" gutterBottom>
-                            Quality Dimensions
-                        </Typography>
-
+                        <Typography variant="h6" gutterBottom>Quality Dimensions</Typography>
                         <Grid container spacing={2} sx={{ mb: 4 }}>
                             {Object.entries(analysisState.report.dimensions).map(([dimension, result]) => (
                                 <Grid item xs={12} md={6} lg={4} key={dimension}>
                                     <Card>
                                         <CardContent>
-                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                                                 <Typography variant="h6" sx={{ textTransform: 'capitalize' }}>
                                                     {dimension}
                                                 </Typography>
@@ -465,26 +559,12 @@ function App() {
                                                     size="small"
                                                 />
                                             </Box>
-
                                             {result.findings.length > 0 && (
-                                                <Box sx={{ mb: 1 }}>
-                                                    <Typography variant="body2" color="text.secondary">
-                                                        Key Findings:
-                                                    </Typography>
-                                                    {result.findings.slice(0, 2).map((finding, i) => (
-                                                        <Typography key={i} variant="body2" sx={{ fontSize: '0.8rem' }}>
-                                                            • {finding}
-                                                        </Typography>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    {result.findings.slice(0, 2).map((f, i) => (
+                                                        <div key={i}>• {f}</div>
                                                     ))}
-                                                </Box>
-                                            )}
-
-                                            {result.recommendations.length > 0 && (
-                                                <Box>
-                                                    <Typography variant="body2" color="text.secondary">
-                                                        Recommendations: {result.recommendations.length}
-                                                    </Typography>
-                                                </Box>
+                                                </Typography>
                                             )}
                                         </CardContent>
                                     </Card>
@@ -492,139 +572,10 @@ function App() {
                             ))}
                         </Grid>
 
-                        <Typography variant="h6" gutterBottom>
-                            Analysis Summary
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 3 }}>
+                            Analysis completed in {(analysisState.report.analysisTime / 1000).toFixed(1)}s
+                            {analysisState.report.cacheStatus === 'hit' && ' ⚡ (cached)'}
                         </Typography>
-
-                        <Grid container spacing={2}>
-                            <Grid item xs={12} md={6}>
-                                <Card>
-                                    <CardContent>
-                                        <Typography variant="subtitle1" gutterBottom>Code Analysis</Typography>
-                                        <Typography variant="body2">
-                                            Snippets: {analysisState.report.codeAnalysis.snippetsFound}<br />
-                                            Languages: {analysisState.report.codeAnalysis.languagesDetected.join(', ')}<br />
-                                            Issues: {analysisState.report.codeAnalysis.syntaxErrors + analysisState.report.codeAnalysis.deprecatedMethods}
-                                        </Typography>
-                                    </CardContent>
-                                </Card>
-                            </Grid>
-                            <Grid item xs={12} md={6}>
-                                <Card>
-                                    <CardContent>
-                                        <Typography variant="subtitle1" gutterBottom>Cache Status</Typography>
-                                        <Typography variant="body2">
-                                            Main Page: <strong>{analysisState.report.cacheStatus === 'hit' ? '✅ Cached' : '🔄 Fresh Analysis'}</strong><br />
-                                            Analysis Time: {Math.round(analysisState.report.analysisTime / 1000)}s<br />
-                                            Performance: {analysisState.report.cacheStatus === 'hit' ? 'Fast (cached)' : 'Normal (fresh)'}
-                                        </Typography>
-                                    </CardContent>
-                                </Card>
-                            </Grid>
-                            <Grid item xs={12} md={6}>
-                                <Card>
-                                    <CardContent>
-                                        <Typography variant="subtitle1" gutterBottom>Media Analysis</Typography>
-                                        <Typography variant="body2">
-                                            Images: {analysisState.report.mediaAnalysis.imagesFound}<br />
-                                            Interactive: {analysisState.report.mediaAnalysis.interactiveElements}<br />
-                                            Accessibility Issues: {analysisState.report.mediaAnalysis.accessibilityIssues}
-                                        </Typography>
-                                    </CardContent>
-                                </Card>
-                            </Grid>
-                            <Grid item xs={12} md={6}>
-                                <Card>
-                                    <CardContent>
-                                        <Typography variant="subtitle1" gutterBottom>Link Analysis</Typography>
-                                        <Typography variant="body2">
-                                            Total Links: {analysisState.report.linkAnalysis.totalLinks}<br />
-                                            Sub-pages: {analysisState.report.linkAnalysis.subPagesIdentified.length}<br />
-                                            Scope: {analysisState.report.linkAnalysis.analysisScope}
-                                        </Typography>
-                                    </CardContent>
-                                </Card>
-                            </Grid>
-                        </Grid>
-
-                        {/* Context Analysis Results */}
-                        {analysisState.report.contextAnalysis && (
-                            <>
-                                <Typography variant="h6" gutterBottom sx={{ mt: 4 }}>
-                                    Context Analysis
-                                </Typography>
-
-                                <Card sx={{ mb: 3 }}>
-                                    <CardContent>
-                                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                            <AnalyticsIcon sx={{ mr: 1, color: 'primary.main' }} />
-                                            <Typography variant="h6">
-                                                Related Pages Analysis
-                                            </Typography>
-                                        </Box>
-
-                                        <Grid container spacing={2} sx={{ mb: 2 }}>
-                                            <Grid item xs={12} md={6}>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Analysis Scope
-                                                </Typography>
-                                                <Typography variant="body1">
-                                                    {analysisState.report.contextAnalysis.analysisScope === 'with-context' ?
-                                                        'Multi-page analysis' : 'Single page only'}
-                                                </Typography>
-                                            </Grid>
-                                            <Grid item xs={12} md={6}>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Pages Analyzed
-                                                </Typography>
-                                                <Typography variant="body1">
-                                                    {analysisState.report.contextAnalysis.totalPagesAnalyzed}
-                                                </Typography>
-                                            </Grid>
-                                        </Grid>
-
-                                        {analysisState.report.contextAnalysis.contextPages.length > 0 && (
-                                            <Box>
-                                                <Typography variant="subtitle2" gutterBottom>
-                                                    Related pages discovered:
-                                                </Typography>
-                                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                                                    {analysisState.report.contextAnalysis.contextPages.map((page, index) => (
-                                                        <Chip
-                                                            key={index}
-                                                            icon={<LinkIcon />}
-                                                            label={`${page.relationship === 'parent' ? '↗️' : page.relationship === 'child' ? '↘️' : '↔️'} ${page.title}`}
-                                                            variant={page.cached ? 'filled' : 'outlined'}
-                                                            color={page.cached ? 'success' : 'default'}
-                                                            size="small"
-                                                            title={`${page.relationship} page (confidence: ${Math.round(page.confidence * 100)}%)${page.cached ? ' - cached' : ' - fresh'}`}
-                                                        />
-                                                    ))}
-                                                </Box>
-                                                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                                    Green chips indicate cached content, outlined chips were processed fresh
-                                                </Typography>
-                                            </Box>
-                                        )}
-
-                                        {analysisState.report.contextAnalysis.contextPages.length === 0 && (
-                                            <Alert severity="info">
-                                                No related pages were discovered for this documentation page.
-                                            </Alert>
-                                        )}
-                                    </CardContent>
-                                </Card>
-                            </>
-                        )}
-
-                        <Box sx={{ mt: 3, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
-                            <Typography variant="body2" color="text.secondary">
-                                Real AI analysis completed in {(analysisState.report.analysisTime / 1000).toFixed(1)}s using {analysisState.report.modelUsed}
-                                {analysisState.executionArn && (
-                                    <><br />Execution: {analysisState.executionArn.split(':').pop()}</>
-                                )}
-                            </Typography>
-                        </Box>
                     </Paper>
                 )}
             </Container>
