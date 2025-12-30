@@ -156,6 +156,11 @@ const handler = async (event) => {
         const mediaElements = extractMediaElements(document, event.url);
         const codeSnippets = extractCodeSnippets(document);
         const linkAnalysis = analyzeLinkStructure(document, event.url);
+        // NEW: Validate internal links
+        let linkValidationResult = { brokenLinks: [], healthyLinks: 0 };
+        if (linkAnalysis.internalLinksForValidation && linkAnalysis.internalLinksForValidation.length > 0) {
+            linkValidationResult = await validateInternalLinks(linkAnalysis.internalLinksForValidation, progress);
+        }
         // Context Analysis (if enabled)
         let contextAnalysisResult = null;
         if (event.contextAnalysis?.enabled) {
@@ -197,7 +202,15 @@ const handler = async (event) => {
             mediaElements: mediaElements.slice(0, 10),
             codeSnippets: codeSnippets.slice(0, 15),
             contentType,
-            linkAnalysis,
+            linkAnalysis: {
+                ...linkAnalysis,
+                linkValidation: {
+                    checkedLinks: linkValidationResult.brokenLinks.length + linkValidationResult.healthyLinks,
+                    brokenLinkFindings: linkValidationResult.brokenLinks,
+                    healthyLinks: linkValidationResult.healthyLinks,
+                    timeoutLinks: linkValidationResult.brokenLinks.filter(link => link.status === 'timeout').length
+                }
+            },
             contextAnalysis: contextAnalysisResult,
             processedAt: new Date().toISOString(),
             noiseReduction: {
@@ -210,6 +223,8 @@ const handler = async (event) => {
         if (contextAnalysisResult) {
             processedContent.linkAnalysis.analysisScope = contextAnalysisResult.analysisScope === 'with-context' ? 'with-context' : 'current-page-only';
         }
+        // Update brokenLinks count in linkAnalysis (cast to any to add the property)
+        processedContent.linkAnalysis.brokenLinks = linkValidationResult.brokenLinks.length;
         // Store processed content in S3 session location
         const s3Key = `sessions/${event.sessionId}/processed-content.json`;
         const bucketName = process.env.ANALYSIS_BUCKET;
@@ -472,15 +487,29 @@ function analyzeLinkStructure(document, baseUrl) {
     let internalLinks = 0;
     let externalLinks = 0;
     const subPagesIdentified = [];
+    const internalLinksForValidation = [];
     links.forEach(link => {
         const href = link.getAttribute('href');
         if (!href)
             return;
+        // Skip non-HTTP links
+        if (href.startsWith('mailto:') ||
+            href.startsWith('tel:') ||
+            href.startsWith('javascript:') ||
+            href.startsWith('#')) {
+            return;
+        }
         totalLinks++;
         try {
             const linkUrl = new URL(href, baseUrl);
             if (linkUrl.hostname === baseUrlObj.hostname) {
                 internalLinks++;
+                // Store internal links for validation
+                internalLinksForValidation.push({
+                    url: linkUrl.href,
+                    anchorText: link.textContent?.trim() || href,
+                    element: link
+                });
                 if (linkUrl.pathname !== baseUrlObj.pathname) {
                     const linkText = link.textContent?.trim() || '';
                     if (linkText && !subPagesIdentified.includes(linkText)) {
@@ -502,8 +531,90 @@ function analyzeLinkStructure(document, baseUrl) {
         externalLinks,
         subPagesIdentified: subPagesIdentified.slice(0, 10),
         linkContext: subPagesIdentified.length > 0 ? 'multi-page-referenced' : 'single-page',
-        analysisScope: 'current-page-only' // Will be updated by context analysis if enabled
+        analysisScope: 'current-page-only',
+        internalLinksForValidation // NEW: Links to validate
     };
+}
+// NEW: Link validation function
+async function validateInternalLinks(linksToValidate, progress) {
+    if (linksToValidate.length === 0) {
+        return { brokenLinks: [], healthyLinks: 0 };
+    }
+    await progress.info(`Checking ${linksToValidate.length} internal links for accessibility...`);
+    const brokenLinks = [];
+    let healthyLinks = 0;
+    const maxConcurrent = 10;
+    const timeout = 5000; // 5 seconds
+    // Process links in batches to avoid overwhelming the server
+    for (let i = 0; i < linksToValidate.length; i += maxConcurrent) {
+        const batch = linksToValidate.slice(i, i + maxConcurrent);
+        const promises = batch.map(async (linkInfo) => {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), timeout);
+                const response = await fetch(linkInfo.url, {
+                    method: 'HEAD',
+                    headers: {
+                        'User-Agent': 'Lensy Documentation Quality Auditor/1.0'
+                    },
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+                if (response.status === 404) {
+                    const brokenLink = {
+                        url: linkInfo.url,
+                        status: 404,
+                        anchorText: linkInfo.anchorText,
+                        sourceLocation: 'main page',
+                        errorMessage: 'Page not found'
+                    };
+                    brokenLinks.push(brokenLink);
+                    await progress.info(`⚠ Broken link: ${linkInfo.url} (404)`);
+                }
+                else if (response.status >= 400) {
+                    const brokenLink = {
+                        url: linkInfo.url,
+                        status: response.status,
+                        anchorText: linkInfo.anchorText,
+                        sourceLocation: 'main page',
+                        errorMessage: `HTTP ${response.status}: ${response.statusText}`
+                    };
+                    brokenLinks.push(brokenLink);
+                    await progress.info(`⚠ Link error: ${linkInfo.url} (${response.status})`);
+                }
+                else {
+                    healthyLinks++;
+                }
+            }
+            catch (error) {
+                if (error instanceof Error && error.name === 'AbortError') {
+                    const brokenLink = {
+                        url: linkInfo.url,
+                        status: 'timeout',
+                        anchorText: linkInfo.anchorText,
+                        sourceLocation: 'main page',
+                        errorMessage: 'Request timeout (>5 seconds)'
+                    };
+                    brokenLinks.push(brokenLink);
+                    await progress.info(`⚠ Link timeout: ${linkInfo.url}`);
+                }
+                else {
+                    const brokenLink = {
+                        url: linkInfo.url,
+                        status: 'error',
+                        anchorText: linkInfo.anchorText,
+                        sourceLocation: 'main page',
+                        errorMessage: error instanceof Error ? error.message : 'Unknown error'
+                    };
+                    brokenLinks.push(brokenLink);
+                    await progress.info(`⚠ Link error: ${linkInfo.url} (${error instanceof Error ? error.message : 'Unknown error'})`);
+                }
+            }
+        });
+        await Promise.all(promises);
+    }
+    await progress.success(`✓ Link check complete: ${brokenLinks.length} broken, ${healthyLinks} healthy`);
+    return { brokenLinks, healthyLinks };
 }
 function discoverContextPages(document, baseUrl) {
     const contextPages = [];
