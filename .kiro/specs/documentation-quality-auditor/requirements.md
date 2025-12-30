@@ -12,11 +12,15 @@ Lensy is a Documentation Quality Auditor that analyzes developer documentation U
 - **Report_Generator**: The component that creates the final quality dashboard
 - **Structure_Detector**: The component that identifies documentation topics and organization
 - **Code_Validator**: The component that checks code snippets for syntax and deprecation issues
+- **Link_Checker**: Component that validates internal link accessibility via HTTP requests
+- **Code_Analyzer**: Component that detects deprecated methods and syntax errors in code snippets using LLM analysis
 - **Dimension**: A specific quality aspect being evaluated (Relevance, Freshness, Clarity, Accuracy, Completeness)
 - **Model_Selector**: The component that manages AI model selection and configuration
 - **Context_Pages**: Related documentation pages (parent, child, sibling) that provide additional context for analysis
 - **Cache_Index**: The DynamoDB table that tracks processed content locations and metadata
 - **TTL**: Time To Live - the expiration time for cached content entries
+- **Finding**: A specific, verifiable issue with exact location (URL, line number, method name)
+- **Critical_Findings**: High-impact issues (broken links, deprecated code, syntax errors) displayed prominently in UI
 
 ## Requirements
 
@@ -266,6 +270,85 @@ Lensy is a Documentation Quality Auditor that analyzes developer documentation U
 - Re-enable Auto-select feature once all models are validated
 - Add model-specific prompt optimization for better JSON compliance
 
+### Requirement 20: Internal Link Validation
+
+**User Story:** As a documentation analyst, I want to identify broken internal links with exact URLs and status codes, so that I can report specific, verifiable issues for documentation maintenance.
+
+#### Acceptance Criteria
+
+1. WHEN analyzing a page, THE Link_Checker SHALL extract all internal links within the same domain
+2. THE Link_Checker SHALL perform HTTP HEAD requests to verify each internal link's accessibility
+3. WHEN a link returns 404, THE Link_Checker SHALL report it as broken with: URL, status code, anchor text, source page path
+4. WHEN a link returns other 4xx/5xx status, THE Link_Checker SHALL report it as an error with specific status
+5. WHEN a link times out (>5 seconds), THE Link_Checker SHALL report it as unreachable
+6. THE Link_Checker SHALL process links asynchronously (max 10 simultaneous) to avoid rate limiting
+7. THE Link_Checker SHALL skip mailto:, tel:, javascript:, and anchor-only (#) links
+8. WHEN link checking completes, THE existing Progress_Streamer SHALL display: "✓ Link check: X broken, Y healthy"
+9. THE Link_Checker SHALL integrate with existing linkAnalysis data structure and enhance Completeness dimension scoring
+
+### Requirement 21: Enhanced Language-Agnostic Code Analysis
+
+**User Story:** As a documentation analyst, I want to detect deprecated code and syntax errors in any programming language, so that findings are relevant regardless of the tech stack being documented.
+
+#### Acceptance Criteria
+
+1. WHEN code snippets are extracted, THE Code_Analyzer SHALL enhance existing language detection with LLM-based analysis
+2. THE Code_Analyzer SHALL support deprecation detection for all common languages including but not limited to: JavaScript, TypeScript, Python, PHP, Ruby, Go, Java, C#, Rust, Swift
+3. WHEN analyzing code, THE Code_Analyzer SHALL use the LLM to identify deprecated methods, functions, or patterns based on its training knowledge of language/framework evolution
+4. THE Code_Analyzer SHALL prompt the LLM with: language detected, code snippet, and request to identify deprecated/removed APIs with version information
+5. WHEN deprecated code is found, THE Code_Analyzer SHALL report: method/function name, line number within snippet, deprecation version, recommended replacement
+6. THE Code_Analyzer SHALL detect framework-specific deprecations (e.g., React lifecycle methods, jQuery patterns, Express.js old APIs)
+7. WHEN deprecation is detected, THE Code_Analyzer SHALL provide confidence level (high/medium/low) based on LLM certainty
+8. THE Code_Analyzer SHALL use LLM to identify syntax errors by prompting it to parse the code and report any syntax violations
+9. WHEN syntax errors are found, THE Code_Analyzer SHALL report: error type, line number within snippet, description, the problematic code fragment
+10. THE Code_Analyzer SHALL distinguish between definite syntax errors vs. style issues vs. potential runtime errors
+11. THE Code_Analyzer SHALL handle incomplete code snippets gracefully — snippets showing partial code should not trigger false positives
+12. THE Code_Analyzer SHALL enhance existing Freshness and Accuracy dimension scoring with detailed findings
+
+### Requirement 22: Critical Findings Integration and Display
+
+**User Story:** As a user, I want to see a clear summary of critical findings (broken links, deprecated code, syntax errors) in the existing dashboard, so that I can quickly assess documentation health without extensive navigation.
+
+#### Acceptance Criteria
+
+1. THE existing dashboard SHALL be enhanced to include a "Critical Findings" section below dimension scores
+2. THE Critical Findings section SHALL display high-level counts for: Broken Links, Deprecated Code, Syntax Errors
+3. WHEN a finding category has zero issues, THE dashboard SHALL display a green checkmark (✓) with "None found"
+4. WHEN findings exist, THE dashboard SHALL display count with warning icon (⚠) and show 1-2 example issues
+5. THE dashboard SHALL include "See full report for details" message to encourage report export
+6. THE existing dimension scoring SHALL be enhanced to reflect broken links in Completeness, deprecated code in Freshness, and syntax errors in Accuracy
+7. THE dashboard SHALL NOT create a new/separate UI — all updates integrate into the existing results view
+
+### Requirement 23: Markdown Report Export
+
+**User Story:** As a user, I want to export a complete Markdown report of the analysis including dimension scores and all findings, so that I can share or reference the results outside of Lensy for outreach and documentation improvement planning.
+
+#### Acceptance Criteria
+
+1. WHEN analysis completes, THE existing dashboard SHALL display an "Export Report" button
+2. THE exported report SHALL include: analyzed URL, analysis date, overall score, all dimension scores with breakdowns
+3. THE exported report SHALL include all findings: broken links (with URLs and status), deprecated code (with method names and replacements), syntax errors (with line numbers and descriptions)
+4. THE exported report SHALL be available in Markdown format with clear sections for each dimension and finding type
+5. WHEN export button is clicked, THE System SHALL generate and download the report file as .md
+6. THE exported report SHALL be structured for readability with proper Markdown formatting, tables, and code blocks
+7. THE exported report SHALL include executive summary suitable for sharing with documentation portal owners
+
+### Requirement 24: Enhanced Progress Streaming for Code and Link Analysis
+
+**User Story:** As a user, I want to see real-time progress during link checking and enhanced code analysis, so that I understand what the system is checking and can track the comprehensive analysis progress.
+
+#### Acceptance Criteria
+
+1. THE existing Progress_Streamer infrastructure SHALL be extended to support link checking and enhanced code analysis updates
+2. WHEN link checking begins, THE Progress_Streamer SHALL display "Checking X internal links for accessibility..."
+3. WHEN a broken link is found, THE Progress_Streamer SHALL immediately display: "⚠ Broken link: [URL] (404)"
+4. WHEN link checking completes, THE Progress_Streamer SHALL display: "✓ Link check complete: X broken, Y healthy"
+5. WHEN enhanced code analysis begins, THE Progress_Streamer SHALL display "Analyzing X code snippets for deprecation and syntax..."
+6. WHEN a deprecated method is found, THE Progress_Streamer SHALL immediately display: "⚠ Deprecated: [method] in [location]"
+7. WHEN a syntax error is found, THE Progress_Streamer SHALL immediately display: "✗ Syntax error: [description] in [location]"
+8. WHEN code analysis completes, THE Progress_Streamer SHALL display: "✓ Code analysis complete: X deprecated, Y syntax errors"
+9. ALL progress updates SHALL use the existing Progress_Streamer format and WebSocket infrastructure
+
 ### Requirement 19: Real-Time WebSocket Progress Streaming
 
 **User Story:** As a user, I want to see live progress updates via WebSocket during analysis, so that I can track real-time progress without polling delays.
@@ -282,3 +365,68 @@ Lensy is a Documentation Quality Auditor that analyzes developer documentation U
 8. THE System SHALL maintain WebSocket connections with auto-reconnect capability for reliability
 9. THE System SHALL display progress message counts and timestamps for user reference
 10. THE System SHALL ensure progress logs don't interfere with results display through smart UI management
+
+**User Story:** As a user, I want to see live progress updates via WebSocket during analysis, so that I can track real-time progress without polling delays.
+
+#### Acceptance Criteria
+
+1. WHEN analysis starts, THE System SHALL establish a WebSocket connection for real-time progress updates
+2. WHEN WebSocket connection fails, THE System SHALL gracefully fallback to polling-based status updates
+3. WHEN progress events occur, THE System SHALL stream them immediately via WebSocket with appropriate message types
+4. WHEN analysis completes, THE Progress_Streamer SHALL automatically collapse logs while preserving expandable access
+5. WHEN cache status is determined, THE System SHALL stream cache HIT/MISS indicators with lightning bolt icons
+6. THE System SHALL support WebSocket message types including info, success, error, progress, cache-hit, and cache-miss
+7. THE System SHALL provide auto-scroll functionality during active analysis with manual expand/collapse control
+8. THE System SHALL maintain WebSocket connections with auto-reconnect capability for reliability
+9. THE System SHALL display progress message counts and timestamps for user reference
+10. THE System SHALL ensure progress logs don't interfere with results display through smart UI management
+
+
+### Requirement 25: Link Issue Categorization and Reporting
+
+**User Story:** As a documentation analyst, I want to distinguish between truly broken links (404) and other link issues (403, timeouts, errors), so that I can prioritize fixing actual broken pages versus investigating access or network issues.
+
+#### Acceptance Criteria
+
+1. WHEN validating internal links, THE System SHALL categorize issues by type: 404 (broken), 403 (access-denied), timeout, and error
+2. WHEN a link returns 404, THE System SHALL report it as a broken link with high priority
+3. WHEN a link returns 403, THE System SHALL report it as an access issue with medium priority
+4. WHEN a link times out, THE System SHALL report it as a timeout issue with low priority
+5. WHEN displaying link issues, THE System SHALL show separate counts for broken links (404) versus other issues
+6. THE System SHALL display link issues in the format "Link Issues: X (Y broken)" where X is total issues and Y is 404 count
+7. WHEN generating reports, THE System SHALL create separate sections for "Broken Links (404)" and "Other Link Issues"
+8. THE System SHALL include issue type information (404, access-denied, timeout, error) in all link findings
+9. THE System SHALL deduplicate link issues by URL to ensure each unique link is reported only once
+10. THE System SHALL provide clear progress messages distinguishing between broken links and other link issues
+
+### Requirement 26: Cache Control for Testing
+
+**User Story:** As a developer testing the system, I want to disable caching temporarily, so that I can test changes without cache interference and verify fresh analysis behavior.
+
+#### Acceptance Criteria
+
+1. THE System SHALL provide a user-facing toggle to enable or disable caching
+2. WHEN caching is disabled, THE System SHALL skip all cache checks for processed content
+3. WHEN caching is disabled, THE System SHALL skip all cache checks for dimension analysis results
+4. WHEN caching is disabled, THE System SHALL NOT store new results in cache
+5. WHEN caching is disabled, THE System SHALL display a warning message indicating testing mode
+6. THE System SHALL default caching to enabled for normal operation
+7. WHEN caching is enabled, THE System SHALL function normally with full cache read/write operations
+8. THE System SHALL send cache control preferences from frontend to backend via API
+9. THE System SHALL log cache control status for debugging and monitoring
+10. THE System SHALL maintain backward compatibility by defaulting to cache enabled when preference is not specified
+
+### Requirement 27: Compact UI Layout for Configuration Options
+
+**User Story:** As a user, I want configuration options (Context Analysis, Cache Control) displayed side-by-side, so that the interface is more compact and I can see all options without excessive scrolling.
+
+#### Acceptance Criteria
+
+1. THE System SHALL display Context Analysis and Cache Control cards in a side-by-side layout on desktop screens
+2. WHEN viewed on mobile devices, THE System SHALL stack configuration cards vertically for readability
+3. THE System SHALL ensure both configuration cards have equal heights when displayed side-by-side
+4. THE System SHALL maintain consistent spacing and visual hierarchy in the compact layout
+5. THE System SHALL preserve all functionality of configuration toggles in the compact layout
+6. THE System SHALL use responsive grid layout (50% width each on desktop, 100% on mobile)
+7. THE System SHALL ensure configuration cards remain easily accessible and readable in compact layout
+8. THE System SHALL maintain visual consistency with the rest of the application design

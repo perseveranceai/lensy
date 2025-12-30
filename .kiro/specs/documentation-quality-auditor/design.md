@@ -275,6 +275,76 @@ interface StepFunctionState {
   - Graceful error handling for disconnected clients
   - Integration with all Lambda functions for progress streaming
 
+#### LinkChecker (Component) - NEW
+- **Purpose**: Validates internal link accessibility via HTTP requests
+- **Input**: `{ links: ExtractedLink[], baseUrl: string }`
+- **Output**: `{ brokenLinks: BrokenLink[], healthyLinks: number }`
+- **Features**:
+  - Asynchronous HTTP HEAD requests (max 10 concurrent)
+  - Internal link filtering (same domain only)
+  - Status code categorization (404, 4xx, 5xx, timeout)
+  - Integration with existing linkAnalysis data structure
+  - Progress streaming for real-time updates
+- **Implementation**:
+  ```typescript
+  interface BrokenLink {
+    url: string;
+    status: number | 'timeout';
+    anchorText: string;
+    sourceLocation: string;
+    errorMessage: string;
+  }
+  
+  async function checkLinksAsync(links: ExtractedLink[]): Promise<LinkCheckResult> {
+    // Process links in batches of 10 with timeout handling
+    // Filter internal links only
+    // Report progress via WebSocket
+  }
+  ```
+
+#### EnhancedCodeAnalyzer (Component) - NEW
+- **Purpose**: LLM-based detection of deprecated code and syntax errors across all languages
+- **Input**: `{ codeSnippets: CodeSnippet[], model: string }`
+- **Output**: `{ deprecatedCode: DeprecatedCodeFinding[], syntaxErrors: SyntaxErrorFinding[] }`
+- **Features**:
+  - Language-agnostic analysis using LLM knowledge
+  - Framework-specific deprecation detection
+  - Confidence scoring for findings
+  - Integration with existing Freshness and Accuracy dimensions
+  - Progress streaming for real-time updates
+- **Implementation**:
+  ```typescript
+  interface DeprecatedCodeFinding {
+    language: string;
+    method: string;
+    location: string;
+    deprecatedIn: string;
+    removedIn?: string;
+    replacement: string;
+    confidence: 'high' | 'medium' | 'low';
+  }
+  
+  interface SyntaxErrorFinding {
+    language: string;
+    location: string;
+    errorType: string;
+    description: string;
+    codeFragment: string;
+    confidence: 'high' | 'medium' | 'low';
+  }
+  ```
+
+#### ReportExporter (Component) - NEW
+- **Purpose**: Generates downloadable Markdown reports with complete analysis results
+- **Input**: `{ analysisResults: FinalReport, criticalFindings: CriticalFindings }`
+- **Output**: `{ markdownContent: string, filename: string }`
+- **Features**:
+  - Executive summary for outreach
+  - Detailed findings with code examples
+  - Proper Markdown formatting with tables
+  - Structured sections for readability
+  - Integration with existing dashboard export button
+
 #### ModelSelector
 - **Purpose**: Manages AI model selection at the analysis level (not per-dimension)
 - **Input**: `{ modelPreference: string, analysisType: 'full' | 'quick' }`
@@ -334,6 +404,9 @@ interface AnalysisRequest {
   contextAnalysis?: {
     enabled: boolean;
     maxContextPages?: number;
+  };
+  cacheControl?: {
+    enabled: boolean;  // Frontend sends cache preference to backend
   };
 }
 
@@ -458,8 +531,48 @@ interface FinalReport {
   codeAnalysis: CodeAnalysisSummary;
   mediaAnalysis: MediaAnalysisSummary;
   linkAnalysis: LinkAnalysisSummary;
+  criticalFindings: CriticalFindings; // NEW: Enhanced findings for outreach
   analysisTime: number;
   retryCount: number;
+}
+
+interface CriticalFindings {
+  brokenLinks: BrokenLinkFinding[];
+  deprecatedCode: DeprecatedCodeFinding[];
+  syntaxErrors: SyntaxErrorFinding[];
+  summary: {
+    brokenLinksCount: number;
+    deprecatedCodeCount: number;
+    syntaxErrorsCount: number;
+  };
+}
+
+interface BrokenLinkFinding {
+  url: string;
+  status: number | 'timeout';
+  anchorText: string;
+  sourceLocation: string;
+  errorMessage: string;
+}
+
+interface DeprecatedCodeFinding {
+  language: string;
+  method: string;
+  location: string; // e.g., "/quickstart code block 2, line 5"
+  deprecatedIn: string;
+  removedIn?: string;
+  replacement: string;
+  confidence: 'high' | 'medium' | 'low';
+  codeFragment: string;
+}
+
+interface SyntaxErrorFinding {
+  language: string;
+  location: string; // e.g., "/api-reference code block 1, line 8"
+  errorType: string;
+  description: string;
+  codeFragment: string;
+  confidence: 'high' | 'medium' | 'low';
 }
 
 interface CodeAnalysisSummary {
@@ -468,6 +581,16 @@ interface CodeAnalysisSummary {
   deprecatedMethods: number;
   missingVersionSpecs: number;
   languagesDetected: string[];
+  enhancedAnalysis: {
+    llmAnalyzedSnippets: number;
+    deprecatedFindings: DeprecatedCodeFinding[];
+    syntaxErrorFindings: SyntaxErrorFinding[];
+    confidenceDistribution: {
+      high: number;
+      medium: number;
+      low: number;
+    };
+  };
 }
 
 interface MediaAnalysisSummary {
@@ -483,10 +606,20 @@ interface LinkAnalysisSummary {
   totalLinks: number;
   internalLinks: number;
   externalLinks: number;
-  brokenLinks: number;
+  brokenLinks: number;  // Count of 404s only
+  totalLinkIssues?: number;  // Count of all issues (404 + 403 + timeout + error)
   subPagesIdentified: string[];
   linkContext: 'single-page' | 'multi-page-referenced';
   analysisScope: 'current-page-only' | 'with-context';
+  linkValidation: {
+    checkedLinks: number;
+    linkIssueFindings: LinkIssue[];  // All link issues with categorization
+    healthyLinks: number;
+    brokenLinks: number;  // 404s only
+    accessDeniedLinks: number;  // 403s
+    timeoutLinks: number;  // Timeouts
+    otherErrors: number;  // Other HTTP errors
+  };
 }
 
 interface CacheMetrics {
@@ -1639,3 +1772,171 @@ const modelSelectionGenerator = fc.constantFrom('claude', 'titan', 'llama', 'aut
 - **Test Documentation**: Maintain test documentation URLs with known characteristics
 - **Automated Testing**: CI/CD pipeline with automated test execution
 - **Performance Monitoring**: Track analysis times and success rates across test runs
+
+
+## Recent Enhancements (December 2024)
+
+### Link Issue Categorization and Reporting
+
+The system now distinguishes between different types of link issues rather than treating all non-200 responses as "broken links".
+
+#### LinkIssue Interface
+
+```typescript
+interface LinkIssue {
+  url: string;
+  status: number | string;
+  anchorText: string;
+  sourceLocation: string;
+  errorMessage: string;
+  issueType: '404' | 'error' | 'timeout' | 'access-denied';
+}
+```
+
+#### Issue Type Categorization
+
+- **404 (broken)**: True broken links - page not found
+- **403 (access-denied)**: Access permission issues
+- **timeout**: Network timeout or slow response
+- **error**: Other HTTP errors (5xx, etc.)
+
+#### Deduplication Strategy
+
+The system deduplicates link issues by URL to ensure each unique link is reported only once:
+
+1. **Before Validation**: Deduplicate extracted links to avoid redundant HTTP requests
+2. **After Validation**: Deduplicate results to ensure each URL appears once in findings
+
+#### Enhanced Reporting
+
+```typescript
+interface LinkValidationResult {
+  checkedLinks: number;
+  linkIssueFindings: LinkIssue[];
+  healthyLinks: number;
+  brokenLinks: number;        // 404s only
+  accessDeniedLinks: number;  // 403s
+  timeoutLinks: number;       // Timeouts
+  otherErrors: number;        // Other HTTP errors
+}
+```
+
+**Frontend Display**: "Link Issues: X (Y broken)" where X is total issues and Y is 404 count
+
+**Markdown Report Sections**:
+- "Broken Links (404)" - separate section for true broken links
+- "Other Link Issues" - separate section for 403s, timeouts, and errors
+
+### Cache Control for Testing
+
+The system provides a user-facing toggle to disable caching temporarily for testing purposes.
+
+#### Cache Control Flow
+
+```typescript
+interface CacheControlPreference {
+  enabled: boolean;  // Default: true
+}
+
+// Frontend → Backend flow
+interface AnalysisRequest {
+  url: string;
+  selectedModel: string;
+  sessionId: string;
+  cacheControl?: {
+    enabled: boolean;
+  };
+}
+```
+
+#### Cache Control Behavior
+
+**When Cache Enabled (default)**:
+- Check DynamoDB cache before processing
+- Retrieve cached content from S3 if available
+- Store new results in cache after processing
+- Normal operation with full cache benefits
+
+**When Cache Disabled (testing mode)**:
+- Skip all cache checks (DynamoDB and S3)
+- Always run fresh analysis
+- Do NOT store results in cache
+- Display warning: "⚠️ Testing mode: Cache disabled - fresh analysis every time"
+
+#### Implementation in URLProcessor
+
+```typescript
+export const handler: Handler<URLProcessorEvent, URLProcessorResponse> = async (event) => {
+  // Check if caching is enabled (default to true for backward compatibility)
+  const cacheEnabled = event.cacheControl?.enabled !== false;
+  
+  if (cacheEnabled) {
+    // Normal cache flow
+    const cachedContent = await checkProcessedContentCache(event.url);
+    if (cachedContent && !isCacheExpired(cachedContent)) {
+      return { success: true, message: 'Retrieved from cache' };
+    }
+  } else {
+    console.log('⚠️ Cache disabled by user - skipping cache check');
+  }
+  
+  // Process content fresh
+  const processedContent = await processContent(event.url);
+  
+  // Store in cache only if caching is enabled
+  if (cacheEnabled) {
+    await storeInCache(event.url, processedContent);
+  } else {
+    console.log('⚠️ Cache disabled - skipping cache storage');
+  }
+  
+  return { success: true, message: 'Content processed' };
+};
+```
+
+### Compact UI Layout for Configuration Options
+
+The frontend now displays configuration cards (Context Analysis and Cache Control) side-by-side on desktop screens to save vertical space.
+
+#### Responsive Grid Layout
+
+```typescript
+// Material-UI Grid implementation
+<Grid container spacing={2} sx={{ mb: 3 }}>
+  <Grid item xs={12} md={6}>
+    <Card sx={{ bgcolor: 'grey.50', height: '100%' }}>
+      <CardContent>
+        {/* Context Analysis toggle and description */}
+      </CardContent>
+    </Card>
+  </Grid>
+  
+  <Grid item xs={12} md={6}>
+    <Card sx={{ bgcolor: 'grey.50', height: '100%' }}>
+      <CardContent>
+        {/* Cache Control toggle and description */}
+      </CardContent>
+    </Card>
+  </Grid>
+</Grid>
+```
+
+#### Layout Behavior
+
+**Desktop (md and above)**:
+- Both cards displayed side-by-side
+- Each card takes 50% width
+- Equal heights with `height: '100%'`
+- Consistent spacing with `spacing={2}`
+
+**Mobile (xs)**:
+- Cards stack vertically
+- Each card takes full width (100%)
+- Maintains readability on small screens
+
+#### Benefits
+
+- **Space Efficiency**: Reduces vertical scrolling on desktop
+- **Visual Balance**: Equal-height cards create clean layout
+- **Responsive**: Adapts to mobile screens automatically
+- **Consistency**: Maintains Material-UI design system

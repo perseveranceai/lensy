@@ -20,6 +20,9 @@ interface URLProcessorEvent {
         enabled: boolean;
         maxContextPages?: number;
     };
+    cacheControl?: {
+        enabled: boolean;
+    };
 }
 
 interface URLProcessorResponse {
@@ -48,6 +51,35 @@ interface ContextPage {
     title: string;
     relationship: 'parent' | 'child' | 'sibling';
     confidence: number;
+}
+
+interface LinkIssue {
+    url: string;
+    status: number | string;
+    anchorText: string;
+    sourceLocation: string;
+    errorMessage: string;
+    issueType: '404' | 'error' | 'timeout' | 'access-denied';
+}
+
+interface DeprecatedCodeFinding {
+    language: string;
+    method: string;
+    location: string;
+    deprecatedIn: string;
+    removedIn?: string;
+    replacement: string;
+    confidence: 'high' | 'medium' | 'low';
+    codeFragment: string;
+}
+
+interface SyntaxErrorFinding {
+    language: string;
+    location: string;
+    errorType: string;
+    description: string;
+    codeFragment: string;
+    confidence: 'high' | 'medium' | 'low';
 }
 
 interface ContextAnalysisResult {
@@ -118,15 +150,24 @@ export const handler: Handler<URLProcessorEvent, URLProcessorResponse> = async (
         // Send initial progress
         await progress.progress('Processing URL...', 'url-processing');
 
+        // Check if caching is enabled (default to true for backward compatibility)
+        const cacheEnabled = event.cacheControl?.enabled !== false;
+
         // Generate consistent session ID based on URL + context setting
         const contextEnabled = event.contextAnalysis?.enabled || false;
         const contextualSetting = contextEnabled ? 'with-context' : 'without-context';
         const consistentSessionId = generateConsistentSessionId(event.url, contextualSetting);
 
-        console.log(`Generated consistent session ID: ${consistentSessionId} (context: ${contextEnabled})`);
+        console.log(`Generated consistent session ID: ${consistentSessionId} (context: ${contextEnabled}, cache: ${cacheEnabled})`);
 
-        // Step 1: Check cache first using consistent session ID
-        const cachedContent = await checkProcessedContentCache(event.url, contextualSetting);
+        // Step 1: Check cache first using consistent session ID (only if caching is enabled)
+        let cachedContent = null;
+        if (cacheEnabled) {
+            cachedContent = await checkProcessedContentCache(event.url, contextualSetting);
+        } else {
+            console.log('⚠️ Cache disabled by user - skipping cache check');
+            await progress.info('⚠️ Cache disabled - running fresh analysis');
+        }
 
         if (cachedContent && !isCacheExpired(cachedContent)) {
             console.log(`Cache hit! Using cached content from session: ${consistentSessionId}`);
@@ -157,10 +198,12 @@ export const handler: Handler<URLProcessorEvent, URLProcessorResponse> = async (
 
         console.log('Cache miss or expired, processing fresh content...');
 
-        // Send cache miss message
-        await progress.cacheMiss('Cache MISS - Running fresh analysis', {
-            cacheStatus: 'miss'
-        });
+        // Send cache miss message (only if cache was enabled)
+        if (cacheEnabled) {
+            await progress.cacheMiss('Cache MISS - Running fresh analysis', {
+                cacheStatus: 'miss'
+            });
+        }
         // Fetch HTML content
         await progress.info('Fetching and cleaning content...');
 
@@ -208,9 +251,15 @@ export const handler: Handler<URLProcessorEvent, URLProcessorResponse> = async (
         const linkAnalysis = analyzeLinkStructure(document, event.url);
 
         // NEW: Validate internal links
-        let linkValidationResult = { brokenLinks: [], healthyLinks: 0 };
+        let linkValidationResult: { linkIssues: LinkIssue[], healthyLinks: number } = { linkIssues: [], healthyLinks: 0 };
         if (linkAnalysis.internalLinksForValidation && linkAnalysis.internalLinksForValidation.length > 0) {
             linkValidationResult = await validateInternalLinks(linkAnalysis.internalLinksForValidation, progress);
+        }
+
+        // NEW: Enhanced Code Analysis
+        let enhancedCodeAnalysis: { deprecatedCode: DeprecatedCodeFinding[], syntaxErrors: SyntaxErrorFinding[] } = { deprecatedCode: [], syntaxErrors: [] };
+        if (codeSnippets.length > 0) {
+            enhancedCodeAnalysis = await analyzeCodeSnippetsEnhanced(codeSnippets, progress);
         }
 
         // Context Analysis (if enabled)
@@ -265,10 +314,23 @@ export const handler: Handler<URLProcessorEvent, URLProcessorResponse> = async (
             linkAnalysis: {
                 ...linkAnalysis,
                 linkValidation: {
-                    checkedLinks: linkValidationResult.brokenLinks.length + linkValidationResult.healthyLinks,
-                    brokenLinkFindings: linkValidationResult.brokenLinks,
+                    checkedLinks: linkValidationResult.linkIssues.length + linkValidationResult.healthyLinks,
+                    linkIssueFindings: linkValidationResult.linkIssues,
                     healthyLinks: linkValidationResult.healthyLinks,
-                    timeoutLinks: linkValidationResult.brokenLinks.filter(link => link.status === 'timeout').length
+                    brokenLinks: linkValidationResult.linkIssues.filter(link => link.issueType === '404').length,
+                    accessDeniedLinks: linkValidationResult.linkIssues.filter(link => link.issueType === 'access-denied').length,
+                    timeoutLinks: linkValidationResult.linkIssues.filter(link => link.issueType === 'timeout').length,
+                    otherErrors: linkValidationResult.linkIssues.filter(link => link.issueType === 'error').length
+                }
+            },
+            enhancedCodeAnalysis: {
+                deprecatedCodeFindings: enhancedCodeAnalysis.deprecatedCode,
+                syntaxErrorFindings: enhancedCodeAnalysis.syntaxErrors,
+                analyzedSnippets: codeSnippets.length,
+                confidenceDistribution: {
+                    high: [...enhancedCodeAnalysis.deprecatedCode, ...enhancedCodeAnalysis.syntaxErrors].filter(f => f.confidence === 'high').length,
+                    medium: [...enhancedCodeAnalysis.deprecatedCode, ...enhancedCodeAnalysis.syntaxErrors].filter(f => f.confidence === 'medium').length,
+                    low: [...enhancedCodeAnalysis.deprecatedCode, ...enhancedCodeAnalysis.syntaxErrors].filter(f => f.confidence === 'low').length
                 }
             },
             contextAnalysis: contextAnalysisResult,
@@ -286,7 +348,8 @@ export const handler: Handler<URLProcessorEvent, URLProcessorResponse> = async (
         }
 
         // Update brokenLinks count in linkAnalysis (cast to any to add the property)
-        (processedContent.linkAnalysis as any).brokenLinks = linkValidationResult.brokenLinks.length;
+        (processedContent.linkAnalysis as any).brokenLinks = linkValidationResult.linkIssues.filter(link => link.issueType === '404').length;
+        (processedContent.linkAnalysis as any).totalLinkIssues = linkValidationResult.linkIssues.length;
 
         // Store processed content in S3 session location
         const s3Key = `sessions/${event.sessionId}/processed-content.json`;
@@ -311,8 +374,12 @@ export const handler: Handler<URLProcessorEvent, URLProcessorResponse> = async (
         // Add cache metadata to indicate this was NOT from cache
         await addCacheMetadata(event.sessionId, false);
 
-        // Step 3: Store in cache for future use
-        await storeProcessedContentInCache(event.url, processedContent, contextualSetting);
+        // Step 3: Store in cache for future use (only if caching is enabled)
+        if (cacheEnabled) {
+            await storeProcessedContentInCache(event.url, processedContent, contextualSetting);
+        } else {
+            console.log('⚠️ Cache disabled - skipping cache storage');
+        }
 
         // Return ONLY minimal success status - no data at all
         return {
@@ -587,6 +654,70 @@ function extractCodeSnippets(document: Document) {
     return codeSnippets;
 }
 
+/**
+ * Check if two hostnames are related domains that should be validated together
+ * This includes same organization subdomains and common documentation patterns
+ */
+function isRelatedDomain(linkHostname: string, baseHostname: string): boolean {
+    // Same hostname (already handled by caller, but included for completeness)
+    if (linkHostname === baseHostname) {
+        return true;
+    }
+
+    // Extract root domains
+    const getRootDomain = (hostname: string): string => {
+        const parts = hostname.split('.');
+        if (parts.length >= 2) {
+            return parts.slice(-2).join('.');
+        }
+        return hostname;
+    };
+
+    const linkRoot = getRootDomain(linkHostname);
+    const baseRoot = getRootDomain(baseHostname);
+
+    // Same root domain (e.g., docs.x.com and developer.x.com)
+    if (linkRoot === baseRoot) {
+        return true;
+    }
+
+    // Additional cross-domain patterns for organizations that use different root domains
+    const crossDomainPatterns = [
+        // X/Twitter ecosystem (different root domains)
+        ['x.com', 'twitter.com'],
+
+        // GitHub ecosystem
+        ['github.com', 'github.io', 'githubapp.com'],
+
+        // Google ecosystem
+        ['google.com', 'googleapis.com', 'googleusercontent.com', 'gstatic.com'],
+
+        // Amazon/AWS ecosystem
+        ['amazon.com', 'amazonaws.com', 'awsstatic.com'],
+
+        // Microsoft ecosystem
+        ['microsoft.com', 'microsoftonline.com', 'azure.com', 'office.com'],
+
+        // Meta/Facebook ecosystem
+        ['facebook.com', 'fbcdn.net', 'instagram.com'],
+
+        // Atlassian ecosystem
+        ['atlassian.com', 'atlassian.net', 'bitbucket.org'],
+
+        // Salesforce ecosystem
+        ['salesforce.com', 'force.com', 'herokuapp.com']
+    ];
+
+    // Check if both root domains are in the same cross-domain pattern group
+    for (const pattern of crossDomainPatterns) {
+        if (pattern.includes(linkRoot) && pattern.includes(baseRoot)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function analyzeLinkStructure(document: Document, baseUrl: string) {
     const links = document.querySelectorAll('a[href]');
     const baseUrlObj = new URL(baseUrl);
@@ -614,10 +745,14 @@ function analyzeLinkStructure(document: Document, baseUrl: string) {
         try {
             const linkUrl = new URL(href, baseUrl);
 
-            if (linkUrl.hostname === baseUrlObj.hostname) {
+            // Check if it's an internal link (same hostname) or related domain link
+            const isInternalLink = linkUrl.hostname === baseUrlObj.hostname;
+            const isRelatedDomainLink = isRelatedDomain(linkUrl.hostname, baseUrlObj.hostname);
+
+            if (isInternalLink || isRelatedDomainLink) {
                 internalLinks++;
 
-                // Store internal links for validation
+                // Store internal and related domain links for validation
                 internalLinksForValidation.push({
                     url: linkUrl.href,
                     anchorText: link.textContent?.trim() || href,
@@ -649,25 +784,34 @@ function analyzeLinkStructure(document: Document, baseUrl: string) {
     };
 }
 
-// NEW: Link validation function
+// NEW: Link validation function for internal and related domain links
 async function validateInternalLinks(
     linksToValidate: Array<{ url: string, anchorText: string, element: Element }>,
     progress: ProgressPublisher
-): Promise<{ brokenLinks: any[], healthyLinks: number }> {
+): Promise<{ linkIssues: LinkIssue[], healthyLinks: number }> {
     if (linksToValidate.length === 0) {
-        return { brokenLinks: [], healthyLinks: 0 };
+        return { linkIssues: [], healthyLinks: 0 };
     }
 
-    await progress.info(`Checking ${linksToValidate.length} internal links for accessibility...`);
+    // Deduplicate links by URL before validation to avoid redundant HTTP requests
+    const uniqueLinksMap = new Map<string, { url: string, anchorText: string, element: Element }>();
+    linksToValidate.forEach(link => {
+        if (!uniqueLinksMap.has(link.url)) {
+            uniqueLinksMap.set(link.url, link);
+        }
+    });
+    const uniqueLinks = Array.from(uniqueLinksMap.values());
 
-    const brokenLinks: any[] = [];
+    await progress.info(`Checking ${uniqueLinks.length} unique internal and related domain links for accessibility...`);
+
+    const linkIssues: LinkIssue[] = [];
     let healthyLinks = 0;
     const maxConcurrent = 10;
     const timeout = 5000; // 5 seconds
 
     // Process links in batches to avoid overwhelming the server
-    for (let i = 0; i < linksToValidate.length; i += maxConcurrent) {
-        const batch = linksToValidate.slice(i, i + maxConcurrent);
+    for (let i = 0; i < uniqueLinks.length; i += maxConcurrent) {
+        const batch = uniqueLinks.slice(i, i + maxConcurrent);
 
         const promises = batch.map(async (linkInfo) => {
             try {
@@ -685,51 +829,67 @@ async function validateInternalLinks(
                 clearTimeout(timeoutId);
 
                 if (response.status === 404) {
-                    const brokenLink = {
+                    const linkIssue: LinkIssue = {
                         url: linkInfo.url,
                         status: 404,
                         anchorText: linkInfo.anchorText,
                         sourceLocation: 'main page',
-                        errorMessage: 'Page not found'
+                        errorMessage: 'Page not found',
+                        issueType: '404'
                     };
-                    brokenLinks.push(brokenLink);
+                    linkIssues.push(linkIssue);
 
-                    await progress.info(`⚠ Broken link: ${linkInfo.url} (404)`);
+                    await progress.info(`⚠ Broken link (404): ${linkInfo.url}`);
+                } else if (response.status === 403) {
+                    const linkIssue: LinkIssue = {
+                        url: linkInfo.url,
+                        status: 403,
+                        anchorText: linkInfo.anchorText,
+                        sourceLocation: 'main page',
+                        errorMessage: 'Access denied (403 Forbidden)',
+                        issueType: 'access-denied'
+                    };
+                    linkIssues.push(linkIssue);
+
+                    await progress.info(`⚠ Link issue (403): ${linkInfo.url}`);
                 } else if (response.status >= 400) {
-                    const brokenLink = {
+                    const linkIssue: LinkIssue = {
                         url: linkInfo.url,
                         status: response.status,
                         anchorText: linkInfo.anchorText,
                         sourceLocation: 'main page',
-                        errorMessage: `HTTP ${response.status}: ${response.statusText}`
+                        errorMessage: `HTTP ${response.status}: ${response.statusText}`,
+                        issueType: 'error'
                     };
-                    brokenLinks.push(brokenLink);
+                    linkIssues.push(linkIssue);
 
-                    await progress.info(`⚠ Link error: ${linkInfo.url} (${response.status})`);
+                    await progress.info(`⚠ Link issue (${response.status}): ${linkInfo.url}`);
                 } else {
                     healthyLinks++;
                 }
             } catch (error) {
                 if (error instanceof Error && error.name === 'AbortError') {
-                    const brokenLink = {
+                    const linkIssue: LinkIssue = {
                         url: linkInfo.url,
                         status: 'timeout',
                         anchorText: linkInfo.anchorText,
                         sourceLocation: 'main page',
-                        errorMessage: 'Request timeout (>5 seconds)'
+                        errorMessage: 'Request timeout (>5 seconds)',
+                        issueType: 'timeout'
                     };
-                    brokenLinks.push(brokenLink);
+                    linkIssues.push(linkIssue);
 
                     await progress.info(`⚠ Link timeout: ${linkInfo.url}`);
                 } else {
-                    const brokenLink = {
+                    const linkIssue: LinkIssue = {
                         url: linkInfo.url,
                         status: 'error',
                         anchorText: linkInfo.anchorText,
                         sourceLocation: 'main page',
-                        errorMessage: error instanceof Error ? error.message : 'Unknown error'
+                        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+                        issueType: 'error'
                     };
-                    brokenLinks.push(brokenLink);
+                    linkIssues.push(linkIssue);
 
                     await progress.info(`⚠ Link error: ${linkInfo.url} (${error instanceof Error ? error.message : 'Unknown error'})`);
                 }
@@ -739,9 +899,211 @@ async function validateInternalLinks(
         await Promise.all(promises);
     }
 
-    await progress.success(`✓ Link check complete: ${brokenLinks.length} broken, ${healthyLinks} healthy`);
+    // Deduplicate link issues by URL (in case of any edge cases)
+    const uniqueLinkIssuesMap = new Map<string, LinkIssue>();
+    linkIssues.forEach(link => {
+        if (!uniqueLinkIssuesMap.has(link.url)) {
+            uniqueLinkIssuesMap.set(link.url, link);
+        }
+    });
+    const uniqueLinkIssues = Array.from(uniqueLinkIssuesMap.values());
 
-    return { brokenLinks, healthyLinks };
+    // Count broken links (404s only)
+    const brokenLinksCount = uniqueLinkIssues.filter(link => link.issueType === '404').length;
+    const totalIssuesCount = uniqueLinkIssues.length;
+
+    if (brokenLinksCount > 0 && brokenLinksCount === totalIssuesCount) {
+        await progress.success(`✓ Link check complete: ${brokenLinksCount} broken (404), ${healthyLinks} healthy`);
+    } else if (totalIssuesCount > 0) {
+        await progress.success(`✓ Link check complete: ${brokenLinksCount} broken (404), ${totalIssuesCount - brokenLinksCount} other issues, ${healthyLinks} healthy`);
+    } else {
+        await progress.success(`✓ Link check complete: All ${healthyLinks} links healthy`);
+    }
+
+    return { linkIssues: uniqueLinkIssues, healthyLinks };
+}
+
+// NEW: Enhanced Code Analysis function
+async function analyzeCodeSnippetsEnhanced(
+    codeSnippets: any[],
+    progress: ProgressPublisher
+): Promise<{ deprecatedCode: DeprecatedCodeFinding[], syntaxErrors: SyntaxErrorFinding[] }> {
+    if (codeSnippets.length === 0) {
+        return { deprecatedCode: [], syntaxErrors: [] };
+    }
+
+    await progress.info(`Analyzing ${codeSnippets.length} code snippets for deprecation and syntax issues...`);
+
+    const deprecatedCode: DeprecatedCodeFinding[] = [];
+    const syntaxErrors: SyntaxErrorFinding[] = [];
+
+    // Process code snippets in batches to avoid overwhelming the LLM
+    const batchSize = 3;
+    for (let i = 0; i < codeSnippets.length; i += batchSize) {
+        const batch = codeSnippets.slice(i, i + batchSize);
+
+        for (const snippet of batch) {
+            try {
+                // Skip very short or simple code snippets to avoid false positives
+                if (snippet.code.trim().length < 20 || isSimpleCode(snippet.code)) {
+                    continue;
+                }
+
+                const analysis = await analyzeCodeSnippetWithLLM(snippet, i + 1);
+
+                if (analysis.deprecatedCode.length > 0) {
+                    deprecatedCode.push(...analysis.deprecatedCode);
+                    for (const deprecated of analysis.deprecatedCode) {
+                        await progress.info(`⚠ Deprecated: ${deprecated.method} in code block ${i + 1}`);
+                    }
+                }
+
+                if (analysis.syntaxErrors.length > 0) {
+                    syntaxErrors.push(...analysis.syntaxErrors);
+                    for (const error of analysis.syntaxErrors) {
+                        await progress.info(`✗ Syntax error: ${error.description} in code block ${i + 1}`);
+                    }
+                }
+
+            } catch (error) {
+                console.error(`Failed to analyze code snippet ${i + 1}:`, error);
+                // Continue with other snippets
+            }
+        }
+    }
+
+    await progress.success(`✓ Code analysis complete: ${deprecatedCode.length} deprecated, ${syntaxErrors.length} syntax errors`);
+
+    return { deprecatedCode, syntaxErrors };
+}
+
+// Helper function to check if code is too simple to analyze
+function isSimpleCode(code: string): boolean {
+    const trimmed = code.trim();
+
+    // Skip single-line comments or very short snippets
+    if (trimmed.length < 20) return true;
+
+    // Skip pure CSS (already filtered out in markdown processing)
+    if (trimmed.includes('{') && trimmed.includes(':') && trimmed.includes(';') && !trimmed.includes('function')) {
+        return true;
+    }
+
+    // Skip simple HTML tags
+    if (trimmed.startsWith('<') && trimmed.endsWith('>') && trimmed.split('\n').length < 3) {
+        return true;
+    }
+
+    // Skip configuration files without code logic
+    if (trimmed.includes('=') && !trimmed.includes('function') && !trimmed.includes('class') && trimmed.split('\n').length < 5) {
+        return true;
+    }
+
+    return false;
+}
+
+// LLM-based code analysis function
+async function analyzeCodeSnippetWithLLM(
+    snippet: any,
+    blockNumber: number
+): Promise<{ deprecatedCode: DeprecatedCodeFinding[], syntaxErrors: SyntaxErrorFinding[] }> {
+    const prompt = `Analyze this ${snippet.language || 'unknown'} code snippet for deprecated methods and syntax errors.
+
+Code snippet (block ${blockNumber}):
+\`\`\`${snippet.language || ''}
+${snippet.code}
+\`\`\`
+
+Please identify:
+1. Deprecated methods, functions, or patterns with version information
+2. Definite syntax errors that would prevent code execution
+
+Return your analysis in this JSON format:
+{
+  "deprecatedCode": [
+    {
+      "language": "javascript",
+      "method": "componentWillMount",
+      "location": "code block ${blockNumber}, line 5",
+      "deprecatedIn": "React 16.3",
+      "removedIn": "React 17",
+      "replacement": "useEffect() or componentDidMount()",
+      "confidence": "high",
+      "codeFragment": "componentWillMount() {"
+    }
+  ],
+  "syntaxErrors": [
+    {
+      "language": "python",
+      "location": "code block ${blockNumber}, line 8",
+      "errorType": "SyntaxError",
+      "description": "Unclosed string literal",
+      "codeFragment": "message = \\"Hello world",
+      "confidence": "high"
+    }
+  ]
+}
+
+Important guidelines:
+- Only report HIGH CONFIDENCE findings to avoid false positives
+- For deprecated code: Include specific version information when known
+- For syntax errors: Only report definite errors, not style issues
+- Handle incomplete code snippets gracefully (snippets with "..." are often partial)
+- Skip simple configuration or markup that isn't executable code
+- If uncertain, mark confidence as "medium" or "low"`;
+
+    try {
+        const command = new InvokeModelCommand({
+            modelId: 'us.anthropic.claude-3-5-sonnet-20241022-v2:0',
+            contentType: 'application/json',
+            accept: 'application/json',
+            body: JSON.stringify({
+                anthropic_version: "bedrock-2023-05-31",
+                max_tokens: 1000,
+                temperature: 0.1,
+                messages: [
+                    {
+                        role: "user",
+                        content: prompt
+                    }
+                ]
+            })
+        });
+
+        const response = await bedrockClient.send(command);
+        const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+        const aiResponse = responseBody.content[0].text.trim();
+
+        // Parse JSON response
+        const analysisResult = JSON.parse(aiResponse);
+
+        // Validate and clean the response
+        const deprecatedCode: DeprecatedCodeFinding[] = (analysisResult.deprecatedCode || []).map((item: any) => ({
+            language: item.language || snippet.language || 'unknown',
+            method: item.method || 'unknown',
+            location: item.location || `code block ${blockNumber}`,
+            deprecatedIn: item.deprecatedIn || 'unknown version',
+            removedIn: item.removedIn,
+            replacement: item.replacement || 'see documentation',
+            confidence: item.confidence || 'medium',
+            codeFragment: item.codeFragment || item.method || ''
+        }));
+
+        const syntaxErrors: SyntaxErrorFinding[] = (analysisResult.syntaxErrors || []).map((item: any) => ({
+            language: item.language || snippet.language || 'unknown',
+            location: item.location || `code block ${blockNumber}`,
+            errorType: item.errorType || 'SyntaxError',
+            description: item.description || 'syntax error detected',
+            codeFragment: item.codeFragment || '',
+            confidence: item.confidence || 'medium'
+        }));
+
+        return { deprecatedCode, syntaxErrors };
+
+    } catch (error) {
+        console.error('LLM code analysis failed:', error);
+        return { deprecatedCode: [], syntaxErrors: [] };
+    }
 }
 
 function discoverContextPages(document: Document, baseUrl: string): ContextPage[] {

@@ -45,6 +45,9 @@ interface AnalysisRequest {
         enabled: boolean;
         maxContextPages?: number;
     };
+    cacheControl?: {
+        enabled: boolean;
+    };
 }
 
 interface DimensionResult {
@@ -74,6 +77,32 @@ interface FinalReport {
         deprecatedMethods: number;
         missingVersionSpecs: number;
         languagesDetected: string[];
+        enhancedAnalysis?: {
+            llmAnalyzedSnippets: number;
+            deprecatedFindings: Array<{
+                language: string;
+                method: string;
+                location: string;
+                deprecatedIn: string;
+                removedIn?: string;
+                replacement: string;
+                confidence: 'high' | 'medium' | 'low';
+                codeFragment: string;
+            }>;
+            syntaxErrorFindings: Array<{
+                language: string;
+                location: string;
+                errorType: string;
+                description: string;
+                codeFragment: string;
+                confidence: 'high' | 'medium' | 'low';
+            }>;
+            confidenceDistribution: {
+                high: number;
+                medium: number;
+                low: number;
+            };
+        };
     };
     mediaAnalysis: {
         videosFound: number;
@@ -88,9 +117,26 @@ interface FinalReport {
         internalLinks: number;
         externalLinks: number;
         brokenLinks: number;
+        totalLinkIssues?: number;
         subPagesIdentified: string[];
         linkContext: 'single-page' | 'multi-page-referenced';
         analysisScope: 'current-page-only' | 'with-subpages';
+        linkValidation?: {
+            checkedLinks: number;
+            linkIssueFindings: Array<{
+                url: string;
+                status: number | string;
+                anchorText: string;
+                sourceLocation: string;
+                errorMessage: string;
+                issueType: '404' | 'error' | 'timeout' | 'access-denied';
+            }>;
+            healthyLinks: number;
+            brokenLinks: number;
+            accessDeniedLinks: number;
+            timeoutLinks: number;
+            otherErrors: number;
+        };
     };
     cacheStatus: 'hit' | 'miss';
     contextAnalysis?: {
@@ -140,6 +186,7 @@ function App() {
     const [url, setUrl] = useState('');
     const [selectedModel, setSelectedModel] = useState<'claude' | 'titan' | 'llama' | 'auto'>('claude');
     const [contextAnalysisEnabled, setContextAnalysisEnabled] = useState(false);
+    const [cacheEnabled, setCacheEnabled] = useState(true);
     const [analysisState, setAnalysisState] = useState<AnalysisState>({
         status: 'idle',
         progressMessages: []
@@ -290,7 +337,10 @@ function App() {
             contextAnalysis: contextAnalysisEnabled ? {
                 enabled: true,
                 maxContextPages: 5
-            } : undefined
+            } : undefined,
+            cacheControl: {
+                enabled: cacheEnabled
+            }
         };
 
         try {
@@ -364,6 +414,108 @@ function App() {
         }
     };
 
+    const exportMarkdownReport = (report: FinalReport) => {
+        const analysisDate = new Date().toLocaleDateString();
+
+        let markdown = `# DOCUMENTATION QUALITY REPORT\n\n`;
+        markdown += `**URL:** ${url}\n`;
+        markdown += `**Analyzed:** ${analysisDate}\n`;
+        markdown += `**Overall Score:** ${report.overallScore}/10\n\n`;
+
+        markdown += `## DIMENSION SCORES\n\n`;
+        Object.entries(report.dimensions).forEach(([dimension, result]) => {
+            markdown += `**${dimension.charAt(0).toUpperCase() + dimension.slice(1)}:** ${result.score || 'N/A'}/10\n`;
+        });
+
+        markdown += `\n## CRITICAL FINDINGS\n\n`;
+
+        // Link Issues (404s and other errors)
+        const linkIssues = report.linkAnalysis.linkValidation?.linkIssueFindings || [];
+        const brokenLinks = linkIssues.filter((link: any) => link.issueType === '404');
+        const otherIssues = linkIssues.filter((link: any) => link.issueType !== '404');
+
+        markdown += `### Link Issues (${linkIssues.length})\n\n`;
+
+        if (brokenLinks.length > 0) {
+            markdown += `#### Broken Links (404) - ${brokenLinks.length}\n\n`;
+            brokenLinks.forEach((link: any, i: number) => {
+                markdown += `${i + 1}. **${link.anchorText}** → \`${link.url}\`\n`;
+                markdown += `   Error: ${link.errorMessage}\n\n`;
+            });
+        }
+
+        if (otherIssues.length > 0) {
+            markdown += `#### Other Link Issues - ${otherIssues.length}\n\n`;
+            otherIssues.forEach((link: any, i: number) => {
+                markdown += `${i + 1}. **${link.anchorText}** → \`${link.url}\` (${link.status})\n`;
+                markdown += `   Issue: ${link.errorMessage}\n`;
+                markdown += `   Type: ${link.issueType === 'access-denied' ? 'Access Denied (403)' : link.issueType === 'timeout' ? 'Timeout' : 'Error'}\n\n`;
+            });
+        }
+
+        if (linkIssues.length === 0) {
+            markdown += `✓ None found\n\n`;
+        }
+
+        // Deprecated Code
+        const deprecatedCode = report.codeAnalysis.enhancedAnalysis?.deprecatedFindings || [];
+        markdown += `### Deprecated Code (${deprecatedCode.length})\n\n`;
+        if (deprecatedCode.length === 0) {
+            markdown += `✓ None found\n\n`;
+        } else {
+            deprecatedCode.forEach((finding, i) => {
+                markdown += `${i + 1}. **${finding.method}** in ${finding.location}\n`;
+                markdown += `   - Deprecated in: ${finding.deprecatedIn}\n`;
+                if (finding.removedIn) {
+                    markdown += `   - Removed in: ${finding.removedIn}\n`;
+                }
+                markdown += `   - Replacement: ${finding.replacement}\n`;
+                markdown += `   - Confidence: ${finding.confidence}\n\n`;
+            });
+        }
+
+        // Syntax Errors
+        const syntaxErrors = report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings || [];
+        markdown += `### Syntax Errors (${syntaxErrors.length})\n\n`;
+        if (syntaxErrors.length === 0) {
+            markdown += `✓ None found\n\n`;
+        } else {
+            syntaxErrors.forEach((error, i) => {
+                markdown += `${i + 1}. **${error.errorType}** in ${error.location}\n`;
+                markdown += `   - Description: ${error.description}\n`;
+                markdown += `   - Code: \`${error.codeFragment}\`\n`;
+                markdown += `   - Confidence: ${error.confidence}\n\n`;
+            });
+        }
+
+        markdown += `## RECOMMENDATIONS\n\n`;
+        Object.entries(report.dimensions).forEach(([dimension, result]) => {
+            if (result.recommendations.length > 0) {
+                markdown += `### ${dimension.charAt(0).toUpperCase() + dimension.slice(1)}\n\n`;
+                result.recommendations.forEach((rec, i) => {
+                    markdown += `${i + 1}. **${rec.priority.toUpperCase()}:** ${rec.action}\n`;
+                    markdown += `   Impact: ${rec.impact}\n\n`;
+                });
+            }
+        });
+
+        markdown += `---\n\n`;
+        markdown += `*Report generated by Lensy Documentation Quality Auditor*\n`;
+        markdown += `*Analysis model: ${report.modelUsed}*\n`;
+        markdown += `*Analysis time: ${(report.analysisTime / 1000).toFixed(1)}s*\n`;
+
+        // Create and download file
+        const blob = new Blob([markdown], { type: 'text/markdown' });
+        const url_obj = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url_obj;
+        a.download = `documentation-quality-report-${new Date().toISOString().split('T')[0]}.md`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url_obj);
+    };
+
     return (
         <div className="App">
             <AppBar position="static">
@@ -411,27 +563,57 @@ function App() {
                             </Select>
                         </FormControl>
 
-                        <Card sx={{ mb: 3, bgcolor: 'grey.50' }}>
-                            <CardContent>
-                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                    <AnalyticsIcon sx={{ mr: 1, color: 'primary.main' }} />
-                                    <Typography variant="h6">Context Analysis</Typography>
-                                </Box>
-                                <FormControlLabel
-                                    control={
-                                        <Switch
-                                            checked={contextAnalysisEnabled}
-                                            onChange={(e) => setContextAnalysisEnabled(e.target.checked)}
-                                            disabled={analysisState.status === 'analyzing'}
+                        <Grid container spacing={2} sx={{ mb: 3 }}>
+                            <Grid item xs={12} md={6}>
+                                <Card sx={{ bgcolor: 'grey.50', height: '100%' }}>
+                                    <CardContent>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                                            <AnalyticsIcon sx={{ mr: 1, color: 'primary.main' }} />
+                                            <Typography variant="h6">Context Analysis</Typography>
+                                        </Box>
+                                        <FormControlLabel
+                                            control={
+                                                <Switch
+                                                    checked={contextAnalysisEnabled}
+                                                    onChange={(e) => setContextAnalysisEnabled(e.target.checked)}
+                                                    disabled={analysisState.status === 'analyzing'}
+                                                />
+                                            }
+                                            label="Include related pages"
                                         />
-                                    }
-                                    label="Include related pages"
-                                />
-                                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                                    Analyze parent, child, and sibling pages for better context
-                                </Typography>
-                            </CardContent>
-                        </Card>
+                                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                                            Analyze parent, child, and sibling pages for better context
+                                        </Typography>
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+
+                            <Grid item xs={12} md={6}>
+                                <Card sx={{ bgcolor: 'grey.50', height: '100%' }}>
+                                    <CardContent>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                                            <CachedIcon sx={{ mr: 1, color: 'primary.main' }} />
+                                            <Typography variant="h6">Cache Control</Typography>
+                                        </Box>
+                                        <FormControlLabel
+                                            control={
+                                                <Switch
+                                                    checked={cacheEnabled}
+                                                    onChange={(e) => setCacheEnabled(e.target.checked)}
+                                                    disabled={analysisState.status === 'analyzing'}
+                                                />
+                                            }
+                                            label="Enable caching"
+                                        />
+                                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                                            {cacheEnabled
+                                                ? 'Results will be cached for faster subsequent analyses'
+                                                : '⚠️ Testing mode: Cache disabled - fresh analysis every time'}
+                                        </Typography>
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+                        </Grid>
 
                         <Button
                             variant="contained"
@@ -543,6 +725,125 @@ function App() {
                             </Grid>
                         </Grid>
 
+                        {/* Critical Findings Section */}
+                        <Typography variant="h6" gutterBottom sx={{ mt: 4 }}>
+                            Critical Findings
+                        </Typography>
+                        <Grid container spacing={2} sx={{ mb: 4 }}>
+                            {/* Link Issues */}
+                            <Grid item xs={12} md={4}>
+                                <Card>
+                                    <CardContent>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                                            {analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.length ? (
+                                                <>
+                                                    <ErrorIcon sx={{ color: 'warning.main', mr: 1 }} />
+                                                    <Typography variant="h6">
+                                                        Link Issues: {analysisState.report.linkAnalysis.linkValidation.linkIssueFindings.length}
+                                                        {(() => {
+                                                            const broken = analysisState.report.linkAnalysis.linkValidation.linkIssueFindings.filter((l: any) => l.issueType === '404').length;
+                                                            return broken > 0 ? ` (${broken} broken)` : '';
+                                                        })()}
+                                                    </Typography>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <CheckCircleIcon sx={{ color: 'success.main', mr: 1 }} />
+                                                    <Typography variant="h6">
+                                                        Link Issues: None found
+                                                    </Typography>
+                                                </>
+                                            )}
+                                        </Box>
+                                        {analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.slice(0, 2).map((link: any, i: number) => (
+                                            <Typography key={i} variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                                                • {link.anchorText} → {link.issueType === '404' ? '404' : link.issueType === 'access-denied' ? '403' : link.status}
+                                            </Typography>
+                                        ))}
+                                        {(analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.length || 0) > 2 && (
+                                            <Typography variant="body2" color="text.secondary">
+                                                ... and {(analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.length || 0) - 2} more
+                                            </Typography>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+
+                            {/* Deprecated Code */}
+                            <Grid item xs={12} md={4}>
+                                <Card>
+                                    <CardContent>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                                            {analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length ? (
+                                                <>
+                                                    <ErrorIcon sx={{ color: 'warning.main', mr: 1 }} />
+                                                    <Typography variant="h6">
+                                                        Deprecated Code: {analysisState.report.codeAnalysis.enhancedAnalysis.deprecatedFindings.length}
+                                                    </Typography>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <CheckCircleIcon sx={{ color: 'success.main', mr: 1 }} />
+                                                    <Typography variant="h6">
+                                                        Deprecated Code: None found
+                                                    </Typography>
+                                                </>
+                                            )}
+                                        </Box>
+                                        {analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.slice(0, 2).map((finding, i) => (
+                                            <Typography key={i} variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                                                • {finding.method} (deprecated in {finding.deprecatedIn})
+                                            </Typography>
+                                        ))}
+                                        {(analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length || 0) > 2 && (
+                                            <Typography variant="body2" color="text.secondary">
+                                                ... and {(analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length || 0) - 2} more
+                                            </Typography>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+
+                            {/* Syntax Errors */}
+                            <Grid item xs={12} md={4}>
+                                <Card>
+                                    <CardContent>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                                            {analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.length ? (
+                                                <>
+                                                    <ErrorIcon sx={{ color: 'error.main', mr: 1 }} />
+                                                    <Typography variant="h6">
+                                                        Syntax Errors: {analysisState.report.codeAnalysis.enhancedAnalysis.syntaxErrorFindings.length}
+                                                    </Typography>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <CheckCircleIcon sx={{ color: 'success.main', mr: 1 }} />
+                                                    <Typography variant="h6">
+                                                        Syntax Errors: None found
+                                                    </Typography>
+                                                </>
+                                            )}
+                                        </Box>
+                                        {analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.slice(0, 2).map((error, i) => (
+                                            <Typography key={i} variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                                                • {error.errorType}: {error.description}
+                                            </Typography>
+                                        ))}
+                                        {(analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.length || 0) > 2 && (
+                                            <Typography variant="body2" color="text.secondary">
+                                                ... and {(analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.length || 0) - 2} more
+                                            </Typography>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+                        </Grid>
+
+                        <Alert severity="info" sx={{ mb: 4 }}>
+                            See full report for complete details on all findings and recommendations.
+                        </Alert>
+
                         <Typography variant="h6" gutterBottom>Quality Dimensions</Typography>
                         <Grid container spacing={2} sx={{ mb: 4 }}>
                             {Object.entries(analysisState.report.dimensions).map(([dimension, result]) => (
@@ -572,10 +873,19 @@ function App() {
                             ))}
                         </Grid>
 
-                        <Typography variant="body2" color="text.secondary" sx={{ mt: 3 }}>
-                            Analysis completed in {(analysisState.report.analysisTime / 1000).toFixed(1)}s
-                            {analysisState.report.cacheStatus === 'hit' && ' ⚡ (cached)'}
-                        </Typography>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 3 }}>
+                            <Typography variant="body2" color="text.secondary">
+                                Analysis completed in {(analysisState.report.analysisTime / 1000).toFixed(1)}s
+                                {analysisState.report.cacheStatus === 'hit' && ' ⚡ (cached)'}
+                            </Typography>
+                            <Button
+                                variant="outlined"
+                                onClick={() => exportMarkdownReport(analysisState.report!)}
+                                sx={{ ml: 2 }}
+                            >
+                                Export Report
+                            </Button>
+                        </Box>
                     </Paper>
                 )}
             </Container>

@@ -120,9 +120,17 @@ const handler = async (event) => {
         const contentStr = await contentResponse.Body.transformToString();
         const processedContent = JSON.parse(contentStr);
         console.log('Retrieved processed content from S3');
-        // Check if dimension analysis is already cached
+        // Check if caching is enabled (default to true for backward compatibility)
+        const cacheEnabled = event.cacheControl?.enabled !== false;
+        // Check if dimension analysis is already cached (only if caching is enabled)
         const contextualSetting = processedContent.contextAnalysis?.contextPages?.length > 0 ? 'with-context' : 'without-context';
-        const cachedResults = await checkDimensionCache(bucketName, processedContent, contextualSetting, selectedModel);
+        let cachedResults = null;
+        if (cacheEnabled) {
+            cachedResults = await checkDimensionCache(bucketName, processedContent, contextualSetting, selectedModel);
+        }
+        else {
+            console.log('⚠️ Cache disabled by user - skipping dimension cache check');
+        }
         if (cachedResults) {
             console.log('✅ Dimension analysis cache hit! Using cached results');
             // Send cache hit message for dimensions
@@ -214,8 +222,13 @@ const handler = async (event) => {
             Body: JSON.stringify(weightedResults),
             ContentType: 'application/json'
         }));
-        // Cache the results for future use
-        await cacheDimensionResults(bucketName, processedContent, contextualSetting, selectedModel, weightedResults);
+        // Cache the results for future use (only if caching is enabled)
+        if (cacheEnabled) {
+            await cacheDimensionResults(bucketName, processedContent, contextualSetting, selectedModel, weightedResults);
+        }
+        else {
+            console.log('⚠️ Cache disabled - skipping dimension cache storage');
+        }
         console.log('Dimension analysis completed and stored in S3');
         return {
             success: true,

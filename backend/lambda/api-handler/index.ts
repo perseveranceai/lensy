@@ -13,6 +13,9 @@ interface AnalysisRequest {
         enabled: boolean;
         maxContextPages?: number;
     };
+    cacheControl?: {
+        enabled: boolean;
+    };
 }
 
 export const handler: Handler<any, any> = async (event: any) => {

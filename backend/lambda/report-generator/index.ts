@@ -79,6 +79,7 @@ interface LinkAnalysisSummary {
     internalLinks: number;
     externalLinks: number;
     brokenLinks: number;
+    totalLinkIssues?: number;
     subPagesIdentified: string[];
     linkContext: 'single-page' | 'multi-page-referenced';
     analysisScope: 'current-page-only' | 'with-subpages';

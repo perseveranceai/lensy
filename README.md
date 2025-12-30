@@ -15,8 +15,8 @@ AI-powered documentation quality auditor with real-time analysis, transparency, 
 
 ## Architecture
 
-- **Frontend**: React with Material-UI for rapid, professional interface
-- **Backend**: AWS Lambda functions orchestrated by Step Functions
+- **Frontend**: React with Material-UI running locally (never deployed to AWS)
+- **Backend**: AWS Lambda functions orchestrated by Step Functions (deployed to AWS)
 - **AI Models**: AWS Bedrock integration with Claude, Titan, and Llama
 - **Real-time**: WebSocket API for progress streaming
 - **Infrastructure**: AWS CDK for reproducible deployments
@@ -37,24 +37,35 @@ AI-powered documentation quality auditor with real-time analysis, transparency, 
    npm run setup
    ```
 
-2. **Deploy backend infrastructure**:
+2. **Deploy backend infrastructure to AWS**:
    ```bash
    cd backend
    npm run deploy
    ```
+   Note: Backend is deployed to AWS Lambda. Current API endpoint: https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com/
 
-3. **Start frontend development server**:
+3. **Start frontend development server locally**:
    ```bash
    cd frontend
    npm start
    ```
+   Note: Frontend runs locally only and connects to the deployed AWS backend.
 
 ### Development
 
-- **Frontend development**: `npm run dev:frontend`
-- **Backend development**: `npm run dev:backend`
+- **Frontend development**: `npm run dev:frontend` (runs locally, connects to AWS backend)
+- **Backend development**: `npm run dev:backend` (for local testing before AWS deployment)
 - **Run tests**: `npm test`
-- **Build for production**: `npm run build`
+- **Build frontend**: `cd frontend && npm run build` (for local optimization only)
+
+### Deployment Architecture
+
+- **Backend**: Deployed to AWS Lambda via CDK
+  - API Gateway: https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com/
+  - WebSocket: wss://g2l57hb9ak.execute-api.us-east-1.amazonaws.com/prod
+- **Frontend**: Runs locally via `npm start` in the frontend/ directory
+  - Never deployed to AWS
+  - Connects to deployed AWS backend APIs
 
 ## Testing URLs
 
@@ -102,12 +113,21 @@ lensy/
 ## Implementation Status
 
 This is a 24-hour MVP implementation focusing on:
-- ✅ Core infrastructure setup
-- 🔄 URL processing and content extraction
-- 🔄 Multi-model AI analysis
-- 🔄 Real-time progress streaming
-- 🔄 Quality validation and transparency
-- 🔄 React frontend with Material-UI
+- ✅ Core infrastructure setup (AWS backend deployed)
+- ✅ URL processing and content extraction
+- ✅ Multi-model AI analysis with Claude 3.5 Sonnet
+- ✅ Real-time progress streaming via WebSocket
+- ✅ Quality validation and transparency
+- ✅ React frontend with Material-UI (runs locally)
+- ✅ Critical findings: broken links, deprecated code, syntax errors
+- ✅ Enhanced dashboard with findings display
+- ✅ Markdown report export functionality
+
+### Current Deployment Status
+- **Backend**: ✅ Deployed to AWS Lambda
+- **Frontend**: ✅ Runs locally, connects to AWS backend
+- **API Endpoints**: ✅ Active at https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com/
+- **WebSocket**: ✅ Active at wss://g2l57hb9ak.execute-api.us-east-1.amazonaws.com/prod
 
 ## License
 
