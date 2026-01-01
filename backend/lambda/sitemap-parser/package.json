@@ -1,0 +1,16 @@
+{
+    "name": "sitemap-parser",
+    "version": "1.0.0",
+    "description": "Lambda function for parsing sitemap.xml files and extracting URLs",
+    "main": "index.js",
+    "dependencies": {
+        "@aws-sdk/client-apigatewaymanagementapi": "^3.958.0",
+        "aws-sdk": "^2.1691.0",
+        "xml2js": "^0.6.2"
+    },
+    "devDependencies": {
+        "@types/node": "^20.0.0",
+        "@types/xml2js": "^0.4.14",
+        "typescript": "^5.0.0"
+    }
+}

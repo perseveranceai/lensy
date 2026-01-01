@@ -1,9 +1,11 @@
 import { Handler } from 'aws-lambda';
 import { SFNClient, StartExecutionCommand, DescribeExecutionCommand } from '@aws-sdk/client-sfn';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 
 const sfnClient = new SFNClient({ region: process.env.AWS_REGION || 'us-east-1' });
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
+const lambdaClient = new LambdaClient({ region: process.env.AWS_REGION || 'us-east-1' });
 
 interface AnalysisRequest {
     url: string;
@@ -50,6 +52,10 @@ export const handler: Handler<any, any> = async (event: any) => {
             return await handleAnalyzeRequest(body, corsHeaders);
         }
 
+        if (httpMethod === 'POST' && path === '/discover-issues') {
+            return await handleDiscoverIssuesRequest(body, corsHeaders);
+        }
+
         if (httpMethod === 'GET' && path?.startsWith('/status/')) {
             return await handleStatusRequest(path, corsHeaders);
         }
@@ -61,7 +67,7 @@ export const handler: Handler<any, any> = async (event: any) => {
                 error: 'Not found',
                 method: httpMethod,
                 path: path,
-                availableRoutes: ['POST /analyze', 'GET /status/{sessionId}']
+                availableRoutes: ['POST /analyze', 'POST /discover-issues', 'GET /status/{sessionId}']
             })
         };
 
@@ -171,14 +177,107 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
         const bucketName = process.env.ANALYSIS_BUCKET || 'lensy-analysis-951411676525-us-east-1';
 
         // Try to get the final report from S3
-        // The report-generator stores it as the Step Functions output
-        // We need to check if dimension-results.json exists (analysis complete)
+        // Check for both sitemap mode and doc mode results
 
         const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
         const s3 = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
 
+        // First, check if this is sitemap mode by looking for sitemap health results
         try {
-            // Check if dimension results exist (means analysis is complete or in progress)
+            const sitemapHealthKey = `sessions/${sessionId}/sitemap-health-results.json`;
+            const sitemapHealthResponse = await s3.send(new GetObjectCommand({
+                Bucket: bucketName,
+                Key: sitemapHealthKey
+            }));
+
+            const sitemapHealthContent = await sitemapHealthResponse.Body.transformToString();
+            const sitemapHealthResults = JSON.parse(sitemapHealthContent);
+
+            console.log('Found sitemap health results - this is sitemap mode');
+
+            // Get session metadata for timing
+            let analysisStartTime = Date.now(); // fallback
+            try {
+                const metadataKey = `sessions/${sessionId}/metadata.json`;
+                const metadataResponse = await s3.send(new GetObjectCommand({
+                    Bucket: bucketName,
+                    Key: metadataKey
+                }));
+                const metadataStr = await metadataResponse.Body.transformToString();
+                const metadata = JSON.parse(metadataStr);
+                analysisStartTime = metadata.startTime || Date.now();
+            } catch (metadataError) {
+                console.log('No metadata found, using current time');
+            }
+
+            const actualAnalysisTime = Date.now() - analysisStartTime;
+            const healthPercentage = sitemapHealthResults.healthPercentage || 0;
+
+            // Build sitemap health report
+            const report = {
+                overallScore: healthPercentage,
+                dimensionsAnalyzed: 1, // We analyzed "health" dimension
+                dimensionsTotal: 1,
+                confidence: 'high', // Sitemap health checking is deterministic
+                modelUsed: 'Sitemap Health Checker',
+                cacheStatus: 'miss', // Sitemap health is always fresh
+                dimensions: {}, // No dimension analysis in sitemap mode
+                codeAnalysis: {
+                    snippetsFound: 0,
+                    syntaxErrors: 0,
+                    deprecatedMethods: 0,
+                    missingVersionSpecs: 0,
+                    languagesDetected: []
+                },
+                mediaAnalysis: {
+                    videosFound: 0,
+                    audiosFound: 0,
+                    imagesFound: 0,
+                    interactiveElements: 0,
+                    accessibilityIssues: 0,
+                    missingAltText: 0
+                },
+                linkAnalysis: {
+                    totalLinks: 0,
+                    internalLinks: 0,
+                    externalLinks: 0,
+                    brokenLinks: 0,
+                    subPagesIdentified: [],
+                    linkContext: 'single-page',
+                    analysisScope: 'current-page-only'
+                },
+                sitemapHealth: {
+                    totalUrls: sitemapHealthResults.totalUrls,
+                    healthyUrls: sitemapHealthResults.healthyUrls,
+                    brokenUrls: sitemapHealthResults.linkIssues?.filter((issue: any) => issue.issueType === '404').length || 0,
+                    accessDeniedUrls: sitemapHealthResults.linkIssues?.filter((issue: any) => issue.issueType === 'access-denied').length || 0,
+                    timeoutUrls: sitemapHealthResults.linkIssues?.filter((issue: any) => issue.issueType === 'timeout').length || 0,
+                    otherErrorUrls: sitemapHealthResults.linkIssues?.filter((issue: any) => issue.issueType === 'error').length || 0,
+                    healthPercentage: sitemapHealthResults.healthPercentage,
+                    linkIssues: sitemapHealthResults.linkIssues || [],
+                    processingTime: sitemapHealthResults.processingTime
+                },
+                analysisTime: actualAnalysisTime,
+                retryCount: 0
+            };
+
+            return {
+                statusCode: 200,
+                headers: corsHeaders,
+                body: JSON.stringify({
+                    sessionId,
+                    status: 'completed',
+                    report
+                })
+            };
+
+        } catch (sitemapError) {
+            // Not sitemap mode, try doc mode
+            console.log('No sitemap health results found, checking for doc mode results');
+        }
+
+        // DOC MODE: Check for dimension results
+        try {
             const dimensionKey = `sessions/${sessionId}/dimension-results.json`;
             const dimensionResponse = await s3.send(new GetObjectCommand({
                 Bucket: bucketName,
@@ -286,8 +385,8 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
                 })
             };
 
-        } catch (s3Error) {
-            // Results not ready yet
+        } catch (docModeError) {
+            // Neither sitemap nor doc mode results found - analysis still in progress
             return {
                 statusCode: 200,
                 headers: corsHeaders,
@@ -306,6 +405,80 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
             headers: corsHeaders,
             body: JSON.stringify({
                 error: 'Failed to check status',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            })
+        };
+    }
+}
+
+async function handleDiscoverIssuesRequest(body: string | null, corsHeaders: Record<string, string>) {
+    if (!body) {
+        return {
+            statusCode: 400,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: 'Request body is required' })
+        };
+    }
+
+    let discoverRequest: { companyName: string; domain: string; sessionId: string };
+
+    try {
+        discoverRequest = JSON.parse(body);
+    } catch (error) {
+        return {
+            statusCode: 400,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: 'Invalid JSON in request body' })
+        };
+    }
+
+    const { companyName, domain, sessionId } = discoverRequest;
+
+    if (!domain || !sessionId) {
+        return {
+            statusCode: 400,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: 'Missing required fields: domain and sessionId' })
+        };
+    }
+
+    try {
+        console.log('Invoking IssueDiscoverer Lambda for:', { companyName, domain, sessionId });
+
+        // Invoke the IssueDiscoverer Lambda function directly
+        const invokeParams = {
+            FunctionName: process.env.ISSUE_DISCOVERER_FUNCTION_NAME || 'lensy-issue-discoverer',
+            Payload: JSON.stringify({
+                body: JSON.stringify({ companyName, domain, sessionId })
+            })
+        };
+
+        const result = await lambdaClient.send(new InvokeCommand(invokeParams));
+
+        if (result.Payload) {
+            const responsePayload = JSON.parse(new TextDecoder().decode(result.Payload));
+
+            if (responsePayload.statusCode === 200) {
+                const issueResults = JSON.parse(responsePayload.body);
+                return {
+                    statusCode: 200,
+                    headers: corsHeaders,
+                    body: JSON.stringify(issueResults)
+                };
+            } else {
+                throw new Error(`IssueDiscoverer failed: ${responsePayload.body}`);
+            }
+        } else {
+            throw new Error('No response payload from IssueDiscoverer');
+        }
+
+    } catch (error) {
+        console.error('Issue discovery failed:', error);
+        return {
+            statusCode: 500,
+            headers: corsHeaders,
+            body: JSON.stringify({
+                error: 'Issue discovery failed',
                 message: error instanceof Error ? error.message : 'Unknown error'
             })
         };

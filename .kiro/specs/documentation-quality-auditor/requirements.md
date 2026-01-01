@@ -1,12 +1,59 @@
 # Requirements Document
 
+## Implementation Status (Updated Dec 31, 2024)
+
+### ✅ Completed Requirements
+- **Requirements 1-27**: Doc Mode and Sitemap Journey Mode (fully implemented)
+- **Requirements 28-35**: Sitemap Journey Mode enhancements (fully implemented)
+- **Requirement 36**: Issue Discovery and Online Search ✅ **COMPLETED TODAY**
+  - 36.1: Multi-source web search ✅ (Manual research from Stack Overflow, GitHub, Reddit)
+  - 36.2: Issue categorization ✅ (deployment, email-delivery, api-usage, documentation)
+  - 36.3: Frequency analysis ✅ (Severity scores 12-27 based on real data)
+  - 36.4: Source credibility ✅ (Stack Overflow: 0.95, GitHub: 0.90, Reddit: 0.75)
+  - 36.5: Mode selection UI ✅ (Three-mode dropdown with dynamic inputs)
+  - 36.6: Real-time search ✅ (Triggered on Tab/Enter)
+  - 36.7-36.10: Session storage and caching ✅
+
+### 🔄 Deferred to Next Session
+- **Requirement 37**: Real-Time Issue Validation and Documentation Analysis
+  - IssueValidator Lambda to validate issues against current docs
+  - Root cause analysis (missing examples, unclear guidance)
+  - Specific recommendations generation
+- **Requirement 38**: Enhanced Report Generation for Issue Discovery Mode
+  - Confirmed vs resolved issues sections
+  - Specific recommendations with code examples
+  - Evidence-based reporting
+
+### 📝 Implementation Approach
+- **Pragmatic POC**: Manual web search + JSON file instead of live API calls
+- **Real Data**: 5 authentic Q4 2025 issues from real developer communities
+- **Extensible**: Can be upgraded to Google Custom Search API or MCP servers later
+
 ## Introduction
 
-Lensy is a Documentation Quality Auditor that analyzes developer documentation URLs and produces comprehensive quality reports with specific, actionable recommendations. The system evaluates documentation across five quality dimensions and provides real-time progress feedback during analysis.
+Lensy is a Documentation Quality Auditor that analyzes developer documentation and produces comprehensive quality reports with specific, actionable recommendations. The system operates in three modes:
+
+1. **Doc Mode** (existing): Analyzes individual documentation URLs across five quality dimensions
+2. **Sitemap Journey Mode** (existing): Analyzes entire documentation portals via sitemap.xml to detect developer journeys and assess workflow completion confidence
+3. **Issue Discovery Mode** (new): Discovers real developer problems online, validates them against current documentation, and provides targeted analysis
+
+All modes provide real-time progress feedback and generate detailed reports with actionable recommendations.
 
 ## Glossary
 
 - **System**: The Lensy Documentation Quality Auditor application
+- **Doc_Mode**: Existing analysis mode for individual documentation URLs (UNCHANGED)
+- **Sitemap_Mode**: Analysis mode that processes sitemap.xml files for bulk documentation analysis
+- **Issue_Discovery_Mode**: New analysis mode that discovers real developer problems online and validates them against current documentation
+- **Issue_Discoverer**: Component that searches online for common developer problems with documentation portals
+- **Issue_Validator**: Component that validates whether discovered issues still exist in current documentation
+- **Sitemap_Parser**: Component that fetches and parses sitemap.xml files to extract documentation URLs
+- **Journey_Detector**: Component that groups sitemap URLs into developer persona + action workflows
+- **Journey_Aggregator**: Component that combines page scores into overall journey completion confidence
+- **Journey**: A sequence of documentation pages a developer follows to complete a specific action
+- **Persona**: The type of developer (e.g., "Node.js Developer", "DevOps Engineer")
+- **Action**: The goal the developer wants to achieve (e.g., "Send first email", "Set up webhooks")
+- **Completion_Confidence**: Percentage likelihood that a developer can successfully complete an action using the documentation
 - **Analyzer**: The component responsible for evaluating documentation quality
 - **Progress_Streamer**: The component that provides real-time analysis updates
 - **Report_Generator**: The component that creates the final quality dashboard
@@ -17,7 +64,9 @@ Lensy is a Documentation Quality Auditor that analyzes developer documentation U
 - **Dimension**: A specific quality aspect being evaluated (Relevance, Freshness, Clarity, Accuracy, Completeness)
 - **Model_Selector**: The component that manages AI model selection and configuration
 - **Context_Pages**: Related documentation pages (parent, child, sibling) that provide additional context for analysis
-- **Cache_Index**: The DynamoDB table that tracks processed content locations and metadata
+- **Cache_Index**: The existing DynamoDB table that tracks processed content locations and metadata using session-based S3 paths
+- **Session_ID**: Unique identifier for each analysis session, used in S3 path structure (e.g., "session-d3dc80920ce1")
+- **Journey_Cache**: New DynamoDB table for storing journey-level analysis results and company associations
 - **TTL**: Time To Live - the expiration time for cached content entries
 - **Finding**: A specific, verifiable issue with exact location (URL, line number, method name)
 - **Critical_Findings**: High-impact issues (broken links, deprecated code, syntax errors) displayed prominently in UI
@@ -164,16 +213,16 @@ Lensy is a Documentation Quality Auditor that analyzes developer documentation U
 
 ### Requirement 11: Intelligent Content Caching
 
-**User Story:** As a system administrator, I want processed content to be cached intelligently, so that repeated analysis of the same documentation pages is faster and more cost-effective.
+**User Story:** As a system administrator, I want processed content to be cached intelligently using the existing session-based S3 structure, so that repeated analysis of the same documentation pages is faster and more cost-effective.
 
 #### Acceptance Criteria
 
-1. WHEN processing a documentation URL, THE System SHALL check the Cache_Index before fetching and processing content
-2. WHEN cached content exists and is not expired, THE System SHALL retrieve processed content from S3 cache storage
-3. WHEN cached content is expired or content has changed, THE System SHALL re-process the content and update the cache
-4. THE System SHALL store processed content in S3 with Cache_Index containing URL, content hash, S3 location, and TTL
+1. WHEN processing a documentation URL, THE System SHALL check the existing Cache_Index before fetching and processing content
+2. WHEN cached content exists and is not expired, THE System SHALL retrieve processed content from the existing session-based S3 storage (e.g., "sessions/session-d3dc80920ce1/processed-content.json")
+3. WHEN cached content is expired or content has changed, THE System SHALL re-process the content and update the cache using the existing session structure
+4. THE System SHALL continue using the existing S3 path format: "sessions/{sessionId}/processed-content.json"
 5. THE System SHALL set cache TTL to 7 days by default for processed content to balance freshness and performance
-6. WHEN context analysis is enabled, THE System SHALL cache Context_Pages individually to avoid re-processing shared pages
+6. WHEN context analysis is enabled, THE System SHALL cache Context_Pages individually using the existing session-based structure
 7. THE System SHALL calculate content hash to detect when documentation content has changed since last processing
 8. THE System SHALL track cache performance metrics including hit rate, processing time savings, and storage usage
 9. THE System SHALL automatically clean up expired cache entries using TTL functionality
@@ -430,3 +479,194 @@ Lensy is a Documentation Quality Auditor that analyzes developer documentation U
 6. THE System SHALL use responsive grid layout (50% width each on desktop, 100% on mobile)
 7. THE System SHALL ensure configuration cards remain easily accessible and readable in compact layout
 8. THE System SHALL maintain visual consistency with the rest of the application design
+
+## Sitemap Journey Mode Requirements
+
+### Requirement 28: Intelligent Input Detection
+
+**User Story:** As a user, I want the input field to automatically detect whether I'm entering a sitemap URL or a doc URL, so that the appropriate analysis mode is triggered without manual selection.
+
+#### Acceptance Criteria
+
+1. WHEN a URL ends with `.xml` or `sitemap.xml`, THE System SHALL detect it as Sitemap_Mode
+2. WHEN a URL contains `/sitemap` in the path, THE System SHALL detect it as Sitemap_Mode
+3. WHEN a URL does not match sitemap patterns, THE System SHALL use existing Doc_Mode (UNCHANGED)
+4. THE System SHALL display a visual indicator showing which mode was detected
+5. THE System SHALL allow user to override the detected mode if needed
+6. THE System SHALL preserve all existing Doc_Mode functionality without modification
+7. THE System SHALL provide clear mode selection UI when input type is ambiguous
+8. THE System SHALL default to Doc_Mode for backward compatibility
+
+### Requirement 29: Sitemap Parser and URL Extraction
+
+**User Story:** As a user, I want to provide a sitemap.xml URL so that Lensy can discover all documentation pages automatically for bulk analysis.
+
+#### Acceptance Criteria
+
+1. WHEN a sitemap URL is provided, THE Sitemap_Parser SHALL fetch the XML content
+2. THE Sitemap_Parser SHALL extract all `<loc>` URLs from the sitemap
+3. THE Sitemap_Parser SHALL handle nested sitemaps (sitemap index files) by following `<sitemap>` references
+4. WHEN parsing fails, THE System SHALL display a clear error message with specific failure reason
+5. THE Sitemap_Parser SHALL report the total number of URLs found
+6. THE Progress_Streamer SHALL display "Parsing sitemap... Found X URLs"
+7. THE Sitemap_Parser SHALL validate XML format and handle malformed sitemaps gracefully
+8. THE Sitemap_Parser SHALL support both compressed (.xml.gz) and uncompressed sitemap formats
+9. THE Sitemap_Parser SHALL extract optional metadata (lastmod, priority) when available
+10. THE Sitemap_Parser SHALL limit processing to prevent infinite recursion in nested sitemaps
+
+### Requirement 30: Sitemap Health Check and Link Validation
+
+**User Story:** As a user, I want to see which URLs in the sitemap are broken or inaccessible, so that I can identify site-wide link issues before analyzing content quality.
+
+#### Acceptance Criteria
+
+1. WHEN sitemap is parsed, THE System SHALL check all URLs for accessibility using existing Link_Checker
+2. THE Link_Checker SHALL perform HTTP HEAD requests with maximum 10 concurrent connections
+3. THE System SHALL categorize URLs as: healthy (2xx), broken (404), access-denied (403), timeout, error (other 4xx/5xx)
+4. THE Progress_Streamer SHALL display real-time progress: "Checking URLs: X/Y complete"
+5. WHEN a broken link is found, THE Progress_Streamer SHALL immediately display: "⚠ Broken: [URL] (404)"
+6. THE System SHALL display a sitemap health summary before journey selection
+7. THE System SHALL provide expandable details showing all broken URLs with status codes
+8. THE System SHALL skip inaccessible URLs from further analysis to avoid wasted processing
+9. THE System SHALL track and report health check performance metrics
+10. THE System SHALL handle rate limiting and implement exponential backoff for failed requests
+
+### Requirement 31: Developer Journey Detection and Grouping
+
+**User Story:** As a user, I want Lensy to automatically detect developer journeys from the sitemap URLs, so that I can analyze documentation by user workflow rather than individual pages.
+
+#### Acceptance Criteria
+
+1. WHEN sitemap URLs are available, THE Journey_Detector SHALL group URLs by developer persona + action patterns
+2. THE Journey_Detector SHALL detect journeys based on URL patterns, naming conventions, and content analysis
+3. EACH journey SHALL have: id, name, persona, action, pages array, estimated completion time
+4. THE Journey_Detector SHALL prioritize common developer workflows (getting started, API usage, webhooks, authentication)
+5. THE System SHALL display detected journeys with page counts for user selection
+6. THE System SHALL allow users to select multiple journeys for analysis
+7. THE Journey_Detector SHALL use AI analysis to improve journey detection accuracy when URL patterns are insufficient
+8. THE System SHALL provide journey preview showing the sequence of pages in each workflow
+9. THE Journey_Detector SHALL handle overlapping pages across multiple journeys appropriately
+10. THE System SHALL allow manual journey editing for cases where automatic detection is incomplete
+
+### Requirement 32: Journey Selection and Configuration UI
+
+**User Story:** As a user, I want to select which developer journeys to analyze, so that I can focus on the most important user workflows for my documentation assessment.
+
+#### Acceptance Criteria
+
+1. THE System SHALL display detected journeys as selectable cards with checkboxes
+2. EACH journey card SHALL show: name, persona, action, page count, estimated time
+3. THE User SHALL be able to select multiple journeys simultaneously
+4. THE System SHALL display total pages to be analyzed based on current selection
+5. THE System SHALL provide a [ANALYZE SELECTED JOURNEYS] button that is disabled when no journeys are selected
+6. THE System SHALL show journey page sequences in expandable preview sections
+7. THE System SHALL persist journey selections during the session
+8. THE System SHALL provide "Select All" and "Clear All" options for bulk selection
+9. THE System SHALL display journey complexity indicators (beginner, intermediate, advanced)
+10. THE System SHALL allow filtering journeys by persona type or complexity level
+
+### Requirement 33: Journey-Aware Content Analysis
+
+**User Story:** As a system, I want to provide journey context to the Dimension Analyzer, so that each page is scored considering its role in the complete developer workflow.
+
+#### Acceptance Criteria
+
+1. WHEN analyzing a page within a journey, THE System SHALL add journeyContext to the processed content
+2. THE journeyContext SHALL include: journey name, persona, action, step number, total steps, previous/next pages
+3. THE Dimension_Analyzer SHALL use journeyContext in analysis prompts (enhancing existing contextAnalysis)
+4. THE Dimension_Analyzer SHALL evaluate: "Does this page help the persona complete the action effectively?"
+5. THE System SHALL assess workflow continuity between sequential pages in the journey
+6. THE System SHALL identify gaps or missing steps that could block workflow completion
+7. THE System SHALL evaluate if page complexity matches the target persona's skill level
+8. THE System SHALL consider journey context when scoring Relevance and Completeness dimensions
+9. THE System SHALL track journey-specific findings separately from general page issues
+10. THE System SHALL provide journey-aware recommendations that consider the complete workflow
+
+### Requirement 34: Journey Score Aggregation and Completion Confidence
+
+**User Story:** As a user, I want to see an overall score for each developer journey with completion confidence, so that I can quickly assess if the documentation supports complete workflows effectively.
+
+#### Acceptance Criteria
+
+1. WHEN all pages in a journey are analyzed, THE Journey_Aggregator SHALL combine page scores into a journey score
+2. THE Journey_Aggregator SHALL calculate a weighted average of dimension scores across all journey pages
+3. THE Journey_Aggregator SHALL calculate a Completion_Confidence percentage (0-100%)
+4. THE Completion_Confidence SHALL be reduced by blocking issues (syntax errors, broken links, deprecated code, missing steps)
+5. THE Journey_Aggregator SHALL identify and list blocking issues that prevent workflow completion
+6. THE System SHALL weight critical pages (getting started, core API calls) more heavily in journey scoring
+7. THE Journey_Aggregator SHALL detect workflow gaps where essential steps are missing or unclear
+8. THE System SHALL provide confidence breakdown showing factors that increase or decrease completion likelihood
+9. THE Journey_Aggregator SHALL generate journey-specific recommendations for improving workflow success
+10. THE System SHALL compare journey scores to identify which workflows need the most attention
+11. THE System SHALL store journey results in the new Journey_Cache table with session-based S3 paths following the existing pattern: "sessions/{sessionId}/journey-{journeyId}.json"
+12. THE System SHALL associate journeys with company names for organizational grouping and analytics
+
+### Requirement 35: Comprehensive Journey Report Generation
+
+**User Story:** As a user, I want a comprehensive report showing sitemap health and journey analysis results, so that I can share findings with stakeholders and prioritize documentation improvements.
+
+#### Acceptance Criteria
+
+1. THE Report SHALL include a Sitemap Health section with URL statistics and broken link details
+2. THE Report SHALL include a Journey Analysis section for each selected journey
+3. EACH Journey section SHALL show: overall score, completion confidence, page breakdown table, blocking issues
+4. THE Report SHALL list all findings with specific locations (page, line number, code snippet)
+5. THE Report SHALL be exportable as Markdown with proper formatting and tables
+6. THE existing Export Report functionality SHALL be enhanced to support journey reports
+7. THE Report SHALL include executive summary suitable for sharing with documentation portal owners
+8. THE Report SHALL provide actionable recommendations prioritized by impact on journey completion
+9. THE Report SHALL include journey comparison section highlighting best and worst performing workflows
+10. THE Report SHALL maintain backward compatibility with existing single-page report format
+
+## Issue Discovery Mode Requirements
+
+### Requirement 36: Online Issue Discovery and Validation
+
+**User Story:** As a user, I want Lensy to discover common developer problems with a documentation portal by searching online discussions, so that I can focus analysis on real-world issues that developers are experiencing.
+
+#### Acceptance Criteria
+
+1. WHEN Issue Discovery Mode is triggered, THE System SHALL search online for common developer problems related to the documentation portal
+2. THE System SHALL search multiple sources including Stack Overflow, GitHub issues, developer blogs, and community forums
+3. THE System SHALL extract and categorize common issues including: rate limiting, authentication, production deployment, code examples, API usage
+4. THE System SHALL present discovered issues to the user with frequency counts and source references
+5. THE System SHALL allow users to select which issues to investigate and validate
+6. THE System SHALL provide issue descriptions with links to original sources for user reference
+7. THE System SHALL filter out resolved or outdated issues by checking publication dates and resolution status
+8. THE System SHALL rank issues by frequency and recency to prioritize the most current problems
+9. THE System SHALL support manual issue entry for cases where users want to investigate specific problems
+10. THE System SHALL maintain a database of common documentation issues for faster discovery
+
+### Requirement 37: Real-Time Issue Validation and Documentation Analysis
+
+**User Story:** As a user, I want Lensy to validate whether discovered issues still exist in the current documentation, so that I only receive reports about current, actionable problems.
+
+#### Acceptance Criteria
+
+1. WHEN an issue is selected for analysis, THE System SHALL identify relevant documentation pages that should address the issue
+2. THE System SHALL analyze the identified pages for code examples, implementation guidance, and completeness
+3. WHEN code examples exist, THE System SHALL validate their accuracy, completeness, and production-readiness
+4. WHEN code examples are missing, THE System SHALL flag the issue as "Missing implementation examples"
+5. THE System SHALL check for cross-references between conceptual documentation and practical implementation guides
+6. THE System SHALL validate that error handling, rate limiting, and production considerations are adequately covered
+7. THE System SHALL provide real-time validation status: "Issue Confirmed", "Issue Resolved", or "Partially Addressed"
+8. THE System SHALL generate specific recommendations for addressing confirmed issues
+9. THE System SHALL include validation results in the final report with evidence and specific page references
+10. THE System SHALL skip issues that appear to have been resolved to avoid reporting outdated problems
+
+### Requirement 38: Enhanced Report Generation for Issue Discovery Mode
+
+**User Story:** As a user, I want a comprehensive report showing discovered issues, validation results, and specific recommendations, so that I can prioritize documentation improvements based on real developer pain points.
+
+#### Acceptance Criteria
+
+1. THE Report SHALL include an Issue Discovery Summary showing all investigated issues and their validation status
+2. THE Report SHALL include a Confirmed Issues section with specific documentation gaps and missing examples
+3. THE Report SHALL include a Resolved Issues section showing problems that have been addressed since online complaints
+4. THE Report SHALL provide specific recommendations for each confirmed issue with implementation examples
+5. THE Report SHALL include sitemap health results as supporting evidence for link-related issues
+6. THE Report SHALL reference original sources where issues were discovered for credibility
+7. THE Report SHALL prioritize recommendations by impact on developer success and frequency of complaints
+8. THE Report SHALL include code examples and implementation guidance for addressing confirmed issues
+9. THE Report SHALL be exportable in Markdown format suitable for sharing with development teams
+10. THE Report SHALL maintain backward compatibility with existing Doc Mode and Sitemap Journey Mode reports

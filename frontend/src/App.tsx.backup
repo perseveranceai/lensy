@@ -217,6 +217,7 @@ function App() {
     }>>([]);
     const [selectedIssues, setSelectedIssues] = useState<string[]>([]);
     const [isSearchingIssues, setIsSearchingIssues] = useState(false);
+    const [focusArea, setFocusArea] = useState('all');
     const [analysisState, setAnalysisState] = useState<AnalysisState>({
         status: 'idle',
         progressMessages: []
@@ -360,83 +361,59 @@ function App() {
         setDiscoveredIssues([]);
 
         try {
-            console.log(`Searching for developer issues for domain: ${domain}`);
+            // Simulate API call to search for developer issues
+            // In real implementation, this would call a backend service
+            // that searches GitHub issues, Stack Overflow, Reddit, etc.
 
-            // Call the real IssueDiscoverer Lambda function
-            const sessionId = `search-${Date.now()}`;
-            const searchRequest = {
-                companyName: domain.split('.')[0], // Extract company name from domain
-                domain: domain,
-                sessionId: sessionId
-            };
-
-            const response = await fetch(`${API_BASE_URL}/discover-issues`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(searchRequest)
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-
-            const result = await response.json();
-
-            // Transform the response to match our UI interface
-            const transformedIssues = result.issues.map((issue: any) => ({
-                id: issue.id,
-                title: issue.title,
-                description: issue.description,
-                frequency: issue.frequency,
-                sources: issue.sources.map((url: string) => {
-                    // Extract source names from URLs for display
-                    if (url.includes('stackoverflow.com')) return 'Stack Overflow';
-                    if (url.includes('github.com')) return 'GitHub Issues';
-                    if (url.includes('reddit.com')) return 'Reddit';
-                    if (url.includes('discord.gg')) return 'Discord';
-                    if (url.includes('dev.to')) return 'Dev.to';
-                    if (url.includes('community.')) return 'Community Forums';
-                    if (url.includes('twitter.com')) return 'Twitter';
-                    return 'Developer Forums';
-                })
-            }));
-
-            console.log(`Found ${transformedIssues.length} issues from ${result.searchSources?.length || 0} sources`);
-            setDiscoveredIssues(transformedIssues);
-
-        } catch (error) {
-            console.error('Error searching for developer issues:', error);
-
-            // Fallback to mock data if API fails (for development/demo purposes)
-            console.log('Falling back to mock data due to API error');
+            // Mock data for demonstration - replace with actual API call
             const mockIssues = [
                 {
                     id: 'rate-limiting-1',
                     title: 'Rate Limiting Issues',
                     description: 'Developers hitting 2 requests/second limit without clear documentation on handling',
                     frequency: 23,
-                    sources: ['GitHub Issues', 'Stack Overflow', 'Reddit']
+                    sources: ['GitHub Issues', 'Stack Overflow', 'Reddit r/webdev']
                 },
                 {
                     id: 'auth-problems-1',
                     title: 'API Key Authentication Problems',
                     description: 'Confusion between test and production API keys causing authentication failures',
                     frequency: 18,
-                    sources: ['GitHub Issues', 'Stack Overflow', 'Reddit']
+                    sources: ['GitHub Issues', 'Discord', 'Community Forums']
                 },
                 {
                     id: 'missing-examples-1',
                     title: 'Missing Node.js Code Examples',
                     description: 'API reference lacks practical implementation examples for Node.js integration',
                     frequency: 15,
-                    sources: ['Stack Overflow', 'GitHub Issues', 'Reddit']
+                    sources: ['Stack Overflow', 'GitHub Issues', 'Twitter']
+                },
+                {
+                    id: 'webhook-setup-1',
+                    title: 'Webhook Setup Complexity',
+                    description: 'Developers struggling with webhook endpoint configuration and testing',
+                    frequency: 12,
+                    sources: ['GitHub Issues', 'Community Forums']
+                },
+                {
+                    id: 'error-handling-1',
+                    title: 'Unclear Error Messages',
+                    description: 'API error responses lack actionable guidance for resolution',
+                    frequency: 9,
+                    sources: ['Stack Overflow', 'GitHub Issues']
                 }
             ];
 
-            // Filter mock issues based on domain for demo
-            const filteredIssues = domain.toLowerCase().includes('resend') ? mockIssues : [];
-            setDiscoveredIssues(filteredIssues);
+            // Simulate network delay
+            await new Promise(resolve => setTimeout(resolve, 2000));
 
+            // Filter issues based on domain (in real implementation, this would be done by the search API)
+            const filteredIssues = domain.toLowerCase().includes('resend') ? mockIssues : [];
+
+            setDiscoveredIssues(filteredIssues);
+        } catch (error) {
+            console.error('Error searching for developer issues:', error);
+            setDiscoveredIssues([]);
         } finally {
             setIsSearchingIssues(false);
         }
@@ -771,18 +748,17 @@ function App() {
                         </FormControl>
 
                         {/* Dynamic Fields Based on Selected Mode */}
-                        {(manualModeOverride || selectedMode) === 'doc' && (
-                            <TextField
-                                fullWidth
-                                label="Documentation URL"
-                                value={url}
-                                onChange={(e) => setUrl(e.target.value)}
-                                placeholder="https://developer.wordpress.org/..."
-                                sx={{ mb: 3 }}
-                                disabled={analysisState.status === 'analyzing'}
-                                helperText="Analyze individual documentation page quality across 5 dimensions"
-                            />
-                        )}
+                        <TextField
+                            fullWidth
+                            label="Documentation URL"
+                            value={url}
+                            onChange={(e) => setUrl(e.target.value)}
+                            placeholder="https://developer.wordpress.org/..."
+                            sx={{ mb: 3 }}
+                            disabled={analysisState.status === 'analyzing'}
+                            helperText="Analyze individual documentation page quality across 5 dimensions"
+                        />
+                    )}
 
                         {(manualModeOverride || selectedMode) === 'sitemap' && (
                             <TextField
@@ -805,29 +781,17 @@ function App() {
                                     value={companyDomain}
                                     onChange={(e) => {
                                         setCompanyDomain(e.target.value);
-                                        // Clear issues when domain changes
-                                        if (discoveredIssues.length > 0) {
+                                        // Auto-search for issues when domain is entered
+                                        if (e.target.value.trim().length > 3) {
+                                            searchForDeveloperIssues(e.target.value.trim());
+                                        } else {
                                             setDiscoveredIssues([]);
-                                            setSelectedIssues([]);
-                                        }
-                                    }}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter' || e.key === 'Tab') {
-                                            if (companyDomain.trim().length > 3) {
-                                                searchForDeveloperIssues(companyDomain.trim());
-                                            }
-                                        }
-                                    }}
-                                    onBlur={() => {
-                                        // Also trigger search on blur (when user clicks away)
-                                        if (companyDomain.trim().length > 3) {
-                                            searchForDeveloperIssues(companyDomain.trim());
                                         }
                                     }}
                                     placeholder="resend.com"
                                     sx={{ mb: 3 }}
                                     disabled={analysisState.status === 'analyzing'}
-                                    helperText="Domain of the documentation portal to investigate (press Tab or Enter to search)"
+                                    helperText="Domain of the documentation portal to investigate"
                                 />
 
                                 {/* Dynamic Issues Discovery */}
@@ -842,61 +806,57 @@ function App() {
 
                                 {discoveredIssues.length > 0 && (
                                     <Box sx={{ mb: 3 }}>
-                                        <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 'bold' }}>
-                                            Top Issues Found ({discoveredIssues.length}) - Select to analyze:
+                                        <Typography variant="h6" gutterBottom>
+                                            Top Developer Issues Found ({discoveredIssues.length})
                                         </Typography>
-                                        <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
-                                            {discoveredIssues.map((issue, index) => (
-                                                <Box
-                                                    key={issue.id}
-                                                    sx={{
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        p: 1.5,
-                                                        borderBottom: index < discoveredIssues.length - 1 ? '1px solid' : 'none',
-                                                        borderBottomColor: 'divider',
-                                                        bgcolor: selectedIssues.includes(issue.id) ? 'primary.50' : 'background.paper',
-                                                        '&:hover': { bgcolor: selectedIssues.includes(issue.id) ? 'primary.100' : 'grey.50' },
-                                                        cursor: 'pointer'
-                                                    }}
-                                                    onClick={() => {
-                                                        if (selectedIssues.includes(issue.id)) {
-                                                            setSelectedIssues(selectedIssues.filter(id => id !== issue.id));
-                                                        } else {
-                                                            setSelectedIssues([...selectedIssues, issue.id]);
-                                                        }
-                                                    }}
-                                                >
-                                                    <Switch
-                                                        checked={selectedIssues.includes(issue.id)}
-                                                        onChange={() => { }} // Handled by parent onClick
-                                                        disabled={analysisState.status === 'analyzing'}
-                                                        size="small"
-                                                        sx={{ mr: 2 }}
-                                                    />
-                                                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                                                            <Typography variant="body2" sx={{ fontWeight: 'bold', flex: 1 }}>
+                                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                            Select issues to analyze in the documentation:
+                                        </Typography>
+                                        {discoveredIssues.map((issue) => (
+                                            <Card key={issue.id} sx={{ mb: 2, bgcolor: selectedIssues.includes(issue.id) ? 'primary.50' : 'grey.50' }}>
+                                                <CardContent sx={{ py: 2 }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
+                                                        <FormControlLabel
+                                                            control={
+                                                                <Switch
+                                                                    checked={selectedIssues.includes(issue.id)}
+                                                                    onChange={(e) => {
+                                                                        if (e.target.checked) {
+                                                                            setSelectedIssues([...selectedIssues, issue.id]);
+                                                                        } else {
+                                                                            setSelectedIssues(selectedIssues.filter(id => id !== issue.id));
+                                                                        }
+                                                                    }}
+                                                                    disabled={analysisState.status === 'analyzing'}
+                                                                />
+                                                            }
+                                                            label=""
+                                                            sx={{ mr: 2, mt: 0 }}
+                                                        />
+                                                        <Box sx={{ flex: 1 }}>
+                                                            <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
                                                                 {issue.title}
                                                             </Typography>
-                                                            <Chip
-                                                                label={`${issue.frequency}`}
-                                                                size="small"
-                                                                color="primary"
-                                                                variant="outlined"
-                                                                sx={{ minWidth: 'auto', height: 20, fontSize: '0.7rem' }}
-                                                            />
+                                                            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                                                {issue.description}
+                                                            </Typography>
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                <Chip
+                                                                    label={`${issue.frequency} reports`}
+                                                                    size="small"
+                                                                    color="primary"
+                                                                    variant="outlined"
+                                                                />
+                                                                <Typography variant="caption" color="text.secondary">
+                                                                    Sources: {issue.sources.slice(0, 2).join(', ')}
+                                                                    {issue.sources.length > 2 && ` +${issue.sources.length - 2} more`}
+                                                                </Typography>
+                                                            </Box>
                                                         </Box>
-                                                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.2 }}>
-                                                            {issue.description}
-                                                        </Typography>
-                                                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem', opacity: 0.7 }}>
-                                                            {issue.sources.slice(0, 2).join(', ')}{issue.sources.length > 2 && ` +${issue.sources.length - 2}`}
-                                                        </Typography>
                                                     </Box>
-                                                </Box>
-                                            ))}
-                                        </Box>
+                                                </CardContent>
+                                            </Card>
+                                        ))}
                                     </Box>
                                 )}
 

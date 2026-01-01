@@ -1,0 +1,305 @@
+import { Handler } from 'aws-lambda';
+import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { ProgressPublisher } from './progress-publisher';
+
+interface SitemapHealthCheckerEvent {
+    sessionId: string;
+    sitemapParserResult: {
+        Payload: {
+            success: boolean;
+            totalUrls: number;
+            sitemapUrls: string[];
+            s3Location: string;
+        };
+    };
+}
+
+interface SitemapHealthCheckerResponse {
+    success: boolean;
+    sessionId: string;
+    totalUrls: number;
+    healthyUrls: number;
+    brokenUrls: number;
+    accessDeniedUrls: number;
+    timeoutUrls: number;
+    otherErrorUrls: number;
+    healthSummary: SitemapHealthSummary;
+    s3Location: string;
+    message: string;
+    processingTime: number;
+}
+
+interface LinkIssue {
+    url: string;
+    status: number | string;
+    errorMessage: string;
+    issueType: '404' | 'access-denied' | 'timeout' | 'error';
+}
+
+interface SitemapHealthSummary {
+    totalUrls: number;
+    healthyUrls: number;
+    linkIssues: LinkIssue[];
+    healthPercentage: number;
+    processingTime: number;
+    timestamp: string;
+}
+
+export const handler: Handler<SitemapHealthCheckerEvent, SitemapHealthCheckerResponse> = async (event) => {
+    const startTime = Date.now();
+    console.log('Starting sitemap health check for session:', event.sessionId);
+
+    // Initialize progress publisher and S3 client
+    const progress = new ProgressPublisher(event.sessionId);
+    const s3Client = new S3Client({ region: process.env.AWS_REGION });
+
+    try {
+        // Check if sitemap parsing was successful
+        if (!event.sitemapParserResult.Payload.success) {
+            throw new Error('Sitemap parsing failed, cannot perform health check');
+        }
+
+        const totalUrls = event.sitemapParserResult.Payload.totalUrls;
+        const sitemapUrls = event.sitemapParserResult.Payload.sitemapUrls;
+
+        if (totalUrls === 0) {
+            await progress.info('No URLs found in sitemap, skipping health check');
+
+            const emptyHealthSummary: SitemapHealthSummary = {
+                totalUrls: 0,
+                healthyUrls: 0,
+                linkIssues: [],
+                healthPercentage: 100,
+                processingTime: Date.now() - startTime,
+                timestamp: new Date().toISOString()
+            };
+
+            return {
+                success: true,
+                sessionId: event.sessionId,
+                totalUrls: 0,
+                healthyUrls: 0,
+                brokenUrls: 0,
+                accessDeniedUrls: 0,
+                timeoutUrls: 0,
+                otherErrorUrls: 0,
+                healthSummary: emptyHealthSummary,
+                s3Location: '',
+                message: 'No URLs to check',
+                processingTime: Date.now() - startTime
+            };
+        }
+
+        await progress.progress(`Starting bulk health check for ${totalUrls} URLs from sitemap`, 'sitemap-health-check');
+
+        // Perform bulk link validation
+        const healthCheckResult = await performBulkLinkValidation(sitemapUrls, progress);
+
+        // Calculate health statistics
+        const brokenUrls = healthCheckResult.linkIssues.filter(issue => issue.issueType === '404').length;
+        const accessDeniedUrls = healthCheckResult.linkIssues.filter(issue => issue.issueType === 'access-denied').length;
+        const timeoutUrls = healthCheckResult.linkIssues.filter(issue => issue.issueType === 'timeout').length;
+        const otherErrorUrls = healthCheckResult.linkIssues.filter(issue => issue.issueType === 'error').length;
+        const healthyUrls = totalUrls - healthCheckResult.linkIssues.length;
+        const healthPercentage = Math.round((healthyUrls / totalUrls) * 100);
+
+        // Create health summary
+        const healthSummary: SitemapHealthSummary = {
+            totalUrls,
+            healthyUrls,
+            linkIssues: healthCheckResult.linkIssues,
+            healthPercentage,
+            processingTime: Date.now() - startTime,
+            timestamp: new Date().toISOString()
+        };
+
+        // Store results in S3
+        const s3Key = `sessions/${event.sessionId}/sitemap-health-results.json`;
+        const s3Location = `s3://${process.env.ANALYSIS_BUCKET}/${s3Key}`;
+
+        await s3Client.send(new PutObjectCommand({
+            Bucket: process.env.ANALYSIS_BUCKET,
+            Key: s3Key,
+            Body: JSON.stringify(healthSummary, null, 2),
+            ContentType: 'application/json'
+        }));
+
+        // Send completion message
+        await progress.success(
+            `Sitemap health check complete: ${healthyUrls}/${totalUrls} URLs healthy (${healthPercentage}%)`,
+            {
+                totalUrls,
+                healthyUrls,
+                brokenUrls,
+                healthPercentage,
+                processingTime: Date.now() - startTime
+            }
+        );
+
+        console.log(`Sitemap health check completed: ${healthyUrls}/${totalUrls} URLs healthy`);
+
+        return {
+            success: true,
+            sessionId: event.sessionId,
+            totalUrls,
+            healthyUrls,
+            brokenUrls,
+            accessDeniedUrls,
+            timeoutUrls,
+            otherErrorUrls,
+            healthSummary,
+            s3Location,
+            message: `Health check complete: ${healthyUrls}/${totalUrls} URLs healthy (${healthPercentage}%)`,
+            processingTime: Date.now() - startTime
+        };
+
+    } catch (error) {
+        console.error('Sitemap health check failed:', error);
+
+        await progress.error(`Sitemap health check failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+
+        return {
+            success: false,
+            sessionId: event.sessionId,
+            totalUrls: 0,
+            healthyUrls: 0,
+            brokenUrls: 0,
+            accessDeniedUrls: 0,
+            timeoutUrls: 0,
+            otherErrorUrls: 0,
+            healthSummary: {
+                totalUrls: 0,
+                healthyUrls: 0,
+                linkIssues: [],
+                healthPercentage: 0,
+                processingTime: Date.now() - startTime,
+                timestamp: new Date().toISOString()
+            },
+            s3Location: '',
+            message: `Health check failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            processingTime: Date.now() - startTime
+        };
+    }
+};
+
+/**
+ * Perform bulk link validation for sitemap URLs
+ * Requirements: 30.1, 30.2, 30.3, 30.8, 30.9, 30.10
+ */
+async function performBulkLinkValidation(
+    urls: string[],
+    progress: ProgressPublisher
+): Promise<{ linkIssues: LinkIssue[] }> {
+
+    if (urls.length === 0) {
+        return { linkIssues: [] };
+    }
+
+    // Remove duplicates
+    const uniqueUrls = [...new Set(urls)];
+
+    await progress.progress(`Checking ${uniqueUrls.length} unique URLs for accessibility`, 'sitemap-health-check');
+
+    const linkIssues: LinkIssue[] = [];
+    const maxConcurrent = 10; // Limit concurrent requests to avoid overwhelming servers
+    const timeout = 8000; // 8 second timeout (longer than single page validation)
+
+    let processedCount = 0;
+
+    // Process URLs in batches to control concurrency
+    for (let i = 0; i < uniqueUrls.length; i += maxConcurrent) {
+        const batch = uniqueUrls.slice(i, i + maxConcurrent);
+
+        const promises = batch.map(async (url) => {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (compatible; Lensy Documentation Quality Auditor/1.0; +https://lensy.dev/bot)'
+                    },
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                if (response.status === 404) {
+                    const linkIssue: LinkIssue = {
+                        url,
+                        status: 404,
+                        errorMessage: 'Page not found (404)',
+                        issueType: '404'
+                    };
+                    linkIssues.push(linkIssue);
+                } else if (response.status === 403) {
+                    const linkIssue: LinkIssue = {
+                        url,
+                        status: 403,
+                        errorMessage: 'Access denied (403 Forbidden)',
+                        issueType: 'access-denied'
+                    };
+                    linkIssues.push(linkIssue);
+                } else if (response.status >= 400) {
+                    const linkIssue: LinkIssue = {
+                        url,
+                        status: response.status,
+                        errorMessage: `HTTP ${response.status}: ${response.statusText}`,
+                        issueType: 'error'
+                    };
+                    linkIssues.push(linkIssue);
+                }
+                // 2xx and 3xx responses are considered healthy (no action needed)
+
+            } catch (error) {
+                if (error instanceof Error && error.name === 'AbortError') {
+                    const linkIssue: LinkIssue = {
+                        url,
+                        status: 'timeout',
+                        errorMessage: 'Request timeout (>8 seconds)',
+                        issueType: 'timeout'
+                    };
+                    linkIssues.push(linkIssue);
+                } else {
+                    const linkIssue: LinkIssue = {
+                        url,
+                        status: 'error',
+                        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+                        issueType: 'error'
+                    };
+                    linkIssues.push(linkIssue);
+                }
+            }
+        });
+
+        await Promise.all(promises);
+
+        processedCount += batch.length;
+
+        // Progress update every batch
+        const progressPercentage = Math.round((processedCount / uniqueUrls.length) * 100);
+        await progress.progress(
+            `Health check progress: ${processedCount}/${uniqueUrls.length} URLs checked (${progressPercentage}%)`,
+            'sitemap-health-check',
+            { processedCount, totalUrls: uniqueUrls.length, progressPercentage }
+        );
+    }
+
+    // Final summary
+    const brokenCount = linkIssues.filter(issue => issue.issueType === '404').length;
+    const accessDeniedCount = linkIssues.filter(issue => issue.issueType === 'access-denied').length;
+    const timeoutCount = linkIssues.filter(issue => issue.issueType === 'timeout').length;
+    const errorCount = linkIssues.filter(issue => issue.issueType === 'error').length;
+    const healthyCount = uniqueUrls.length - linkIssues.length;
+
+    let summaryMessage = `Health check complete: ${healthyCount} healthy`;
+    if (brokenCount > 0) summaryMessage += `, ${brokenCount} broken (404)`;
+    if (accessDeniedCount > 0) summaryMessage += `, ${accessDeniedCount} access denied (403)`;
+    if (timeoutCount > 0) summaryMessage += `, ${timeoutCount} timeout`;
+    if (errorCount > 0) summaryMessage += `, ${errorCount} other errors`;
+
+    await progress.info(summaryMessage);
+
+    return { linkIssues };
+}

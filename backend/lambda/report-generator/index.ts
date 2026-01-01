@@ -37,6 +37,23 @@ interface FinalReport {
     mediaAnalysis: MediaAnalysisSummary;
     linkAnalysis: LinkAnalysisSummary;
     contextAnalysis?: ContextAnalysisSummary;
+    // NEW: Sitemap health analysis for sitemap journey mode
+    sitemapHealth?: {
+        totalUrls: number;
+        healthyUrls: number;
+        brokenUrls: number;
+        accessDeniedUrls: number;
+        timeoutUrls: number;
+        otherErrorUrls: number;
+        healthPercentage: number;
+        linkIssues: Array<{
+            url: string;
+            status: number | string;
+            errorMessage: string;
+            issueType: '404' | 'access-denied' | 'timeout' | 'error';
+        }>;
+        processingTime: number;
+    };
     analysisTime: number;
     retryCount: number;
 }
@@ -121,102 +138,170 @@ export const handler: Handler<any, ReportGeneratorResponse> = async (event: any)
             throw new Error('ANALYSIS_BUCKET environment variable not set');
         }
 
-        // Retrieve processed content from S3
-        let processedContent = null;
+        // Check if this is sitemap mode by looking for sitemap health results
+        let sitemapHealthResults = null;
         try {
-            const contentKey = `sessions/${sessionId}/processed-content.json`;
-            const contentResponse = await s3Client.send(new GetObjectCommand({
+            const sitemapHealthKey = `sessions/${sessionId}/sitemap-health-results.json`;
+            const sitemapHealthResponse = await s3Client.send(new GetObjectCommand({
                 Bucket: bucketName,
-                Key: contentKey
+                Key: sitemapHealthKey
             }));
 
-            if (contentResponse.Body) {
-                const content = await contentResponse.Body.transformToString();
-                processedContent = JSON.parse(content);
-                console.log('Retrieved processed content from S3');
+            if (sitemapHealthResponse.Body) {
+                const content = await sitemapHealthResponse.Body.transformToString();
+                sitemapHealthResults = JSON.parse(content);
+                console.log('Retrieved sitemap health results from S3 - this is sitemap mode');
             }
         } catch (error) {
-            console.log('Could not retrieve processed content from S3:', error);
+            console.log('No sitemap health results found - this is doc mode');
         }
 
-        // Retrieve dimension results from S3 (stored by dimension-analyzer)
-        let dimensionResults: Record<DimensionType, DimensionResult> | null = null;
-        try {
-            const dimensionKey = `sessions/${sessionId}/dimension-results.json`;
-            const dimensionResponse = await s3Client.send(new GetObjectCommand({
-                Bucket: bucketName,
-                Key: dimensionKey
-            }));
+        // Handle sitemap mode vs doc mode
+        if (sitemapHealthResults) {
+            // SITEMAP MODE: Generate report from sitemap health results
+            const totalTime = Date.now() - analysisStartTime;
+            const healthPercentage = sitemapHealthResults.healthPercentage || 0;
 
-            if (dimensionResponse.Body) {
-                const content = await dimensionResponse.Body.transformToString();
-                dimensionResults = JSON.parse(content);
-                console.log('Retrieved dimension results from S3');
+            const finalReport: FinalReport = {
+                overallScore: healthPercentage, // Use health percentage as overall score for sitemap mode
+                dimensionsAnalyzed: 1, // We analyzed "health" dimension
+                dimensionsTotal: 1,
+                confidence: 'high', // Sitemap health checking is deterministic
+                modelUsed: 'Sitemap Health Checker',
+                cacheStatus: 'miss', // Sitemap health is always fresh
+                dimensions: createEmptyDimensions(), // No dimension analysis in sitemap mode
+                codeAnalysis: generateDefaultCodeAnalysis(),
+                mediaAnalysis: generateDefaultMediaAnalysis(),
+                linkAnalysis: generateDefaultLinkAnalysis(),
+                sitemapHealth: {
+                    totalUrls: sitemapHealthResults.totalUrls,
+                    healthyUrls: sitemapHealthResults.healthyUrls,
+                    brokenUrls: sitemapHealthResults.linkIssues?.filter((issue: any) => issue.issueType === '404').length || 0,
+                    accessDeniedUrls: sitemapHealthResults.linkIssues?.filter((issue: any) => issue.issueType === 'access-denied').length || 0,
+                    timeoutUrls: sitemapHealthResults.linkIssues?.filter((issue: any) => issue.issueType === 'timeout').length || 0,
+                    otherErrorUrls: sitemapHealthResults.linkIssues?.filter((issue: any) => issue.issueType === 'error').length || 0,
+                    healthPercentage: sitemapHealthResults.healthPercentage,
+                    linkIssues: sitemapHealthResults.linkIssues || [],
+                    processingTime: sitemapHealthResults.processingTime
+                },
+                analysisTime: totalTime,
+                retryCount: 0
+            };
+
+            console.log(`Sitemap health report generated: ${healthPercentage}% healthy (${sitemapHealthResults.totalUrls} URLs)`);
+
+            // Send final completion message
+            await progress.success(`Analysis complete! Overall: ${healthPercentage}/100 (${(totalTime / 1000).toFixed(1)}s)`, {
+                overallScore: healthPercentage,
+                totalTime,
+                totalUrls: sitemapHealthResults.totalUrls,
+                healthyUrls: sitemapHealthResults.healthyUrls
+            });
+
+            return {
+                finalReport,
+                success: true
+            };
+
+        } else {
+            // DOC MODE: Original logic for dimension analysis
+            // Retrieve processed content from S3
+            let processedContent = null;
+            try {
+                const contentKey = `sessions/${sessionId}/processed-content.json`;
+                const contentResponse = await s3Client.send(new GetObjectCommand({
+                    Bucket: bucketName,
+                    Key: contentKey
+                }));
+
+                if (contentResponse.Body) {
+                    const content = await contentResponse.Body.transformToString();
+                    processedContent = JSON.parse(content);
+                    console.log('Retrieved processed content from S3');
+                }
+            } catch (error) {
+                console.log('Could not retrieve processed content from S3:', error);
             }
-        } catch (error) {
-            console.log('Could not retrieve dimension results from S3:', error);
+
+            // Retrieve dimension results from S3 (stored by dimension-analyzer)
+            let dimensionResults: Record<DimensionType, DimensionResult> | null = null;
+            try {
+                const dimensionKey = `sessions/${sessionId}/dimension-results.json`;
+                const dimensionResponse = await s3Client.send(new GetObjectCommand({
+                    Bucket: bucketName,
+                    Key: dimensionKey
+                }));
+
+                if (dimensionResponse.Body) {
+                    const content = await dimensionResponse.Body.transformToString();
+                    dimensionResults = JSON.parse(content);
+                    console.log('Retrieved dimension results from S3');
+                }
+            } catch (error) {
+                console.log('Could not retrieve dimension results from S3:', error);
+            }
+
+            // Use real dimension results if available, otherwise fall back to mock
+            const finalDimensionResults = dimensionResults || generateMockDimensionResultsSimple(selectedModel, processedContent);
+
+            // Calculate overall score from dimension results
+            const validScores = Object.values(finalDimensionResults)
+                .filter(d => d.score !== null && d.status === 'complete')
+                .map(d => d.score!);
+
+            const overallScore = validScores.length > 0
+                ? Math.round(validScores.reduce((sum, score) => sum + score, 0) / validScores.length)
+                : 0;
+
+            // Generate analysis summaries from processed content if available
+            const codeAnalysis = processedContent ?
+                generateCodeAnalysisFromContent(processedContent) :
+                generateDefaultCodeAnalysis();
+
+            const mediaAnalysis = processedContent ?
+                generateMediaAnalysisFromContent(processedContent) :
+                generateDefaultMediaAnalysis();
+
+            const linkAnalysis = processedContent ?
+                processedContent.linkAnalysis :
+                generateDefaultLinkAnalysis();
+
+            // Generate context analysis summary from processed content if available
+            const contextAnalysis = processedContent?.contextAnalysis ?
+                generateContextAnalysisFromContent(processedContent) :
+                undefined;
+
+            const totalTime = Date.now() - analysisStartTime;
+            const finalReport: FinalReport = {
+                overallScore,
+                dimensionsAnalyzed: validScores.length,
+                dimensionsTotal: 5,
+                confidence: validScores.length === 5 ? 'high' : validScores.length >= 3 ? 'medium' : 'low',
+                modelUsed: selectedModel === 'auto' ? 'Claude 3.5 Sonnet' : selectedModel,
+                cacheStatus: processedContent?.cacheMetadata?.wasFromCache ? 'hit' : 'miss',
+                dimensions: finalDimensionResults,
+                codeAnalysis,
+                mediaAnalysis,
+                linkAnalysis,
+                contextAnalysis,
+                analysisTime: totalTime,
+                retryCount: 0
+            };
+
+            console.log(`Report generated: ${overallScore}/100 overall score (${validScores.length}/5 dimensions)`);
+
+            // Send final completion message
+            await progress.success(`Analysis complete! Overall: ${overallScore}/100 (${(totalTime / 1000).toFixed(1)}s)`, {
+                overallScore,
+                totalTime,
+                dimensionsAnalyzed: validScores.length
+            });
+
+            return {
+                finalReport,
+                success: true
+            };
         }
-
-        // Use real dimension results if available, otherwise fall back to mock
-        const finalDimensionResults = dimensionResults || generateMockDimensionResultsSimple(selectedModel, processedContent);
-
-        // Calculate overall score from dimension results
-        const validScores = Object.values(finalDimensionResults)
-            .filter(d => d.score !== null && d.status === 'complete')
-            .map(d => d.score!);
-
-        const overallScore = validScores.length > 0
-            ? Math.round(validScores.reduce((sum, score) => sum + score, 0) / validScores.length)
-            : 0;
-
-        // Generate analysis summaries from processed content if available
-        const codeAnalysis = processedContent ?
-            generateCodeAnalysisFromContent(processedContent) :
-            generateDefaultCodeAnalysis();
-
-        const mediaAnalysis = processedContent ?
-            generateMediaAnalysisFromContent(processedContent) :
-            generateDefaultMediaAnalysis();
-
-        const linkAnalysis = processedContent ?
-            processedContent.linkAnalysis :
-            generateDefaultLinkAnalysis();
-
-        // Generate context analysis summary from processed content if available
-        const contextAnalysis = processedContent?.contextAnalysis ?
-            generateContextAnalysisFromContent(processedContent) :
-            undefined;
-
-        const totalTime = Date.now() - analysisStartTime;
-        const finalReport: FinalReport = {
-            overallScore,
-            dimensionsAnalyzed: validScores.length,
-            dimensionsTotal: 5,
-            confidence: validScores.length === 5 ? 'high' : validScores.length >= 3 ? 'medium' : 'low',
-            modelUsed: selectedModel === 'auto' ? 'Claude 3.5 Sonnet' : selectedModel,
-            cacheStatus: processedContent?.cacheMetadata?.wasFromCache ? 'hit' : 'miss',
-            dimensions: finalDimensionResults,
-            codeAnalysis,
-            mediaAnalysis,
-            linkAnalysis,
-            contextAnalysis,
-            analysisTime: totalTime,
-            retryCount: 0
-        };
-
-        console.log(`Report generated: ${overallScore}/100 overall score (${validScores.length}/5 dimensions)`);
-
-        // Send final completion message
-        await progress.success(`Analysis complete! Overall: ${overallScore}/100 (${(totalTime / 1000).toFixed(1)}s)`, {
-            overallScore,
-            totalTime,
-            dimensionsAnalyzed: validScores.length
-        });
-
-        return {
-            finalReport,
-            success: true
-        };
 
     } catch (error) {
         console.error('Report generation failed:', error);
@@ -359,6 +444,27 @@ function generateDefaultLinkAnalysis(): LinkAnalysisSummary {
         subPagesIdentified: ['Getting Started', 'Advanced Topics'],
         linkContext: 'multi-page-referenced',
         analysisScope: 'current-page-only'
+    };
+}
+
+function createEmptyDimensions(): Record<DimensionType, DimensionResult> {
+    const emptyDimensionResult = (dimension: DimensionType): DimensionResult => ({
+        dimension,
+        score: null,
+        status: 'failed',
+        findings: [],
+        recommendations: [],
+        failureReason: 'Not applicable in sitemap mode',
+        retryCount: 0,
+        processingTime: 0
+    });
+
+    return {
+        relevance: emptyDimensionResult('relevance'),
+        freshness: emptyDimensionResult('freshness'),
+        clarity: emptyDimensionResult('clarity'),
+        accuracy: emptyDimensionResult('accuracy'),
+        completeness: emptyDimensionResult('completeness')
     };
 }
 

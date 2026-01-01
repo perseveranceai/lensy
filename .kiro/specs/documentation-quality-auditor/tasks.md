@@ -4,16 +4,53 @@
 
 This implementation plan creates a comprehensive documentation quality auditor using React frontend, AWS Lambda backend with Step Functions orchestration, and multi-model AI validation. The system includes transparency, observability, and LLM-as-Judge quality validation for reliable audit results.
 
-**Current Status (Updated Dec 27, 2024):**
+**Current Status (Updated Dec 31, 2024):**
 - ✅ **DEPLOYED TO AWS**: https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com/
-- ✅ **Noise Reduction**: 98% size reduction (106KB → 1.7KB) working
-- ✅ **Parallel Processing**: 5x faster dimension analysis (50s → 17s)
-- ✅ **Claude 3.5 Sonnet**: All 5 dimensions working with real AI
-- ✅ **Context Discovery**: Parent/child page detection implemented
-- ✅ **DynamoDB Caching**: Cache layer with S3 storage working
-- ✅ **React Frontend**: Basic UI with Material-UI deployed
+- ✅ **Three Analysis Modes**: Doc Mode, Sitemap Journey Mode, Issue Discovery Mode
+- ✅ **Issue Discovery Mode (Phase 1)**: Real developer issue discovery from Q4 2025 web search
+- ✅ **Real Data Integration**: 5 authentic Resend issues from Stack Overflow, GitHub, Reddit
+- ✅ **Compact UI**: Apple-like simplicity with mode dropdown and dynamic input fields
+- 🔄 **Issue Validation (Phase 2)**: Deferred to next session - validate issues against docs
 
-**🎯 TODAY'S GOALS (EOD Targets):**
+**🎯 LATEST SESSION SUMMARY (Dec 31, 2024):**
+
+**✅ COMPLETED TODAY:**
+1. **Issue Discovery Mode - Phase 1** (Tasks 39-40)
+   - ✅ Added third analysis mode: Issue Discovery
+   - ✅ Created IssueDiscoverer Lambda with real curated data
+   - ✅ Manually researched 5 real Resend issues from Q4 2025:
+     * Production deployment failures (Vercel, Netlify)
+     * Gmail spam filtering issues
+     * NextJS server actions problems
+     * React Email development issues
+   - ✅ Built compact UI with real-time issue search
+   - ✅ Deployed and tested end-to-end
+   - ✅ Fixed TypeScript compilation and Lambda bundling
+   - ✅ Updated build:lambdas script to include issue-discoverer
+
+2. **Technical Achievements:**
+   - ✅ Real data from Stack Overflow (questions 78276988, 78448480)
+   - ✅ Real data from GitHub (resend/react-email issue #1354)
+   - ✅ JSON-based data storage for POC simplicity
+   - ✅ Three-mode architecture working seamlessly
+
+**🔄 DEFERRED TO NEXT SESSION:**
+1. **Issue Validation - Phase 2** (Tasks 41-43)
+   - Build IssueValidator Lambda to validate issues against Resend docs
+   - Identify relevant documentation pages for each issue
+   - Perform root cause analysis (missing code examples, unclear guidance)
+   - Generate specific recommendations (add examples, improve journeys)
+   - Create enhanced reports with confirmed vs resolved issues
+   - Estimated: 4-6 hours
+
+**📋 NEXT SESSION PLAN:**
+- Start with Task 41.1: Implement IssueValidator Lambda
+- Integrate with existing URLProcessor and DimensionAnalyzer
+- Build validation results UI
+- Generate comprehensive reports with recommendations
+- Test end-to-end with real Resend documentation
+
+**🎯 PREVIOUS GOALS (EOD Targets):**
 
 **Priority 1: Complete Contextual Analysis Feature (6-8 hours) ✅ COMPLETED**
 - ✅ Task 15.1: DynamoDB caching layer (DONE)
@@ -1002,6 +1039,361 @@ This implementation plan creates a comprehensive documentation quality auditor u
   - Confirm caching layer improves performance
   - Test with real WordPress documentation URLs
   - Ensure all tests pass, ask the user if questions arise.
+
+## Phase 2 Tasks (Future Enhancements)
+
+## Sitemap Journey Mode Implementation (New Feature)
+
+### Priority 1: Core Sitemap Journey Infrastructure (8-10 hours)
+
+- [ ] 19. Input Type Detection and Routing
+  - [x] 19.1 Implement InputTypeDetector Lambda function (1 hour)
+    - Create URL pattern detection logic for sitemap.xml files
+    - Add detection for URLs ending with `.xml`, `sitemap.xml`, or containing `/sitemap`
+    - Default to Doc Mode for backward compatibility
+    - Return confidence score for detection accuracy
+    - _Requirements: 28.1, 28.2, 28.3, 28.8_
+
+  - [ ]* 19.2 Write property test for input type detection accuracy
+    - **Property 19: Input Type Detection Accuracy**
+    - Test URL pattern matching across various sitemap formats
+    - Test fallback to Doc Mode for non-sitemap URLs
+    - Run minimum 100 iterations
+    - **Validates: Requirements 28.1, 28.2, 28.3**
+
+  - [ ] 19.3 Update frontend to handle dual modes (1 hour)
+    - Add mode indicator in UI showing detected input type
+    - Allow manual mode override if needed
+    - Update analysis request interface to include inputType
+    - Preserve existing Doc Mode functionality unchanged
+    - _Requirements: 28.4, 28.5, 28.6_
+
+- [ ] 20. Sitemap Parser and URL Extraction
+  - [x] 20.1 Implement SitemapParser Lambda function (2-3 hours)
+    - Create XML parsing logic with error handling for malformed sitemaps
+    - Extract all `<loc>` URLs from sitemap entries
+    - Handle nested sitemaps (sitemap index files) with recursion limits
+    - Support both compressed (.xml.gz) and uncompressed formats
+    - Extract optional metadata (lastmod, priority, changefreq)
+    - Store results in session-based S3 structure
+    - _Requirements: 29.1, 29.2, 29.3, 29.7, 29.8, 29.9, 29.10_
+
+  - [ ]* 20.2 Write property test for sitemap XML parsing completeness
+    - **Property 20: Sitemap XML Parsing Completeness**
+    - Test URL extraction from various sitemap formats
+    - Test nested sitemap handling without infinite recursion
+    - Run minimum 100 iterations
+    - **Validates: Requirements 29.1, 29.2, 29.10**
+
+  - [ ] 20.3 Add progress streaming for sitemap parsing (30 minutes)
+    - Display "Parsing sitemap... Found X URLs" messages
+    - Stream parsing progress and URL discovery
+    - Handle and report parsing errors gracefully
+    - _Requirements: 29.5, 29.6_
+
+- [ ] 21. Sitemap Health Check and Bulk Link Validation
+  - [x] 21.1 Enhance existing LinkChecker for bulk validation (2 hours)
+    - Extend LinkChecker to handle large URL lists from sitemaps
+    - Implement concurrent HTTP HEAD requests (max 10 simultaneous)
+    - Categorize responses: healthy (2xx), broken (404), access-denied (403), timeout, error
+    - Add rate limiting and exponential backoff for failed requests
+    - Store health check results in session-based S3 structure
+    - _Requirements: 30.1, 30.2, 30.3, 30.8, 30.9, 30.10_
+
+  - [ ]* 21.2 Write property test for bulk link validation categorization
+    - **Property 21: Bulk Link Validation Categorization**
+    - Test correct HTTP status code categorization
+    - Test concurrent processing without rate limit issues
+    - Run minimum 100 iterations
+    - **Validates: Requirements 30.1, 30.3**
+
+  - [x] 21.3 Create sitemap health summary UI (1 hour)
+    - Display health statistics: total URLs, healthy, broken, access-denied, timeout
+    - Show expandable details with all broken URLs and status codes
+    - Add visual health indicators and percentages
+    - Create "View Broken URLs" expandable section
+    - _Requirements: 30.6, 30.7_
+
+- [ ] 22. Journey Detection and AI-Powered Grouping
+  - [ ] 22.1 Implement JourneyDetector Lambda function (3-4 hours)
+    - Create URL pattern matching for common journey types (getting started, API usage, webhooks)
+    - Implement AI-powered journey detection for complex cases using Claude
+    - Group URLs by developer persona + action patterns
+    - Generate journey metadata: id, name, persona, action, estimated time, complexity
+    - Handle overlapping pages across multiple journeys appropriately
+    - Store detected journeys in new Journey Cache DynamoDB table
+    - _Requirements: 31.1, 31.2, 31.3, 31.4, 31.7, 31.9, 31.10_
+
+  - [ ]* 22.2 Write property test for journey detection and grouping
+    - **Property 22: Journey Detection and Grouping**
+    - Test logical workflow grouping across various URL patterns
+    - Test handling of overlapping pages between journeys
+    - Run minimum 100 iterations
+    - **Validates: Requirements 31.1, 31.9**
+
+  - [ ] 22.3 Create Journey Cache DynamoDB table (1 hour)
+    - Design table schema with sitemapUrl (PK) and journeyId (SK)
+    - Add GSI on companyName for company-based queries
+    - Include fields: companyName, journeyName, persona, action, pages, scores
+    - Set up TTL for 7-day expiration matching existing cache pattern
+    - Store session-based S3 references for journey reports
+    - _Requirements: 34.11, 34.12_
+
+### Priority 2: Journey Selection and Analysis (6-8 hours)
+
+- [ ] 23. Journey Selection UI and User Experience
+  - [ ] 23.1 Create journey selection interface (2-3 hours)
+    - Display detected journeys as selectable cards with checkboxes
+    - Show journey metadata: name, persona, action, page count, estimated time
+    - Add complexity indicators (beginner, intermediate, advanced)
+    - Implement "Select All" and "Clear All" bulk selection options
+    - Show total pages to be analyzed based on current selection
+    - Add expandable journey preview showing page sequences
+    - _Requirements: 32.1, 32.2, 32.4, 32.6, 32.7, 32.8, 32.9, 32.10_
+
+  - [ ] 23.2 Add journey filtering and organization (1 hour)
+    - Allow filtering journeys by persona type or complexity level
+    - Group journeys by category (API, Authentication, Webhooks, etc.)
+    - Add search functionality for journey names
+    - Persist journey selections during session
+    - _Requirements: 32.10_
+
+- [ ] 24. Journey-Aware Content Analysis
+  - [ ] 24.1 Enhance existing URLProcessor for journey context (1-2 hours)
+    - Add journeyContext to ProcessedContent interface
+    - Include journey metadata: name, persona, action, step number, total steps
+    - Add previous/next page references for workflow continuity
+    - Reuse existing URL processing logic with journey enrichment
+    - _Requirements: 33.1, 33.2_
+
+  - [ ]* 24.2 Write property test for journey context enrichment
+    - **Property 23: Journey Context Enrichment**
+    - Test journey context addition to processed content
+    - Test step numbering and workflow sequence accuracy
+    - Run minimum 100 iterations
+    - **Validates: Requirements 33.1**
+
+  - [ ] 24.3 Enhance DimensionAnalyzer with journey-aware prompts (2 hours)
+    - Update analysis prompts to include journey context information
+    - Add persona-specific evaluation criteria to prompts
+    - Evaluate workflow continuity between sequential pages
+    - Assess if page complexity matches target persona skill level
+    - Identify workflow gaps that could block completion
+    - _Requirements: 33.3, 33.5, 33.6, 33.7, 33.8_
+
+- [ ] 25. Journey Score Aggregation and Completion Confidence
+  - [ ] 25.1 Implement JourneyAggregator Lambda function (2-3 hours)
+    - Calculate weighted average of dimension scores across journey pages
+    - Implement completion confidence algorithm (0-100%)
+    - Weight critical pages (getting started, core APIs) more heavily
+    - Detect workflow gaps and missing essential steps
+    - Generate journey-specific recommendations for improvement
+    - Identify blocking issues: syntax errors, broken links, deprecated code
+    - _Requirements: 34.1, 34.2, 34.4, 34.5, 34.6, 34.7, 34.8, 34.9_
+
+  - [ ]* 25.2 Write property test for journey score aggregation consistency
+    - **Property 24: Journey Score Aggregation Consistency**
+    - Test score combination logic across various page result sets
+    - Test completion confidence calculation accuracy (0-100% range)
+    - Run minimum 100 iterations
+    - **Validates: Requirements 34.1, 34.3**
+
+  - [ ] 25.3 Store journey results in cache with company association (1 hour)
+    - Save journey scores and findings to Journey Cache table
+    - Include company name for organizational grouping
+    - Store detailed findings and recommendations
+    - Reference session-based S3 locations for detailed reports
+    - _Requirements: 34.11, 34.12_
+
+### Priority 3: Journey Report Generation and Export (4-5 hours)
+
+- [ ] 26. Comprehensive Journey Report Generation
+  - [ ] 26.1 Enhance existing ReportGenerator for journey reports (2-3 hours)
+    - Add sitemap health section with URL statistics and broken link details
+    - Create journey analysis section for each selected journey
+    - Include journey comparison highlighting best/worst performing workflows
+    - Add executive summary suitable for sharing with documentation portal owners
+    - Generate actionable recommendations prioritized by impact on journey completion
+    - Maintain backward compatibility with existing single-page report format
+    - _Requirements: 35.1, 35.2, 35.8, 35.9, 35.10_
+
+  - [ ]* 26.2 Write property test for comprehensive journey report structure
+    - **Property 25: Comprehensive Journey Report Structure**
+    - Test report completeness with sitemap health and journey sections
+    - Test Markdown export formatting and table structure
+    - Run minimum 100 iterations
+    - **Validates: Requirements 35.1, 35.5**
+
+  - [ ] 26.3 Update frontend to display journey results (2 hours)
+    - Create journey results dashboard showing completion confidence
+    - Display journey scores with dimension breakdowns
+    - Show blocking issues and workflow gaps prominently
+    - Add journey comparison view for multiple analyzed journeys
+    - Include sitemap health summary at top of results
+    - _Requirements: 35.3, 35.9_
+
+### Priority 4: Testing and Integration (3-4 hours)
+
+- [ ] 27. End-to-End Sitemap Journey Testing
+  - [ ] 27.1 Test with real documentation sitemaps (2 hours)
+    - Test with Resend documentation sitemap (https://resend.com/docs/sitemap.xml)
+    - Test with Stripe documentation sitemap if available
+    - Verify journey detection accuracy for common developer workflows
+    - Test bulk link validation performance and accuracy
+    - Confirm journey score aggregation and completion confidence
+    - _Requirements: All sitemap journey requirements_
+
+  - [ ] 27.2 Integration testing with existing Doc Mode (1 hour)
+    - Verify Doc Mode functionality remains completely unchanged
+    - Test input type detection routing between modes
+    - Confirm shared infrastructure (caching, progress streaming) works for both modes
+    - Test mode switching and UI state management
+    - _Requirements: 28.6, 28.7_
+
+  - [ ]* 27.3 Write integration tests for dual-mode operation
+    - Test complete sitemap journey workflow from URL to report
+    - Test Doc Mode preservation and isolation
+    - Test shared component reuse (URLProcessor, DimensionAnalyzer, etc.)
+    - _Requirements: All requirements integration_
+
+### Priority 5: Performance Optimization and Monitoring (2-3 hours)
+
+- [ ] 28. Sitemap Journey Performance Optimization
+  - [ ] 28.1 Optimize bulk processing performance (1-2 hours)
+    - Implement parallel processing for journey page analysis
+    - Add intelligent batching for large sitemaps (>100 URLs)
+    - Optimize DynamoDB queries for journey cache lookups
+    - Add CloudWatch metrics for sitemap processing performance
+    - _Requirements: 30.9, 34.10_
+
+  - [ ] 28.2 Add sitemap-specific monitoring and metrics (1 hour)
+    - Track sitemap parsing success/failure rates
+    - Monitor journey detection accuracy and confidence scores
+    - Add metrics for bulk link validation performance
+    - Track journey analysis completion times and success rates
+    - _Requirements: 30.9, 31.8_
+
+### Checkpoint - Sitemap Journey Mode Complete
+- Ensure all sitemap journey functionality works end-to-end
+- Verify Doc Mode remains completely unchanged and functional
+- Test journey detection, analysis, and reporting with real sitemaps
+- Confirm performance meets expectations for large documentation portals
+- Ensure all tests pass, ask the user if questions arise.
+
+## Issue Discovery Mode Implementation (New Feature)
+
+### Priority 1: Core Issue Discovery Infrastructure (3-4 hours) - ✅ COMPLETED
+
+- [x] 39. Input Type Detection and Routing Enhancement
+  - [x] 39.1 Extend InputTypeDetector for Issue Discovery Mode (30 min)
+    - ✅ Added 'issue-discovery' as third input type option
+    - ✅ Implemented detection logic for issue discovery triggers
+    - ✅ Updated API handler routing to support three modes
+    - ✅ Maintained backward compatibility with existing Doc and Sitemap modes
+    - _Requirements: 36.1, 36.5_
+
+  - [x] 39.2 Update frontend for Issue Discovery Mode selection (30 min)
+    - ✅ Added Issue Discovery Mode option to input interface dropdown
+    - ✅ Created dynamic input fields based on selected mode
+    - ✅ Implemented manual mode override for all three modes
+    - ✅ Preserved existing Doc Mode and Sitemap Mode functionality
+    - _Requirements: 36.5, 36.6_
+
+- [x] 40. Issue Discovery and Web Search Integration
+  - [x] 40.1 Implement IssueDiscoverer Lambda function (2-3 hours)
+    - ✅ Created Lambda function with real curated data from Q4 2025 web search
+    - ✅ Manually researched Stack Overflow, GitHub, Reddit for real Resend issues
+    - ✅ Implemented issue categorization and frequency analysis
+    - ✅ Added source credibility scoring (Stack Overflow, GitHub, Reddit)
+    - ✅ Stored results in session-based S3 structure
+    - ✅ Created real-issues-data.json with 5 authentic developer issues
+    - 📝 **Note**: Used manual web search + JSON file approach instead of live API calls for POC simplicity
+    - _Requirements: 36.1, 36.2, 36.3, 36.4, 36.8, 36.10_
+
+  - [ ]* 40.2 Write property test for issue discovery accuracy
+    - **Property 26: Issue Discovery Accuracy**
+    - Test issue categorization and frequency ranking
+    - Test duplicate detection across multiple sources
+    - Run minimum 100 iterations
+    - **Validates: Requirements 36.3, 36.4, 36.8**
+
+  - [x] 40.3 Create Issue Selection UI (1 hour)
+    - ✅ Displayed discovered issues with frequency counts and descriptions
+    - ✅ Created compact table-like layout for top issues
+    - ✅ Showed source references (Stack Overflow, GitHub Issues)
+    - ✅ Implemented real-time search triggered on Tab/Enter
+    - ✅ Removed "Selected Mode" card for Apple-like simplicity
+    - _Requirements: 36.4, 36.5, 36.6, 36.9_
+
+### Priority 2: Issue Validation and Documentation Analysis (2-3 hours) - 🔄 DEFERRED TO NEXT SESSION
+
+- [ ] 41. Issue Validation and Real-Time Analysis
+  - [ ] 41.1 Implement IssueValidator Lambda function (2 hours)
+    - Create documentation analysis for selected issues
+    - Validate code example completeness and accuracy
+    - Check cross-references between theory and implementation
+    - Generate real-time validation status updates
+    - Reuse existing URLProcessor and DimensionAnalyzer components
+    - 📝 **Next Step**: When user selects issues, validate against Resend docs to find root cause
+    - _Requirements: 37.1, 37.2, 37.3, 37.4, 37.5, 37.6, 37.7, 37.8_
+
+  - [ ]* 41.2 Write property test for issue validation consistency
+    - **Property 27: Issue Validation Consistency**
+    - Test validation accuracy across different issue types
+    - Test integration with existing analysis components
+    - Run minimum 100 iterations
+    - **Validates: Requirements 37.7, 37.8, 37.9**
+
+  - [ ] 41.3 Integrate with existing analysis infrastructure (1 hour)
+    - Enhance DimensionAnalyzer with issue-specific context
+    - Reuse SitemapHealthChecker for link-related issues
+    - Integrate with existing Progress Streaming infrastructure
+    - Store validation results in session-based S3 structure
+    - _Requirements: 37.6, 37.9, 37.10_
+
+### Priority 3: Enhanced Report Generation and UI Integration (1-2 hours) - 🔄 DEFERRED TO NEXT SESSION
+
+- [ ] 42. Issue Discovery Report Generation
+  - [ ] 42.1 Enhance ReportGenerator for Issue Discovery Mode (1 hour)
+    - Add Issue Discovery Summary section
+    - Include Confirmed Issues and Resolved Issues sections
+    - Provide specific recommendations with implementation examples
+    - Include sitemap health results as supporting evidence
+    - Reference original sources for credibility
+    - 📝 **Next Step**: Generate report with root cause analysis and recommendations
+    - _Requirements: 38.1, 38.2, 38.3, 38.4, 38.5, 38.6_
+
+  - [ ] 42.2 Update frontend to display issue validation results (1 hour)
+    - Create issue validation results dashboard
+    - Show validation status with evidence and recommendations
+    - Display confirmed vs resolved issues clearly
+    - Integrate with existing export functionality
+    - Maintain backward compatibility with other modes
+    - _Requirements: 38.7, 38.8, 38.9, 38.10_
+
+### Priority 4: Testing and Integration (1-2 hours) - 🔄 DEFERRED TO NEXT SESSION
+
+- [ ] 43. End-to-End Issue Discovery Testing
+  - [ ] 43.1 Test with real documentation portals (1 hour)
+    - Test issue discovery with Resend documentation
+    - Verify validation accuracy for known issues
+    - Test integration with existing Doc and Sitemap modes
+    - Confirm all three modes work independently
+    - _Requirements: All Issue Discovery Mode requirements_
+
+  - [ ] 43.2 Integration testing with existing infrastructure (1 hour)
+    - Verify shared component reuse (URLProcessor, DimensionAnalyzer)
+    - Test session-based S3 storage integration
+    - Confirm WebSocket progress streaming works
+    - Test export functionality for all three modes
+    - _Requirements: 37.9, 38.10_
+
+### Checkpoint - Issue Discovery Mode Complete
+- Ensure Issue Discovery Mode works end-to-end
+- Verify all three modes (Doc, Sitemap, Issue Discovery) work independently
+- Test issue discovery, validation, and reporting with real documentation
+- Confirm existing functionality remains unchanged
+- Ensure all tests pass, ask the user if questions arise.
 
 ## Phase 2 Tasks (Future Enhancements)
 

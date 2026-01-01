@@ -1,8 +1,38 @@
 # Design Document: Documentation Quality Auditor
 
+## Implementation Status (Updated Dec 31, 2024)
+
+### ✅ Completed Features
+- **Doc Mode**: Fully implemented and deployed
+- **Sitemap Journey Mode**: Fully implemented and deployed
+- **Issue Discovery Mode - Phase 1**: ✅ Completed today
+  - Real developer issue discovery from Q4 2025 web search
+  - 5 authentic Resend issues from Stack Overflow, GitHub, Reddit
+  - Compact UI with mode selection and real-time search
+  - IssueDiscoverer Lambda deployed and working
+
+### 🔄 In Progress / Deferred
+- **Issue Discovery Mode - Phase 2**: Deferred to next session
+  - IssueValidator Lambda (validate issues against docs)
+  - Root cause analysis (missing examples, unclear guidance)
+  - Enhanced report generation with recommendations
+  - Estimated: 4-6 hours
+
+### 📝 Implementation Notes
+- **Pragmatic Approach**: Used manual web search + JSON file for POC
+- **Real Data**: All 5 issues are authentic from Q4 2025 developer communities
+- **Extensible Design**: Can be upgraded to live API calls (Google, MCP) later
+- **Three-Mode Architecture**: All modes working independently and seamlessly
+
 ## Overview
 
-Lensy is a web-based documentation quality auditor that analyzes developer documentation URLs and provides comprehensive quality reports. The system uses a React frontend with AWS Lambda backend, leveraging AWS Bedrock's multi-model capabilities for AI-powered analysis. The architecture supports real-time progress streaming, graceful degradation, and configurable model selection.
+Lensy is a web-based documentation quality auditor that operates in three distinct modes:
+
+1. **Doc Mode** (existing): Analyzes individual documentation URLs across five quality dimensions with real-time progress streaming and comprehensive quality reports
+2. **Sitemap Journey Mode** (existing): Analyzes entire documentation portals via sitemap.xml to detect developer journeys, assess workflow completion confidence, and provide journey-specific quality insights
+3. **Issue Discovery Mode** (new): Discovers real developer problems online, validates them against current documentation, and provides targeted analysis focusing on actual developer pain points
+
+All modes use a React frontend with AWS Lambda backend, leveraging AWS Bedrock's AI capabilities for analysis. The system supports real-time progress streaming, graceful degradation, intelligent caching, and configurable model selection.
 
 ## Architecture
 
@@ -55,6 +85,90 @@ graph TB
     CA --> CT
     CA --> CF
     CA --> CR
+```
+
+### Sitemap Journey Mode Architecture
+
+```mermaid
+graph TB
+    A[React Frontend] --> B[API Gateway]
+    B --> ITD[Input Type Detector]
+    
+    ITD --> DOC[Doc Mode - Existing]
+    ITD --> SIT[Sitemap Mode - New]
+    
+    subgraph "Doc Mode (Unchanged)"
+        DOC --> UP[URL Processor]
+        UP --> SD[Structure Detector]
+        SD --> DA[Dimension Analyzer]
+        DA --> RG[Report Generator]
+    end
+    
+    subgraph "Sitemap Journey Mode (New)"
+        SIT --> SP[Sitemap Parser]
+        SP --> SHC[Sitemap Health Check]
+        SHC --> JD[Journey Detector]
+        JD --> JSU[Journey Selection UI]
+        JSU --> JA[Journey Analyzer]
+        JA --> JAG[Journey Aggregator]
+        JAG --> JRG[Journey Report Generator]
+        
+        SP --> LC[Link Checker - Reused]
+        JA --> UP2[URL Processor - Reused]
+        JA --> DA2[Dimension Analyzer - Enhanced]
+        
+        JAG --> JC[Journey Cache - New]
+        JC --> S3J[S3 Journey Storage]
+    end
+    
+    subgraph "Shared Infrastructure"
+        UP --> CC[Content Cache]
+        UP2 --> CC
+        CC --> DDB[DynamoDB Index]
+        CC --> S3C[S3 Cache Storage]
+        
+        DA --> H[AWS Bedrock Models]
+        DA2 --> H
+        
+        PS[Progress Streamer] --> WS[WebSocket Handler]
+        DA --> PS
+        DA2 --> PS
+        JA --> PS
+    end
+```
+
+### Issue Discovery Mode Architecture
+
+```mermaid
+graph TB
+    A[React Frontend] --> B[API Gateway]
+    B --> ITD[Input Type Detector]
+    
+    ITD --> DOC[Doc Mode]
+    ITD --> SIT[Sitemap Mode]
+    ITD --> IDS[Issue Discovery Mode - New]
+    
+    subgraph "Issue Discovery Mode (New)"
+        IDS --> ID[Issue Discoverer]
+        ID --> WS[Web Search APIs]
+        ID --> ISU[Issue Selection UI]
+        ISU --> IV[Issue Validator]
+        IV --> UP3[URL Processor - Reused]
+        IV --> DA3[Dimension Analyzer - Enhanced]
+        IV --> SHC2[Sitemap Health Check - Reused]
+        DA3 --> IRG[Issue Report Generator]
+        
+        ID --> IC[Issue Cache - New]
+        IC --> S3I[S3 Issue Storage]
+    end
+    
+    subgraph "Shared Infrastructure"
+        UP3 --> CC[Content Cache]
+        DA3 --> H[AWS Bedrock Models]
+        PS[Progress Streamer] --> WS2[WebSocket Handler]
+        IV --> PS
+        DA3 --> PS
+    end
 ```
 
 ### Component Architecture
@@ -345,6 +459,108 @@ interface StepFunctionState {
   - Structured sections for readability
   - Integration with existing dashboard export button
 
+### Sitemap Journey Mode Components (New)
+
+#### InputTypeDetector (Lambda) - NEW
+- **Purpose**: Automatically detects whether input is a sitemap.xml URL or regular documentation URL
+- **Input**: `{ url: string }`
+- **Output**: `{ inputType: 'sitemap' | 'doc', confidence: number }`
+- **Logic**: 
+  - Check if URL ends with `.xml` or `sitemap.xml`
+  - Check if URL path contains `/sitemap`
+  - Default to 'doc' mode for backward compatibility
+- **Integration**: Routes to appropriate analysis workflow
+
+#### SitemapParser (Lambda) - NEW
+- **Purpose**: Fetches and parses sitemap.xml files to extract all documentation URLs
+- **Input**: `{ sitemapUrl: string, sessionId: string }`
+- **Output**: `{ success: boolean, totalUrls: number, urls: SitemapUrl[], errors: string[] }`
+- **Features**:
+  - XML parsing with error handling
+  - Nested sitemap support (sitemap index files)
+  - URL extraction from `<loc>` elements
+  - Optional metadata extraction (lastmod, priority)
+  - Progress streaming: "Parsing sitemap... Found X URLs"
+- **Storage**: Results stored in session-based S3 structure
+- **Error Handling**: Graceful handling of malformed XML and network issues
+
+#### JourneyDetector (Lambda) - NEW
+- **Purpose**: Groups sitemap URLs into developer persona + action workflows using AI analysis
+- **Input**: `{ urls: string[], companyName: string, sessionId: string }`
+- **Output**: `{ journeys: Journey[], confidence: number }`
+- **Features**:
+  - URL pattern matching for common journey types
+  - AI-powered journey detection for complex cases
+  - Persona identification (Node.js Developer, DevOps Engineer, etc.)
+  - Action identification (Send Email, Set up Webhooks, etc.)
+  - Journey sequence ordering based on logical workflow
+- **Journey Patterns**:
+  ```typescript
+  interface Journey {
+    id: string;                    // "nodejs-send-email"
+    name: string;                  // "Send Email with Node.js"
+    persona: string;               // "Node.js Developer"
+    action: string;                // "Send first transactional email"
+    pages: string[];               // URLs in sequence
+    pageCount: number;             // Number of pages
+    estimatedTime: string;         // "15 min"
+    companyName: string;           // "Resend"
+  }
+  ```
+
+#### JourneyAggregator (Lambda) - NEW
+- **Purpose**: Combines individual page analysis results into journey-level scores and completion confidence
+- **Input**: `{ journeyId: string, pageResults: PageResult[], sessionId: string }`
+- **Output**: `{ journeyScore: JourneyScore, completionConfidence: number }`
+- **Features**:
+  - Weighted average calculation across journey pages
+  - Completion confidence based on blocking issues
+  - Critical page identification (getting started, core APIs)
+  - Workflow gap detection
+  - Journey-specific recommendations
+- **Confidence Calculation**:
+  ```typescript
+  function calculateCompletionConfidence(pageResults: PageResult[]): number {
+    let confidence = 100;
+    
+    // Deduct for blocking issues
+    for (const page of pageResults) {
+      confidence -= page.syntaxErrors * 15;      // Critical - code won't run
+      confidence -= page.brokenLinks * 5;       // Disrupts flow
+      confidence -= page.deprecatedCode * 3;    // Confuses users
+      
+      if (page.dimensions.clarity < 50) confidence -= 10;
+      if (page.dimensions.accuracy < 50) confidence -= 15;
+    }
+    
+    return Math.max(0, Math.min(100, confidence));
+  }
+  ```
+
+#### JourneyCache (DynamoDB Table) - NEW
+- **Purpose**: Stores journey-level analysis results with company association and session-based S3 references
+- **Schema**:
+  ```typescript
+  interface JourneyCacheEntry {
+    sitemapUrl: string;           // Partition key
+    journeyId: string;            // Sort key
+    companyName: string;          // "Resend", "Stripe", etc.
+    journeyName: string;          // "Send Email with Node.js"
+    persona: string;              // "Node.js Developer"
+    action: string;               // "Send first transactional email"
+    pages: string[];              // Array of URLs in journey
+    overallScore: number;         // Aggregated journey score
+    completionConfidence: number; // Percentage likelihood of success
+    s3ReportLocation: string;     // "sessions/{sessionId}/journey-{journeyId}.json"
+    lastAnalyzed: string;         // ISO timestamp
+    ttl: number;                  // 7-day expiration
+  }
+  ```
+- **Indexes**: 
+  - GSI on `companyName` for company-based queries
+  - GSI on `lastAnalyzed` for cleanup operations
+- **Integration**: Works with existing session-based S3 storage pattern
+
 #### ModelSelector
 - **Purpose**: Manages AI model selection at the analysis level (not per-dimension)
 - **Input**: `{ modelPreference: string, analysisType: 'full' | 'quick' }`
@@ -392,6 +608,90 @@ function selectModel(strategy: ModelSelectionStrategy): string {
 - **Output**: `{ parsedData: object, confidence: number }`
 - **Validation**: JSON structure validation and error recovery
 
+#### IssueDiscoverer (Lambda) - NEW ✅ IMPLEMENTED
+- **Purpose**: Searches online for common developer problems with documentation portals
+- **Input**: `{ companyName: string, domain: string, sessionId: string }`
+- **Output**: `{ issues: DiscoveredIssue[], totalFound: number }`
+- **Implementation Status**: ✅ Phase 1 Complete (Dec 31, 2024)
+  - ✅ Lambda function deployed and working
+  - ✅ Real curated data from Q4 2025 web search
+  - ✅ Manual research from Stack Overflow, GitHub, Reddit
+  - ✅ 5 authentic Resend issues stored in real-issues-data.json
+  - 📝 **Approach**: Manual web search + JSON file (pragmatic POC approach)
+  - 🔄 **Future**: Can be replaced with live API calls (Google Custom Search, MCP servers)
+- **Features**:
+  - ✅ Multi-source credibility scoring (Stack Overflow, GitHub, Reddit)
+  - ✅ Issue categorization (deployment, email-delivery, api-usage, documentation)
+  - ✅ Frequency analysis and ranking by recency
+  - ✅ Source credibility scoring (Stack Overflow: 0.95, GitHub: 0.90, Reddit: 0.75)
+  - ✅ Session-based S3 storage
+- **Real Data Sources**:
+  - Stack Overflow question 78276988 (Vercel production failures)
+  - Stack Overflow question 78448480 (Netlify deployment issues)
+  - Stack Overflow resend.com tag (Gmail spam filtering)
+  - GitHub resend/react-email issue #1354 (React Email dev links)
+- **Issue Patterns**:
+  ```typescript
+  interface DiscoveredIssue {
+    id: string;                    // "stackoverflow-78276988"
+    title: string;                 // "Resend email doesn't work in production..."
+    category: string;              // "deployment", "email-delivery", etc.
+    description: string;           // Summary of the problem
+    frequency: number;             // Severity score (12-27 for current issues)
+    sources: string[];             // Real URLs from Stack Overflow, GitHub
+    lastSeen: string;              // "2025-12-28" (Q4 2025)
+    severity: 'high' | 'medium' | 'low';
+    relatedPages: string[];        // "/docs/send-email", "/docs/api-keys"
+  }
+  ```
+
+#### IssueValidator (Lambda) - NEW 🔄 DEFERRED TO NEXT SESSION
+- **Purpose**: Validates whether discovered issues still exist in current documentation
+- **Input**: `{ issue: DiscoveredIssue, sessionId: string }`
+- **Output**: `{ validationResult: ValidationResult, recommendations: string[] }`
+- **Implementation Status**: 🔄 Planned for next session (Task 41)
+- **Features**:
+  - Documentation page analysis for issue coverage
+  - Code example completeness checking
+  - Cross-reference validation between theory and practice
+  - Real-time validation status reporting
+  - Specific recommendation generation
+  - Root cause analysis (missing examples, unclear guidance)
+- **Validation Logic**:
+  ```typescript
+  interface ValidationResult {
+    status: 'confirmed' | 'resolved' | 'partial';
+    evidence: string[];            // Specific findings from docs
+    missingElements: string[];     // What's missing to address the issue
+    relatedFindings: Finding[];    // From existing dimension analysis
+    confidence: number;            // Validation confidence (0-100)
+    recommendations: Recommendation[]; // Specific fixes with code examples
+  }
+  ```
+
+#### IssueCache (DynamoDB Table) - NEW 🔄 DEFERRED TO NEXT SESSION
+- **Purpose**: Stores discovered issues and validation results with company association
+- **Implementation Status**: 🔄 Planned for next session (Task 41.3)
+- **Schema**:
+  ```typescript
+  interface IssueCacheEntry {
+    companyDomain: string;         // Partition key - "resend.com"
+    issueId: string;               // Sort key - "rate-limiting-nodejs"
+    issueTitle: string;            // "Rate limiting issues with Node.js"
+    category: string;              // "rate-limiting"
+    frequency: number;             // Number of online mentions
+    lastDiscovered: string;        // ISO timestamp
+    validationStatus: string;      // "confirmed", "resolved", "partial"
+    validationDate: string;        // Last validation timestamp
+    s3ResultLocation: string;      // "sessions/{sessionId}/issue-{issueId}.json"
+    ttl: number;                   // 30-day expiration (longer than other caches)
+  }
+  ```
+- **Indexes**:
+  - GSI on `category` for issue type queries
+  - GSI on `validationStatus` for filtering confirmed issues
+- **Integration**: Works with existing session-based S3 storage pattern
+
 ## Data Models
 
 ### Core Data Structures
@@ -401,6 +701,7 @@ interface AnalysisRequest {
   url: string;
   selectedModel: 'claude' | 'titan' | 'llama' | 'auto';
   sessionId: string;
+  inputType?: 'sitemap' | 'doc';  // NEW: Auto-detected or user-specified
   contextAnalysis?: {
     enabled: boolean;
     maxContextPages?: number;
@@ -408,8 +709,115 @@ interface AnalysisRequest {
   cacheControl?: {
     enabled: boolean;  // Frontend sends cache preference to backend
   };
+  // NEW: Sitemap-specific options
+  sitemapOptions?: {
+    selectedJourneys?: string[];  // Journey IDs to analyze
+    companyName?: string;         // Auto-detected or user-provided
+  };
 }
 
+// NEW: Sitemap Journey Mode Data Structures
+interface SitemapUrl {
+  loc: string;           // URL from sitemap
+  lastmod?: string;      // Last modified date
+  priority?: number;     // Priority hint (0.0-1.0)
+  changefreq?: string;   // Change frequency
+}
+
+interface SitemapParseResult {
+  success: boolean;
+  totalUrls: number;
+  urls: SitemapUrl[];
+  errors: string[];
+  companyName?: string;  // Auto-detected from sitemap domain
+}
+
+interface SitemapHealthResult {
+  totalUrls: number;
+  healthyUrls: number;
+  brokenUrls: number;        // 404s only
+  accessDeniedUrls: number;  // 403s
+  timeoutUrls: number;       // Timeouts
+  otherErrorUrls: number;    // Other HTTP errors
+  healthCheckDetails: LinkIssue[];
+}
+
+interface Journey {
+  id: string;                    // "nodejs-send-email"
+  name: string;                  // "Send Email with Node.js"
+  persona: string;               // "Node.js Developer"
+  action: string;                // "Send first transactional email"
+  pages: string[];               // URLs in sequence
+  pageCount: number;             // Number of pages
+  estimatedTime: string;         // "15 min"
+  companyName: string;           // "Resend"
+  complexity: 'beginner' | 'intermediate' | 'advanced';
+  detectionConfidence: number;   // 0.0-1.0
+}
+
+interface JourneyContext {
+  journeyId: string;              // "nodejs-send-email"
+  journeyName: string;            // "Send Email with Node.js"
+  persona: string;                // "Node.js Developer"
+  action: string;                 // "Send first transactional email"
+  stepNumber: number;             // 2 (this is step 2)
+  totalSteps: number;             // 4 (of 4 total)
+  previousSteps: string[];        // ["/send-with-nodejs"]
+  nextSteps: string[];            // ["/domains/introduction", "/api-reference/errors"]
+  currentPageUrl: string;         // "/api-reference/emails/send-email"
+  companyName: string;            // "Resend"
+}
+
+interface JourneyScore {
+  journeyId: string;
+  journeyName: string;
+  persona: string;
+  action: string;
+  companyName: string;
+  overallScore: number;              // 0-100
+  completionConfidence: number;      // 0-100%
+  pageScores: PageScore[];
+  dimensionAverages: {
+    relevance: number;
+    freshness: number;
+    clarity: number;
+    accuracy: number;
+    completeness: number;
+  };
+  blockingIssues: BlockingIssue[];
+  findings: Finding[];
+  analysisTime: number;
+  sessionId: string;
+}
+
+interface BlockingIssue {
+  type: 'syntax-error' | 'broken-link' | 'deprecated-code' | 'missing-content' | 'workflow-gap';
+  severity: 'critical' | 'high' | 'medium';
+  page: string;
+  description: string;
+  impact: string;  // How this blocks journey completion
+  recommendation: string;
+}
+
+interface SitemapAnalysisResult {
+  sitemapUrl: string;
+  companyName: string;
+  sessionId: string;
+  sitemapHealth: SitemapHealthResult;
+  detectedJourneys: Journey[];
+  selectedJourneys: string[];
+  journeyResults: JourneyScore[];
+  overallInsights: {
+    bestPerformingJourney: string;
+    worstPerformingJourney: string;
+    commonIssues: string[];
+    recommendedImprovements: string[];
+  };
+  analysisTime: number;
+  totalPagesAnalyzed: number;
+}
+
+// Enhanced ProcessedContent for Journey Context
 interface ProcessedContent {
   url: string;
   markdownContent: string;
@@ -419,21 +827,51 @@ interface ProcessedContent {
   contentType: 'api-docs' | 'tutorial' | 'reference' | 'mixed';
   linkAnalysis: LinkAnalysisSummary;
   contextAnalysis?: ContextAnalysisResult;
+  journeyContext?: JourneyContext;  // NEW: Journey-aware analysis
   processedAt: string;
   noiseReduction: NoiseReductionMetrics;
 }
 
+// NEW: Journey Cache Table Schema
+interface JourneyCacheEntry {
+  sitemapUrl: string;           // Partition key
+  journeyId: string;            // Sort key
+  companyName: string;          // "Resend", "Stripe", etc.
+  journeyName: string;          // "Send Email with Node.js"
+  persona: string;              // "Node.js Developer"
+  action: string;               // "Send first transactional email"
+  pages: string[];              // Array of URLs in journey
+  overallScore: number;         // Aggregated journey score
+  completionConfidence: number; // Percentage likelihood of success
+  findings: Finding[];          // Journey-specific findings
+  s3ReportLocation: string;     // "sessions/{sessionId}/journey-{journeyId}.json"
+  lastAnalyzed: string;         // ISO timestamp
+  ttl: number;                  // 7-day expiration
+  sessionId: string;            // Reference to analysis session
+}
+
+// Existing structures remain unchanged...
 interface ProcessedContentIndex {
   url: string;                    // Partition key
   processedAt: string;            // Sort key
   contentHash: string;            // Content hash for validation
-  s3Location: string;             // S3 path to processed content
+  s3Location: string;             // S3 path: "sessions/{sessionId}/processed-content.json"
   ttl: number;                    // TTL for automatic cleanup
   contentType: string;            // 'api-docs' | 'tutorial' | 'reference'
   noiseReductionMetrics: NoiseReductionMetrics;
   contextAnalysis?: {
     contextPages: ContextPage[];
     analysisScope: string;
+  };
+  // NEW: Page-level dimension analysis caching for journey mode optimization
+  dimensionResults?: {            // Cache dimension analysis per page to avoid re-analysis
+    relevance: DimensionResult;
+    freshness: DimensionResult;
+    clarity: DimensionResult;
+    accuracy: DimensionResult;
+    completeness: DimensionResult;
+    analyzedAt: string;
+    modelUsed: string;
   };
 }
 
@@ -779,6 +1217,36 @@ Now I need to use the prework tool to analyze the acceptance criteria before wri
 ### Property 18: Scoring Transparency and Cost Efficiency
 *For any* completed analysis, the system should provide clear explanations of which scoring criteria were applied and which were skipped, while minimizing AI costs through smart detection caching.
 **Validates: Requirements 16.7, 16.8, 16.9**
+
+## Sitemap Journey Mode Correctness Properties
+
+### Property 19: Input Type Detection Accuracy
+*For any* URL input, if the URL ends with `.xml`, `sitemap.xml`, or contains `/sitemap` in the path, the system should detect it as Sitemap Mode, otherwise it should default to Doc Mode.
+**Validates: Requirements 28.1, 28.2, 28.3**
+
+### Property 20: Sitemap XML Parsing Completeness
+*For any* valid sitemap XML content, the parser should extract all `<loc>` URLs and handle nested sitemaps without infinite recursion.
+**Validates: Requirements 29.1, 29.2, 29.10**
+
+### Property 21: Bulk Link Validation Categorization
+*For any* set of URLs from a sitemap, the system should check all URLs for accessibility and correctly categorize each response as healthy (2xx), broken (404), access-denied (403), timeout, or error based on HTTP status codes.
+**Validates: Requirements 30.1, 30.3**
+
+### Property 22: Journey Detection and Grouping
+*For any* collection of sitemap URLs, the Journey Detector should group them into logical developer workflows by persona and action, and handle overlapping pages across multiple journeys appropriately.
+**Validates: Requirements 31.1, 31.9**
+
+### Property 23: Journey Context Enrichment
+*For any* page analyzed within a journey, the system should add journey context information including journey name, persona, action, step number, and related pages to the processed content.
+**Validates: Requirements 33.1**
+
+### Property 24: Journey Score Aggregation Consistency
+*For any* set of page analysis results within a journey, the Journey Aggregator should combine them into a single journey score and calculate a completion confidence percentage between 0-100%.
+**Validates: Requirements 34.1, 34.3**
+
+### Property 25: Comprehensive Journey Report Structure
+*For any* sitemap journey analysis, the generated report should include a sitemap health section with URL statistics and be exportable as properly formatted Markdown with tables and sections.
+**Validates: Requirements 35.1, 35.5**
 
 ## Phase 1 vs Phase 2 Feature Separation
 

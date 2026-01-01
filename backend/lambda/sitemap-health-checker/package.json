@@ -1,0 +1,14 @@
+{
+    "name": "sitemap-health-checker",
+    "version": "1.0.0",
+    "description": "Lambda function for bulk link validation from sitemap URLs",
+    "main": "index.js",
+    "dependencies": {
+        "@aws-sdk/client-apigatewaymanagementapi": "^3.958.0",
+        "aws-sdk": "^2.1691.0"
+    },
+    "devDependencies": {
+        "@types/node": "^20.0.0",
+        "typescript": "^5.0.0"
+    }
+}
