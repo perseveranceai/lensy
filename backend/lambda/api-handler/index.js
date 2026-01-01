@@ -36,6 +36,9 @@ const handler = async (event) => {
         if (httpMethod === 'POST' && path === '/discover-issues') {
             return await handleDiscoverIssuesRequest(body, corsHeaders);
         }
+        if (httpMethod === 'POST' && path === '/validate-issues') {
+            return await handleValidateIssuesRequest(body, corsHeaders);
+        }
         if (httpMethod === 'GET' && path?.startsWith('/status/')) {
             return await handleStatusRequest(path, corsHeaders);
         }
@@ -46,7 +49,7 @@ const handler = async (event) => {
                 error: 'Not found',
                 method: httpMethod,
                 path: path,
-                availableRoutes: ['POST /analyze', 'POST /discover-issues', 'GET /status/{sessionId}']
+                availableRoutes: ['POST /analyze', 'POST /discover-issues', 'POST /validate-issues', 'GET /status/{sessionId}']
             })
         };
     }
@@ -419,6 +422,76 @@ async function handleDiscoverIssuesRequest(body, corsHeaders) {
             headers: corsHeaders,
             body: JSON.stringify({
                 error: 'Issue discovery failed',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            })
+        };
+    }
+}
+/**
+ * Handle issue validation request
+ */
+async function handleValidateIssuesRequest(body, corsHeaders) {
+    if (!body) {
+        return {
+            statusCode: 400,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: 'Request body is required' })
+        };
+    }
+    let validateRequest;
+    try {
+        validateRequest = JSON.parse(body);
+    }
+    catch (error) {
+        return {
+            statusCode: 400,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: 'Invalid JSON in request body' })
+        };
+    }
+    const { issues, domain, sessionId } = validateRequest;
+    if (!issues || !domain || !sessionId) {
+        return {
+            statusCode: 400,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: 'Missing required fields: issues, domain, and sessionId' })
+        };
+    }
+    try {
+        console.log('Invoking IssueValidator Lambda for:', { issueCount: issues.length, domain, sessionId });
+        // Invoke the IssueValidator Lambda function directly
+        const invokeParams = {
+            FunctionName: process.env.ISSUE_VALIDATOR_FUNCTION_NAME || 'lensy-issue-validator',
+            Payload: JSON.stringify({
+                body: JSON.stringify({ issues, domain, sessionId })
+            })
+        };
+        const result = await lambdaClient.send(new client_lambda_1.InvokeCommand(invokeParams));
+        if (result.Payload) {
+            const responsePayload = JSON.parse(new TextDecoder().decode(result.Payload));
+            if (responsePayload.statusCode === 200) {
+                const validationResults = JSON.parse(responsePayload.body);
+                return {
+                    statusCode: 200,
+                    headers: corsHeaders,
+                    body: JSON.stringify(validationResults)
+                };
+            }
+            else {
+                throw new Error(`IssueValidator failed: ${responsePayload.body}`);
+            }
+        }
+        else {
+            throw new Error('No response payload from IssueValidator');
+        }
+    }
+    catch (error) {
+        console.error('Issue validation failed:', error);
+        return {
+            statusCode: 500,
+            headers: corsHeaders,
+            body: JSON.stringify({
+                error: 'Issue validation failed',
                 message: error instanceof Error ? error.message : 'Unknown error'
             })
         };

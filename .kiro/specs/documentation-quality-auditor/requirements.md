@@ -639,34 +639,41 @@ All modes provide real-time progress feedback and generate detailed reports with
 
 ### Requirement 37: Real-Time Issue Validation and Documentation Analysis
 
-**User Story:** As a user, I want Lensy to validate whether discovered issues still exist in the current documentation, so that I only receive reports about current, actionable problems.
+**User Story:** As a user, I want Lensy to validate whether discovered issues still exist in the current documentation, so that I only receive reports about current, actionable problems with specific evidence of documentation gaps.
 
 #### Acceptance Criteria
 
-1. WHEN an issue is selected for analysis, THE System SHALL identify relevant documentation pages that should address the issue
-2. THE System SHALL analyze the identified pages for code examples, implementation guidance, and completeness
-3. WHEN code examples exist, THE System SHALL validate their accuracy, completeness, and production-readiness
-4. WHEN code examples are missing, THE System SHALL flag the issue as "Missing implementation examples"
-5. THE System SHALL check for cross-references between conceptual documentation and practical implementation guides
-6. THE System SHALL validate that error handling, rate limiting, and production considerations are adequately covered
-7. THE System SHALL provide real-time validation status: "Issue Confirmed", "Issue Resolved", or "Partially Addressed"
-8. THE System SHALL generate specific recommendations for addressing confirmed issues
-9. THE System SHALL include validation results in the final report with evidence and specific page references
-10. THE System SHALL skip issues that appear to have been resolved to avoid reporting outdated problems
+1. WHEN an issue is selected for analysis, THE System SHALL identify relevant documentation pages using pre-curated relatedPages first, then fallback to sitemap search if needed
+2. WHEN using sitemap fallback, THE System SHALL search for pages matching issue keywords (e.g., "gmail", "spam", "deliverability" for Gmail spam issue)
+3. THE System SHALL analyze each identified page for code examples, implementation guidance, and completeness
+4. WHEN a page is found but lacks relevant content, THE System SHALL report this as "Potential Gap - Page exists but missing context"
+5. WHEN no relevant pages are found in sitemap, THE System SHALL report this as "Critical Gap - Missing documentation page"
+6. WHEN code examples exist, THE System SHALL validate their accuracy, completeness, and production-readiness
+7. WHEN code examples are missing, THE System SHALL flag the issue as "Missing implementation examples"
+8. THE System SHALL check for cross-references between conceptual documentation and practical implementation guides
+9. THE System SHALL validate that error handling, rate limiting, and production considerations are adequately covered
+10. THE System SHALL provide real-time validation status: "Issue Confirmed", "Issue Resolved", "Partially Addressed", or "Potential Gap"
+11. THE System SHALL generate specific recommendations for addressing confirmed issues and potential gaps
+12. THE System SHALL include validation results in the final report with evidence showing which pages were checked and what content is missing
+13. THE System SHALL highlight "potential gaps" where developers would search (via AI/web) but find incomplete content
+14. THE System SHALL skip issues that appear to have been fully resolved to avoid reporting outdated problems
 
 ### Requirement 38: Enhanced Report Generation for Issue Discovery Mode
 
-**User Story:** As a user, I want a comprehensive report showing discovered issues, validation results, and specific recommendations, so that I can prioritize documentation improvements based on real developer pain points.
+**User Story:** As a user, I want a comprehensive report showing discovered issues, validation results, and specific recommendations, so that I can prioritize documentation improvements based on real developer pain points and identify potential gaps where developers search but find incomplete content.
 
 #### Acceptance Criteria
 
 1. THE Report SHALL include an Issue Discovery Summary showing all investigated issues and their validation status
 2. THE Report SHALL include a Confirmed Issues section with specific documentation gaps and missing examples
-3. THE Report SHALL include a Resolved Issues section showing problems that have been addressed since online complaints
-4. THE Report SHALL provide specific recommendations for each confirmed issue with implementation examples
-5. THE Report SHALL include sitemap health results as supporting evidence for link-related issues
-6. THE Report SHALL reference original sources where issues were discovered for credibility
-7. THE Report SHALL prioritize recommendations by impact on developer success and frequency of complaints
-8. THE Report SHALL include code examples and implementation guidance for addressing confirmed issues
-9. THE Report SHALL be exportable in Markdown format suitable for sharing with development teams
-10. THE Report SHALL maintain backward compatibility with existing Doc Mode and Sitemap Journey Mode reports
+3. THE Report SHALL include a Potential Gaps section showing pages that exist but lack relevant content (where developers would search but find incomplete information)
+4. THE Report SHALL include a Critical Gaps section showing missing documentation pages that should exist based on developer issues
+5. THE Report SHALL include a Resolved Issues section showing problems that have been addressed since online complaints
+6. THE Report SHALL provide specific recommendations for each confirmed issue and potential gap with implementation examples
+7. THE Report SHALL include sitemap health results as supporting evidence for link-related issues
+8. THE Report SHALL reference original sources where issues were discovered for credibility (Stack Overflow, GitHub, Reddit)
+9. THE Report SHALL prioritize recommendations by impact on developer success and frequency of complaints
+10. THE Report SHALL include code examples and implementation guidance for addressing confirmed issues
+11. THE Report SHALL highlight "potential gaps" with evidence showing page title/URL suggests relevance but content is missing
+12. THE Report SHALL be exportable in Markdown format suitable for sharing with development teams and executives
+13. THE Report SHALL maintain backward compatibility with existing Doc Mode and Sitemap Journey Mode reports

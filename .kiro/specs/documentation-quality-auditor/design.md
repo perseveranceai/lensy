@@ -645,29 +645,69 @@ function selectModel(strategy: ModelSelectionStrategy): string {
   }
   ```
 
-#### IssueValidator (Lambda) - NEW 🔄 DEFERRED TO NEXT SESSION
-- **Purpose**: Validates whether discovered issues still exist in current documentation
-- **Input**: `{ issue: DiscoveredIssue, sessionId: string }`
-- **Output**: `{ validationResult: ValidationResult, recommendations: string[] }`
-- **Implementation Status**: 🔄 Planned for next session (Task 41)
-- **Features**:
-  - Documentation page analysis for issue coverage
-  - Code example completeness checking
-  - Cross-reference validation between theory and practice
-  - Real-time validation status reporting
-  - Specific recommendation generation
-  - Root cause analysis (missing examples, unclear guidance)
+#### IssueValidator (Lambda) - NEW 🔄 IMPLEMENTING TODAY
+- **Purpose**: Validates whether discovered issues still exist in current documentation and identifies potential gaps where developers would search but find incomplete content
+- **Input**: `{ issue: DiscoveredIssue, domain: string, sessionId: string }`
+- **Output**: `{ validationResult: ValidationResult, recommendations: Recommendation[] }`
+- **Implementation Status**: 🔄 Starting implementation (Task 41)
+- **Page Discovery Strategy**:
+  1. **Pre-Curated Pages First** (instant):
+     - Use `issue.relatedPages` if available
+     - Example: `["/docs/deliverability", "/docs/dns-records"]`
+  2. **Sitemap Fallback** (2-5 seconds):
+     - Fetch sitemap.xml if no pre-curated pages
+     - Search for pages matching issue keywords
+     - Example: Search for "gmail", "spam", "deliverability"
+  3. **Keyword Extraction**:
+     - Extract from issue title + description
+     - Use category mapping for additional keywords
+- **Content Validation**:
+  - ✅ **Page exists with relevant content** → Analyze for completeness
+  - ⚠️ **Page exists but missing context** → Report as "Potential Gap"
+  - ❌ **No relevant page found** → Report as "Critical Gap"
+- **Gap Detection Logic**:
+  ```typescript
+  interface GapAnalysis {
+    gapType: 'potential-gap' | 'critical-gap' | 'resolved';
+    pageUrl?: string;              // URL of page with gap (if exists)
+    pageTitle?: string;            // Title suggests relevance
+    missingContent: string[];      // What content is missing
+    reasoning: string;             // Why this is a gap
+    developerImpact: string;       // How this affects developers
+  }
+  ```
 - **Validation Logic**:
   ```typescript
   interface ValidationResult {
-    status: 'confirmed' | 'resolved' | 'partial';
-    evidence: string[];            // Specific findings from docs
+    status: 'confirmed' | 'resolved' | 'potential-gap' | 'critical-gap';
+    evidence: Evidence[];          // Pages checked and findings
     missingElements: string[];     // What's missing to address the issue
+    potentialGaps: GapAnalysis[];  // Pages that exist but lack content
+    criticalGaps: string[];        // Missing pages that should exist
     relatedFindings: Finding[];    // From existing dimension analysis
     confidence: number;            // Validation confidence (0-100)
     recommendations: Recommendation[]; // Specific fixes with code examples
   }
+  
+  interface Evidence {
+    pageUrl: string;               // Page that was checked
+    pageTitle: string;             // Title of the page
+    hasRelevantContent: boolean;   // Does it address the issue?
+    contentGaps: string[];         // What's missing from this page
+    codeExamples: number;          // Number of code examples found
+    productionGuidance: boolean;   // Has production considerations?
+  }
   ```
+- **Features**:
+  - Smart page discovery (pre-curated → sitemap fallback)
+  - Potential gap detection (page exists but incomplete)
+  - Critical gap detection (missing pages)
+  - Code example completeness checking
+  - Cross-reference validation between theory and practice
+  - Real-time validation status reporting
+  - Specific recommendation generation with evidence
+  - Root cause analysis (missing examples, unclear guidance)
+  - Developer impact assessment (how many affected)
 
 #### IssueCache (DynamoDB Table) - NEW 🔄 DEFERRED TO NEXT SESSION
 - **Purpose**: Stores discovered issues and validation results with company association

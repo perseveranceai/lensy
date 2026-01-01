@@ -1325,51 +1325,76 @@ This implementation plan creates a comprehensive documentation quality auditor u
     - ✅ Removed "Selected Mode" card for Apple-like simplicity
     - _Requirements: 36.4, 36.5, 36.6, 36.9_
 
-### Priority 2: Issue Validation and Documentation Analysis (2-3 hours) - 🔄 DEFERRED TO NEXT SESSION
+### Priority 2: Issue Validation and Documentation Analysis (2-3 hours) - 🚀 STARTING TODAY
 
 - [ ] 41. Issue Validation and Real-Time Analysis
-  - [ ] 41.1 Implement IssueValidator Lambda function (2 hours)
-    - Create documentation analysis for selected issues
-    - Validate code example completeness and accuracy
-    - Check cross-references between theory and implementation
-    - Generate real-time validation status updates
+  - [x] 41.1 Implement IssueValidator Lambda function (2 hours)
+    - **Smart Page Discovery**:
+      - Use pre-curated `relatedPages` from issue data (instant)
+      - Fallback to sitemap search if no pre-curated pages (2-5 seconds)
+      - Extract keywords from issue title + description for sitemap search
+    - **Content Validation**:
+      - Fetch and analyze each identified page
+      - Check for code examples, production guidance, error handling
+      - Detect "potential gaps" (page exists but missing relevant content)
+      - Detect "critical gaps" (no relevant page found in sitemap)
+    - **Gap Analysis**:
+      - ⚠️ Potential Gap: Page title suggests relevance but content is incomplete
+      - ❌ Critical Gap: No documentation page found for this issue
+      - ✅ Resolved: Page exists with complete, relevant content
+    - **Evidence Collection**:
+      - Record which pages were checked
+      - Document what content is missing from each page
+      - Provide reasoning for gap classification
+    - **Recommendation Generation**:
+      - Generate specific, actionable recommendations
+      - Include code examples for missing implementations
+      - Prioritize by developer impact (frequency score)
     - Reuse existing URLProcessor and DimensionAnalyzer components
-    - 📝 **Next Step**: When user selects issues, validate against Resend docs to find root cause
-    - _Requirements: 37.1, 37.2, 37.3, 37.4, 37.5, 37.6, 37.7, 37.8_
+    - 📝 **Key Insight**: Turn "not found" into a finding - show where developers would search but find incomplete content
+    - _Requirements: 37.1, 37.2, 37.3, 37.4, 37.5, 37.6, 37.7, 37.8, 37.9, 37.10, 37.11, 37.12, 37.13, 37.14_
 
   - [ ]* 41.2 Write property test for issue validation consistency
     - **Property 27: Issue Validation Consistency**
     - Test validation accuracy across different issue types
+    - Test gap detection (potential vs critical)
     - Test integration with existing analysis components
     - Run minimum 100 iterations
-    - **Validates: Requirements 37.7, 37.8, 37.9**
+    - **Validates: Requirements 37.7, 37.10, 37.12**
 
   - [ ] 41.3 Integrate with existing analysis infrastructure (1 hour)
     - Enhance DimensionAnalyzer with issue-specific context
-    - Reuse SitemapHealthChecker for link-related issues
+    - Reuse SitemapParser for sitemap fallback discovery
+    - Reuse URLProcessor for page content fetching
     - Integrate with existing Progress Streaming infrastructure
     - Store validation results in session-based S3 structure
-    - _Requirements: 37.6, 37.9, 37.10_
+    - _Requirements: 37.6, 37.12, 37.14_
 
-### Priority 3: Enhanced Report Generation and UI Integration (1-2 hours) - 🔄 DEFERRED TO NEXT SESSION
+### Priority 3: Enhanced Report Generation and UI Integration (1-2 hours) - 🚀 STARTING TODAY
 
 - [ ] 42. Issue Discovery Report Generation
   - [ ] 42.1 Enhance ReportGenerator for Issue Discovery Mode (1 hour)
     - Add Issue Discovery Summary section
-    - Include Confirmed Issues and Resolved Issues sections
+    - Include Confirmed Issues section with specific documentation gaps
+    - Include **Potential Gaps** section showing pages that exist but lack relevant content
+    - Include **Critical Gaps** section showing missing documentation pages
+    - Include Resolved Issues section showing problems that have been addressed
     - Provide specific recommendations with implementation examples
     - Include sitemap health results as supporting evidence
-    - Reference original sources for credibility
-    - 📝 **Next Step**: Generate report with root cause analysis and recommendations
-    - _Requirements: 38.1, 38.2, 38.3, 38.4, 38.5, 38.6_
+    - Reference original sources for credibility (Stack Overflow, GitHub URLs)
+    - Highlight "potential gaps" with evidence: "Page '/docs/deliverability' exists but missing Gmail troubleshooting"
+    - Prioritize recommendations by developer impact (frequency scores)
+    - _Requirements: 38.1, 38.2, 38.3, 38.4, 38.5, 38.6, 38.7, 38.8, 38.9, 38.10, 38.11_
 
   - [ ] 42.2 Update frontend to display issue validation results (1 hour)
     - Create issue validation results dashboard
     - Show validation status with evidence and recommendations
-    - Display confirmed vs resolved issues clearly
+    - Display confirmed issues, potential gaps, and critical gaps clearly
+    - Use visual indicators: ✅ Resolved, ⚠️ Potential Gap, ❌ Critical Gap
+    - Show which pages were checked and what content is missing
     - Integrate with existing export functionality
     - Maintain backward compatibility with other modes
-    - _Requirements: 38.7, 38.8, 38.9, 38.10_
+    - _Requirements: 38.7, 38.11, 38.12, 38.13_
 
 ### Priority 4: Testing and Integration (1-2 hours) - 🔄 DEFERRED TO NEXT SESSION
 

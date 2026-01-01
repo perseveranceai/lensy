@@ -12,8 +12,8 @@
             "lastSeen": "2025-12-15",
             "severity": "high",
             "relatedPages": [
-                "/docs/send-email",
-                "/docs/api-keys"
+                "/docs/api-reference/emails/send-email",
+                "/docs/api-reference/api-keys/create-api-key"
             ]
         },
         {
@@ -28,9 +28,9 @@
             "lastSeen": "2025-12-10",
             "severity": "high",
             "relatedPages": [
-                "/docs/send-email",
-                "/docs/api-keys",
-                "/docs/troubleshooting"
+                "/docs/api-reference/emails/send-email",
+                "/docs/api-reference/api-keys/create-api-key",
+                "/docs/dashboard/api-keys/introduction"
             ]
         },
         {
@@ -45,9 +45,9 @@
             "lastSeen": "2025-12-28",
             "severity": "high",
             "relatedPages": [
-                "/docs/domains",
-                "/docs/dns-records",
-                "/docs/deliverability"
+                "/docs/dashboard/domains/introduction",
+                "/docs/api-reference/domains/create-domain",
+                "/docs/send-with-resend/deliverability"
             ]
         },
         {
@@ -62,8 +62,8 @@
             "lastSeen": "2025-12-20",
             "severity": "medium",
             "relatedPages": [
-                "/docs/send-email",
-                "/docs/frameworks/nextjs"
+                "/docs/api-reference/emails/send-email",
+                "/docs/send-with-nextjs"
             ]
         },
         {
@@ -78,8 +78,8 @@
             "lastSeen": "2025-11-15",
             "severity": "medium",
             "relatedPages": [
-                "/docs/react-email",
-                "/docs/templates"
+                "/docs/send-with-react-email",
+                "/docs/api-reference/emails/send-email"
             ]
         }
     ],
