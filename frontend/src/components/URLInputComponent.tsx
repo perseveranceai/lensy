@@ -25,7 +25,7 @@ const URLInputComponent: React.FC<URLInputComponentProps> = ({ onSubmit }) => {
 
     const availableModels = [
         { value: 'auto', label: 'Auto (Recommended)', description: 'Automatically select the best model for your content' },
-        { value: 'claude', label: 'Claude 3.5 Sonnet', description: 'Best for code analysis and technical accuracy' },
+        { value: 'claude', label: 'Claude 4.5 Sonnet', description: 'Best for code analysis and technical accuracy' },
         { value: 'titan', label: 'Amazon Titan Text Premier', description: 'Optimized for comprehensive analysis' },
         { value: 'llama', label: 'Meta Llama 3.1 70B', description: 'Strong at context understanding' },
     ];

@@ -9,8 +9,18 @@ lib/
 
 # CDK
 cdk.out/
+cdk-out-deploy/
 *.d.ts
 !jest.config.d.ts
+
+# Test files
+test-*.js
+test-*.ts
+*.test.js
+*.test.ts
+debug-*.js
+check-*.js
+check-*.sh
 
 # Environment variables
 .env
@@ -24,6 +34,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
+deploy.log
+*.log
 
 # Runtime data
 pids
@@ -83,6 +95,14 @@ public
 # Temporary folders
 tmp/
 temp/
+
+# Debug and analysis files
+*.html
+!frontend/public/*.html
+updated-policy.json
+*-IMPLEMENTATION.md
+*_ANALYSIS.md
+CODE_COMPARISON.md
 
 # Editor directories and files
 .vscode/

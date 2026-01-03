@@ -2,6 +2,7 @@ import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import https from 'https';
 import { URL } from 'url';
+import TurndownService from 'turndown';
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION });
 
@@ -15,6 +16,12 @@ interface DiscoveredIssue {
     lastSeen: string;
     severity: 'high' | 'medium' | 'low';
     relatedPages: string[];
+    // NEW: Rich content from source
+    fullContent?: string;  // Full question/issue body
+    codeSnippets?: string[];  // Code examples from the issue
+    errorMessages?: string[];  // Extracted error messages
+    tags?: string[];  // Technology tags
+    stackTrace?: string;  // Stack traces if present
 }
 
 interface IssueDiscovererInput {
@@ -78,6 +85,312 @@ const ISSUE_CATEGORIES = {
 };
 
 /**
+ * Enrich issues with full content from their source URLs
+ */
+async function enrichIssuesWithFullContent(issues: DiscoveredIssue[]): Promise<DiscoveredIssue[]> {
+    console.log(`Enriching ${issues.length} issues with full content from sources...`);
+
+    const enrichedIssues: DiscoveredIssue[] = [];
+
+    for (const issue of issues) {
+        try {
+            // Get the first source URL
+            const sourceUrl = issue.sources[0];
+
+            if (!sourceUrl) {
+                console.log(`No source URL for issue: ${issue.id}`);
+                enrichedIssues.push(issue);
+                continue;
+            }
+
+            console.log(`Fetching full content from: ${sourceUrl}`);
+
+            // Determine source type and fetch accordingly
+            if (sourceUrl.includes('stackoverflow.com')) {
+                const enrichedIssue = await enrichFromStackOverflow(issue, sourceUrl);
+                enrichedIssues.push(enrichedIssue);
+            } else if (sourceUrl.includes('github.com')) {
+                const enrichedIssue = await enrichFromGitHub(issue, sourceUrl);
+                enrichedIssues.push(enrichedIssue);
+            } else {
+                // For other sources, keep original
+                enrichedIssues.push(issue);
+            }
+
+            // Add small delay to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 200));
+
+        } catch (error) {
+            console.error(`Failed to enrich issue ${issue.id}:`, error);
+            // Keep original issue if enrichment fails
+            enrichedIssues.push(issue);
+        }
+    }
+
+    console.log(`Enrichment complete: ${enrichedIssues.length} issues processed`);
+    return enrichedIssues;
+}
+
+/**
+ * Enrich issue with full content from StackOverflow
+ */
+async function enrichFromStackOverflow(issue: DiscoveredIssue, url: string): Promise<DiscoveredIssue> {
+    try {
+        console.log(`Fetching StackOverflow page: ${url}`);
+
+        // Fetch the HTML page
+        const html = await makeHttpRequest(url, {
+            'User-Agent': 'Mozilla/5.0 (compatible; Lensy-Documentation-Auditor/1.0)',
+            'Accept': 'text/html'
+        });
+
+        // Extract rich content
+        const fullContent = extractStackOverflowContent(html);
+        const codeSnippets = extractCodeSnippets(html);
+        const errorMessages = extractErrorMessages(html);
+        const tags = extractStackOverflowTags(html);
+        const stackTrace = extractStackTrace(html);
+
+        console.log(`Extracted from StackOverflow: ${fullContent.length} chars, ${codeSnippets.length} code snippets, ${errorMessages.length} errors, ${tags.length} tags`);
+
+        return {
+            ...issue,
+            fullContent: fullContent.substring(0, 8000), // Limit to 8000 chars like doc pages
+            codeSnippets,
+            errorMessages,
+            tags,
+            stackTrace
+        };
+
+    } catch (error) {
+        console.error(`Failed to fetch StackOverflow content:`, error);
+        return issue;
+    }
+}
+
+/**
+ * Extract main question content from StackOverflow HTML and convert to clean Markdown
+ */
+function extractStackOverflowContent(html: string): string {
+    try {
+        // Extract ALL question bodies (there might be multiple answers)
+        const allMatches = html.matchAll(/<div class="s-prose js-post-body"[^>]*itemprop="text">([\s\S]*?)<\/div>\s*<\/div>/gi);
+
+        let allContent = '';
+        let matchCount = 0;
+
+        for (const match of allMatches) {
+            matchCount++;
+            allContent += match[1];
+            if (matchCount >= 3) break; // Limit to first 3 (question + top 2 answers)
+        }
+
+        if (matchCount === 0) {
+            console.log('Could not find question body in HTML');
+            return '';
+        }
+
+        console.log(`Found ${matchCount} content blocks`);
+
+        // Convert HTML to clean Markdown
+        const turndownService = new TurndownService({
+            headingStyle: 'atx',
+            codeBlockStyle: 'fenced',
+            emDelimiter: '*',
+            strongDelimiter: '**'
+        });
+
+        // Remove script and style tags before conversion
+        const cleanHtml = allContent
+            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+
+        // Convert to Markdown
+        let markdown = turndownService.turndown(cleanHtml);
+
+        // Clean up the markdown
+        markdown = markdown
+            .replace(/\n{3,}/g, '\n\n') // Remove excessive newlines
+            .replace(/\s+$/gm, '') // Remove trailing whitespace
+            .trim();
+
+        console.log(`Extracted content length: ${markdown.length} chars`);
+        return markdown;
+
+    } catch (error) {
+        console.error('Error extracting StackOverflow content:', error);
+        return '';
+    }
+}
+
+/**
+ * Extract code snippets from StackOverflow HTML
+ */
+function extractCodeSnippets(html: string): string[] {
+    const snippets: string[] = [];
+
+    try {
+        // Match pre/code blocks more aggressively
+        const codeMatches = html.matchAll(/<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>/gi);
+
+        for (const match of codeMatches) {
+            let code = match[1]
+                .replace(/<[^>]+>/g, '') // Remove HTML tags
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>')
+                .replace(/&amp;/g, '&')
+                .replace(/&quot;/g, '"')
+                .replace(/&#39;/g, "'")
+                .trim();
+
+            // Only include substantial code snippets (more than 20 chars)
+            if (code.length > 20 && code.length < 1000) {
+                snippets.push(code);
+            }
+        }
+
+        console.log(`Extracted ${snippets.length} code snippets`);
+
+    } catch (error) {
+        console.error('Error extracting code snippets:', error);
+    }
+
+    return snippets.slice(0, 5); // Limit to 5 snippets
+}
+
+/**
+ * Extract error messages from content
+ */
+function extractErrorMessages(html: string): string[] {
+    const errors: string[] = [];
+
+    try {
+        const content = html.replace(/<[^>]+>/g, ' ');
+
+        // Common error patterns
+        const errorPatterns = [
+            /Error:\s*([^\n]{10,100})/gi,
+            /Exception:\s*([^\n]{10,100})/gi,
+            /Failed:\s*([^\n]{10,100})/gi,
+            /\d{3}\s+error[:\s]+([^\n]{10,100})/gi, // HTTP errors like "500 error: ..."
+            /TypeError:\s*([^\n]{10,100})/gi,
+            /ReferenceError:\s*([^\n]{10,100})/gi,
+            /SyntaxError:\s*([^\n]{10,100})/gi
+        ];
+
+        for (const pattern of errorPatterns) {
+            const matches = content.matchAll(pattern);
+            for (const match of matches) {
+                if (match[1]) {
+                    errors.push(match[1].trim());
+                }
+            }
+        }
+
+        console.log(`Extracted ${errors.length} error messages`);
+
+    } catch (error) {
+        console.error('Error extracting error messages:', error);
+    }
+
+    return [...new Set(errors)].slice(0, 3); // Dedupe and limit to 3
+}
+
+/**
+ * Extract tags from StackOverflow
+ */
+function extractStackOverflowTags(html: string): string[] {
+    const tags: string[] = [];
+
+    try {
+        // Match tag elements
+        const tagMatches = html.matchAll(/<a[^>]*class="[^"]*post-tag[^"]*"[^>]*>([^<]+)<\/a>/gi);
+
+        for (const match of tagMatches) {
+            if (match[1]) {
+                tags.push(match[1].trim());
+            }
+        }
+
+        console.log(`Extracted ${tags.length} tags: ${tags.join(', ')}`);
+
+    } catch (error) {
+        console.error('Error extracting tags:', error);
+    }
+
+    return tags;
+}
+
+/**
+ * Extract stack trace from content
+ */
+function extractStackTrace(html: string): string | undefined {
+    try {
+        const content = html.replace(/<[^>]+>/g, '\n');
+
+        // Look for stack trace patterns
+        const stackTracePattern = /at\s+[\w.$]+\s*\([^)]+\)/gi;
+        const matches = content.match(stackTracePattern);
+
+        if (matches && matches.length > 2) {
+            // Found a stack trace
+            const stackTrace = matches.slice(0, 5).join('\n'); // First 5 lines
+            console.log(`Extracted stack trace: ${stackTrace.length} chars`);
+            return stackTrace;
+        }
+
+    } catch (error) {
+        console.error('Error extracting stack trace:', error);
+    }
+
+    return undefined;
+}
+
+/**
+ * Enrich issue with full content from GitHub
+ */
+async function enrichFromGitHub(issue: DiscoveredIssue, url: string): Promise<DiscoveredIssue> {
+    try {
+        console.log(`Fetching GitHub issue: ${url}`);
+
+        // For GitHub, we could use the GitHub API for better structured data
+        // For now, we'll do basic HTML parsing similar to StackOverflow
+
+        const html = await makeHttpRequest(url, {
+            'User-Agent': 'Mozilla/5.0 (compatible; Lensy-Documentation-Auditor/1.0)',
+            'Accept': 'text/html'
+        });
+
+        // Extract issue body
+        const bodyMatch = html.match(/<td class="d-block comment-body[^"]*"[^>]*>([\s\S]*?)<\/td>/i);
+        let fullContent = '';
+
+        if (bodyMatch) {
+            fullContent = bodyMatch[1]
+                .replace(/<[^>]+>/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
+
+        const codeSnippets = extractCodeSnippets(html);
+        const errorMessages = extractErrorMessages(html);
+
+        console.log(`Extracted from GitHub: ${fullContent.length} chars, ${codeSnippets.length} code snippets`);
+
+        return {
+            ...issue,
+            fullContent: fullContent.substring(0, 8000),
+            codeSnippets,
+            errorMessages
+        };
+
+    } catch (error) {
+        console.error(`Failed to fetch GitHub content:`, error);
+        return issue;
+    }
+}
+
+/**
  * Real developer issue discovery using curated web search data
  */
 async function searchDeveloperIssues(companyName: string, domain: string): Promise<DiscoveredIssue[]> {
@@ -93,15 +406,20 @@ async function searchDeveloperIssues(companyName: string, domain: string): Promi
         issues.push(...realIssues);
         console.log(`Real data loaded: ${realIssues.length} issues found`);
 
+        // NEW: Enrich issues with full content from their source URLs
+        console.log('Enriching issues with full content from sources...');
+        const enrichedIssues = await enrichIssuesWithFullContent(issues);
+        console.log(`Enrichment complete: ${enrichedIssues.length} issues enriched`);
+
+        console.log(`Total real issues found: ${enrichedIssues.length} in ${Date.now() - startTime}ms`);
+        return enrichedIssues;
+
     } catch (error) {
         console.error('Error loading real data:', error);
         console.error('Error details:', JSON.stringify(error, null, 2));
         // Fallback to empty array if data loading fails
         return [];
     }
-
-    console.log(`Total real issues found: ${issues.length} in ${Date.now() - startTime}ms`);
-    return issues;
 }
 
 /**
@@ -324,13 +642,13 @@ async function searchStackOverflowReal(companyName: string, domain: string): Pro
 }
 
 /**
- * Make HTTP request with error handling
+ * Make HTTP request with error handling and redirect support
  */
-async function makeHttpRequest(url: string, headers: Record<string, string> = {}, body?: string): Promise<any> {
+async function makeHttpRequest(url: string, headers: Record<string, string> = {}, body?: string, redirectCount: number = 0): Promise<any> {
     console.log(`Making HTTP request to: ${url}`);
-    console.log(`Request headers:`, JSON.stringify(headers, null, 2));
-    if (body) {
-        console.log(`Request body:`, body.substring(0, 200) + (body.length > 200 ? '...' : ''));
+
+    if (redirectCount > 5) {
+        throw new Error('Too many redirects');
     }
 
     return new Promise((resolve, reject) => {
@@ -341,31 +659,56 @@ async function makeHttpRequest(url: string, headers: Record<string, string> = {}
             path: urlObj.pathname + urlObj.search,
             method: body ? 'POST' : 'GET',
             headers: {
-                'User-Agent': 'Lensy-Documentation-Auditor/1.0',
+                'User-Agent': 'Mozilla/5.0 (compatible; Lensy-Documentation-Auditor/1.0)',
                 ...headers
             }
         };
 
-        console.log(`HTTP request options:`, JSON.stringify(options, null, 2));
-
         const req = https.request(options, (res) => {
             console.log(`HTTP response status: ${res.statusCode}`);
-            console.log(`HTTP response headers:`, JSON.stringify(res.headers, null, 2));
+
+            // Handle redirects
+            if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) {
+                const redirectUrl = res.headers.location;
+                if (!redirectUrl) {
+                    reject(new Error('Redirect without location header'));
+                    return;
+                }
+
+                console.log(`Following redirect to: ${redirectUrl}`);
+
+                // Handle relative URLs
+                const fullRedirectUrl = redirectUrl.startsWith('http')
+                    ? redirectUrl
+                    : `https://${urlObj.hostname}${redirectUrl}`;
+
+                makeHttpRequest(fullRedirectUrl, headers, body, redirectCount + 1)
+                    .then(resolve)
+                    .catch(reject);
+                return;
+            }
 
             let data = '';
             res.on('data', (chunk) => data += chunk);
             res.on('end', () => {
                 console.log(`HTTP response data length: ${data.length}`);
-                console.log(`HTTP response data preview: ${data.substring(0, 200)}...`);
 
-                try {
-                    const parsed = JSON.parse(data);
-                    console.log(`Successfully parsed JSON response`);
-                    resolve(parsed);
-                } catch (error) {
-                    console.error(`Failed to parse JSON response:`, error);
-                    console.error(`Raw response data:`, data.substring(0, 500));
-                    reject(new Error(`Failed to parse JSON: ${error}`));
+                // Check if response is JSON or HTML
+                const contentType = res.headers['content-type'] || '';
+
+                if (contentType.includes('application/json')) {
+                    try {
+                        const parsed = JSON.parse(data);
+                        console.log(`Successfully parsed JSON response`);
+                        resolve(parsed);
+                    } catch (error) {
+                        console.error(`Failed to parse JSON response:`, error);
+                        reject(new Error(`Failed to parse JSON: ${error}`));
+                    }
+                } else {
+                    // Return raw HTML/text
+                    console.log(`Returning raw HTML/text response`);
+                    resolve(data);
                 }
             });
         });
@@ -375,7 +718,7 @@ async function makeHttpRequest(url: string, headers: Record<string, string> = {}
             reject(error);
         });
 
-        req.setTimeout(10000, () => {
+        req.setTimeout(15000, () => {
             console.error(`HTTP request timeout for: ${url}`);
             req.destroy();
             reject(new Error('Request timeout'));

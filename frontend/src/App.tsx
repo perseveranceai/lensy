@@ -1,4 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import {
     Container,
     Paper,
@@ -217,6 +220,7 @@ function App() {
     }>>([]);
     const [selectedIssues, setSelectedIssues] = useState<string[]>([]);
     const [isSearchingIssues, setIsSearchingIssues] = useState(false);
+    const [validationResults, setValidationResults] = useState<any>(null);
     const [analysisState, setAnalysisState] = useState<AnalysisState>({
         status: 'idle',
         progressMessages: []
@@ -473,47 +477,109 @@ function App() {
 
         const sessionId = `session-${Date.now()}`;
         const finalInputType = manualModeOverride || selectedMode;
-        const analysisRequest: AnalysisRequest = {
-            url: finalInputType === 'issue-discovery' ? companyDomain : url,
-            selectedModel,
-            sessionId,
-            inputType: finalInputType,
-            contextAnalysis: (contextAnalysisEnabled && finalInputType === 'doc') ? {
-                enabled: true,
-                maxContextPages: 5
-            } : undefined,
-            cacheControl: {
-                enabled: cacheEnabled
-            }
-        };
 
         try {
-            // Connect WebSocket
-            try {
-                await connectWebSocket(sessionId);
-            } catch (wsError) {
-                console.warn('WebSocket failed, using polling only:', wsError);
+            // Handle issue-discovery mode differently
+            if (finalInputType === 'issue-discovery') {
+                // Get selected issues
+                const issuesToValidate = discoveredIssues.filter(issue => selectedIssues.includes(issue.id));
+
+                console.log(`Validating ${issuesToValidate.length} selected issues`);
+
+                // Call validate-issues endpoint
+                const response = await fetch(`${API_BASE_URL}/validate-issues`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        issues: issuesToValidate.map(issue => ({
+                            id: issue.id,
+                            title: issue.title,
+                            description: issue.description,
+                            frequency: issue.frequency,
+                            sources: issue.sources.map(source => {
+                                // Convert display names back to URLs (best effort)
+                                if (source === 'Stack Overflow') return 'https://stackoverflow.com';
+                                if (source === 'GitHub Issues') return 'https://github.com';
+                                if (source === 'Reddit') return 'https://reddit.com';
+                                return source;
+                            }),
+                            category: 'general', // Default category
+                            severity: 'medium', // Default severity
+                            lastSeen: new Date().toISOString().split('T')[0],
+                            relatedPages: [] // Will use sitemap fallback
+                        })),
+                        domain: companyDomain,
+                        sessionId: sessionId
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const validationResults = await response.json();
+
+                console.log('Validation results:', validationResults);
+
+                // Store results for display
+                setValidationResults(validationResults);
+
+                // Store results and show completion
+                setAnalysisState({
+                    status: 'completed',
+                    progressMessages: [
+                        { type: 'success', message: `Validated ${validationResults.validationResults.length} issues`, timestamp: Date.now() },
+                        { type: 'info', message: `Found ${validationResults.summary.resolved} resolved, ${validationResults.summary.potentialGaps} potential gaps, ${validationResults.summary.criticalGaps} critical gaps`, timestamp: Date.now() }
+                    ]
+                });
+
+                // TODO: Display validation results in UI
+                // For now, log to console
+                console.table(validationResults.summary);
+
+            } else {
+                // Original doc/sitemap mode logic
+                const analysisRequest: AnalysisRequest = {
+                    url: url,
+                    selectedModel,
+                    sessionId,
+                    inputType: finalInputType,
+                    contextAnalysis: (contextAnalysisEnabled && finalInputType === 'doc') ? {
+                        enabled: true,
+                        maxContextPages: 5
+                    } : undefined,
+                    cacheControl: {
+                        enabled: cacheEnabled
+                    }
+                };
+
+                // Connect WebSocket
+                try {
+                    await connectWebSocket(sessionId);
+                } catch (wsError) {
+                    console.warn('WebSocket failed, using polling only:', wsError);
+                }
+
+                // Start analysis
+                const response = await fetch(`${API_BASE_URL}/analyze`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(analysisRequest)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const result = await response.json();
+
+                setAnalysisState(prev => ({
+                    ...prev,
+                    executionArn: result.executionArn
+                }));
+
+                pollForResults(sessionId);
             }
-
-            // Start analysis
-            const response = await fetch(`${API_BASE_URL}/analyze`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(analysisRequest)
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-
-            const result = await response.json();
-
-            setAnalysisState(prev => ({
-                ...prev,
-                executionArn: result.executionArn
-            }));
-
-            pollForResults(sessionId);
 
         } catch (error) {
             if (wsRef.current) wsRef.current.close();
@@ -556,6 +622,203 @@ function App() {
             default:
                 return <InfoIcon sx={{ color: 'info.main' }} />;
         }
+    };
+
+    const exportValidationReport = (validationResults: any) => {
+        const analysisDate = new Date().toLocaleDateString();
+
+        let markdown = `# DOCUMENTATION QUALITY VALIDATION REPORT\n\n`;
+        markdown += `**Company Domain:** ${companyDomain}\n`;
+        markdown += `**Analyzed:** ${analysisDate}\n`;
+        markdown += `**Total Issues Validated:** ${validationResults.summary.totalIssues}\n`;
+        markdown += `**Processing Time:** ${validationResults.processingTime}ms\n\n`;
+
+        // Executive Summary
+        markdown += `## EXECUTIVE SUMMARY\n\n`;
+        markdown += `This report analyzes ${validationResults.summary.totalIssues} real developer issue${validationResults.summary.totalIssues === 1 ? '' : 's'} found on Stack Overflow. Each issue was validated against existing documentation to identify gaps and improvement opportunities.\n\n`;
+
+        // Summary Statistics
+        markdown += `### Summary Statistics\n\n`;
+        markdown += `- **✅ Resolved Issues:** ${validationResults.summary.resolved} (${((validationResults.summary.resolved / validationResults.summary.totalIssues) * 100).toFixed(1)}%)\n`;
+        markdown += `- **⚠️ Potential Gaps:** ${validationResults.summary.potentialGaps} (${((validationResults.summary.potentialGaps / validationResults.summary.totalIssues) * 100).toFixed(1)}%)\n`;
+        markdown += `- **❌ Critical Gaps:** ${validationResults.summary.criticalGaps} (${((validationResults.summary.criticalGaps / validationResults.summary.totalIssues) * 100).toFixed(1)}%)\n\n`;
+
+        // Key Insights
+        markdown += `### Key Insights\n\n`;
+        if (validationResults.summary.criticalGaps > 0) {
+            markdown += `🚨 **${validationResults.summary.criticalGaps} critical documentation gaps** require immediate attention - these are issues developers are actively struggling with but have no documentation coverage.\n\n`;
+        }
+        if (validationResults.summary.potentialGaps > 0) {
+            markdown += `⚠️ **${validationResults.summary.potentialGaps} potential gaps** exist where documentation pages exist but may not fully address developer needs.\n\n`;
+        }
+        if (validationResults.summary.resolved > 0) {
+            markdown += `✅ **${validationResults.summary.resolved} issues appear well-documented** with comprehensive coverage.\n\n`;
+        }
+
+        // Sitemap Health Analysis (if available)
+        if (validationResults.sitemapHealth) {
+            const sitemap = validationResults.sitemapHealth;
+            markdown += `## SITEMAP HEALTH ANALYSIS\n\n`;
+            markdown += `This analysis checked all ${sitemap.totalUrls} URLs from the documentation sitemap for accessibility and health.\n\n`;
+
+            markdown += `### Health Summary\n\n`;
+            markdown += `- **✅ Healthy URLs:** ${sitemap.healthyUrls} (${sitemap.healthPercentage}%)\n`;
+            markdown += `- **🔴 Broken URLs (404):** ${sitemap.brokenUrls || 0}\n`;
+            markdown += `- **🟡 Access Denied (403):** ${sitemap.accessDeniedUrls || 0}\n`;
+            markdown += `- **🟠 Timeout Issues:** ${sitemap.timeoutUrls || 0}\n`;
+            markdown += `- **⚫ Other Errors:** ${sitemap.otherErrorUrls || 0}\n\n`;
+
+            if (sitemap.linkIssues.length > 0) {
+                markdown += `### Link Issues Details\n\n`;
+
+                const brokenLinks = sitemap.linkIssues.filter((issue: any) => issue.issueType === '404');
+                const accessDeniedLinks = sitemap.linkIssues.filter((issue: any) => issue.issueType === 'access-denied');
+                const timeoutLinks = sitemap.linkIssues.filter((issue: any) => issue.issueType === 'timeout');
+                const otherErrors = sitemap.linkIssues.filter((issue: any) => issue.issueType === 'error');
+
+                if (brokenLinks.length > 0) {
+                    markdown += `#### 🔴 Broken Links (404) - ${brokenLinks.length}\n\n`;
+                    brokenLinks.forEach((issue: any, i: number) => {
+                        markdown += `${i + 1}. \`${issue.url}\`\n`;
+                        markdown += `   Error: ${issue.errorMessage}\n\n`;
+                    });
+                }
+
+                if (accessDeniedLinks.length > 0) {
+                    markdown += `#### 🟡 Access Denied (403) - ${accessDeniedLinks.length}\n\n`;
+                    accessDeniedLinks.forEach((issue: any, i: number) => {
+                        markdown += `${i + 1}. \`${issue.url}\`\n`;
+                        markdown += `   Error: ${issue.errorMessage}\n\n`;
+                    });
+                }
+
+                if (timeoutLinks.length > 0) {
+                    markdown += `#### 🟠 Timeout Issues - ${timeoutLinks.length}\n\n`;
+                    timeoutLinks.forEach((issue: any, i: number) => {
+                        markdown += `${i + 1}. \`${issue.url}\`\n`;
+                        markdown += `   Error: ${issue.errorMessage}\n\n`;
+                    });
+                }
+
+                if (otherErrors.length > 0) {
+                    markdown += `#### ⚫ Other Errors - ${otherErrors.length}\n\n`;
+                    otherErrors.forEach((issue: any, i: number) => {
+                        markdown += `${i + 1}. \`${issue.url}\` (${issue.status})\n`;
+                        markdown += `   Error: ${issue.errorMessage}\n\n`;
+                    });
+                }
+            } else {
+                markdown += `### ✅ All Links Healthy\n\nNo broken links or accessibility issues found in the documentation sitemap!\n\n`;
+            }
+        }
+
+        // Detailed Issue Analysis
+        markdown += `## DETAILED ISSUE ANALYSIS\n\n`;
+
+        validationResults.validationResults.forEach((result: any, index: number) => {
+            const statusEmoji = result.status === 'resolved' ? '✅' :
+                result.status === 'potential-gap' ? '⚠️' :
+                    result.status === 'critical-gap' ? '❌' : '❓';
+
+            markdown += `### ${index + 1}. ${statusEmoji} ${result.issueTitle}\n\n`;
+            markdown += `**Status:** ${result.status.toUpperCase()}\n`;
+            markdown += `**Confidence:** ${result.confidence}%\n\n`;
+
+            // Evidence Analysis
+            if (result.evidence && result.evidence.length > 0) {
+                markdown += `**📄 Documentation Evidence (${result.evidence.length} pages analyzed):**\n\n`;
+                result.evidence.forEach((evidence: any, idx: number) => {
+                    markdown += `${idx + 1}. **${evidence.pageUrl}** - ${evidence.pageTitle}\n`;
+                    if (evidence.semanticScore !== undefined) {
+                        markdown += `   - Semantic Match: ${(evidence.semanticScore * 100).toFixed(0)}%\n`;
+                    }
+                    markdown += `   - Code Examples: ${evidence.codeExamples}\n`;
+                    markdown += `   - Production Guidance: ${evidence.productionGuidance ? 'Yes' : 'No'}\n`;
+                    if (evidence.contentGaps.length > 0) {
+                        markdown += `   - Missing Content: ${evidence.contentGaps.join(', ')}\n`;
+                    }
+                    markdown += `\n`;
+                });
+            }
+
+            // AI Recommendations
+            if (result.recommendations && result.recommendations.length > 0) {
+                markdown += `**💡 AI-Generated Recommendations:**\n\n`;
+                result.recommendations.forEach((rec: string, idx: number) => {
+                    // Clean up the markdown formatting for better readability
+                    const cleanRec = rec
+                        .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold formatting
+                        .replace(/```[\s\S]*?```/g, '[CODE EXAMPLE INCLUDED]') // Replace code blocks with placeholder
+                        .replace(/\n\s*\n/g, '\n') // Remove extra line breaks
+                        .trim();
+
+                    markdown += `${idx + 1}. ${cleanRec}\n\n`;
+                });
+            }
+
+            // Potential Gaps
+            if (result.potentialGaps && result.potentialGaps.length > 0) {
+                markdown += `**⚠️ Identified Gaps:**\n\n`;
+                result.potentialGaps.forEach((gap: any, idx: number) => {
+                    markdown += `- **${gap.pageUrl || 'General'}:** ${gap.reasoning}\n`;
+                    if (gap.missingContent && gap.missingContent.length > 0) {
+                        markdown += `  Missing: ${gap.missingContent.join(', ')}\n`;
+                    }
+                });
+                markdown += `\n`;
+            }
+
+            markdown += `---\n\n`;
+        });
+
+        // Recommendations Summary
+        markdown += `## PRIORITY RECOMMENDATIONS\n\n`;
+
+        const criticalIssues = validationResults.validationResults.filter((r: any) => r.status === 'critical-gap');
+        const potentialGaps = validationResults.validationResults.filter((r: any) => r.status === 'potential-gap');
+
+        if (criticalIssues.length > 0) {
+            markdown += `### 🚨 Critical Priority (${criticalIssues.length} issues)\n\n`;
+            criticalIssues.forEach((issue: any, idx: number) => {
+                markdown += `${idx + 1}. **Create documentation for:** ${issue.issueTitle}\n`;
+                markdown += `   - Developer Impact: High (no existing coverage)\n`;
+                markdown += `   - Confidence: ${issue.confidence}%\n\n`;
+            });
+        }
+
+        if (potentialGaps.length > 0) {
+            markdown += `### ⚠️ Medium Priority (${potentialGaps.length} issues)\n\n`;
+            potentialGaps.forEach((issue: any, idx: number) => {
+                markdown += `${idx + 1}. **Enhance documentation for:** ${issue.issueTitle}\n`;
+                markdown += `   - Developer Impact: Medium (partial coverage exists)\n`;
+                markdown += `   - Confidence: ${issue.confidence}%\n\n`;
+            });
+        }
+
+        markdown += `## METHODOLOGY\n\n`;
+        markdown += `This analysis used AI-powered semantic search to match real developer issues against existing documentation. Each issue was:\n\n`;
+        markdown += `1. **Discovered** from Stack Overflow developer community\n`;
+        markdown += `2. **Analyzed** using semantic similarity matching against documentation\n`;
+        markdown += `3. **Validated** by fetching and analyzing actual page content\n`;
+        markdown += `4. **Scored** for confidence based on content relevance and completeness\n`;
+        markdown += `5. **Enhanced** with AI-generated improvement recommendations\n\n`;
+
+        markdown += `---\n\n`;
+        markdown += `*Report generated by Lensy Documentation Quality Auditor*\n`;
+        markdown += `*Analysis Date: ${analysisDate}*\n`;
+        markdown += `*Total Processing Time: ${validationResults.processingTime}ms*\n`;
+
+        // Create and download file
+        const blob = new Blob([markdown], { type: 'text/markdown' });
+        const url_obj = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url_obj;
+        const filename = `documentation-validation-report-${companyDomain.replace(/[^a-zA-Z0-9]/g, '-')}-${new Date().toISOString().split('T')[0]}.md`;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url_obj);
     };
 
     const exportMarkdownReport = (report: FinalReport) => {
@@ -916,7 +1179,7 @@ function App() {
                                 onChange={(e) => setSelectedModel(e.target.value as any)}
                                 disabled={analysisState.status === 'analyzing'}
                             >
-                                <MenuItem value="claude">Claude 3.5 Sonnet</MenuItem>
+                                <MenuItem value="claude">Claude 4.5 Sonnet</MenuItem>
                             </Select>
                         </FormControl>
 
@@ -1044,6 +1307,324 @@ function App() {
                                 </List>
                             </Box>
                         </Collapse>
+                    </Paper>
+                )}
+
+                {/* Results */}
+                {analysisState.status === 'completed' && validationResults && (
+                    <Paper elevation={3} sx={{ p: 4, mb: 3 }}>
+                        <Typography variant="h5" gutterBottom>
+                            Issue Validation Results
+                        </Typography>
+
+                        {/* Summary Cards */}
+                        <Grid container spacing={3} sx={{ mb: 4 }}>
+                            <Grid item xs={12} md={3}>
+                                <Card>
+                                    <CardContent sx={{ textAlign: 'center' }}>
+                                        <Typography variant="h3" color="success.main">
+                                            {validationResults.summary.resolved}
+                                        </Typography>
+                                        <Typography variant="h6">✅ Resolved</Typography>
+                                        <Typography variant="body2" color="text.secondary">
+                                            Documentation is complete
+                                        </Typography>
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+                            <Grid item xs={12} md={3}>
+                                <Card>
+                                    <CardContent sx={{ textAlign: 'center' }}>
+                                        <Typography variant="h3" color="warning.main">
+                                            {validationResults.summary.potentialGaps}
+                                        </Typography>
+                                        <Typography variant="h6">⚠️ Potential Gaps</Typography>
+                                        <Typography variant="body2" color="text.secondary">
+                                            Pages exist but incomplete
+                                        </Typography>
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+                            <Grid item xs={12} md={3}>
+                                <Card>
+                                    <CardContent sx={{ textAlign: 'center' }}>
+                                        <Typography variant="h3" color="error.main">
+                                            {validationResults.summary.criticalGaps}
+                                        </Typography>
+                                        <Typography variant="h6">❌ Critical Gaps</Typography>
+                                        <Typography variant="body2" color="text.secondary">
+                                            No relevant pages found
+                                        </Typography>
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+                            <Grid item xs={12} md={3}>
+                                <Card>
+                                    <CardContent sx={{ textAlign: 'center' }}>
+                                        <Typography variant="h3" color="primary">
+                                            {validationResults.processingTime}ms
+                                        </Typography>
+                                        <Typography variant="h6">Processing Time</Typography>
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+                        </Grid>
+
+                        {/* Sitemap Health Summary (if available) */}
+                        {validationResults.sitemapHealth && (
+                            <>
+                                <Typography variant="h6" gutterBottom sx={{ mt: 4 }}>
+                                    📊 Sitemap Health Analysis
+                                </Typography>
+                                <Grid container spacing={3} sx={{ mb: 4 }}>
+                                    <Grid item xs={12} md={3}>
+                                        <Card>
+                                            <CardContent sx={{ textAlign: 'center' }}>
+                                                <Typography variant="h3" color="primary">
+                                                    {validationResults.sitemapHealth.totalUrls}
+                                                </Typography>
+                                                <Typography variant="h6">Total URLs</Typography>
+                                            </CardContent>
+                                        </Card>
+                                    </Grid>
+                                    <Grid item xs={12} md={3}>
+                                        <Card>
+                                            <CardContent sx={{ textAlign: 'center' }}>
+                                                <Typography variant="h3" color="success.main">
+                                                    {validationResults.sitemapHealth.healthyUrls}
+                                                </Typography>
+                                                <Typography variant="h6">Healthy</Typography>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    {validationResults.sitemapHealth.healthPercentage}%
+                                                </Typography>
+                                            </CardContent>
+                                        </Card>
+                                    </Grid>
+                                    <Grid item xs={12} md={3}>
+                                        <Card>
+                                            <CardContent sx={{ textAlign: 'center' }}>
+                                                <Typography variant="h3" color="error.main">
+                                                    {validationResults.sitemapHealth.brokenUrls || 0}
+                                                </Typography>
+                                                <Typography variant="h6">Broken (404)</Typography>
+                                            </CardContent>
+                                        </Card>
+                                    </Grid>
+                                    <Grid item xs={12} md={3}>
+                                        <Card>
+                                            <CardContent sx={{ textAlign: 'center' }}>
+                                                <Typography variant="h3" color="warning.main">
+                                                    {(validationResults.sitemapHealth.accessDeniedUrls || 0) +
+                                                        (validationResults.sitemapHealth.timeoutUrls || 0) +
+                                                        (validationResults.sitemapHealth.otherErrorUrls || 0)}
+                                                </Typography>
+                                                <Typography variant="h6">Other Issues</Typography>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    {validationResults.sitemapHealth.accessDeniedUrls || 0} access denied, {' '}
+                                                    {validationResults.sitemapHealth.timeoutUrls || 0} timeout, {' '}
+                                                    {validationResults.sitemapHealth.otherErrorUrls || 0} errors
+                                                </Typography>
+                                            </CardContent>
+                                        </Card>
+                                    </Grid>
+                                </Grid>
+
+                                {/* Expandable Broken URLs List */}
+                                {validationResults.sitemapHealth.linkIssues.length > 0 && (
+                                    <Card sx={{ mb: 4 }}>
+                                        <CardContent>
+                                            <Typography variant="h6" gutterBottom>
+                                                🔗 Link Issues Details ({validationResults.sitemapHealth.linkIssues.length})
+                                            </Typography>
+                                            <Box sx={{ maxHeight: 300, overflow: 'auto' }}>
+                                                {validationResults.sitemapHealth.linkIssues.map((issue: any, index: number) => (
+                                                    <Box key={index} sx={{ mb: 1, p: 1, bgcolor: 'grey.50', borderRadius: 1 }}>
+                                                        <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                                                            {issue.issueType === '404' ? '🔴' :
+                                                                issue.issueType === 'access-denied' ? '🟡' :
+                                                                    issue.issueType === 'timeout' ? '🟠' : '⚫'} {issue.url}
+                                                        </Typography>
+                                                        <Typography variant="body2" color="text.secondary">
+                                                            {issue.errorMessage}
+                                                        </Typography>
+                                                    </Box>
+                                                ))}
+                                            </Box>
+                                        </CardContent>
+                                    </Card>
+                                )}
+                            </>
+                        )}
+
+                        {/* Detailed Results */}
+                        <Typography variant="h6" gutterBottom sx={{ mt: 4 }}>
+                            Detailed Validation Results
+                        </Typography>
+                        {validationResults.validationResults.map((result: any, index: number) => (
+                            <Card key={result.issueId} sx={{ mb: 2 }}>
+                                <CardContent>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                                        <Chip
+                                            label={result.status.toUpperCase()}
+                                            color={
+                                                result.status === 'resolved' ? 'success' :
+                                                    result.status === 'potential-gap' ? 'warning' :
+                                                        result.status === 'critical-gap' ? 'error' : 'default'
+                                            }
+                                            sx={{ mr: 2 }}
+                                        />
+                                        <Typography variant="h6" sx={{ flex: 1 }}>
+                                            {result.issueTitle}
+                                        </Typography>
+                                        <Chip label={`${result.confidence}% confidence`} variant="outlined" />
+                                    </Box>
+
+                                    {/* Evidence */}
+                                    {result.evidence && result.evidence.length > 0 && (
+                                        <Box sx={{ mt: 2 }}>
+                                            <Typography variant="subtitle2" gutterBottom>
+                                                📄 Evidence ({result.evidence.length} pages analyzed):
+                                            </Typography>
+                                            {result.evidence.map((evidence: any, idx: number) => (
+                                                <Box key={idx} sx={{ ml: 2, mb: 1, p: 1, bgcolor: 'grey.50', borderRadius: 1 }}>
+                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <Typography variant="body2">
+                                                            <strong>{evidence.pageUrl}</strong> - {evidence.pageTitle}
+                                                        </Typography>
+                                                        {evidence.semanticScore !== undefined && (
+                                                            <Chip
+                                                                label={`${(evidence.semanticScore * 100).toFixed(0)}% match`}
+                                                                size="small"
+                                                                color={evidence.semanticScore > 0.7 ? 'success' : evidence.semanticScore > 0.5 ? 'warning' : 'default'}
+                                                                sx={{ ml: 1 }}
+                                                            />
+                                                        )}
+                                                    </Box>
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        {evidence.codeExamples} code examples •
+                                                        {evidence.productionGuidance ? ' Production guidance ✓' : ' No production guidance'}
+                                                        {evidence.contentGaps.length > 0 && ` • Missing: ${evidence.contentGaps.join(', ')}`}
+                                                    </Typography>
+                                                </Box>
+                                            ))}
+                                        </Box>
+                                    )}
+
+                                    {/* Recommendations for Best Match */}
+                                    {result.recommendations && result.recommendations.length > 0 && (
+                                        <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1, border: '1px solid', borderColor: 'grey.300' }}>
+                                            <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 'bold', mb: 2 }}>
+                                                💡 Gap Recommendations for Best Match:
+                                            </Typography>
+                                            {result.recommendations.map((rec: string, idx: number) => (
+                                                <Box key={idx} sx={{ mb: 3, pb: 2, borderBottom: idx < result.recommendations.length - 1 ? '1px solid' : 'none', borderColor: 'grey.200' }}>
+                                                    <ReactMarkdown
+                                                        components={{
+                                                            code({ node, className, children, ...props }: any) {
+                                                                const match = /language-(\w+)/.exec(className || '');
+                                                                const inline = !match;
+                                                                return !inline && match ? (
+                                                                    <Box sx={{
+                                                                        maxHeight: '500px',
+                                                                        overflow: 'auto',
+                                                                        maxWidth: '100%',
+                                                                        my: 2,
+                                                                        border: '1px solid rgba(0, 0, 0, 0.1)',
+                                                                        borderRadius: '4px',
+                                                                        '& pre': {
+                                                                            margin: '0 !important',
+                                                                            maxWidth: '100%'
+                                                                        }
+                                                                    }}>
+                                                                        <SyntaxHighlighter
+                                                                            style={vscDarkPlus}
+                                                                            language={match[1]}
+                                                                            PreTag="div"
+                                                                            wrapLines={false}
+                                                                            wrapLongLines={false}
+                                                                            customStyle={{
+                                                                                margin: 0,
+                                                                                borderRadius: '4px',
+                                                                                fontSize: '0.875rem',
+                                                                                maxWidth: '100%'
+                                                                            }}
+                                                                            {...props}
+                                                                        >
+                                                                            {String(children).replace(/\n$/, '')}
+                                                                        </SyntaxHighlighter>
+                                                                    </Box>
+                                                                ) : (
+                                                                    <code className={className} {...props} style={{
+                                                                        backgroundColor: '#f5f5f5',
+                                                                        padding: '2px 6px',
+                                                                        borderRadius: '3px',
+                                                                        fontFamily: 'monospace',
+                                                                        fontSize: '0.9em'
+                                                                    }}>
+                                                                        {children}
+                                                                    </code>
+                                                                );
+                                                            },
+                                                            p({ children }: any) {
+                                                                return <Typography variant="body2" sx={{ mb: 1, lineHeight: 1.6 }}>{children}</Typography>;
+                                                            },
+                                                            h1({ children }: any) {
+                                                                return <Typography variant="h6" sx={{ mt: 2, mb: 1, fontWeight: 'bold' }}>{children}</Typography>;
+                                                            },
+                                                            h2({ children }: any) {
+                                                                return <Typography variant="subtitle1" sx={{ mt: 2, mb: 1, fontWeight: 'bold' }}>{children}</Typography>;
+                                                            },
+                                                            h3({ children }: any) {
+                                                                return <Typography variant="subtitle2" sx={{ mt: 1, mb: 1, fontWeight: 'bold' }}>{children}</Typography>;
+                                                            },
+                                                            ul({ children }: any) {
+                                                                return <Box component="ul" sx={{ pl: 2, my: 1 }}>{children}</Box>;
+                                                            },
+                                                            li({ children }: any) {
+                                                                return <Typography component="li" variant="body2" sx={{ mb: 0.5 }}>{children}</Typography>;
+                                                            }
+                                                        }}
+                                                    >
+                                                        {rec}
+                                                    </ReactMarkdown>
+                                                </Box>
+                                            ))}
+                                        </Box>
+                                    )}
+
+                                    {/* Potential Gaps */}
+                                    {result.potentialGaps && result.potentialGaps.length > 0 && (
+                                        <Box sx={{ mt: 2 }}>
+                                            <Typography variant="subtitle2" gutterBottom color="warning.main">
+                                                ⚠️ Potential Gaps:
+                                            </Typography>
+                                            {result.potentialGaps.map((gap: any, idx: number) => (
+                                                <Box key={idx} sx={{ ml: 2, mb: 1, p: 1, bgcolor: 'warning.50', borderRadius: 1 }}>
+                                                    <Typography variant="body2">
+                                                        <strong>{gap.pageUrl}</strong>
+                                                    </Typography>
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        {gap.reasoning}
+                                                    </Typography>
+                                                </Box>
+                                            ))}
+                                        </Box>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        ))}
+
+                        {/* Export Button for Validation Results */}
+                        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 3 }}>
+                            <Button
+                                variant="contained"
+                                color="primary"
+                                onClick={() => exportValidationReport(validationResults)}
+                                sx={{ minWidth: 200 }}
+                            >
+                                📄 Export Report (Markdown)
+                            </Button>
+                        </Box>
                     </Paper>
                 )}
 

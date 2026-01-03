@@ -40,7 +40,7 @@
             "description": "Transactional emails sent through Resend/React Email are being flagged by Gmail. DNS configuration and verification are properly set up but images are hidden and emails marked suspicious.",
             "frequency": 27,
             "sources": [
-                "https://stackoverflow.com/questions/tagged/resend.com"
+                "https://stackoverflow.com/questions/79263315/images-in-this-message-are-hidden-this-message-might-be-suspicious-or-spam-i"
             ],
             "lastSeen": "2025-12-28",
             "severity": "high",
@@ -57,7 +57,7 @@
             "description": "NextJS 13.5.1 with server actions enabled. Form submission should send email but fails silently. No clear error messages in production.",
             "frequency": 15,
             "sources": [
-                "https://stackoverflow.com/questions/tagged/resend.com"
+                "https://stackoverflow.com/questions/78946618/why-email-not-being-sent-with-nextjs-server-actions-with-resend-com"
             ],
             "lastSeen": "2025-12-20",
             "severity": "medium",
