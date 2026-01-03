@@ -1118,9 +1118,12 @@ function App() {
                                                         p: 1.5,
                                                         borderBottom: index < discoveredIssues.length - 1 ? '1px solid' : 'none',
                                                         borderBottomColor: 'divider',
-                                                        bgcolor: selectedIssues.includes(issue.id) ? 'primary.50' : 'background.paper',
-                                                        '&:hover': { bgcolor: selectedIssues.includes(issue.id) ? 'primary.100' : 'grey.50' },
-                                                        cursor: 'pointer'
+                                                        bgcolor: selectedIssues.includes(issue.id) ? 'primary.dark' : 'background.paper',
+                                                        '&:hover': {
+                                                            bgcolor: selectedIssues.includes(issue.id) ? 'primary.main' : 'action.hover',
+                                                        },
+                                                        cursor: 'pointer',
+                                                        transition: 'background-color 0.2s'
                                                     }}
                                                     onClick={() => {
                                                         if (selectedIssues.includes(issue.id)) {
@@ -1185,7 +1188,7 @@ function App() {
 
                         <Grid container spacing={2} sx={{ mb: 3 }}>
                             <Grid item xs={12} md={6}>
-                                <Card sx={{ bgcolor: 'grey.50', height: '100%' }}>
+                                <Card sx={{ bgcolor: 'background.paper', height: '100%' }}>
                                     <CardContent>
                                         <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                                             <AnalyticsIcon sx={{ mr: 1, color: 'primary.main' }} />
@@ -1212,7 +1215,7 @@ function App() {
                             </Grid>
 
                             <Grid item xs={12} md={6}>
-                                <Card sx={{ bgcolor: 'grey.50', height: '100%' }}>
+                                <Card sx={{ bgcolor: 'background.paper', height: '100%' }}>
                                     <CardContent>
                                         <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                                             <CachedIcon sx={{ mr: 1, color: 'primary.main' }} />
@@ -1438,7 +1441,7 @@ function App() {
                                             </Typography>
                                             <Box sx={{ maxHeight: 300, overflow: 'auto' }}>
                                                 {validationResults.sitemapHealth.linkIssues.map((issue: any, index: number) => (
-                                                    <Box key={index} sx={{ mb: 1, p: 1, bgcolor: 'grey.50', borderRadius: 1 }}>
+                                                    <Box key={index} sx={{ mb: 1, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
                                                         <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
                                                             {issue.issueType === '404' ? '🔴' :
                                                                 issue.issueType === 'access-denied' ? '🟡' :
@@ -1486,7 +1489,7 @@ function App() {
                                                 📄 Evidence ({result.evidence.length} pages analyzed):
                                             </Typography>
                                             {result.evidence.map((evidence: any, idx: number) => (
-                                                <Box key={idx} sx={{ ml: 2, mb: 1, p: 1, bgcolor: 'grey.50', borderRadius: 1 }}>
+                                                <Box key={idx} sx={{ ml: 2, mb: 1, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
                                                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                         <Typography variant="body2">
                                                             <strong>{evidence.pageUrl}</strong> - {evidence.pageTitle}
@@ -1512,12 +1515,12 @@ function App() {
 
                                     {/* Recommendations for Best Match */}
                                     {result.recommendations && result.recommendations.length > 0 && (
-                                        <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1, border: '1px solid', borderColor: 'grey.300' }}>
+                                        <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
                                             <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 'bold', mb: 2 }}>
                                                 💡 Gap Recommendations for Best Match:
                                             </Typography>
                                             {result.recommendations.map((rec: string, idx: number) => (
-                                                <Box key={idx} sx={{ mb: 3, pb: 2, borderBottom: idx < result.recommendations.length - 1 ? '1px solid' : 'none', borderColor: 'grey.200' }}>
+                                                <Box key={idx} sx={{ mb: 3, pb: 2, borderBottom: idx < result.recommendations.length - 1 ? '1px solid' : 'none', borderColor: 'divider' }}>
                                                     <ReactMarkdown
                                                         components={{
                                                             code({ node, className, children, ...props }: any) {
@@ -1555,11 +1558,12 @@ function App() {
                                                                     </Box>
                                                                 ) : (
                                                                     <code className={className} {...props} style={{
-                                                                        backgroundColor: '#f5f5f5',
+                                                                        backgroundColor: 'rgba(255, 255, 255, 0.1)',
                                                                         padding: '2px 6px',
                                                                         borderRadius: '3px',
                                                                         fontFamily: 'monospace',
-                                                                        fontSize: '0.9em'
+                                                                        fontSize: '0.9em',
+                                                                        color: '#60a5fa'
                                                                     }}>
                                                                         {children}
                                                                     </code>
@@ -1599,7 +1603,7 @@ function App() {
                                                 ⚠️ Potential Gaps:
                                             </Typography>
                                             {result.potentialGaps.map((gap: any, idx: number) => (
-                                                <Box key={idx} sx={{ ml: 2, mb: 1, p: 1, bgcolor: 'warning.50', borderRadius: 1 }}>
+                                                <Box key={idx} sx={{ ml: 2, mb: 1, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
                                                     <Typography variant="body2">
                                                         <strong>{gap.pageUrl}</strong>
                                                     </Typography>
@@ -1737,7 +1741,7 @@ function App() {
                                             </Typography>
                                             <Box sx={{ maxHeight: 300, overflow: 'auto' }}>
                                                 {analysisState.report.sitemapHealth.linkIssues.map((issue, index) => (
-                                                    <Box key={index} sx={{ mb: 1, p: 1, bgcolor: 'grey.50', borderRadius: 1 }}>
+                                                    <Box key={index} sx={{ mb: 1, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
                                                         <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
                                                             {issue.issueType === '404' ? '🔴' :
                                                                 issue.issueType === 'access-denied' ? '🟡' :
