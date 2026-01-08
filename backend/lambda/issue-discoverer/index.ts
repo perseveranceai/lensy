@@ -778,7 +778,22 @@ function getRealCuratedData(companyName: string, domain: string): DiscoveredIssu
     const realIssuesData = require('./real-issues-data.json');
 
     // Extract company name from domain or use provided name
-    const searchKey = companyName.toLowerCase() || domain.split('.')[0].toLowerCase();
+    let searchKey = companyName?.toLowerCase();
+
+    // If no company name provided, extract from domain
+    if (!searchKey && domain) {
+        // Handle common domain patterns
+        if (domain.includes('resend.com')) {
+            searchKey = 'resend';
+        } else if (domain.includes('liveblocks.io')) {
+            searchKey = 'liveblocks';
+        } else {
+            // Extract first part of domain (e.g., "example.com" -> "example")
+            searchKey = domain.split('.')[0].toLowerCase();
+        }
+    }
+
+    console.log(`Searching for issues with key: ${searchKey} (from company: ${companyName}, domain: ${domain})`);
 
     // Return real curated data for known companies
     const issues = realIssuesData[searchKey] || [];
@@ -786,7 +801,7 @@ function getRealCuratedData(companyName: string, domain: string): DiscoveredIssu
     // Log which sources were searched
     const searchedSources = Array.from(CREDIBLE_SOURCES.values()).map(source => source.name);
     console.log(`Using real curated data from: ${searchedSources.join(', ')}`);
-    console.log(`Found ${issues.length} real issues for ${searchKey} from Q4 2025 web search`);
+    console.log(`Found ${issues.length} real issues for ${searchKey} from manual web search`);
 
     return issues;
 }

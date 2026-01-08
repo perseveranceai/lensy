@@ -171,7 +171,9 @@ async function loadOrGenerateEmbeddings(domain: string): Promise<RichContentEmbe
         throw new Error('S3_BUCKET_NAME environment variable not set');
     }
 
-    const embeddingsKey = 'rich-content-embeddings.json';
+    // Domain-specific embeddings key to avoid cross-contamination
+    const embeddingsKey = `rich-content-embeddings-${domain.replace(/\./g, '-')}.json`;
+    console.log(`Using domain-specific embeddings key: ${embeddingsKey}`);
 
     try {
         // Try to load existing embeddings from S3
@@ -387,16 +389,55 @@ function extractKeywords(issue: DiscoveredIssue): string[] {
 }
 
 /**
- * Fetch sitemap.xml and extract URLs - Enhanced to support docs sitemap
+ * Domain-specific sitemap configuration
+ */
+const DOMAIN_SITEMAP_CONFIG: Record<string, { sitemapUrl: string; docFilter: string }> = {
+    'resend.com': {
+        sitemapUrl: 'https://resend.com/docs/sitemap.xml',
+        docFilter: '/docs/'
+    },
+    'liveblocks.io': {
+        sitemapUrl: 'https://liveblocks.io/sitemap.xml',
+        docFilter: '/docs'
+    }
+};
+
+/**
+ * Fetch sitemap.xml and extract URLs - Enhanced to support multiple domains
  */
 async function fetchSitemap(domain: string): Promise<string[]> {
-    // Only fetch docs sitemap for the 216 documentation pages
-    const docsSitemapUrl = `https://${domain}/docs/sitemap.xml`;
+    // Get domain-specific configuration
+    const config = DOMAIN_SITEMAP_CONFIG[domain];
 
-    console.log(`Fetching docs sitemap from: ${docsSitemapUrl}`);
+    if (!config) {
+        console.warn(`No sitemap configuration for domain: ${domain}, using default`);
+        // Default fallback
+        const defaultSitemapUrl = `https://${domain}/sitemap.xml`;
+        console.log(`Fetching sitemap from: ${defaultSitemapUrl}`);
+
+        try {
+            const xml = await makeHttpRequest(defaultSitemapUrl);
+            const urlMatches = xml.match(/<loc>(.*?)<\/loc>/g) || [];
+            const urls = urlMatches.map(match => {
+                const url = match.replace(/<\/?loc>/g, '');
+                try {
+                    const urlObj = new URL(url);
+                    return urlObj.pathname;
+                } catch {
+                    return url;
+                }
+            });
+            return urls.filter(url => url.includes('/docs'));
+        } catch (error) {
+            console.error('Failed to fetch sitemap:', error);
+            return [];
+        }
+    }
+
+    console.log(`Fetching sitemap from: ${config.sitemapUrl} (filtering for: ${config.docFilter})`);
 
     try {
-        const xml = await makeHttpRequest(docsSitemapUrl);
+        const xml = await makeHttpRequest(config.sitemapUrl);
 
         // Extract URLs from sitemap XML
         const urlMatches = xml.match(/<loc>(.*?)<\/loc>/g) || [];
@@ -411,11 +452,14 @@ async function fetchSitemap(domain: string): Promise<string[]> {
             }
         });
 
-        console.log(`Found ${urls.length} docs URLs (including knowledge-base)`);
-        return urls;
+        // Filter to only documentation pages
+        const docUrls = urls.filter(url => url.startsWith(config.docFilter));
+        console.log(`Found ${docUrls.length} documentation URLs from ${urls.length} total URLs`);
+
+        return docUrls;
 
     } catch (error) {
-        console.error('Failed to fetch docs sitemap:', error);
+        console.error('Failed to fetch sitemap:', error);
         return [];
     }
 }
@@ -1096,15 +1140,48 @@ async function storeValidationResults(sessionId: string, results: IssueValidator
 }
 
 /**
- * Perform sitemap health check for the given domain
+ * Perform sitemap health check for the given domain with caching
  */
 async function performSitemapHealthCheck(domain: string, sessionId: string): Promise<SitemapHealthSummary | null> {
+    const bucketName = process.env.S3_BUCKET_NAME;
+    if (!bucketName) {
+        console.error('S3_BUCKET_NAME environment variable not set');
+        return null;
+    }
+
     try {
         console.log(`🔍 Starting sitemap health check for domain: ${domain}`);
 
-        // Construct sitemap URL - assume docs sitemap pattern
-        const sitemapUrl = `https://${domain}/docs/sitemap.xml`;
-        console.log(`📄 Checking sitemap: ${sitemapUrl}`);
+        // Domain-specific cache key (similar to embeddings)
+        const cacheKey = `sitemap-health-${domain.replace(/\./g, '-')}.json`;
+        console.log(`📦 Cache key: ${cacheKey}`);
+
+        // Try to load cached health results from S3
+        try {
+            console.log('🔍 Checking for cached sitemap health results...');
+            const getCommand = new GetObjectCommand({
+                Bucket: bucketName,
+                Key: cacheKey
+            });
+
+            const response = await s3Client.send(getCommand);
+            const cachedData = await response.Body?.transformToString();
+
+            if (cachedData) {
+                const cachedHealth: SitemapHealthSummary = JSON.parse(cachedData);
+                console.log(`✅ Using cached sitemap health results (${cachedHealth.totalUrls} URLs, ${cachedHealth.healthPercentage}% healthy)`);
+                console.log(`📅 Cache timestamp: ${cachedHealth.timestamp}`);
+                return cachedHealth;
+            }
+        } catch (error) {
+            console.log('📝 No cached results found, performing fresh health check...');
+        }
+
+        // Get domain-specific sitemap URL and doc filter
+        const config = DOMAIN_SITEMAP_CONFIG[domain];
+        const sitemapUrl = config ? config.sitemapUrl : `https://${domain}/sitemap.xml`;
+        const docFilter = config ? config.docFilter : '/docs';
+        console.log(`📄 Checking sitemap: ${sitemapUrl} (filtering for: ${docFilter})`);
 
         // Step 1: Invoke SitemapParser Lambda
         const sitemapParserPayload = {
@@ -1131,11 +1208,28 @@ async function performSitemapHealthCheck(domain: string, sessionId: string): Pro
             return null;
         }
 
-        // Step 2: Invoke SitemapHealthChecker Lambda
+        // Filter URLs to only include documentation pages
+        const allUrls = parserResponse.sitemapUrls || [];
+        // URLs might be full URLs or paths, handle both cases
+        const docUrls = allUrls.filter((url: string) => {
+            // Extract path from full URL if needed
+            const path = url.startsWith('http') ? new URL(url).pathname : url;
+            return path.startsWith(docFilter);
+        });
+        console.log(`📋 Filtered to ${docUrls.length} documentation URLs from ${allUrls.length} total URLs`);
+
+        // Create filtered parser response with correct field names for SitemapHealthChecker
+        const filteredParserResponse = {
+            ...parserResponse,
+            sitemapUrls: docUrls,  // SitemapHealthChecker expects 'sitemapUrls' not 'urls'
+            totalUrls: docUrls.length
+        };
+
+        // Step 2: Invoke SitemapHealthChecker Lambda with filtered URLs
         const healthCheckerPayload = {
             sessionId: sessionId,
             sitemapParserResult: {
-                Payload: parserResponse
+                Payload: filteredParserResponse
             }
         };
 
@@ -1157,9 +1251,32 @@ async function performSitemapHealthCheck(domain: string, sessionId: string): Pro
             return null;
         }
 
-        // Return the health summary
-        const healthSummary: SitemapHealthSummary = healthResponse.healthSummary;
+        // Return the health summary with breakdown counts
+        const healthSummary: SitemapHealthSummary = {
+            ...healthResponse.healthSummary,
+            brokenUrls: healthResponse.brokenUrls,
+            accessDeniedUrls: healthResponse.accessDeniedUrls,
+            timeoutUrls: healthResponse.timeoutUrls,
+            otherErrorUrls: healthResponse.otherErrorUrls
+        };
         console.log(`✅ Sitemap health check complete: ${healthSummary.healthyUrls}/${healthSummary.totalUrls} URLs healthy (${healthSummary.healthPercentage}%)`);
+        console.log(`📊 Breakdown: ${healthSummary.brokenUrls} broken, ${healthSummary.accessDeniedUrls} access denied, ${healthSummary.timeoutUrls} timeout, ${healthSummary.otherErrorUrls} other errors`);
+
+        // Store health results in domain-specific cache
+        try {
+            const putCommand = new PutObjectCommand({
+                Bucket: bucketName,
+                Key: cacheKey,
+                Body: JSON.stringify(healthSummary, null, 2),
+                ContentType: 'application/json'
+            });
+
+            await s3Client.send(putCommand);
+            console.log(`💾 Cached sitemap health results to: ${cacheKey}`);
+        } catch (error) {
+            console.error('⚠️ Failed to cache sitemap health results:', error);
+            // Don't fail the whole operation if caching fails
+        }
 
         return healthSummary;
 

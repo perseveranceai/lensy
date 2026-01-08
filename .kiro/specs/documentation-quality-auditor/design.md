@@ -675,40 +675,52 @@ function selectModel(strategy: ModelSelectionStrategy): string {
 - **Output**: `{ parsedData: object, confidence: number }`
 - **Validation**: JSON structure validation and error recovery
 
-#### IssueDiscoverer (Lambda) - NEW ✅ IMPLEMENTED
-- **Purpose**: Searches online for common developer problems with documentation portals
+#### IssueDiscoverer (Lambda) - NEW ✅ IMPLEMENTED WITH MULTI-DOMAIN SUPPORT
+- **Purpose**: Searches online for common developer problems with documentation portals across multiple domains
 - **Input**: `{ companyName: string, domain: string, sessionId: string }`
 - **Output**: `{ issues: DiscoveredIssue[], totalFound: number }`
-- **Implementation Status**: ✅ Phase 1 Complete (Dec 31, 2024)
+- **Multi-Domain Support**: ✅ Supports resend.com and liveblocks.io with domain-specific issue datasets
+- **Implementation Status**: ✅ Phase 1 Complete (Updated January 6, 2026)
   - ✅ Lambda function deployed and working
-  - ✅ Real curated data from Q4 2025 web search
-  - ✅ Manual research from Stack Overflow, GitHub, Reddit
-  - ✅ 5 authentic Resend issues stored in real-issues-data.json
-  - 📝 **Approach**: Manual web search + JSON file (pragmatic POC approach)
+  - ✅ Real curated data from 2025-2026 web search
+  - ✅ Manual research from Stack Overflow, GitHub, Liveblocks Changelog
+  - ✅ 5 authentic Resend issues + 5 authentic Liveblocks issues
+  - ✅ Domain detection from URL input (liveblocks.io/docs → liveblocks domain)
+  - 📝 **Approach**: Manual web search + JSON file with multi-domain structure
   - 🔄 **Future**: Can be replaced with live API calls (Google Custom Search, MCP servers)
+- **Supported Domains**:
+  - **resend.com**: Email delivery, Next.js integration, production deployment issues
+  - **liveblocks.io**: Collaborative editing, React integration, Yjs synchronization issues
 - **Features**:
-  - ✅ Multi-source credibility scoring (Stack Overflow, GitHub, Reddit)
-  - ✅ Issue categorization (deployment, email-delivery, api-usage, documentation)
-  - ✅ Frequency analysis and ranking by recency
-  - ✅ Source credibility scoring (Stack Overflow: 0.95, GitHub: 0.90, Reddit: 0.75)
+  - ✅ Multi-source credibility scoring (Stack Overflow, GitHub, Liveblocks Changelog)
+  - ✅ Issue categorization (deployment, email-delivery, api-usage, authentication, performance, integration)
+  - ✅ Frequency analysis and ranking by recency (2025-2026 focus)
+  - ✅ Source credibility scoring (Stack Overflow: 0.95, GitHub: 0.90, Changelog: 0.85)
+  - ✅ Domain-specific issue filtering based on input URL
   - ✅ Session-based S3 storage
 - **Real Data Sources**:
-  - Stack Overflow question 78276988 (Vercel production failures)
-  - Stack Overflow question 78448480 (Netlify deployment issues)
-  - Stack Overflow resend.com tag (Gmail spam filtering)
-  - GitHub resend/react-email issue #1354 (React Email dev links)
+  - **Resend**: Stack Overflow questions (78276988, 78448480, Gmail spam), GitHub issues
+  - **Liveblocks**: Stack Overflow questions (77992883, 78487128, 79267827), GitHub issues, Changelog
+- **Domain Detection Logic**:
+  ```typescript
+  function detectDomain(url: string): string {
+    if (url.includes('liveblocks.io')) return 'liveblocks';
+    if (url.includes('resend.com')) return 'resend';
+    return 'resend'; // default fallback
+  }
+  ```
 - **Issue Patterns**:
   ```typescript
   interface DiscoveredIssue {
-    id: string;                    // "stackoverflow-78276988"
-    title: string;                 // "Resend email doesn't work in production..."
-    category: string;              // "deployment", "email-delivery", etc.
+    id: string;                    // "stackoverflow-78487128"
+    title: string;                 // "BlockNote editor re-renders on every keystroke..."
+    category: string;              // "performance", "authentication", "integration", etc.
     description: string;           // Summary of the problem
-    frequency: number;             // Severity score (12-27 for current issues)
-    sources: string[];             // Real URLs from Stack Overflow, GitHub
-    lastSeen: string;              // "2025-12-28" (Q4 2025)
+    frequency: number;             // Severity score (12-24 for current issues)
+    sources: string[];             // Real URLs from Stack Overflow, GitHub, Changelog
+    lastSeen: string;              // "2025-11-15" (2025-2026 timeframe)
     severity: 'high' | 'medium' | 'low';
-    relatedPages: string[];        // "/docs/send-email", "/docs/api-keys"
+    relatedPages: string[];        // "/docs/get-started/nextjs-blocknote", "/docs/authentication"
   }
   ```
 

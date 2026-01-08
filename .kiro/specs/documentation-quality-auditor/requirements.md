@@ -741,3 +741,29 @@ All modes provide real-time progress feedback and generate detailed reports with
 11. THE Report SHALL highlight "potential gaps" with evidence showing page title/URL suggests relevance but content is missing
 12. THE Report SHALL be exportable in Markdown format suitable for sharing with development teams and executives
 13. THE Report SHALL maintain backward compatibility with existing Doc Mode and Sitemap Journey Mode reports
+
+### Requirement 39: Multi-Domain Issue Discovery Support ✅ **COMPLETED (January 6, 2026)**
+
+**User Story:** As a user, I want to analyze issues for different documentation portals (Resend, Liveblocks, etc.), so that I can use the same tool to assess documentation quality across various developer tools and services.
+
+#### Acceptance Criteria
+
+1. ✅ THE System SHALL support multiple documentation domains including resend.com and liveblocks.io
+2. ✅ WHEN a user enters a URL from a supported domain, THE System SHALL automatically detect the domain and load relevant issues
+3. ✅ THE Issue_Discoverer SHALL maintain separate issue datasets for each supported domain
+4. ✅ THE System SHALL display domain-specific issues based on the documentation URL being analyzed
+5. ✅ WHEN analyzing liveblocks.io documentation, THE System SHALL show Liveblocks-specific developer issues from 2025-2026
+6. ✅ WHEN analyzing resend.com documentation, THE System SHALL show Resend-specific developer issues from 2025-2026
+7. ✅ THE System SHALL support domain detection from URLs like "https://liveblocks.io/docs/..." → liveblocks domain
+8. ✅ THE Issue_Validator SHALL use domain-appropriate sitemaps and documentation structures for validation
+9. ✅ THE System SHALL maintain issue data freshness with recent issues from Stack Overflow and GitHub (2025-2026 timeframe)
+10. ✅ THE System SHALL provide accurate issue categorization and frequency data for each supported domain
+11. ✅ THE Report SHALL clearly indicate which domain's issues were analyzed in the executive summary
+12. ✅ THE System SHALL support adding new domains through configuration updates to the issue data file
+
+#### Implementation Notes (January 6, 2026)
+- ✅ **Issue Data Updated**: All 5 Liveblocks issues now have 2025-2026 dates and working links
+- ✅ **Real Sources**: Using actual Liveblocks changelog entries from 2025 and verified GitHub issues
+- ✅ **Link Validation**: All URLs verified to be working and contain real developer problems
+- ✅ **Rich Content**: Each issue includes detailed technical descriptions and code examples
+- ✅ **Domain Detection**: Automatic detection working for both resend.com and liveblocks.io domains

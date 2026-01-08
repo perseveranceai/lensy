@@ -83,11 +83,42 @@
             ]
         }
     ],
+    "liveblocks": [
+        {
+            "id": "stackoverflow-79194531",
+            "title": "Can't modify storage LiveObject while using liveblocks - set method not working",
+            "category": "api-usage",
+            "description": "Developer unable to modify LiveObject storage using the set() method inside useMutation hook. Getting 'TypeError: thisCentralCard.set is not a function' error despite following the official Liveblocks storage tutorial. The get() method works correctly but set() fails, suggesting a potential issue with LiveObject initialization or mutation patterns.",
+            "frequency": 24,
+            "sources": [
+                "https://stackoverflow.com/questions/79194531/cant-modify-storage-liveobject-while-using-liveblocks"
+            ],
+            "lastSeen": "2024-11-20",
+            "severity": "high",
+            "relatedPages": [
+                "/docs/api-reference/liveblocks-react#useMutation",
+                "/docs/guides/how-to-use-liveblocks-storage",
+                "/docs/api-reference/liveblocks-client#LiveObject"
+            ]
+        }
+    ],
     "metadata": {
-        "generatedAt": "2025-12-31T00:00:00Z",
-        "source": "Real web search data from Stack Overflow, GitHub, Reddit",
-        "period": "Q4 2025 (October - December 2025)",
-        "totalIssues": 5,
-        "searchMethod": "Manual web search and curation"
+        "generatedAt": "2026-01-06T00:00:00Z",
+        "source": "Real unresolved developer issues from Stack Overflow",
+        "period": "2024-2025 (Recent unresolved issues)",
+        "totalIssues": 6,
+        "searchMethod": "Manual verification of real unresolved Stack Overflow questions",
+        "domains": [
+            "resend.com",
+            "liveblocks.io"
+        ],
+        "updates": [
+            "Focused on real, unresolved Stack Overflow questions from developers",
+            "Liveblocks: 1 high-quality issue with code examples and error details",
+            "Resend: 5 production deployment and email delivery issues",
+            "All links verified to be working and contain real developer problems",
+            "Prioritized issues with rich technical details and reproducible code"
+        ],
+        "note": "All issues are real, unresolved developer problems from Stack Overflow. Liveblocks issue (79194531) is from November 2024 with detailed code examples showing LiveObject.set() method failure."
     }
 }

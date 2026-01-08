@@ -1,4 +1,13 @@
 "use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -15,25 +24,27 @@ const lambdaClient = new client_lambda_1.LambdaClient({ region: process.env.AWS_
 /**
  * Generate embedding for text using Amazon Bedrock Titan
  */
-async function generateEmbedding(text) {
-    try {
-        const input = {
-            modelId: 'amazon.titan-embed-text-v1',
-            contentType: 'application/json',
-            accept: 'application/json',
-            body: JSON.stringify({
-                inputText: text
-            })
-        };
-        const command = new client_bedrock_runtime_1.InvokeModelCommand(input);
-        const response = await bedrockClient.send(command);
-        const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-        return responseBody.embedding;
-    }
-    catch (error) {
-        console.error('Error generating embedding:', error);
-        throw error;
-    }
+function generateEmbedding(text) {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            const input = {
+                modelId: 'amazon.titan-embed-text-v1',
+                contentType: 'application/json',
+                accept: 'application/json',
+                body: JSON.stringify({
+                    inputText: text
+                })
+            };
+            const command = new client_bedrock_runtime_1.InvokeModelCommand(input);
+            const response = yield bedrockClient.send(command);
+            const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+            return responseBody.embedding;
+        }
+        catch (error) {
+            console.error('Error generating embedding:', error);
+            throw error;
+        }
+    });
 }
 /**
  * Extract page content from HTML
@@ -65,76 +76,81 @@ function extractPageContent(html) {
 /**
  * Load or generate embeddings for all documentation pages
  */
-async function loadOrGenerateEmbeddings(domain) {
-    const bucketName = process.env.S3_BUCKET_NAME;
-    if (!bucketName) {
-        throw new Error('S3_BUCKET_NAME environment variable not set');
-    }
-    const embeddingsKey = 'rich-content-embeddings.json';
-    try {
-        // Try to load existing embeddings from S3
-        console.log('Loading existing embeddings from S3...');
-        const getCommand = new client_s3_1.GetObjectCommand({
-            Bucket: bucketName,
-            Key: embeddingsKey
-        });
-        const response = await s3Client.send(getCommand);
-        const embeddingsData = await response.Body?.transformToString();
-        if (embeddingsData) {
-            const embeddings = JSON.parse(embeddingsData);
-            console.log(`Loaded ${embeddings.length} existing embeddings from S3`);
-            return embeddings;
+function loadOrGenerateEmbeddings(domain) {
+    var _a;
+    return __awaiter(this, void 0, void 0, function* () {
+        const bucketName = process.env.S3_BUCKET_NAME;
+        if (!bucketName) {
+            throw new Error('S3_BUCKET_NAME environment variable not set');
         }
-    }
-    catch (error) {
-        console.log('No existing embeddings found, generating new ones...');
-    }
-    // Generate new embeddings
-    const sitemap = await fetchSitemap(domain);
-    const docPages = sitemap.filter(url => url.startsWith('/docs/'));
-    console.log(`Generating embeddings for ${docPages.length} documentation pages...`);
-    const embeddings = [];
-    for (const pagePath of docPages) {
+        // Domain-specific embeddings key to avoid cross-contamination
+        const embeddingsKey = `rich-content-embeddings-${domain.replace(/\./g, '-')}.json`;
+        console.log(`Using domain-specific embeddings key: ${embeddingsKey}`);
         try {
-            const html = await fetchPageContent(domain, pagePath);
-            if (!html)
-                continue;
-            const { title, description, content } = extractPageContent(html);
-            // Combine title, description, and content for embedding
-            const textForEmbedding = `${title} ${description} ${content}`.trim();
-            if (textForEmbedding.length < 10)
-                continue; // Skip pages with minimal content
-            const embedding = await generateEmbedding(textForEmbedding);
-            embeddings.push({
-                url: pagePath,
-                title,
-                description,
-                content,
-                embedding
+            // Try to load existing embeddings from S3
+            console.log('Loading existing embeddings from S3...');
+            const getCommand = new client_s3_1.GetObjectCommand({
+                Bucket: bucketName,
+                Key: embeddingsKey
             });
-            console.log(`Generated embedding for: ${pagePath} (${title})`);
-            // Add small delay to avoid rate limiting
-            await new Promise(resolve => setTimeout(resolve, 100));
+            const response = yield s3Client.send(getCommand);
+            const embeddingsData = yield ((_a = response.Body) === null || _a === void 0 ? void 0 : _a.transformToString());
+            if (embeddingsData) {
+                const embeddings = JSON.parse(embeddingsData);
+                console.log(`Loaded ${embeddings.length} existing embeddings from S3`);
+                return embeddings;
+            }
         }
         catch (error) {
-            console.error(`Failed to generate embedding for ${pagePath}:`, error);
+            console.log('No existing embeddings found, generating new ones...');
         }
-    }
-    // Store embeddings in S3
-    try {
-        const putCommand = new client_s3_1.PutObjectCommand({
-            Bucket: bucketName,
-            Key: embeddingsKey,
-            Body: JSON.stringify(embeddings, null, 2),
-            ContentType: 'application/json'
-        });
-        await s3Client.send(putCommand);
-        console.log(`Stored ${embeddings.length} embeddings in S3`);
-    }
-    catch (error) {
-        console.error('Failed to store embeddings in S3:', error);
-    }
-    return embeddings;
+        // Generate new embeddings
+        const sitemap = yield fetchSitemap(domain);
+        const docPages = sitemap.filter(url => url.startsWith('/docs/'));
+        console.log(`Generating embeddings for ${docPages.length} documentation pages...`);
+        const embeddings = [];
+        for (const pagePath of docPages) {
+            try {
+                const html = yield fetchPageContent(domain, pagePath);
+                if (!html)
+                    continue;
+                const { title, description, content } = extractPageContent(html);
+                // Combine title, description, and content for embedding
+                const textForEmbedding = `${title} ${description} ${content}`.trim();
+                if (textForEmbedding.length < 10)
+                    continue; // Skip pages with minimal content
+                const embedding = yield generateEmbedding(textForEmbedding);
+                embeddings.push({
+                    url: pagePath,
+                    title,
+                    description,
+                    content,
+                    embedding
+                });
+                console.log(`Generated embedding for: ${pagePath} (${title})`);
+                // Add small delay to avoid rate limiting
+                yield new Promise(resolve => setTimeout(resolve, 100));
+            }
+            catch (error) {
+                console.error(`Failed to generate embedding for ${pagePath}:`, error);
+            }
+        }
+        // Store embeddings in S3
+        try {
+            const putCommand = new client_s3_1.PutObjectCommand({
+                Bucket: bucketName,
+                Key: embeddingsKey,
+                Body: JSON.stringify(embeddings, null, 2),
+                ContentType: 'application/json'
+            });
+            yield s3Client.send(putCommand);
+            console.log(`Stored ${embeddings.length} embeddings in S3`);
+        }
+        catch (error) {
+            console.error('Failed to store embeddings in S3:', error);
+        }
+        return embeddings;
+    });
 }
 /**
  * Calculate cosine similarity between two vectors
@@ -162,63 +178,65 @@ function cosineSimilarity(a, b) {
  * Search sitemap using semantic similarity (optimized version)
  * Returns array of {url, title, similarity} objects
  */
-async function searchSitemapSemanticlyOptimized(issue, domain) {
-    try {
-        // Load pre-generated embeddings
-        const embeddings = await loadOrGenerateEmbeddings(domain);
-        if (embeddings.length === 0) {
-            console.log('No embeddings available, falling back to keyword search');
+function searchSitemapSemanticlyOptimized(issue, domain) {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            // Load pre-generated embeddings
+            const embeddings = yield loadOrGenerateEmbeddings(domain);
+            if (embeddings.length === 0) {
+                console.log('No embeddings available, falling back to keyword search');
+                return [];
+            }
+            // Generate embedding for the issue using RICH CONTENT
+            // Combine all available fields for maximum context
+            let issueText = `${issue.title} ${issue.description} ${issue.category}`;
+            // Add rich content if available
+            if (issue.fullContent) {
+                issueText += ` ${issue.fullContent}`;
+                console.log(`Using full content (${issue.fullContent.length} chars) for semantic matching`);
+            }
+            if (issue.codeSnippets && issue.codeSnippets.length > 0) {
+                issueText += ` ${issue.codeSnippets.join(' ')}`;
+                console.log(`Including ${issue.codeSnippets.length} code snippets`);
+            }
+            if (issue.errorMessages && issue.errorMessages.length > 0) {
+                issueText += ` ${issue.errorMessages.join(' ')}`;
+                console.log(`Including ${issue.errorMessages.length} error messages`);
+            }
+            if (issue.tags && issue.tags.length > 0) {
+                issueText += ` ${issue.tags.join(' ')}`;
+                console.log(`Including ${issue.tags.length} tags: ${issue.tags.join(', ')}`);
+            }
+            if (issue.stackTrace) {
+                issueText += ` ${issue.stackTrace}`;
+                console.log(`Including stack trace`);
+            }
+            console.log(`Total issue text for embedding: ${issueText.length} chars`);
+            const issueEmbedding = yield generateEmbedding(issueText);
+            // Calculate similarities
+            const similarities = [];
+            for (const embedding of embeddings) {
+                const similarity = cosineSimilarity(issueEmbedding, embedding.embedding);
+                similarities.push({
+                    url: embedding.url,
+                    title: embedding.title,
+                    similarity
+                });
+            }
+            // Sort by similarity and return top 5
+            similarities.sort((a, b) => b.similarity - a.similarity);
+            const topPages = similarities.slice(0, 5);
+            console.log(`Semantic search results for "${issue.title}" (using rich content):`);
+            topPages.forEach((page, index) => {
+                console.log(`${index + 1}. ${page.url} (${page.title}) - Similarity: ${page.similarity.toFixed(3)}`);
+            });
+            return topPages;
+        }
+        catch (error) {
+            console.error('Semantic search failed:', error);
             return [];
         }
-        // Generate embedding for the issue using RICH CONTENT
-        // Combine all available fields for maximum context
-        let issueText = `${issue.title} ${issue.description} ${issue.category}`;
-        // Add rich content if available
-        if (issue.fullContent) {
-            issueText += ` ${issue.fullContent}`;
-            console.log(`Using full content (${issue.fullContent.length} chars) for semantic matching`);
-        }
-        if (issue.codeSnippets && issue.codeSnippets.length > 0) {
-            issueText += ` ${issue.codeSnippets.join(' ')}`;
-            console.log(`Including ${issue.codeSnippets.length} code snippets`);
-        }
-        if (issue.errorMessages && issue.errorMessages.length > 0) {
-            issueText += ` ${issue.errorMessages.join(' ')}`;
-            console.log(`Including ${issue.errorMessages.length} error messages`);
-        }
-        if (issue.tags && issue.tags.length > 0) {
-            issueText += ` ${issue.tags.join(' ')}`;
-            console.log(`Including ${issue.tags.length} tags: ${issue.tags.join(', ')}`);
-        }
-        if (issue.stackTrace) {
-            issueText += ` ${issue.stackTrace}`;
-            console.log(`Including stack trace`);
-        }
-        console.log(`Total issue text for embedding: ${issueText.length} chars`);
-        const issueEmbedding = await generateEmbedding(issueText);
-        // Calculate similarities
-        const similarities = [];
-        for (const embedding of embeddings) {
-            const similarity = cosineSimilarity(issueEmbedding, embedding.embedding);
-            similarities.push({
-                url: embedding.url,
-                title: embedding.title,
-                similarity
-            });
-        }
-        // Sort by similarity and return top 5
-        similarities.sort((a, b) => b.similarity - a.similarity);
-        const topPages = similarities.slice(0, 5);
-        console.log(`Semantic search results for "${issue.title}" (using rich content):`);
-        topPages.forEach((page, index) => {
-            console.log(`${index + 1}. ${page.url} (${page.title}) - Similarity: ${page.similarity.toFixed(3)}`);
-        });
-        return topPages;
-    }
-    catch (error) {
-        console.error('Semantic search failed:', error);
-        return [];
-    }
+    });
 }
 /**
  * Extract keywords from issue for sitemap search
@@ -245,34 +263,76 @@ function extractKeywords(issue) {
     return [...new Set(keywords)];
 }
 /**
- * Fetch sitemap.xml and extract URLs - Enhanced to support docs sitemap
+ * Domain-specific sitemap configuration
  */
-async function fetchSitemap(domain) {
-    // Only fetch docs sitemap for the 216 documentation pages
-    const docsSitemapUrl = `https://${domain}/docs/sitemap.xml`;
-    console.log(`Fetching docs sitemap from: ${docsSitemapUrl}`);
-    try {
-        const xml = await makeHttpRequest(docsSitemapUrl);
-        // Extract URLs from sitemap XML
-        const urlMatches = xml.match(/<loc>(.*?)<\/loc>/g) || [];
-        const urls = urlMatches.map(match => {
-            const url = match.replace(/<\/?loc>/g, '');
-            // Convert full URL to path
+const DOMAIN_SITEMAP_CONFIG = {
+    'resend.com': {
+        sitemapUrl: 'https://resend.com/docs/sitemap.xml',
+        docFilter: '/docs/'
+    },
+    'liveblocks.io': {
+        sitemapUrl: 'https://liveblocks.io/sitemap.xml',
+        docFilter: '/docs'
+    }
+};
+/**
+ * Fetch sitemap.xml and extract URLs - Enhanced to support multiple domains
+ */
+function fetchSitemap(domain) {
+    return __awaiter(this, void 0, void 0, function* () {
+        // Get domain-specific configuration
+        const config = DOMAIN_SITEMAP_CONFIG[domain];
+        if (!config) {
+            console.warn(`No sitemap configuration for domain: ${domain}, using default`);
+            // Default fallback
+            const defaultSitemapUrl = `https://${domain}/sitemap.xml`;
+            console.log(`Fetching sitemap from: ${defaultSitemapUrl}`);
             try {
-                const urlObj = new url_1.URL(url);
-                return urlObj.pathname;
+                const xml = yield makeHttpRequest(defaultSitemapUrl);
+                const urlMatches = xml.match(/<loc>(.*?)<\/loc>/g) || [];
+                const urls = urlMatches.map(match => {
+                    const url = match.replace(/<\/?loc>/g, '');
+                    try {
+                        const urlObj = new url_1.URL(url);
+                        return urlObj.pathname;
+                    }
+                    catch (_a) {
+                        return url;
+                    }
+                });
+                return urls.filter(url => url.includes('/docs'));
             }
-            catch {
-                return url;
+            catch (error) {
+                console.error('Failed to fetch sitemap:', error);
+                return [];
             }
-        });
-        console.log(`Found ${urls.length} docs URLs (including knowledge-base)`);
-        return urls;
-    }
-    catch (error) {
-        console.error('Failed to fetch docs sitemap:', error);
-        return [];
-    }
+        }
+        console.log(`Fetching sitemap from: ${config.sitemapUrl} (filtering for: ${config.docFilter})`);
+        try {
+            const xml = yield makeHttpRequest(config.sitemapUrl);
+            // Extract URLs from sitemap XML
+            const urlMatches = xml.match(/<loc>(.*?)<\/loc>/g) || [];
+            const urls = urlMatches.map(match => {
+                const url = match.replace(/<\/?loc>/g, '');
+                // Convert full URL to path
+                try {
+                    const urlObj = new url_1.URL(url);
+                    return urlObj.pathname;
+                }
+                catch (_a) {
+                    return url;
+                }
+            });
+            // Filter to only documentation pages
+            const docUrls = urls.filter(url => url.startsWith(config.docFilter));
+            console.log(`Found ${docUrls.length} documentation URLs from ${urls.length} total URLs`);
+            return docUrls;
+        }
+        catch (error) {
+            console.error('Failed to fetch sitemap:', error);
+            return [];
+        }
+    });
 }
 /**
  * Search sitemap for relevant pages based on keywords
@@ -305,17 +365,19 @@ function searchSitemapForRelevantPages(keywords, sitemapUrls) {
 /**
  * Fetch page content
  */
-async function fetchPageContent(domain, path) {
-    const url = `https://${domain}${path}`;
-    console.log(`Fetching page content from: ${url}`);
-    try {
-        const content = await makeHttpRequest(url);
-        return content;
-    }
-    catch (error) {
-        console.error(`Failed to fetch page ${url}:`, error);
-        return '';
-    }
+function fetchPageContent(domain, path) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const url = `https://${domain}${path}`;
+        console.log(`Fetching page content from: ${url}`);
+        try {
+            const content = yield makeHttpRequest(url);
+            return content;
+        }
+        catch (error) {
+            console.error(`Failed to fetch page ${url}:`, error);
+            return '';
+        }
+    });
 }
 /**
  * Extract code snippets from HTML page
@@ -419,205 +481,209 @@ function analyzePageContent(content, issue, pageUrl, semanticScore) {
 /**
  * Validate a single issue against documentation
  */
-async function validateIssue(issue, domain) {
-    console.log(`\n=== Validating issue: ${issue.title} ===`);
-    let pagesToCheck = [];
-    let usedSitemapFallback = false;
-    // Step 1: Try pre-curated pages first
-    if (issue.relatedPages && issue.relatedPages.length > 0) {
-        pagesToCheck = issue.relatedPages.map(url => ({ url, title: url }));
-        console.log(`Using pre-curated pages:`, pagesToCheck.map(p => p.url));
-    }
-    else {
-        // Step 2: Use semantic search for better relevance
-        console.log(`No pre-curated pages, using semantic search`);
-        usedSitemapFallback = true;
-        const semanticResults = await searchSitemapSemanticlyOptimized(issue, domain);
-        pagesToCheck = semanticResults;
-        // Fallback to keyword search if semantic search fails
-        if (pagesToCheck.length === 0) {
-            console.log(`Semantic search failed, falling back to keyword search`);
-            const sitemap = await fetchSitemap(domain);
-            if (sitemap.length > 0) {
-                // Filter to only include docs pages to avoid irrelevant results
-                const docPages = sitemap.filter(url => url.startsWith('/docs/'));
-                console.log(`Filtered to ${docPages.length} docs pages from ${sitemap.length} total pages`);
-                const keywords = extractKeywords(issue);
-                console.log(`Extracted keywords:`, keywords);
-                const keywordPages = searchSitemapForRelevantPages(keywords, docPages);
-                pagesToCheck = keywordPages.map(url => ({ url, title: url }));
+function validateIssue(issue, domain) {
+    return __awaiter(this, void 0, void 0, function* () {
+        console.log(`\n=== Validating issue: ${issue.title} ===`);
+        let pagesToCheck = [];
+        let usedSitemapFallback = false;
+        // Step 1: Try pre-curated pages first
+        if (issue.relatedPages && issue.relatedPages.length > 0) {
+            pagesToCheck = issue.relatedPages.map(url => ({ url, title: url }));
+            console.log(`Using pre-curated pages:`, pagesToCheck.map(p => p.url));
+        }
+        else {
+            // Step 2: Use semantic search for better relevance
+            console.log(`No pre-curated pages, using semantic search`);
+            usedSitemapFallback = true;
+            const semanticResults = yield searchSitemapSemanticlyOptimized(issue, domain);
+            pagesToCheck = semanticResults;
+            // Fallback to keyword search if semantic search fails
+            if (pagesToCheck.length === 0) {
+                console.log(`Semantic search failed, falling back to keyword search`);
+                const sitemap = yield fetchSitemap(domain);
+                if (sitemap.length > 0) {
+                    // Filter to only include docs pages to avoid irrelevant results
+                    const docPages = sitemap.filter(url => url.startsWith('/docs/'));
+                    console.log(`Filtered to ${docPages.length} docs pages from ${sitemap.length} total pages`);
+                    const keywords = extractKeywords(issue);
+                    console.log(`Extracted keywords:`, keywords);
+                    const keywordPages = searchSitemapForRelevantPages(keywords, docPages);
+                    pagesToCheck = keywordPages.map(url => ({ url, title: url }));
+                }
             }
         }
-    }
-    // Step 3: Validate each page
-    const evidence = [];
-    const potentialGaps = [];
-    const criticalGaps = [];
-    const missingElements = [];
-    if (pagesToCheck.length === 0) {
-        // Critical gap: No relevant pages found
-        console.log(`❌ CRITICAL GAP: No relevant pages found for issue`);
-        criticalGaps.push(`No documentation page found addressing "${issue.title}"`);
-        potentialGaps.push({
-            gapType: 'critical-gap',
-            missingContent: [
-                'Complete documentation page missing',
-                'Code examples needed',
-                'Troubleshooting guide needed',
-                'Production deployment guidance needed'
-            ],
-            reasoning: `Searched sitemap.xml but found no pages matching keywords: ${extractKeywords(issue).join(', ')}`,
-            developerImpact: `${issue.frequency} developers affected - reporting this issue since ${issue.lastSeen}`
+        // Step 3: Validate each page
+        const evidence = [];
+        const potentialGaps = [];
+        const criticalGaps = [];
+        const missingElements = [];
+        if (pagesToCheck.length === 0) {
+            // Critical gap: No relevant pages found
+            console.log(`❌ CRITICAL GAP: No relevant pages found for issue`);
+            criticalGaps.push(`No documentation page found addressing "${issue.title}"`);
+            potentialGaps.push({
+                gapType: 'critical-gap',
+                missingContent: [
+                    'Complete documentation page missing',
+                    'Code examples needed',
+                    'Troubleshooting guide needed',
+                    'Production deployment guidance needed'
+                ],
+                reasoning: `Searched sitemap.xml but found no pages matching keywords: ${extractKeywords(issue).join(', ')}`,
+                developerImpact: `${issue.frequency} developers affected - reporting this issue since ${issue.lastSeen}`
+            });
+            return {
+                issueId: issue.id,
+                issueTitle: issue.title,
+                status: 'critical-gap',
+                evidence,
+                missingElements: ['Complete documentation page'],
+                potentialGaps,
+                criticalGaps,
+                confidence: 95,
+                recommendations: [
+                    `Create new documentation page addressing: ${issue.title}`,
+                    `Include code examples for ${issue.category}`,
+                    `Add troubleshooting section`,
+                    `Reference: ${issue.sources[0]}`
+                ]
+            };
+        }
+        // Fetch and analyze each page
+        for (const page of pagesToCheck) {
+            const content = yield fetchPageContent(domain, page.url);
+            if (!content) {
+                console.log(`⚠️ Failed to fetch page: ${page.url}`);
+                continue;
+            }
+            const pageEvidence = analyzePageContent(content, issue, page.url, page.similarity);
+            evidence.push(pageEvidence);
+            // Content gaps are already shown in the Evidence section, no need to duplicate
+            // if (!pageEvidence.hasRelevantContent || pageEvidence.contentGaps.length > 0) {
+            //     console.log(`⚠️ POTENTIAL GAP: ${page.url} exists but missing content`);
+            //     potentialGaps.push({
+            //         gapType: 'potential-gap',
+            //         pageUrl: page.url,
+            //         pageTitle: pageEvidence.pageTitle,
+            //         missingContent: pageEvidence.contentGaps,
+            //         reasoning: `Rich content analysis suggests relevance to "${issue.title}" but lacks specific content`,
+            //         developerImpact: `Developers searching for "${issue.title}" would find this page but not get complete solution`
+            //     });
+            // }
+            missingElements.push(...pageEvidence.contentGaps);
+        }
+        // Determine overall status
+        // Be conservative: Don't mark as "resolved" unless we're very confident
+        // the documentation addresses the CORE problem, not just mentions related keywords
+        // Debug logging
+        console.log(`\n=== Status Determination Debug ===`);
+        evidence.forEach((e, idx) => {
+            console.log(`Evidence ${idx + 1}: ${e.pageUrl}`);
+            console.log(`  - hasRelevantContent: ${e.hasRelevantContent}`);
+            console.log(`  - contentGaps.length: ${e.contentGaps.length}`);
+            console.log(`  - contentGaps: ${JSON.stringify(e.contentGaps)}`);
+            console.log(`  - semanticScore: ${e.semanticScore}`);
         });
+        const hasCompleteContent = evidence.some(e => e.hasRelevantContent &&
+            e.contentGaps.length === 0 &&
+            e.semanticScore && e.semanticScore > 0.85 // High confidence threshold
+        );
+        const hasSomeContent = evidence.some(e => e.hasRelevantContent);
+        console.log(`hasCompleteContent: ${hasCompleteContent}`);
+        console.log(`hasSomeContent: ${hasSomeContent}`);
+        let status;
+        let confidence;
+        if (hasCompleteContent) {
+            status = 'resolved';
+            confidence = 90;
+            console.log(`✅ RESOLVED: Issue appears to be addressed in documentation (high confidence)`);
+        }
+        else if (evidence.some(e => e.semanticScore && e.semanticScore > 0.6)) {
+            // Good semantic match but not perfect - likely a potential gap
+            status = 'potential-gap';
+            confidence = 75;
+            console.log(`⚠️ POTENTIAL GAP: Relevant pages exist but may not fully address the issue`);
+        }
+        else if (hasSomeContent) {
+            status = 'confirmed';
+            confidence = 70;
+            console.log(`❌ CONFIRMED: Issue exists, documentation is incomplete`);
+        }
+        else {
+            status = 'critical-gap';
+            confidence = 85;
+            console.log(`❌ CRITICAL GAP: No relevant content found`);
+        }
+        // Generate detailed recommendations using AI analysis (for all statuses)
+        const recommendations = yield generateDetailedRecommendations(issue, evidence, status, domain);
         return {
             issueId: issue.id,
             issueTitle: issue.title,
-            status: 'critical-gap',
+            status,
             evidence,
-            missingElements: ['Complete documentation page'],
+            missingElements: [...new Set(missingElements)],
             potentialGaps,
             criticalGaps,
-            confidence: 95,
-            recommendations: [
-                `Create new documentation page addressing: ${issue.title}`,
-                `Include code examples for ${issue.category}`,
-                `Add troubleshooting section`,
-                `Reference: ${issue.sources[0]}`
-            ]
+            confidence,
+            recommendations
         };
-    }
-    // Fetch and analyze each page
-    for (const page of pagesToCheck) {
-        const content = await fetchPageContent(domain, page.url);
-        if (!content) {
-            console.log(`⚠️ Failed to fetch page: ${page.url}`);
-            continue;
-        }
-        const pageEvidence = analyzePageContent(content, issue, page.url, page.similarity);
-        evidence.push(pageEvidence);
-        // Content gaps are already shown in the Evidence section, no need to duplicate
-        // if (!pageEvidence.hasRelevantContent || pageEvidence.contentGaps.length > 0) {
-        //     console.log(`⚠️ POTENTIAL GAP: ${page.url} exists but missing content`);
-        //     potentialGaps.push({
-        //         gapType: 'potential-gap',
-        //         pageUrl: page.url,
-        //         pageTitle: pageEvidence.pageTitle,
-        //         missingContent: pageEvidence.contentGaps,
-        //         reasoning: `Rich content analysis suggests relevance to "${issue.title}" but lacks specific content`,
-        //         developerImpact: `Developers searching for "${issue.title}" would find this page but not get complete solution`
-        //     });
-        // }
-        missingElements.push(...pageEvidence.contentGaps);
-    }
-    // Determine overall status
-    // Be conservative: Don't mark as "resolved" unless we're very confident
-    // the documentation addresses the CORE problem, not just mentions related keywords
-    // Debug logging
-    console.log(`\n=== Status Determination Debug ===`);
-    evidence.forEach((e, idx) => {
-        console.log(`Evidence ${idx + 1}: ${e.pageUrl}`);
-        console.log(`  - hasRelevantContent: ${e.hasRelevantContent}`);
-        console.log(`  - contentGaps.length: ${e.contentGaps.length}`);
-        console.log(`  - contentGaps: ${JSON.stringify(e.contentGaps)}`);
-        console.log(`  - semanticScore: ${e.semanticScore}`);
     });
-    const hasCompleteContent = evidence.some(e => e.hasRelevantContent &&
-        e.contentGaps.length === 0 &&
-        e.semanticScore && e.semanticScore > 0.85 // High confidence threshold
-    );
-    const hasSomeContent = evidence.some(e => e.hasRelevantContent);
-    console.log(`hasCompleteContent: ${hasCompleteContent}`);
-    console.log(`hasSomeContent: ${hasSomeContent}`);
-    let status;
-    let confidence;
-    if (hasCompleteContent) {
-        status = 'resolved';
-        confidence = 90;
-        console.log(`✅ RESOLVED: Issue appears to be addressed in documentation (high confidence)`);
-    }
-    else if (evidence.some(e => e.semanticScore && e.semanticScore > 0.6)) {
-        // Good semantic match but not perfect - likely a potential gap
-        status = 'potential-gap';
-        confidence = 75;
-        console.log(`⚠️ POTENTIAL GAP: Relevant pages exist but may not fully address the issue`);
-    }
-    else if (hasSomeContent) {
-        status = 'confirmed';
-        confidence = 70;
-        console.log(`❌ CONFIRMED: Issue exists, documentation is incomplete`);
-    }
-    else {
-        status = 'critical-gap';
-        confidence = 85;
-        console.log(`❌ CRITICAL GAP: No relevant content found`);
-    }
-    // Generate detailed recommendations using AI analysis (for all statuses)
-    const recommendations = await generateDetailedRecommendations(issue, evidence, status, domain);
-    return {
-        issueId: issue.id,
-        issueTitle: issue.title,
-        status,
-        evidence,
-        missingElements: [...new Set(missingElements)],
-        potentialGaps,
-        criticalGaps,
-        confidence,
-        recommendations
-    };
 }
 /**
  * Generate detailed, actionable recommendations using AI analysis
  */
-async function generateDetailedRecommendations(issue, evidence, status, domain) {
-    try {
-        // Get the best matching page (highest semantic score)
-        const bestMatch = evidence.reduce((best, current) => {
-            const bestScore = best.semanticScore || 0;
-            const currentScore = current.semanticScore || 0;
-            return currentScore > bestScore ? current : best;
-        }, evidence[0]);
-        if (!bestMatch || !bestMatch.semanticScore || bestMatch.semanticScore < 0.5) {
-            // No good match, return generic recommendations
-            console.log(`❌ No good semantic match found. bestMatch: ${!!bestMatch}, semanticScore: ${bestMatch?.semanticScore}`);
-            return [
-                `Create new documentation page addressing: ${issue.title}`,
-                `Include code examples for ${issue.category}`,
-                `Add troubleshooting section for common errors`,
-                `Reference: ${issue.sources[0]}`
-            ];
-        }
-        // For resolved issues, still generate recommendations for improvements
-        console.log(`🔍 Generating recommendations for issue: ${issue.id} (status: ${status})`);
-        console.log(`📊 Best match: ${bestMatch.pageUrl} (score: ${bestMatch.semanticScore})`);
-        console.log(`✅ Proceeding with AI recommendation generation...`);
-        // CRITICAL: Fetch the ACTUAL page content to analyze existing code
-        console.log(`📄 Fetching actual page content from: ${domain}${bestMatch.pageUrl}`);
-        const pageContent = await fetchPageContent(domain, bestMatch.pageUrl);
-        if (!pageContent) {
-            console.log(`❌ Failed to fetch page content, falling back to generic recommendations`);
-            return [
-                `Update ${bestMatch.pageUrl} to address: ${issue.title}`,
-                `Add code examples for ${issue.category}`,
-                `Include troubleshooting section for common errors`,
-                `Reference: ${issue.sources[0]}`
-            ];
-        }
-        // Extract code snippets from the page
-        const codeSnippets = extractCodeSnippetsFromPage(pageContent);
-        console.log(`📝 Extracted ${codeSnippets.length} code snippets from documentation page`);
-        // Build context for AI analysis
-        const issueContext = `
+function generateDetailedRecommendations(issue, evidence, status, domain) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            // Get the best matching page (highest semantic score)
+            const bestMatch = evidence.reduce((best, current) => {
+                const bestScore = best.semanticScore || 0;
+                const currentScore = current.semanticScore || 0;
+                return currentScore > bestScore ? current : best;
+            }, evidence[0]);
+            if (!bestMatch || !bestMatch.semanticScore || bestMatch.semanticScore < 0.5) {
+                // No good match, return generic recommendations
+                console.log(`❌ No good semantic match found. bestMatch: ${!!bestMatch}, semanticScore: ${bestMatch === null || bestMatch === void 0 ? void 0 : bestMatch.semanticScore}`);
+                return [
+                    `Create new documentation page addressing: ${issue.title}`,
+                    `Include code examples for ${issue.category}`,
+                    `Add troubleshooting section for common errors`,
+                    `Reference: ${issue.sources[0]}`
+                ];
+            }
+            // For resolved issues, still generate recommendations for improvements
+            console.log(`🔍 Generating recommendations for issue: ${issue.id} (status: ${status})`);
+            console.log(`📊 Best match: ${bestMatch.pageUrl} (score: ${bestMatch.semanticScore})`);
+            console.log(`✅ Proceeding with AI recommendation generation...`);
+            // CRITICAL: Fetch the ACTUAL page content to analyze existing code
+            console.log(`📄 Fetching actual page content from: ${domain}${bestMatch.pageUrl}`);
+            const pageContent = yield fetchPageContent(domain, bestMatch.pageUrl);
+            if (!pageContent) {
+                console.log(`❌ Failed to fetch page content, falling back to generic recommendations`);
+                return [
+                    `Update ${bestMatch.pageUrl} to address: ${issue.title}`,
+                    `Add code examples for ${issue.category}`,
+                    `Include troubleshooting section for common errors`,
+                    `Reference: ${issue.sources[0]}`
+                ];
+            }
+            // Extract code snippets from the page
+            const codeSnippets = extractCodeSnippetsFromPage(pageContent);
+            console.log(`📝 Extracted ${codeSnippets.length} code snippets from documentation page`);
+            // Build context for AI analysis
+            const issueContext = `
 Issue Title: ${issue.title}
 Category: ${issue.category}
 Description: ${issue.description}
-Error Messages: ${issue.errorMessages?.join(', ') || 'None'}
-Tags: ${issue.tags?.join(', ') || 'None'}
-Code Snippets from Developer Issue: ${issue.codeSnippets?.length || 0} snippets found
+Error Messages: ${((_a = issue.errorMessages) === null || _a === void 0 ? void 0 : _a.join(', ')) || 'None'}
+Tags: ${((_b = issue.tags) === null || _b === void 0 ? void 0 : _b.join(', ')) || 'None'}
+Code Snippets from Developer Issue: ${((_c = issue.codeSnippets) === null || _c === void 0 ? void 0 : _c.length) || 0} snippets found
 ${issue.codeSnippets ? issue.codeSnippets.map((snippet, i) => `\nSnippet ${i + 1}:\n\`\`\`\n${snippet}\n\`\`\``).join('\n') : ''}
-Full Content Preview: ${issue.fullContent?.substring(0, 1000) || 'Not available'}
+Full Content Preview: ${((_d = issue.fullContent) === null || _d === void 0 ? void 0 : _d.substring(0, 1000)) || 'Not available'}
 Source: ${issue.sources[0]}
 `.trim();
-        const docContext = `
+            const docContext = `
 Page URL: ${bestMatch.pageUrl}
 Page Title: ${bestMatch.pageTitle}
 Semantic Match Score: ${(bestMatch.semanticScore * 100).toFixed(1)}%
@@ -628,12 +694,12 @@ Content Gaps: ${bestMatch.contentGaps.join(', ')}
 EXISTING CODE ON DOCUMENTATION PAGE:
 ${codeSnippets.length > 0 ? codeSnippets.map((snippet, i) => `\nCode Example ${i + 1}:\n\`\`\`${snippet.language || 'typescript'}\n${snippet.code}\n\`\`\``).join('\n') : 'No code examples found on page'}
 `.trim();
-        const prompt = `You are a technical documentation expert analyzing a developer issue.
+            const prompt = `You are a technical documentation expert analyzing a developer issue.
 
 DEVELOPER ISSUE:
 - Title: ${issue.title}
 - Description: ${issue.description}
-- Error: ${issue.errorMessages?.[0] || 'N/A'}
+- Error: ${((_e = issue.errorMessages) === null || _e === void 0 ? void 0 : _e[0]) || 'N/A'}
 - Source: ${issue.sources[0]}
 
 DOCUMENTATION PAGE: ${bestMatch.pageUrl}
@@ -693,230 +759,294 @@ OUTPUT FORMAT (follow exactly):
 ---
 
 REMEMBER: Your response should be approximately 3000-4000 characters total. Do NOT be brief. Include FULL, WORKING code that developers can copy directly.`;
-        console.log(`🚀 Calling Bedrock to generate recommendations...`);
-        console.log(`🤖 Model ID: us.anthropic.claude-sonnet-4-5-20250929-v1:0`);
-        console.log(`📝 Prompt length: ${prompt.length} characters`);
-        console.log(`🔍 Issue context length: ${issueContext.length} characters`);
-        console.log(`📄 Doc context length: ${docContext.length} characters`);
-        // Implement continuation logic for truncated responses
-        let fullRecommendationsText = '';
-        let conversationHistory = [
-            { role: 'user', content: prompt }
-        ];
-        let attemptCount = 0;
-        const maxAttempts = 5; // Increased to 5 continuation attempts
-        let wasTruncated = false;
-        do {
-            attemptCount++;
-            console.log(`📡 API call attempt ${attemptCount}/${maxAttempts}...`);
-            const input = {
-                modelId: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
-                contentType: 'application/json',
-                accept: 'application/json',
-                body: JSON.stringify({
-                    anthropic_version: 'bedrock-2023-05-31',
-                    max_tokens: 4096,
-                    temperature: 0.3,
-                    messages: conversationHistory
-                })
-            };
-            const command = new client_bedrock_runtime_1.InvokeModelCommand(input);
-            const response = await bedrockClient.send(command);
-            console.log(`✅ Bedrock response received (attempt ${attemptCount})`);
-            const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-            // Log detailed response info
-            console.log(`📋 Response body keys: ${Object.keys(responseBody).join(', ')}`);
-            console.log(`🛑 Stop reason: ${responseBody.stop_reason}`);
-            console.log(`📊 Usage: input_tokens=${responseBody.usage?.input_tokens}, output_tokens=${responseBody.usage?.output_tokens}`);
-            const partialText = responseBody.content[0].text;
-            fullRecommendationsText += partialText;
-            console.log(`📝 Partial response length: ${partialText.length} chars`);
-            console.log(`📊 Total accumulated length: ${fullRecommendationsText.length} chars`);
-            // Check if response was truncated
-            wasTruncated = responseBody.stop_reason === 'max_tokens';
-            if (wasTruncated) {
-                console.warn(`⚠️ Response ${attemptCount} was truncated (stop_reason: max_tokens)`);
-                console.log(`🔄 Attempting continuation...`);
-                // Add the assistant's response to conversation history
-                conversationHistory.push({
-                    role: 'assistant',
-                    content: partialText
-                });
-                // Add a continuation prompt
-                conversationHistory.push({
-                    role: 'user',
-                    content: 'Please continue from where you left off. Complete the code example and explanation.'
-                });
-            }
-            else {
-                console.log(`✅ Response ${attemptCount} completed naturally (stop_reason: ${responseBody.stop_reason})`);
-            }
-        } while (wasTruncated && attemptCount < maxAttempts);
-        if (wasTruncated && attemptCount >= maxAttempts) {
-            console.warn(`⚠️ Reached maximum continuation attempts (${maxAttempts}). Response may still be incomplete.`);
-        }
-        const recommendationsText = fullRecommendationsText;
-        console.log(`📝 Final AI recommendations (${recommendationsText.length} chars total from ${attemptCount} API calls)`);
-        console.log(`📄 Full response preview (first 500 chars): ${recommendationsText.substring(0, 500)}...`);
-        console.log(`📄 Full response preview (last 500 chars): ...${recommendationsText.substring(recommendationsText.length - 500)}`);
-        // Parse recommendations - preserve code blocks by splitting on double newlines or numbered lists
-        // Split by patterns like "1. ", "2. ", etc. or double newlines
-        const recommendations = [];
-        const lines = recommendationsText.split('\n');
-        let currentRec = '';
-        for (const line of lines) {
-            // Check if line starts with a number (1., 2., etc.) - new recommendation
-            if (line.match(/^\d+\.\s/)) {
-                if (currentRec.trim()) {
-                    recommendations.push(currentRec.trim());
+            console.log(`🚀 Calling Bedrock to generate recommendations...`);
+            console.log(`🤖 Model ID: us.anthropic.claude-sonnet-4-5-20250929-v1:0`);
+            console.log(`📝 Prompt length: ${prompt.length} characters`);
+            console.log(`🔍 Issue context length: ${issueContext.length} characters`);
+            console.log(`📄 Doc context length: ${docContext.length} characters`);
+            // Implement continuation logic for truncated responses
+            let fullRecommendationsText = '';
+            let conversationHistory = [
+                { role: 'user', content: prompt }
+            ];
+            let attemptCount = 0;
+            const maxAttempts = 5; // Increased to 5 continuation attempts
+            let wasTruncated = false;
+            do {
+                attemptCount++;
+                console.log(`📡 API call attempt ${attemptCount}/${maxAttempts}...`);
+                const input = {
+                    modelId: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
+                    contentType: 'application/json',
+                    accept: 'application/json',
+                    body: JSON.stringify({
+                        anthropic_version: 'bedrock-2023-05-31',
+                        max_tokens: 4096,
+                        temperature: 0.3,
+                        messages: conversationHistory
+                    })
+                };
+                const command = new client_bedrock_runtime_1.InvokeModelCommand(input);
+                const response = yield bedrockClient.send(command);
+                console.log(`✅ Bedrock response received (attempt ${attemptCount})`);
+                const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+                // Log detailed response info
+                console.log(`📋 Response body keys: ${Object.keys(responseBody).join(', ')}`);
+                console.log(`🛑 Stop reason: ${responseBody.stop_reason}`);
+                console.log(`📊 Usage: input_tokens=${(_f = responseBody.usage) === null || _f === void 0 ? void 0 : _f.input_tokens}, output_tokens=${(_g = responseBody.usage) === null || _g === void 0 ? void 0 : _g.output_tokens}`);
+                const partialText = responseBody.content[0].text;
+                fullRecommendationsText += partialText;
+                console.log(`📝 Partial response length: ${partialText.length} chars`);
+                console.log(`📊 Total accumulated length: ${fullRecommendationsText.length} chars`);
+                // Check if response was truncated
+                wasTruncated = responseBody.stop_reason === 'max_tokens';
+                if (wasTruncated) {
+                    console.warn(`⚠️ Response ${attemptCount} was truncated (stop_reason: max_tokens)`);
+                    console.log(`🔄 Attempting continuation...`);
+                    // Add the assistant's response to conversation history
+                    conversationHistory.push({
+                        role: 'assistant',
+                        content: partialText
+                    });
+                    // Add a continuation prompt
+                    conversationHistory.push({
+                        role: 'user',
+                        content: 'Please continue from where you left off. Complete the code example and explanation.'
+                    });
                 }
-                currentRec = line.replace(/^\d+\.\s/, ''); // Remove numbering
+                else {
+                    console.log(`✅ Response ${attemptCount} completed naturally (stop_reason: ${responseBody.stop_reason})`);
+                }
+            } while (wasTruncated && attemptCount < maxAttempts);
+            if (wasTruncated && attemptCount >= maxAttempts) {
+                console.warn(`⚠️ Reached maximum continuation attempts (${maxAttempts}). Response may still be incomplete.`);
             }
-            else {
-                // Continue current recommendation (including code blocks)
-                if (currentRec || line.trim()) {
-                    currentRec += (currentRec ? '\n' : '') + line;
+            const recommendationsText = fullRecommendationsText;
+            console.log(`📝 Final AI recommendations (${recommendationsText.length} chars total from ${attemptCount} API calls)`);
+            console.log(`📄 Full response preview (first 500 chars): ${recommendationsText.substring(0, 500)}...`);
+            console.log(`📄 Full response preview (last 500 chars): ...${recommendationsText.substring(recommendationsText.length - 500)}`);
+            // Parse recommendations - preserve code blocks by splitting on double newlines or numbered lists
+            // Split by patterns like "1. ", "2. ", etc. or double newlines
+            const recommendations = [];
+            const lines = recommendationsText.split('\n');
+            let currentRec = '';
+            for (const line of lines) {
+                // Check if line starts with a number (1., 2., etc.) - new recommendation
+                if (line.match(/^\d+\.\s/)) {
+                    if (currentRec.trim()) {
+                        recommendations.push(currentRec.trim());
+                    }
+                    currentRec = line.replace(/^\d+\.\s/, ''); // Remove numbering
+                }
+                else {
+                    // Continue current recommendation (including code blocks)
+                    if (currentRec || line.trim()) {
+                        currentRec += (currentRec ? '\n' : '') + line;
+                    }
                 }
             }
+            // Add the last recommendation
+            if (currentRec.trim()) {
+                recommendations.push(currentRec.trim());
+            }
+            console.log(`✅ Generated ${recommendations.length} AI recommendations successfully`);
+            return recommendations.slice(0, 5); // Limit to 5 recommendations
         }
-        // Add the last recommendation
-        if (currentRec.trim()) {
-            recommendations.push(currentRec.trim());
+        catch (error) {
+            console.error('❌ Failed to generate AI recommendations:', error);
+            if (error instanceof Error) {
+                console.error('🔍 Error details:', {
+                    name: error.name,
+                    message: error.message,
+                    code: error.code,
+                    statusCode: (_h = error.$metadata) === null || _h === void 0 ? void 0 : _h.httpStatusCode,
+                    requestId: (_j = error.$metadata) === null || _j === void 0 ? void 0 : _j.requestId,
+                    stack: error.stack
+                });
+            }
+            console.log(`🔄 Falling back to generic recommendations`);
+            // Enhanced fallback recommendations with more specific content
+            const fallbackRecommendations = [
+                `Add troubleshooting section for "${issue.title}" with specific error handling`,
+                `Include code examples addressing ${issue.category} issues`,
+                `Add production deployment guidance for common ${issue.category} problems`,
+                `Reference developer issue: ${issue.sources[0]}`
+            ];
+            console.log(`📝 Using enhanced fallback recommendations: ${fallbackRecommendations.length} items`);
+            return fallbackRecommendations;
         }
-        console.log(`✅ Generated ${recommendations.length} AI recommendations successfully`);
-        return recommendations.slice(0, 5); // Limit to 5 recommendations
-    }
-    catch (error) {
-        console.error('❌ Failed to generate AI recommendations:', error);
-        if (error instanceof Error) {
-            console.error('🔍 Error details:', {
-                name: error.name,
-                message: error.message,
-                code: error.code,
-                statusCode: error.$metadata?.httpStatusCode,
-                requestId: error.$metadata?.requestId,
-                stack: error.stack
-            });
-        }
-        console.log(`🔄 Falling back to generic recommendations`);
-        // Enhanced fallback recommendations with more specific content
-        const fallbackRecommendations = [
-            `Add troubleshooting section for "${issue.title}" with specific error handling`,
-            `Include code examples addressing ${issue.category} issues`,
-            `Add production deployment guidance for common ${issue.category} problems`,
-            `Reference developer issue: ${issue.sources[0]}`
-        ];
-        console.log(`📝 Using enhanced fallback recommendations: ${fallbackRecommendations.length} items`);
-        return fallbackRecommendations;
-    }
+    });
 }
 /**
  * Make HTTP request
  */
-async function makeHttpRequest(url) {
-    return new Promise((resolve, reject) => {
-        const urlObj = new url_1.URL(url);
-        const options = {
-            hostname: urlObj.hostname,
-            port: urlObj.port || 443,
-            path: urlObj.pathname + urlObj.search,
-            method: 'GET',
-            headers: {
-                'User-Agent': 'Lensy-Documentation-Auditor/1.0'
-            }
-        };
-        const req = https_1.default.request(options, (res) => {
-            let data = '';
-            res.on('data', (chunk) => data += chunk);
-            res.on('end', () => resolve(data));
+function makeHttpRequest(url) {
+    return __awaiter(this, void 0, void 0, function* () {
+        return new Promise((resolve, reject) => {
+            const urlObj = new url_1.URL(url);
+            const options = {
+                hostname: urlObj.hostname,
+                port: urlObj.port || 443,
+                path: urlObj.pathname + urlObj.search,
+                method: 'GET',
+                headers: {
+                    'User-Agent': 'Lensy-Documentation-Auditor/1.0'
+                }
+            };
+            const req = https_1.default.request(options, (res) => {
+                let data = '';
+                res.on('data', (chunk) => data += chunk);
+                res.on('end', () => resolve(data));
+            });
+            req.on('error', reject);
+            req.setTimeout(10000, () => {
+                req.destroy();
+                reject(new Error('Request timeout'));
+            });
+            req.end();
         });
-        req.on('error', reject);
-        req.setTimeout(10000, () => {
-            req.destroy();
-            reject(new Error('Request timeout'));
-        });
-        req.end();
     });
 }
 /**
  * Store validation results in S3
  */
-async function storeValidationResults(sessionId, results) {
-    const bucketName = process.env.S3_BUCKET_NAME;
-    if (!bucketName) {
-        throw new Error('S3_BUCKET_NAME environment variable not set');
-    }
-    const key = `sessions/${sessionId}/issue-validation-results.json`;
-    const content = JSON.stringify(results, null, 2);
-    await s3Client.send(new client_s3_1.PutObjectCommand({
-        Bucket: bucketName,
-        Key: key,
-        Body: content,
-        ContentType: 'application/json'
-    }));
-    console.log(`Stored validation results in S3: ${key}`);
+function storeValidationResults(sessionId, results) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const bucketName = process.env.S3_BUCKET_NAME;
+        if (!bucketName) {
+            throw new Error('S3_BUCKET_NAME environment variable not set');
+        }
+        const key = `sessions/${sessionId}/issue-validation-results.json`;
+        const content = JSON.stringify(results, null, 2);
+        yield s3Client.send(new client_s3_1.PutObjectCommand({
+            Bucket: bucketName,
+            Key: key,
+            Body: content,
+            ContentType: 'application/json'
+        }));
+        console.log(`Stored validation results in S3: ${key}`);
+    });
 }
 /**
- * Perform sitemap health check for the given domain
+ * Perform sitemap health check for the given domain with caching
  */
-async function performSitemapHealthCheck(domain, sessionId) {
-    try {
-        console.log(`🔍 Starting sitemap health check for domain: ${domain}`);
-        // Construct sitemap URL - assume docs sitemap pattern
-        const sitemapUrl = `https://${domain}/docs/sitemap.xml`;
-        console.log(`📄 Checking sitemap: ${sitemapUrl}`);
-        // Step 1: Invoke SitemapParser Lambda
-        const sitemapParserPayload = {
-            url: sitemapUrl,
-            sessionId: sessionId,
-            inputType: 'sitemap'
-        };
-        console.log(`🚀 Invoking SitemapParser Lambda...`);
-        const parserResult = await lambdaClient.send(new client_lambda_1.InvokeCommand({
-            FunctionName: 'LensyStack-SitemapParserFunction1A007DF9-9qoTADYi7kCm',
-            Payload: JSON.stringify(sitemapParserPayload)
-        }));
-        if (!parserResult.Payload) {
-            throw new Error('No response from SitemapParser');
-        }
-        const parserResponse = JSON.parse(new TextDecoder().decode(parserResult.Payload));
-        console.log(`📊 SitemapParser result: ${parserResponse.success ? 'SUCCESS' : 'FAILED'}`);
-        if (!parserResponse.success) {
-            console.log(`❌ SitemapParser failed: ${parserResponse.message}`);
+function performSitemapHealthCheck(domain, sessionId) {
+    var _a;
+    return __awaiter(this, void 0, void 0, function* () {
+        const bucketName = process.env.S3_BUCKET_NAME;
+        if (!bucketName) {
+            console.error('S3_BUCKET_NAME environment variable not set');
             return null;
         }
-        // Step 2: Invoke SitemapHealthChecker Lambda
-        const healthCheckerPayload = {
-            sessionId: sessionId,
-            sitemapParserResult: {
-                Payload: parserResponse
+        try {
+            console.log(`🔍 Starting sitemap health check for domain: ${domain}`);
+            // Domain-specific cache key (similar to embeddings)
+            const cacheKey = `sitemap-health-${domain.replace(/\./g, '-')}.json`;
+            console.log(`📦 Cache key: ${cacheKey}`);
+            // Try to load cached health results from S3
+            try {
+                console.log('🔍 Checking for cached sitemap health results...');
+                const getCommand = new client_s3_1.GetObjectCommand({
+                    Bucket: bucketName,
+                    Key: cacheKey
+                });
+                const response = yield s3Client.send(getCommand);
+                const cachedData = yield ((_a = response.Body) === null || _a === void 0 ? void 0 : _a.transformToString());
+                if (cachedData) {
+                    const cachedHealth = JSON.parse(cachedData);
+                    console.log(`✅ Using cached sitemap health results (${cachedHealth.totalUrls} URLs, ${cachedHealth.healthPercentage}% healthy)`);
+                    console.log(`📅 Cache timestamp: ${cachedHealth.timestamp}`);
+                    return cachedHealth;
+                }
             }
-        };
-        console.log(`🚀 Invoking SitemapHealthChecker Lambda...`);
-        const healthResult = await lambdaClient.send(new client_lambda_1.InvokeCommand({
-            FunctionName: 'LensyStack-SitemapHealthCheckerFunctionB23E4F53-R83DOg6Gh0LY',
-            Payload: JSON.stringify(healthCheckerPayload)
-        }));
-        if (!healthResult.Payload) {
-            throw new Error('No response from SitemapHealthChecker');
+            catch (error) {
+                console.log('📝 No cached results found, performing fresh health check...');
+            }
+            // Get domain-specific sitemap URL and doc filter
+            const config = DOMAIN_SITEMAP_CONFIG[domain];
+            const sitemapUrl = config ? config.sitemapUrl : `https://${domain}/sitemap.xml`;
+            const docFilter = config ? config.docFilter : '/docs';
+            console.log(`📄 Checking sitemap: ${sitemapUrl} (filtering for: ${docFilter})`);
+            // Step 1: Invoke SitemapParser Lambda
+            const sitemapParserPayload = {
+                url: sitemapUrl,
+                sessionId: sessionId,
+                inputType: 'sitemap'
+            };
+            console.log(`🚀 Invoking SitemapParser Lambda...`);
+            const parserResult = yield lambdaClient.send(new client_lambda_1.InvokeCommand({
+                FunctionName: 'LensyStack-SitemapParserFunction1A007DF9-9qoTADYi7kCm',
+                Payload: JSON.stringify(sitemapParserPayload)
+            }));
+            if (!parserResult.Payload) {
+                throw new Error('No response from SitemapParser');
+            }
+            const parserResponse = JSON.parse(new TextDecoder().decode(parserResult.Payload));
+            console.log(`📊 SitemapParser result: ${parserResponse.success ? 'SUCCESS' : 'FAILED'}`);
+            if (!parserResponse.success) {
+                console.log(`❌ SitemapParser failed: ${parserResponse.message}`);
+                return null;
+            }
+            // Filter URLs to only include documentation pages
+            const allUrls = parserResponse.sitemapUrls || [];
+            // URLs might be full URLs or paths, handle both cases
+            const docUrls = allUrls.filter((url) => {
+                // Extract path from full URL if needed
+                const path = url.startsWith('http') ? new url_1.URL(url).pathname : url;
+                return path.startsWith(docFilter);
+            });
+            console.log(`📋 Filtered to ${docUrls.length} documentation URLs from ${allUrls.length} total URLs`);
+            // Create filtered parser response with correct field names for SitemapHealthChecker
+            const filteredParserResponse = Object.assign(Object.assign({}, parserResponse), { sitemapUrls: docUrls, totalUrls: docUrls.length });
+            // Step 2: Invoke SitemapHealthChecker Lambda with filtered URLs
+            const healthCheckerPayload = {
+                sessionId: sessionId,
+                sitemapParserResult: {
+                    Payload: filteredParserResponse
+                }
+            };
+            console.log(`🚀 Invoking SitemapHealthChecker Lambda...`);
+            const healthResult = yield lambdaClient.send(new client_lambda_1.InvokeCommand({
+                FunctionName: 'LensyStack-SitemapHealthCheckerFunctionB23E4F53-R83DOg6Gh0LY',
+                Payload: JSON.stringify(healthCheckerPayload)
+            }));
+            if (!healthResult.Payload) {
+                throw new Error('No response from SitemapHealthChecker');
+            }
+            const healthResponse = JSON.parse(new TextDecoder().decode(healthResult.Payload));
+            console.log(`📊 SitemapHealthChecker result: ${healthResponse.success ? 'SUCCESS' : 'FAILED'}`);
+            if (!healthResponse.success) {
+                console.log(`❌ SitemapHealthChecker failed: ${healthResponse.message}`);
+                return null;
+            }
+            // Return the health summary with breakdown counts
+            const healthSummary = Object.assign(Object.assign({}, healthResponse.healthSummary), { brokenUrls: healthResponse.brokenUrls, accessDeniedUrls: healthResponse.accessDeniedUrls, timeoutUrls: healthResponse.timeoutUrls, otherErrorUrls: healthResponse.otherErrorUrls });
+            console.log(`✅ Sitemap health check complete: ${healthSummary.healthyUrls}/${healthSummary.totalUrls} URLs healthy (${healthSummary.healthPercentage}%)`);
+            console.log(`📊 Breakdown: ${healthSummary.brokenUrls} broken, ${healthSummary.accessDeniedUrls} access denied, ${healthSummary.timeoutUrls} timeout, ${healthSummary.otherErrorUrls} other errors`);
+            // Store health results in domain-specific cache
+            try {
+                const putCommand = new client_s3_1.PutObjectCommand({
+                    Bucket: bucketName,
+                    Key: cacheKey,
+                    Body: JSON.stringify(healthSummary, null, 2),
+                    ContentType: 'application/json'
+                });
+                yield s3Client.send(putCommand);
+                console.log(`💾 Cached sitemap health results to: ${cacheKey}`);
+            }
+            catch (error) {
+                console.error('⚠️ Failed to cache sitemap health results:', error);
+                // Don't fail the whole operation if caching fails
+            }
+            return healthSummary;
         }
-        const healthResponse = JSON.parse(new TextDecoder().decode(healthResult.Payload));
-        console.log(`📊 SitemapHealthChecker result: ${healthResponse.success ? 'SUCCESS' : 'FAILED'}`);
-        if (!healthResponse.success) {
-            console.log(`❌ SitemapHealthChecker failed: ${healthResponse.message}`);
+        catch (error) {
+            console.error('❌ Sitemap health check failed:', error);
             return null;
         }
-        // Return the health summary
-        const healthSummary = healthResponse.healthSummary;
-        console.log(`✅ Sitemap health check complete: ${healthSummary.healthyUrls}/${healthSummary.totalUrls} URLs healthy (${healthSummary.healthPercentage}%)`);
-        return healthSummary;
-    }
-    catch (error) {
-        console.error('❌ Sitemap health check failed:', error);
-        return null;
-    }
+    });
 }
-const handler = async (event) => {
+const handler = (event) => __awaiter(void 0, void 0, void 0, function* () {
     const startTime = Date.now();
     try {
         console.log('IssueValidator Lambda started', { event: JSON.stringify(event) });
@@ -930,7 +1060,7 @@ const handler = async (event) => {
         }
         console.log(`Validating ${issues.length} issues for domain: ${domain}`);
         // Start both issue validation and sitemap health check in parallel
-        const [validationResults, sitemapHealth] = await Promise.all([
+        const [validationResults, sitemapHealth] = yield Promise.all([
             // Issue validation (existing logic)
             Promise.all(issues.map(issue => validateIssue(issue, domain))),
             // Sitemap health check (new logic)
@@ -959,7 +1089,7 @@ const handler = async (event) => {
             sitemapHealth: sitemapHealth || undefined // Include sitemap health if available
         };
         // Store results in S3
-        await storeValidationResults(sessionId, output);
+        yield storeValidationResults(sessionId, output);
         console.log(`IssueValidator completed in ${processingTime}ms`, summary);
         return {
             statusCode: 200,
@@ -993,5 +1123,5 @@ const handler = async (event) => {
             })
         };
     }
-};
+});
 exports.handler = handler;
