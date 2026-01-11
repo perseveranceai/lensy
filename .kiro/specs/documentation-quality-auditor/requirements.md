@@ -1,6 +1,6 @@
 # Requirements Document
 
-## Implementation Status (Updated January 3, 2026)
+## Implementation Status (Updated January 10, 2026)
 
 ### ✅ Completed Requirements (All Phases)
 
@@ -31,7 +31,7 @@
   - 36.5-36.6: Mode selection UI with real-time search ✅
   - 36.7-36.10: Session storage and caching ✅
   
-- ✅ **Requirement 37**: Real-Time Issue Validation ✅ **COMPLETED TODAY**
+- ✅ **Requirement 37**: Real-Time Issue Validation ✅ **COMPLETED**
   - 37.1-37.3: Semantic search with pre-curated pages and sitemap fallback ✅
   - 37.4-37.6: Gap detection (critical, potential, resolved) ✅
   - 37.7-37.9: Code example validation and completeness checking ✅
@@ -40,7 +40,7 @@
   - **NEW**: Semantic similarity scoring using Amazon Titan embeddings ✅
   - **NEW**: Rich content analysis (code snippets, error messages, tags) ✅
   
-- ✅ **Requirement 38**: Enhanced Report Generation ✅ **COMPLETED TODAY**
+- ✅ **Requirement 38**: Enhanced Report Generation ✅ **COMPLETED**
   - 38.1-38.5: Comprehensive issue sections (confirmed, potential, critical, resolved) ✅
   - 38.6-38.7: Specific recommendations with sitemap health integration ✅
   - 38.8-38.9: Source references and impact prioritization ✅
@@ -50,24 +50,29 @@
 
 ### 🎯 Key Features Delivered
 
+**Multi-Domain Support (3 Domains):**
+- ✅ **Resend.com**: 5 issues (email delivery, deployment, API usage)
+- ✅ **Liveblocks.io**: 1 issue (LiveObject storage mutation)
+- ✅ **Knock.app (docs.knock.app)**: 2 issues (cron job triggering, production security)
+
 **Issue Discovery & Validation System:**
-- Real developer issues from Stack Overflow (5 issues for Resend.com POC)
+- Real developer issues from Stack Overflow and community forums
 - Semantic search using Amazon Titan embeddings for accurate page matching
 - AI-powered gap analysis with confidence scoring (70-95%)
 - Detailed recommendations with BEFORE/AFTER code improvements
-- Sitemap health check (217 URLs) integrated with validation results
+- Sitemap health check integrated with validation results
 
 **Technical Implementation:**
-- IssueDiscoverer Lambda: Searches Stack Overflow for real issues
+- IssueDiscoverer Lambda: Searches for real issues across 3 domains
 - IssueValidator Lambda: Validates issues against current documentation
 - SitemapParser Lambda: Extracts documentation URLs from sitemap.xml
 - SitemapHealthChecker Lambda: Bulk URL validation with categorization
 - Frontend: Three-mode UI (Doc, Sitemap, Issue Discovery) with real-time updates
 
 **Report Quality:**
-- Executive summary with accurate source attribution (Stack Overflow only)
-- Sitemap health analysis (100% healthy for Resend.com)
-- Detailed evidence with semantic match scores (39-68%)
+- Executive summary with accurate source attribution
+- Sitemap health analysis with domain-specific caching
+- Detailed evidence with semantic match scores
 - AI-generated recommendations with code examples
 - Markdown export for CEO/team sharing
 
@@ -86,6 +91,12 @@
 - ✅ Updated executive summary to accurately reflect Stack Overflow-only source
 - ✅ Updated methodology section to remove references to GitHub/Reddit
 - ✅ Added null coalescing operators for all sitemap health counts
+
+### 🔧 Bug Fixes (January 11, 2026)
+- ✅ Fixed sitemap health showing zeros for knock.app domain
+- ✅ Added domain normalization to convert user-friendly domains to canonical documentation domains
+- ✅ Applied normalization in sitemap health checks and embedding lookups
+- ✅ Cleared bad cached data for knock.app
 
 ### 📝 Implementation Notes
 - **Pragmatic POC Approach**: Manual Stack Overflow research + real-issues-data.json
@@ -767,3 +778,28 @@ All modes provide real-time progress feedback and generate detailed reports with
 - ✅ **Link Validation**: All URLs verified to be working and contain real developer problems
 - ✅ **Rich Content**: Each issue includes detailed technical descriptions and code examples
 - ✅ **Domain Detection**: Automatic detection working for both resend.com and liveblocks.io domains
+
+### Requirement 40: Domain Normalization for Consistent Configuration ✅ **COMPLETED (January 11, 2026)**
+
+**User Story:** As a user, I want to enter user-friendly domain names (like "knock.app") and have the system automatically normalize them to their canonical documentation domains (like "docs.knock.app"), so that I don't need to know the exact subdomain structure and the system can consistently look up configuration.
+
+#### Acceptance Criteria
+
+1. ✅ THE System SHALL normalize user-provided domains to their canonical documentation domains before configuration lookup
+2. ✅ WHEN a user enters "knock.app", THE System SHALL automatically convert it to "docs.knock.app" for configuration matching
+3. ✅ THE normalizeDomain() function SHALL remove protocols (http://, https://) and trailing slashes before normalization
+4. ✅ THE System SHALL apply domain normalization in sitemap health checks to ensure correct configuration lookup
+5. ✅ THE System SHALL apply domain normalization in embedding lookups to ensure correct cache key matching
+6. ✅ THE System SHALL maintain consistency by normalizing domains in all configuration-dependent operations
+7. ✅ THE System SHALL return normalized domains as-is for domains that don't require conversion (resend.com, liveblocks.io)
+8. ✅ THE System SHALL log both original and normalized domain names for debugging and transparency
+9. ✅ THE System SHALL clear any cached data that was stored with incorrect domain keys after normalization is implemented
+10. ✅ THE System SHALL prioritize consistency over adding multiple configuration keys for the same documentation portal
+
+#### Implementation Notes (January 11, 2026)
+- ✅ **Function Added**: `normalizeDomain()` in IssueValidator Lambda
+- ✅ **Conversion Logic**: `knock.app` → `docs.knock.app`
+- ✅ **Applied In**: `performSitemapHealthCheck()` and `loadOrGenerateEmbeddings()`
+- ✅ **Cache Cleanup**: Removed `sitemap-health-knock-app.json` with incorrect data
+- ✅ **Verification**: Sitemap health now shows 317/319 URLs (99% healthy) for knock.app
+- ✅ **Design Philosophy**: Normalize input rather than duplicate configuration keys

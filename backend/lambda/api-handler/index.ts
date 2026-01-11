@@ -363,7 +363,7 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
                     syntaxErrors: 0,
                     deprecatedMethods: 0,
                     missingVersionSpecs: processedContent.codeSnippets?.filter((s: any) => !s.hasVersionInfo).length || 0,
-                    languagesDetected: [...new Set(processedContent.codeSnippets?.map((s: any) => s.language).filter(Boolean))] || []
+                    languagesDetected: processedContent.codeSnippets ? [...new Set(processedContent.codeSnippets.map((s: any) => s.language).filter(Boolean))] : []
                 },
                 mediaAnalysis: {
                     videosFound: processedContent.mediaElements?.filter((m: any) => m.type === 'video').length || 0,

@@ -171,8 +171,12 @@ async function loadOrGenerateEmbeddings(domain: string): Promise<RichContentEmbe
         throw new Error('S3_BUCKET_NAME environment variable not set');
     }
 
+    // Normalize domain for consistent configuration lookup
+    const normalizedDomain = normalizeDomain(domain);
+    console.log(`Loading embeddings for domain: ${domain} (normalized: ${normalizedDomain})`);
+
     // Domain-specific embeddings key to avoid cross-contamination
-    const embeddingsKey = `rich-content-embeddings-${domain.replace(/\./g, '-')}.json`;
+    const embeddingsKey = `rich-content-embeddings-${normalizedDomain.replace(/\./g, '-')}.json`;
     console.log(`Using domain-specific embeddings key: ${embeddingsKey}`);
 
     try {
@@ -196,7 +200,7 @@ async function loadOrGenerateEmbeddings(domain: string): Promise<RichContentEmbe
     }
 
     // Generate new embeddings
-    const sitemap = await fetchSitemap(domain);
+    const sitemap = await fetchSitemap(normalizedDomain);
     const docPages = sitemap.filter(url => url.startsWith('/docs/'));
     console.log(`Generating embeddings for ${docPages.length} documentation pages...`);
 
@@ -399,8 +403,29 @@ const DOMAIN_SITEMAP_CONFIG: Record<string, { sitemapUrl: string; docFilter: str
     'liveblocks.io': {
         sitemapUrl: 'https://liveblocks.io/sitemap.xml',
         docFilter: '/docs'
+    },
+    'docs.knock.app': {
+        sitemapUrl: 'https://docs.knock.app/sitemap.xml',
+        docFilter: '/'
     }
 };
+
+/**
+ * Normalize domain to match configuration keys
+ * Converts user-friendly domains to their canonical documentation domain
+ */
+function normalizeDomain(domain: string): string {
+    // Remove protocol and trailing slashes
+    const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
+
+    // Handle knock.app -> docs.knock.app conversion
+    if (cleanDomain === 'knock.app') {
+        return 'docs.knock.app';
+    }
+
+    // Return as-is for other domains
+    return cleanDomain;
+}
 
 /**
  * Fetch sitemap.xml and extract URLs - Enhanced to support multiple domains
@@ -1150,10 +1175,12 @@ async function performSitemapHealthCheck(domain: string, sessionId: string): Pro
     }
 
     try {
-        console.log(`🔍 Starting sitemap health check for domain: ${domain}`);
+        // Normalize domain for consistent configuration lookup
+        const normalizedDomain = normalizeDomain(domain);
+        console.log(`🔍 Starting sitemap health check for domain: ${domain} (normalized: ${normalizedDomain})`);
 
         // Domain-specific cache key (similar to embeddings)
-        const cacheKey = `sitemap-health-${domain.replace(/\./g, '-')}.json`;
+        const cacheKey = `sitemap-health-${normalizedDomain.replace(/\./g, '-')}.json`;
         console.log(`📦 Cache key: ${cacheKey}`);
 
         // Try to load cached health results from S3
@@ -1178,8 +1205,8 @@ async function performSitemapHealthCheck(domain: string, sessionId: string): Pro
         }
 
         // Get domain-specific sitemap URL and doc filter
-        const config = DOMAIN_SITEMAP_CONFIG[domain];
-        const sitemapUrl = config ? config.sitemapUrl : `https://${domain}/sitemap.xml`;
+        const config = DOMAIN_SITEMAP_CONFIG[normalizedDomain];
+        const sitemapUrl = config ? config.sitemapUrl : `https://${normalizedDomain}/sitemap.xml`;
         const docFilter = config ? config.docFilter : '/docs';
         console.log(`📄 Checking sitemap: ${sitemapUrl} (filtering for: ${docFilter})`);
 

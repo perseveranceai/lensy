@@ -1,6 +1,6 @@
 # Design Document: Documentation Quality Auditor
 
-## Implementation Status (Updated January 3, 2026)
+## Implementation Status (Updated January 10, 2026)
 
 ### ✅ Completed Features (All Phases)
 
@@ -21,8 +21,8 @@
 - Journey score aggregation with completion confidence
 - Comprehensive journey reports
 
-**Phase 3: Issue Discovery Mode** ✅ **COMPLETED TODAY**
-- **IssueDiscoverer Lambda**: Searches Stack Overflow for real developer issues ✅
+**Phase 3: Issue Discovery Mode** ✅ **COMPLETED**
+- **IssueDiscoverer Lambda**: Searches for real developer issues across 3 domains ✅
 - **IssueValidator Lambda**: Validates issues against current documentation ✅
   - Semantic search using Amazon Titan embeddings
   - Pre-curated pages + sitemap fallback
@@ -32,13 +32,38 @@
 - **Frontend UI**: Three-mode selection with real-time updates ✅
 - **Report Export**: Markdown reports with sitemap health section ✅
 
+### 🎯 Multi-Domain Support (3 Domains)
+
+**Supported Domains:**
+- ✅ **resend.com**: Email delivery platform (5 issues)
+- ✅ **liveblocks.io**: Real-time collaboration (1 issue)
+- ✅ **docs.knock.app**: Notification infrastructure (2 issues)
+
+**Domain Configuration:**
+```typescript
+const DOMAIN_SITEMAP_CONFIG = {
+    'resend.com': {
+        sitemapUrl: 'https://resend.com/docs/sitemap.xml',
+        docFilter: '/docs/'
+    },
+    'liveblocks.io': {
+        sitemapUrl: 'https://liveblocks.io/sitemap.xml',
+        docFilter: '/docs'
+    },
+    'docs.knock.app': {
+        sitemapUrl: 'https://docs.knock.app/sitemap.xml',
+        docFilter: '/'
+    }
+};
+```
+
 ### 🎯 Production Deployment Status
 
 **Deployed Lambdas:**
-- ✅ IssueDiscoverer: Discovers issues from Stack Overflow
+- ✅ IssueDiscoverer: Discovers issues from Stack Overflow and community forums
 - ✅ IssueValidator: Validates issues with semantic search + AI recommendations
-- ✅ SitemapParser: Parses sitemap.xml (217 URLs for Resend.com)
-- ✅ SitemapHealthChecker: Bulk URL validation (100% healthy)
+- ✅ SitemapParser: Parses sitemap.xml for all 3 domains
+- ✅ SitemapHealthChecker: Bulk URL validation with categorization
 - ✅ API Handler: Routes requests to appropriate Lambda
 
 **IAM Permissions:**
@@ -52,22 +77,19 @@
 - ✅ Sitemap health display with expandable details
 - ✅ Markdown export with comprehensive sections
 - ✅ Fixed NaN display bug in sitemap health counts
-- ✅ Accurate executive summary (Stack Overflow only)
+- ✅ Accurate executive summary
 
-### 📊 Production Metrics (Resend.com POC)
-- **Processing Time**: ~23 seconds end-to-end
-- **Sitemap URLs**: 217 documentation pages
-- **Sitemap Health**: 100% healthy (0 broken links)
+### 📊 Production Metrics
+- **Processing Time**: ~23-25 seconds end-to-end
 - **Semantic Search**: 5 pages analyzed per issue
-- **Best Match Score**: 68% (Send emails with Next.js)
 - **AI Recommendations**: 2 detailed code improvements per issue
-- **Validation Confidence**: 75% (potential gap detected)
+- **Validation Confidence**: 70-95% depending on match quality
 
 ### 🔧 Technical Implementation
 
 **Semantic Search Pipeline:**
-1. Pre-generate embeddings for all 217 documentation pages (Amazon Titan)
-2. Store embeddings in S3 for fast retrieval
+1. Pre-generate embeddings for all documentation pages (Amazon Titan)
+2. Store embeddings in S3 with domain-specific keys
 3. Generate embedding for developer issue (title + description + code + errors)
 4. Calculate cosine similarity between issue and all pages
 5. Return top 5 matches with similarity scores
@@ -86,7 +108,7 @@
 4. Display both sections in UI and export report
 
 ### 📝 Implementation Notes
-- **Real Data**: 5 authentic Q4 2025 issues from Stack Overflow
+- **Real Data**: 8 authentic issues from Stack Overflow and community forums
 - **Pragmatic POC**: Manual research + real-issues-data.json
 - **Extensible**: Can upgrade to Google Custom Search API or MCP servers
 - **CEO-Ready**: Clean code, accurate reporting, professional export
@@ -787,6 +809,27 @@ function selectModel(strategy: ModelSelectionStrategy): string {
   - Specific recommendation generation with evidence
   - Root cause analysis (missing examples, unclear guidance)
   - Developer impact assessment (how many affected)
+- **Domain Normalization** (Added January 11, 2026):
+  - `normalizeDomain()` function converts user-friendly domains to canonical documentation domains
+  - Ensures consistent configuration lookup across all operations
+  - Example: `knock.app` → `docs.knock.app`
+  - Applied in `performSitemapHealthCheck()` and `loadOrGenerateEmbeddings()`
+  - Logs both original and normalized domains for transparency
+  - Implementation:
+    ```typescript
+    function normalizeDomain(domain: string): string {
+      // Remove protocol and trailing slashes
+      const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
+      
+      // Handle knock.app -> docs.knock.app conversion
+      if (cleanDomain === 'knock.app') {
+        return 'docs.knock.app';
+      }
+      
+      // Return as-is for other domains
+      return cleanDomain;
+    }
+    ```
 
 #### IssueCache (DynamoDB Table) - NEW 🔄 DEFERRED TO NEXT SESSION
 - **Purpose**: Stores discovered issues and validation results with company association
