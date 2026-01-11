@@ -14,8 +14,8 @@
         "inlineSourceMap": true,
         "inlineSources": true,
         "typeRoots": [
-            "../node_modules/@types",
-            "../types"
+            "./node_modules/@types",
+            "./types"
         ],
         "outDir": "./lambda",
         "rootDir": "./lambda",

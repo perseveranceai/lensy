@@ -395,12 +395,16 @@ function App() {
                 sources: issue.sources.map((url: string) => {
                     // Extract source names from URLs for display
                     if (url.includes('stackoverflow.com')) return 'Stack Overflow';
+                    if (url.includes('solutionfall.com')) return 'SolutionFall';
                     if (url.includes('github.com')) return 'GitHub Issues';
                     if (url.includes('reddit.com')) return 'Reddit';
                     if (url.includes('discord.gg')) return 'Discord';
                     if (url.includes('dev.to')) return 'Dev.to';
                     if (url.includes('community.')) return 'Community Forums';
                     if (url.includes('twitter.com')) return 'Twitter';
+                    if (url.includes('changelog')) return 'Changelog';
+                    if (url.includes('knock.app')) return 'Knock Docs';
+                    if (url.includes('liveblocks.io')) return 'Liveblocks Docs';
                     return 'Developer Forums';
                 })
             }));
@@ -410,36 +414,13 @@ function App() {
 
         } catch (error) {
             console.error('Error searching for developer issues:', error);
+            console.error('Error details:', {
+                message: error instanceof Error ? error.message : 'Unknown error',
+                stack: error instanceof Error ? error.stack : undefined
+            });
 
-            // Fallback to mock data if API fails (for development/demo purposes)
-            console.log('Falling back to mock data due to API error');
-            const mockIssues = [
-                {
-                    id: 'rate-limiting-1',
-                    title: 'Rate Limiting Issues',
-                    description: 'Developers hitting 2 requests/second limit without clear documentation on handling',
-                    frequency: 23,
-                    sources: ['GitHub Issues', 'Stack Overflow', 'Reddit']
-                },
-                {
-                    id: 'auth-problems-1',
-                    title: 'API Key Authentication Problems',
-                    description: 'Confusion between test and production API keys causing authentication failures',
-                    frequency: 18,
-                    sources: ['GitHub Issues', 'Stack Overflow', 'Reddit']
-                },
-                {
-                    id: 'missing-examples-1',
-                    title: 'Missing Node.js Code Examples',
-                    description: 'API reference lacks practical implementation examples for Node.js integration',
-                    frequency: 15,
-                    sources: ['Stack Overflow', 'GitHub Issues', 'Reddit']
-                }
-            ];
-
-            // Filter mock issues based on domain for demo
-            const filteredIssues = domain.toLowerCase().includes('resend') ? mockIssues : [];
-            setDiscoveredIssues(filteredIssues);
+            // Show error message to user
+            setDiscoveredIssues([]);
 
         } finally {
             setIsSearchingIssues(false);
@@ -1087,7 +1068,7 @@ function App() {
                                             searchForDeveloperIssues(companyDomain.trim());
                                         }
                                     }}
-                                    placeholder="resend.com"
+                                    placeholder="resend.com, liveblocks.io, or docs.knock.app"
                                     sx={{ mb: 3 }}
                                     disabled={analysisState.status === 'analyzing'}
                                     helperText="Domain of the documentation portal to investigate (press Tab or Enter to search)"

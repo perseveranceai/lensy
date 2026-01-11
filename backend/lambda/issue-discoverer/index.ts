@@ -787,6 +787,8 @@ function getRealCuratedData(companyName: string, domain: string): DiscoveredIssu
             searchKey = 'resend';
         } else if (domain.includes('liveblocks.io')) {
             searchKey = 'liveblocks';
+        } else if (domain.includes('knock.app') || domain.includes('docs.knock.app')) {
+            searchKey = 'knock';
         } else {
             // Extract first part of domain (e.g., "example.com" -> "example")
             searchKey = domain.split('.')[0].toLowerCase();

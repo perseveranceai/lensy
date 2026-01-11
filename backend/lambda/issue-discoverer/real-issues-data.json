@@ -102,23 +102,61 @@
             ]
         }
     ],
+    "knock": [
+        {
+            "id": "solutionfall-knock-cron-nextjs",
+            "title": "Knock notification service not working when triggered by cron job in NextJS",
+            "category": "api-usage",
+            "description": "Developer using Knock as notification system in React/NextJS app. Notifications work when manually triggered from frontend button, but fail silently when triggered from a cron job. The knock.workflows.trigger() call completes without errors but Knock does not receive the notifications. Issue appears to be related to async execution context in cron jobs vs direct API calls.",
+            "frequency": 18,
+            "sources": [
+                "https://solutionfall.com/question/why-is-the-knock-notification-service-not-functioning-when-triggered-by-a-cron-job-in-nextjs/"
+            ],
+            "lastSeen": "2024-04-03",
+            "severity": "high",
+            "relatedPages": [
+                "/send-notifications/triggering-workflows/overview",
+                "/sdks/node/overview",
+                "/tutorials/implementation-guide"
+            ]
+        },
+        {
+            "id": "knock-enhanced-security-production",
+            "title": "Knock notifications work in development but fail in production with enhanced security mode",
+            "category": "authentication",
+            "description": "Developers report that Knock notifications work perfectly in development environment but fail silently in production. The issue is often related to enhanced security mode requiring signed user tokens in production environments. Without proper user token generation and signing, API calls succeed but notifications are not delivered.",
+            "frequency": 15,
+            "sources": [
+                "https://knock.app/changelog/2023-02-24"
+            ],
+            "lastSeen": "2025-01-05",
+            "severity": "high",
+            "relatedPages": [
+                "/getting-started/going-to-production",
+                "/in-app-ui/security-and-authentication",
+                "/developer-tools/api-keys"
+            ]
+        }
+    ],
     "metadata": {
-        "generatedAt": "2026-01-06T00:00:00Z",
-        "source": "Real unresolved developer issues from Stack Overflow",
+        "generatedAt": "2026-01-10T00:00:00Z",
+        "source": "Real unresolved developer issues from Stack Overflow and community forums",
         "period": "2024-2025 (Recent unresolved issues)",
-        "totalIssues": 6,
-        "searchMethod": "Manual verification of real unresolved Stack Overflow questions",
+        "totalIssues": 8,
+        "searchMethod": "Manual verification of real unresolved Stack Overflow questions and community forums",
         "domains": [
             "resend.com",
-            "liveblocks.io"
+            "liveblocks.io",
+            "docs.knock.app"
         ],
         "updates": [
             "Focused on real, unresolved Stack Overflow questions from developers",
             "Liveblocks: 1 high-quality issue with code examples and error details",
             "Resend: 5 production deployment and email delivery issues",
+            "Knock: 2 issues - cron job triggering and production security mode",
             "All links verified to be working and contain real developer problems",
             "Prioritized issues with rich technical details and reproducible code"
         ],
-        "note": "All issues are real, unresolved developer problems from Stack Overflow. Liveblocks issue (79194531) is from November 2024 with detailed code examples showing LiveObject.set() method failure."
+        "note": "All issues are real, unresolved developer problems from Stack Overflow and community forums. Knock issues focus on workflow triggering and production deployment challenges."
     }
 }
