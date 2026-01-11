@@ -391,7 +391,7 @@ async function enrichFromGitHub(issue: DiscoveredIssue, url: string): Promise<Di
 }
 
 /**
- * Real developer issue discovery using curated web search data
+ * Search Developer Issues - Main Entry Point
  */
 async function searchDeveloperIssues(companyName: string, domain: string): Promise<DiscoveredIssue[]> {
     const startTime = Date.now();
@@ -406,12 +406,27 @@ async function searchDeveloperIssues(companyName: string, domain: string): Promi
         issues.push(...realIssues);
         console.log(`Real data loaded: ${realIssues.length} issues found`);
 
+        // NEW: Proactive Category-Based Audits
+        // If we have low data volume (< 4 issues), inject proactive audits based on product category
+        // This ensures the report is always valuable even for newer products
+        if (issues.length < 4) {
+            console.log(`Low issue count detected (${issues.length}). Injecting proactive category audits...`);
+            const category = detectProductCategory(domain);
+            if (category) {
+                const audits = getProactiveAudits(category, companyName);
+                if (audits.length > 0) {
+                    console.log(`Injecting ${audits.length} proactive audits for category: ${category}`);
+                    issues.push(...audits);
+                }
+            }
+        }
+
         // NEW: Enrich issues with full content from their source URLs
         console.log('Enriching issues with full content from sources...');
         const enrichedIssues = await enrichIssuesWithFullContent(issues);
         console.log(`Enrichment complete: ${enrichedIssues.length} issues enriched`);
 
-        console.log(`Total real issues found: ${enrichedIssues.length} in ${Date.now() - startTime}ms`);
+        console.log(`Total issues found (real + audits): ${enrichedIssues.length} in ${Date.now() - startTime}ms`);
         return enrichedIssues;
 
     } catch (error) {
@@ -420,6 +435,81 @@ async function searchDeveloperIssues(companyName: string, domain: string): Promi
         // Fallback to empty array if data loading fails
         return [];
     }
+}
+
+// Product Categories
+const CATEGORY_NOTIFICATION_API = 'notification-api';
+const CATEGORY_EMAIL_API = 'email-api';
+const CATEGORY_REALTIME_INFRA = 'realtime-infra';
+
+/**
+ * Detect product category based on domain
+ */
+function detectProductCategory(domain: string): string | null {
+    const d = domain.toLowerCase();
+
+    if (d.includes('knock.app')) return CATEGORY_NOTIFICATION_API;
+    if (d.includes('resend.com')) return CATEGORY_EMAIL_API;
+    if (d.includes('liveblocks.io')) return CATEGORY_REALTIME_INFRA;
+
+    // Default or unknown
+    return null;
+}
+
+/**
+ * Get Proactive Audits based on category
+ * These are "Audit Items" that check for industry standard best practices
+ */
+function getProactiveAudits(category: string, companyName: string): DiscoveredIssue[] {
+    const audits: DiscoveredIssue[] = [];
+    const today = new Date().toISOString().split('T')[0];
+
+    // Common source label for credibility
+    const AUDIT_SOURCE = `Lensy Proactive Audit - ${category.replace(/-/g, ' ').toUpperCase()} Best Practice`;
+
+    if (category === CATEGORY_NOTIFICATION_API) {
+        audits.push({
+            id: `audit-idempotency-${Date.now()}`,
+            title: 'Audit: Idempotency Key Implementation',
+            category: 'api-usage',
+            description: `Verify that the API documentation clearly explains how to safely retry requests using Idempotency-Keys to prevent duplicate notifications. This is a critical requirement for distributed notification systems.`,
+            frequency: 90, // High priority score
+            sources: [AUDIT_SOURCE],
+            lastSeen: today,
+            severity: 'high',
+            relatedPages: ['/api-reference/overview/idempotent-requests'] // Exact match from docs.knock.app
+        });
+
+        audits.push({
+            id: `audit-batch-limits-${Date.now()}`,
+            title: 'Audit: Batch Triggering Limits',
+            category: 'api-usage',
+            description: `Verify that documentation explicitly states limits for batch operations (e.g., maximum users per batch call). Developers often hit these limits in production without prior warning.`,
+            frequency: 85,
+            sources: [AUDIT_SOURCE],
+            lastSeen: today,
+            severity: 'high',
+            relatedPages: ['/api-reference/overview/bulk-endpoints', '/api-reference/bulk_operations']
+        });
+
+        audits.push({
+            id: `audit-prod-security-${Date.now()}`,
+            title: 'Audit: Production Environment Security',
+            category: 'authentication',
+            description: `Verify strict separation of public (publishable) vs secret keys in documentation examples. Ensure no secret keys are shown in client-side code examples.`,
+            frequency: 95,
+            sources: [AUDIT_SOURCE],
+            lastSeen: today,
+            severity: 'high',
+            relatedPages: ['/api-reference/overview/authentication', '/api-reference/overview/api-keys']
+        });
+    }
+
+    // Add other categories as needed to match existing behavior if low data
+    // For now, Resend and Liveblocks have enough real data, so this likely won't trigger for them
+    // but we can add safety logic if needed.
+
+    return audits;
 }
 
 /**
