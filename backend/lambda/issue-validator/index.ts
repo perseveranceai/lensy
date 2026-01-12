@@ -570,26 +570,36 @@ function extractCodeSnippetsFromPage(html: string): Array<{ code: string; langua
         }
     }
 
-    // Also try to match simple <code> blocks
-    if (snippets.length === 0) {
-        const codeRegex = /<code[^>]*>([\s\S]*?)<\/code>/gi;
-        while ((match = codeRegex.exec(html)) !== null) {
-            let code = match[1];
-            code = code
-                .replace(/&lt;/g, '<')
-                .replace(/&gt;/g, '>')
-                .replace(/&amp;/g, '&')
-                .replace(/&quot;/g, '"')
-                .replace(/&#39;/g, "'")
-                .replace(/<[^>]+>/g, '');
+    // 2. Comprehensive: Match any <code> blocks that look like code (long or contains symbols)
+    const codeRegex = /<code[^>]*>([\s\S]*?)<\/code>/gi;
+    while ((match = codeRegex.exec(html)) !== null) {
+        let code = match[1]
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&amp;/g, '&')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/<[^>]+>/g, ''); // Remove any nested tags
 
-            if (code.trim().length > 50) { // Only longer code blocks
-                snippets.push({ code: code.trim() });
+        const trimmedCode = code.trim();
+
+        // Logic to distinguish real code snippets from small inline words
+        const isLikelySnippet = trimmedCode.length > 40 ||
+            trimmedCode.includes('{') ||
+            trimmedCode.includes('=>') ||
+            trimmedCode.includes(';') ||
+            trimmedCode.includes('import ') ||
+            trimmedCode.includes('const ');
+
+        if (isLikelySnippet) {
+            // Avoid duplicates with pre/code blocks
+            if (!snippets.some(s => s.code === trimmedCode)) {
+                snippets.push({ code: trimmedCode });
             }
         }
     }
 
-    return snippets.slice(0, 5); // Limit to 5 snippets to avoid token limits
+    return snippets; // Return all snippets for maximum context
 }
 
 /**
@@ -907,7 +917,7 @@ EXISTING CODE ON DOCUMENTATION PAGE:
 ${codeSnippets.length > 0 ? codeSnippets.map((snippet, i) => `\nCode Example ${i + 1}:\n\`\`\`${snippet.language || 'typescript'}\n${snippet.code}\n\`\`\``).join('\n') : 'No code examples found on page'}
 `.trim();
 
-        const prompt = `You are a technical documentation expert analyzing a developer issue.
+        const prompt = `You are a technical documentation expert analyzing a developer issue for the Knock team.
 
 DEVELOPER ISSUE:
 - Title: ${issue.title}
@@ -916,62 +926,62 @@ DEVELOPER ISSUE:
 - Source: ${issue.sources[0]}
 
 DOCUMENTATION PAGE: ${bestMatch.pageUrl}
-EXISTING CODE ON PAGE:
-${codeSnippets.length > 0 ? codeSnippets.slice(0, 2).map((s, i) => `Example ${i + 1}:\n\`\`\`${s.language || 'typescript'}\n${s.code.substring(0, 500)}\n\`\`\``).join('\n\n') : 'No code examples found'}
+EXISTING CODE SNIPPETS ON PAGE (CONTEXT):
+${codeSnippets.length > 0 ? codeSnippets.map((s, i) => `Snippet ${i + 1}:\n\`\`\`${s.language || 'typescript'}\n${s.code}\n\`\`\``).join('\n\n') : 'No code examples found'}
 
-YOUR TASK: Generate TWO detailed recommendations with COMPLETE code examples.
+YOUR TASK: Identify exact gaps or errors based on the developer issue and recommend SURGICAL fixes for the existing code snippets. 
+
+DO NOT generate a new "Master Implementation." Instead, provide updates that the documentation team can easily slot into their existing page layout.
 
 CRITICAL REQUIREMENTS:
-1. Each recommendation MUST include a COMPLETE code block (40-60 lines minimum)
-2. Code must be COPY-PASTE READY - no placeholders, no "// ... rest of code"
-3. Include ALL imports, ALL error handling, ALL edge cases
-4. Show BEFORE (existing doc code) and AFTER (improved code) comparison
+1. FOCUS on specific snippets: If the fix belongs in "Snippet 2", call it out clearly.
+2. SURGICAL UPDATES: Only provide the code necessary to fix/improve that specific section. 
+3. PRESERVE CONTEXT: Ensure the improved code fits perfectly into the existing documentation structure.
+4. Show BEFORE (existing doc snippet) and AFTER (improved snippet) comparison.
 
 OUTPUT FORMAT (follow exactly):
 
-## Recommendation 1: [Descriptive Title]
+## Recommendation 1: [Target Snippet Name/Number] - [Short Fix Title]
 
-**Problem:** [2-3 sentences explaining what's missing in current docs]
+**The Gap:** [1-2 sentences explaining why the current snippet causes the developer issue]
 
-**Current Documentation Code (BEFORE):**
+**Current Documentation (BEFORE):**
 \`\`\`typescript
-// Show the existing code from documentation that needs improvement
+// SHOW the existing code from the page that is most relevant to this fix.
+// Even if this is a "New Section", provide the code from the surrounding area as context so the user knows where to insert it.
+// DO NOT use "// Missing Section" - always provide some context snippet from the page.
 \`\`\`
 
-**Improved Code (AFTER) - Add this to documentation:**
+**Surgical Improvement (AFTER) - Update this specific snippet:**
 \`\`\`typescript
-// COMPLETE 40-60 line code example here
-// Include: 'use server' directive, all imports, type definitions
-// Include: input validation, environment checks
-// Include: try/catch with specific error messages
-// Include: success/error return types
-// Include: helpful comments explaining each section
+// The improved version of the snippet. 
+// Keep it concise but functional.
+// Include the specific fix (e.g., proper error handling, correct config field, or missing API parameter).
 \`\`\`
 
-**Why This Helps Developers:** [2-3 sentences]
+**Why This Helps:** [1-2 sentences explaining how this unblocks developers]
 
 ---
 
-## Recommendation 2: [Descriptive Title]
+## Recommendation 2: [Another Target Area] - [Short Fix Title]
 
-**Problem:** [2-3 sentences]
+**The Gap:** [1-2 sentences]
 
-**Current Documentation Code (BEFORE):**
+**Current Documentation (BEFORE):**
 \`\`\`typescript
-// Existing code
+// Existing code or "Missing Section"
 \`\`\`
 
-**Improved Code (AFTER) - Add this to documentation:**
+**Improved Code (AFTER):**
 \`\`\`typescript
-// Another COMPLETE 40-60 line code example
-// Different aspect of the issue (e.g., form integration, debugging)
+// Targeted update
 \`\`\`
 
-**Why This Helps Developers:** [2-3 sentences]
+**Why This Helps:** [1-2 sentences]
 
 ---
 
-REMEMBER: Your response should be approximately 3000-4000 characters total. Do NOT be brief. Include FULL, WORKING code that developers can copy directly.`;
+REMEMBER: Be surgical and efficient. The goal is to help the Knock team update their documentation with minimal friction.`;
 
         console.log(`🚀 Calling Bedrock to generate recommendations...`);
         console.log(`🤖 Model ID: us.anthropic.claude-sonnet-4-5-20250929-v1:0`);

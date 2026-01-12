@@ -616,11 +616,18 @@ function App() {
 
         // Executive Summary
         markdown += `## EXECUTIVE SUMMARY\n\n`;
-        markdown += `This report analyzes ${validationResults.summary.totalIssues} real developer issue${validationResults.summary.totalIssues === 1 ? '' : 's'} found on Stack Overflow. Each issue was validated against existing documentation to identify gaps and improvement opportunities.\n\n`;
+
+        const isProactive = validationResults.validationResults.some((r: any) => r.issueTitle.startsWith('Audit:'));
+        const sourceDescription = isProactive
+            ? "proactive audit items based on industry best practices"
+            : `real developer issue${validationResults.summary.totalIssues === 1 ? '' : 's'} found on Stack Overflow`;
+
+        markdown += `This report analyzes ${validationResults.summary.totalIssues} ${sourceDescription}. Each issue was validated against existing documentation to identify gaps and improvement opportunities.\n\n`;
 
         // Summary Statistics
         markdown += `### Summary Statistics\n\n`;
         markdown += `- **✅ Resolved Issues:** ${validationResults.summary.resolved} (${((validationResults.summary.resolved / validationResults.summary.totalIssues) * 100).toFixed(1)}%)\n`;
+        markdown += `- **🔍 Confirmed Gaps:** ${validationResults.summary.confirmed || 0} (${((validationResults.summary.confirmed / validationResults.summary.totalIssues) * 100).toFixed(1)}%)\n`;
         markdown += `- **⚠️ Potential Gaps:** ${validationResults.summary.potentialGaps} (${((validationResults.summary.potentialGaps / validationResults.summary.totalIssues) * 100).toFixed(1)}%)\n`;
         markdown += `- **❌ Critical Gaps:** ${validationResults.summary.criticalGaps} (${((validationResults.summary.criticalGaps / validationResults.summary.totalIssues) * 100).toFixed(1)}%)\n\n`;
 
@@ -698,8 +705,9 @@ function App() {
 
         validationResults.validationResults.forEach((result: any, index: number) => {
             const statusEmoji = result.status === 'resolved' ? '✅' :
-                result.status === 'potential-gap' ? '⚠️' :
-                    result.status === 'critical-gap' ? '❌' : '❓';
+                result.status === 'confirmed' ? '🔍' :
+                    result.status === 'potential-gap' ? '⚠️' :
+                        result.status === 'critical-gap' ? '❌' : '❓';
 
             markdown += `### ${index + 1}. ${statusEmoji} ${result.issueTitle}\n\n`;
             markdown += `**Status:** ${result.status.toUpperCase()}\n`;
@@ -726,14 +734,8 @@ function App() {
             if (result.recommendations && result.recommendations.length > 0) {
                 markdown += `**💡 AI-Generated Recommendations:**\n\n`;
                 result.recommendations.forEach((rec: string, idx: number) => {
-                    // Clean up the markdown formatting for better readability
-                    const cleanRec = rec
-                        .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold formatting
-                        .replace(/```[\s\S]*?```/g, '[CODE EXAMPLE INCLUDED]') // Replace code blocks with placeholder
-                        .replace(/\n\s*\n/g, '\n') // Remove extra line breaks
-                        .trim();
-
-                    markdown += `${idx + 1}. ${cleanRec}\n\n`;
+                    // PRESERVE the full markdown formatting including code blocks
+                    markdown += `${idx + 1}. ${rec}\n\n`;
                 });
             }
 
@@ -756,6 +758,7 @@ function App() {
         markdown += `## PRIORITY RECOMMENDATIONS\n\n`;
 
         const criticalIssues = validationResults.validationResults.filter((r: any) => r.status === 'critical-gap');
+        const confirmedIssues = validationResults.validationResults.filter((r: any) => r.status === 'confirmed');
         const potentialGaps = validationResults.validationResults.filter((r: any) => r.status === 'potential-gap');
 
         if (criticalIssues.length > 0) {
@@ -763,6 +766,15 @@ function App() {
             criticalIssues.forEach((issue: any, idx: number) => {
                 markdown += `${idx + 1}. **Create documentation for:** ${issue.issueTitle}\n`;
                 markdown += `   - Developer Impact: High (no existing coverage)\n`;
+                markdown += `   - Confidence: ${issue.confidence}%\n\n`;
+            });
+        }
+
+        if (confirmedIssues.length > 0) {
+            markdown += `### 🔍 High Priority (${confirmedIssues.length} confirmed gaps)\n\n`;
+            confirmedIssues.forEach((issue: any, idx: number) => {
+                markdown += `${idx + 1}. **Fix incomplete documentation for:** ${issue.issueTitle}\n`;
+                markdown += `   - Developer Impact: High (docs exist but miss key info)\n`;
                 markdown += `   - Confidence: ${issue.confidence}%\n\n`;
             });
         }
@@ -794,12 +806,20 @@ function App() {
         const url_obj = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url_obj;
-        const filename = `documentation-validation-report-${companyDomain.replace(/[^a-zA-Z0-9]/g, '-')}-${new Date().toISOString().split('T')[0]}.md`;
+
+        // Safety check for domain
+        const safeDomain = companyDomain ? companyDomain.replace(/[^a-zA-Z0-9]/g, '-') : 'analysis';
+        const filename = `documentation-validation-report-${safeDomain}-${new Date().toISOString().split('T')[0]}.md`;
+
         a.download = filename;
         document.body.appendChild(a);
         a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url_obj);
+
+        // Delay cleanup to ensure download starts
+        setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url_obj);
+        }, 1000);
     };
 
     const exportMarkdownReport = (report: FinalReport) => {
@@ -966,8 +986,12 @@ function App() {
         a.download = filename;
         document.body.appendChild(a);
         a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url_obj);
+
+        // Delay cleanup to ensure download starts
+        setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url_obj);
+        }, 1000);
     };
 
     return (
@@ -1452,8 +1476,9 @@ function App() {
                                             label={result.status.toUpperCase()}
                                             color={
                                                 result.status === 'resolved' ? 'success' :
-                                                    result.status === 'potential-gap' ? 'warning' :
-                                                        result.status === 'critical-gap' ? 'error' : 'default'
+                                                    result.status === 'confirmed' ? 'info' :
+                                                        result.status === 'potential-gap' ? 'warning' :
+                                                            result.status === 'critical-gap' ? 'error' : 'default'
                                             }
                                             sx={{ mr: 2 }}
                                         />
