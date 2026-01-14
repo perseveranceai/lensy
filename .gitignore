@@ -5,7 +5,8 @@ node_modules/
 # Production builds
 build/
 dist/
-lib/
+# lib/
+!backend/lib/
 
 # CDK
 cdk.out/

@@ -48,7 +48,7 @@ export const handler: Handler<any, any> = async (event: any) => {
     }
 
     try {
-        if (httpMethod === 'POST' && path === '/analyze') {
+        if (httpMethod === 'POST' && (path === '/analyze' || path === '/scan-doc')) {
             return await handleAnalyzeRequest(body, corsHeaders);
         }
 
@@ -58,6 +58,14 @@ export const handler: Handler<any, any> = async (event: any) => {
 
         if (httpMethod === 'POST' && path === '/validate-issues') {
             return await handleValidateIssuesRequest(body, corsHeaders);
+        }
+
+        if (httpMethod === 'POST' && path === '/generate-fixes') {
+            return await handleGenerateFixesRequest(body, corsHeaders);
+        }
+
+        if (httpMethod === 'POST' && path === '/apply-fixes') {
+            return await handleApplyFixesRequest(body, corsHeaders);
         }
 
         if (httpMethod === 'GET' && path?.startsWith('/status/')) {
@@ -181,8 +189,6 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
         const bucketName = process.env.ANALYSIS_BUCKET || 'lensy-analysis-951411676525-us-east-1';
 
         // Try to get the final report from S3
-        // Check for both sitemap mode and doc mode results
-
         const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
         const s3 = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
 
@@ -217,15 +223,14 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
             const actualAnalysisTime = Date.now() - analysisStartTime;
             const healthPercentage = sitemapHealthResults.healthPercentage || 0;
 
-            // Build sitemap health report
             const report = {
                 overallScore: healthPercentage,
-                dimensionsAnalyzed: 1, // We analyzed "health" dimension
+                dimensionsAnalyzed: 1,
                 dimensionsTotal: 1,
-                confidence: 'high', // Sitemap health checking is deterministic
+                confidence: 'high',
                 modelUsed: 'Sitemap Health Checker',
-                cacheStatus: 'miss', // Sitemap health is always fresh
-                dimensions: {}, // No dimension analysis in sitemap mode
+                cacheStatus: 'miss',
+                dimensions: {},
                 codeAnalysis: {
                     snippetsFound: 0,
                     syntaxErrors: 0,
@@ -276,7 +281,6 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
             };
 
         } catch (sitemapError) {
-            // Not sitemap mode, try doc mode
             console.log('No sitemap health results found, checking for doc mode results');
         }
 
@@ -291,7 +295,6 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
             const dimensionContent = await dimensionResponse.Body.transformToString();
             const dimensionResults = JSON.parse(dimensionContent);
 
-            // Get processed content for additional info
             const contentKey = `sessions/${sessionId}/processed-content.json`;
             const contentResponse = await s3.send(new GetObjectCommand({
                 Bucket: bucketName,
@@ -301,10 +304,6 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
             const contentStr = await contentResponse.Body.transformToString();
             const processedContent = JSON.parse(contentStr);
 
-            console.log('Retrieved processed content keys:', Object.keys(processedContent));
-            console.log('Context analysis check:', !!processedContent.contextAnalysis);
-
-            // Get session metadata to retrieve the model used and start time
             let modelUsed = 'claude'; // default
             let analysisStartTime = Date.now(); // fallback
             try {
@@ -321,10 +320,8 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
                 console.log('No metadata found, using default model and current time');
             }
 
-            // Calculate actual analysis time
             const actualAnalysisTime = Date.now() - analysisStartTime;
 
-            // Build the report
             const validScores = Object.values(dimensionResults)
                 .filter((d: any) => d.score !== null && d.status === 'complete')
                 .map((d: any) => d.score);
@@ -333,21 +330,14 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
                 ? Math.round(validScores.reduce((sum: number, score: number) => sum + score, 0) / validScores.length)
                 : 0;
 
-            // Generate context analysis summary from processed content if available
             let contextAnalysis = null;
             if (processedContent.contextAnalysis) {
-                console.log('Found context analysis in processed content:', processedContent.contextAnalysis);
-
                 contextAnalysis = {
                     enabled: true,
                     contextPages: processedContent.contextAnalysis.contextPages || [],
                     analysisScope: processedContent.contextAnalysis.analysisScope || 'single-page',
                     totalPagesAnalyzed: processedContent.contextAnalysis.totalPagesAnalyzed || 1
                 };
-
-                console.log('Generated context analysis for report:', contextAnalysis);
-            } else {
-                console.log('No context analysis found in processed content');
             }
 
             const report = {
@@ -359,11 +349,15 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
                 cacheStatus: processedContent.cacheMetadata?.wasFromCache ? 'hit' : 'miss',
                 dimensions: dimensionResults,
                 codeAnalysis: {
-                    snippetsFound: processedContent.codeSnippets?.length || 0,
-                    syntaxErrors: 0,
-                    deprecatedMethods: 0,
+                    snippetsFound: processedContent.enhancedCodeAnalysis?.analyzedSnippets || processedContent.codeSnippets?.length || 0,
+                    syntaxErrors: processedContent.enhancedCodeAnalysis?.syntaxErrorFindings?.length || 0,
+                    deprecatedMethods: processedContent.enhancedCodeAnalysis?.deprecatedCodeFindings?.length || 0,
                     missingVersionSpecs: processedContent.codeSnippets?.filter((s: any) => !s.hasVersionInfo).length || 0,
-                    languagesDetected: processedContent.codeSnippets ? [...new Set(processedContent.codeSnippets.map((s: any) => s.language).filter(Boolean))] : []
+                    languagesDetected: processedContent.codeSnippets ? [...new Set(processedContent.codeSnippets.map((s: any) => s.language).filter(Boolean))] : [],
+                    enhancedAnalysis: {
+                        deprecatedFindings: processedContent.enhancedCodeAnalysis?.deprecatedCodeFindings || [],
+                        syntaxErrorFindings: processedContent.enhancedCodeAnalysis?.syntaxErrorFindings || []
+                    }
                 },
                 mediaAnalysis: {
                     videosFound: processedContent.mediaElements?.filter((m: any) => m.type === 'video').length || 0,
@@ -373,8 +367,8 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
                     accessibilityIssues: processedContent.mediaElements?.filter((m: any) => m.analysisNote?.includes('accessibility')).length || 0,
                     missingAltText: processedContent.mediaElements?.filter((m: any) => m.type === 'image' && !m.alt).length || 0
                 },
-                linkAnalysis: processedContent.linkAnalysis || {},
-                ...(contextAnalysis && { contextAnalysis }), // Only include if not undefined
+                linkAnalysis: processedContent.linkAnalysis || processedContent.enhancedLinkAnalysis || {},
+                ...(contextAnalysis && { contextAnalysis }),
                 analysisTime: actualAnalysisTime,
                 retryCount: 0
             };
@@ -390,7 +384,6 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
             };
 
         } catch (docModeError) {
-            // Neither sitemap nor doc mode results found - analysis still in progress
             return {
                 statusCode: 200,
                 headers: corsHeaders,
@@ -416,152 +409,136 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
 }
 
 async function handleDiscoverIssuesRequest(body: string | null, corsHeaders: Record<string, string>) {
-    if (!body) {
-        return {
-            statusCode: 400,
-            headers: corsHeaders,
-            body: JSON.stringify({ error: 'Request body is required' })
-        };
-    }
-
+    // ... (rest of the file remains same)
+    if (!body) return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Request body is required' }) };
     let discoverRequest: { companyName: string; domain: string; sessionId: string };
-
-    try {
-        discoverRequest = JSON.parse(body);
-    } catch (error) {
-        return {
-            statusCode: 400,
-            headers: corsHeaders,
-            body: JSON.stringify({ error: 'Invalid JSON in request body' })
-        };
-    }
-
+    try { discoverRequest = JSON.parse(body); } catch (error) { return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Invalid JSON in request body' }) }; }
     const { companyName, domain, sessionId } = discoverRequest;
-
-    if (!domain || !sessionId) {
-        return {
-            statusCode: 400,
-            headers: corsHeaders,
-            body: JSON.stringify({ error: 'Missing required fields: domain and sessionId' })
-        };
-    }
-
+    if (!domain || !sessionId) return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Missing required fields: domain and sessionId' }) };
     try {
-        console.log('Invoking IssueDiscoverer Lambda for:', { companyName, domain, sessionId });
-
-        // Invoke the IssueDiscoverer Lambda function directly
         const invokeParams = {
             FunctionName: process.env.ISSUE_DISCOVERER_FUNCTION_NAME || 'lensy-issue-discoverer',
-            Payload: JSON.stringify({
-                body: JSON.stringify({ companyName, domain, sessionId })
-            })
+            Payload: JSON.stringify({ body: JSON.stringify({ companyName, domain, sessionId }) })
+        };
+        const result = await lambdaClient.send(new InvokeCommand(invokeParams));
+        if (result.Payload) {
+            const responsePayload = JSON.parse(new TextDecoder().decode(result.Payload));
+            if (responsePayload.statusCode === 200) {
+                const issueResults = JSON.parse(responsePayload.body);
+                return { statusCode: 200, headers: corsHeaders, body: JSON.stringify(issueResults) };
+            } else throw new Error(`IssueDiscoverer failed: ${responsePayload.body}`);
+        } else throw new Error('No response payload from IssueDiscoverer');
+    } catch (error) {
+        return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: 'Issue discovery failed', message: error instanceof Error ? error.message : 'Unknown error' }) };
+    }
+}
+
+async function handleValidateIssuesRequest(body: string | null, corsHeaders: Record<string, string>): Promise<APIGatewayProxyResult> {
+    if (!body) return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Request body is required' }) };
+    let validateRequest: any;
+    try { validateRequest = JSON.parse(body); } catch (error) { return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Invalid JSON in request body' }) }; }
+    const { issues, domain, sessionId } = validateRequest;
+    if (!issues || !domain || !sessionId) return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Missing required fields: issues, domain, and sessionId' }) };
+    try {
+        const invokeParams = {
+            FunctionName: process.env.ISSUE_VALIDATOR_FUNCTION_NAME || 'lensy-issue-validator',
+            Payload: JSON.stringify({ body: JSON.stringify({ issues, domain, sessionId }) })
+        };
+        const result = await lambdaClient.send(new InvokeCommand(invokeParams));
+        if (result.Payload) {
+            const responsePayload = JSON.parse(new TextDecoder().decode(result.Payload));
+            if (responsePayload.statusCode === 200) {
+                const validationResults = JSON.parse(responsePayload.body);
+                return { statusCode: 200, headers: corsHeaders, body: JSON.stringify(validationResults) };
+            } else throw new Error(`IssueValidator failed: ${responsePayload.body}`);
+        } else throw new Error('No response payload from IssueValidator');
+    } catch (error) {
+        return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: 'Issue validation failed', message: error instanceof Error ? error.message : 'Unknown error' }) };
+    }
+}
+
+async function handleGenerateFixesRequest(body: string | null, corsHeaders: Record<string, string>): Promise<APIGatewayProxyResult> {
+    if (!body) return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Request body is required' }) };
+    let request: any;
+    try { request = JSON.parse(body); } catch (error) { return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Invalid JSON in request body' }) }; }
+
+    if (!request.sessionId) return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Missing required field: sessionId' }) };
+
+    try {
+        console.log(`Invoking FixGenerator for session ${request.sessionId}`);
+        const invokeParams = {
+            FunctionName: process.env.FIX_GENERATOR_FUNCTION_NAME || 'LensyStack-FixGeneratorFunction',
+            Payload: JSON.stringify({ body: JSON.stringify(request) }) // Pass as API Gateway proxy event body
         };
 
         const result = await lambdaClient.send(new InvokeCommand(invokeParams));
 
         if (result.Payload) {
             const responsePayload = JSON.parse(new TextDecoder().decode(result.Payload));
+            console.log('FixGenerator response:', responsePayload);
 
-            if (responsePayload.statusCode === 200) {
-                const issueResults = JSON.parse(responsePayload.body);
-                return {
-                    statusCode: 200,
-                    headers: corsHeaders,
-                    body: JSON.stringify(issueResults)
-                };
-            } else {
-                throw new Error(`IssueDiscoverer failed: ${responsePayload.body}`);
-            }
+            // Handle both direct invocation response and proxy response
+            const responseBody = responsePayload.body ? JSON.parse(responsePayload.body) : responsePayload;
+            const statusCode = responsePayload.statusCode || 200;
+
+            return {
+                statusCode,
+                headers: corsHeaders,
+                body: JSON.stringify(responseBody)
+            };
         } else {
-            throw new Error('No response payload from IssueDiscoverer');
+            throw new Error('No response payload from FixGenerator');
         }
-
     } catch (error) {
-        console.error('Issue discovery failed:', error);
+        console.error('Fix generation failed:', error);
         return {
             statusCode: 500,
             headers: corsHeaders,
-            body: JSON.stringify({
-                error: 'Issue discovery failed',
-                message: error instanceof Error ? error.message : 'Unknown error'
-            })
+            body: JSON.stringify({ error: 'Fix generation failed', message: error instanceof Error ? error.message : 'Unknown error' })
         };
     }
 }
 
+async function handleApplyFixesRequest(body: string | null, corsHeaders: Record<string, string>): Promise<APIGatewayProxyResult> {
+    if (!body) return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Request body is required' }) };
+    let request: any;
+    try { request = JSON.parse(body); } catch (error) { return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Invalid JSON in request body' }) }; }
 
-/**
- * Handle issue validation request
- */
-async function handleValidateIssuesRequest(body: string | null, corsHeaders: Record<string, string>): Promise<APIGatewayProxyResult> {
-    if (!body) {
-        return {
-            statusCode: 400,
-            headers: corsHeaders,
-            body: JSON.stringify({ error: 'Request body is required' })
-        };
-    }
-
-    let validateRequest: any;
-    try {
-        validateRequest = JSON.parse(body);
-    } catch (error) {
-        return {
-            statusCode: 400,
-            headers: corsHeaders,
-            body: JSON.stringify({ error: 'Invalid JSON in request body' })
-        };
-    }
-
-    const { issues, domain, sessionId } = validateRequest;
-
-    if (!issues || !domain || !sessionId) {
-        return {
-            statusCode: 400,
-            headers: corsHeaders,
-            body: JSON.stringify({ error: 'Missing required fields: issues, domain, and sessionId' })
-        };
+    if (!request.sessionId || !request.selectedFixIds) {
+        return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Missing required fields: sessionId and selectedFixIds' }) };
     }
 
     try {
-        console.log('Invoking IssueValidator Lambda for:', { issueCount: issues.length, domain, sessionId });
-
-        // Invoke the IssueValidator Lambda function directly
+        console.log(`Invoking FixApplicator for session ${request.sessionId}`);
         const invokeParams = {
-            FunctionName: process.env.ISSUE_VALIDATOR_FUNCTION_NAME || 'lensy-issue-validator',
-            Payload: JSON.stringify({
-                body: JSON.stringify({ issues, domain, sessionId })
-            })
+            FunctionName: process.env.FIX_APPLICATOR_FUNCTION_NAME || 'LensyStack-FixApplicatorFunction',
+            Payload: JSON.stringify({ body: JSON.stringify(request) }) // Pass as API Gateway proxy event body
         };
 
         const result = await lambdaClient.send(new InvokeCommand(invokeParams));
 
         if (result.Payload) {
             const responsePayload = JSON.parse(new TextDecoder().decode(result.Payload));
+            console.log('FixApplicator response:', responsePayload);
 
-            if (responsePayload.statusCode === 200) {
-                const validationResults = JSON.parse(responsePayload.body);
-                return {
-                    statusCode: 200,
-                    headers: corsHeaders,
-                    body: JSON.stringify(validationResults)
-                };
-            } else {
-                throw new Error(`IssueValidator failed: ${responsePayload.body}`);
-            }
+            // Handle both direct invocation response and proxy response
+            const responseBody = responsePayload.body ? JSON.parse(responsePayload.body) : responsePayload;
+            const statusCode = responsePayload.statusCode || 200;
+
+            return {
+                statusCode,
+                headers: corsHeaders,
+                body: JSON.stringify(responseBody)
+            };
         } else {
-            throw new Error('No response payload from IssueValidator');
+            throw new Error('No response payload from FixApplicator');
         }
-
     } catch (error) {
-        console.error('Issue validation failed:', error);
+        console.error('Fix application failed:', error);
         return {
             statusCode: 500,
             headers: corsHeaders,
-            body: JSON.stringify({
-                error: 'Issue validation failed',
-                message: error instanceof Error ? error.message : 'Unknown error'
-            })
+            body: JSON.stringify({ error: 'Fix application failed', message: error instanceof Error ? error.message : 'Unknown error' })
         };
     }
 }

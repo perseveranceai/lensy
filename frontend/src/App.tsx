@@ -28,7 +28,8 @@ import {
     ListItemText,
     ListItemIcon,
     Collapse,
-    IconButton
+    IconButton,
+    Checkbox
 } from '@mui/material';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -39,6 +40,10 @@ import FlashOnIcon from '@mui/icons-material/FlashOn';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+
+import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import FixReviewPanel, { Fix } from './components/FixReviewPanel';
 
 interface AnalysisRequest {
     url: string;
@@ -193,7 +198,7 @@ interface ProgressMessage {
 }
 
 interface AnalysisState {
-    status: 'idle' | 'analyzing' | 'completed' | 'error';
+    status: 'idle' | 'analyzing' | 'generating' | 'applying' | 'completed' | 'error';
     report?: FinalReport;
     error?: string;
     executionArn?: string;
@@ -207,7 +212,7 @@ function App() {
     const [url, setUrl] = useState('');
     const [selectedModel, setSelectedModel] = useState<'claude' | 'titan' | 'llama' | 'auto'>('claude');
     const [contextAnalysisEnabled, setContextAnalysisEnabled] = useState(false);
-    const [cacheEnabled, setCacheEnabled] = useState(true);
+    const [cacheEnabled, setCacheEnabled] = useState(false);
     const [selectedMode, setSelectedMode] = useState<'doc' | 'sitemap' | 'issue-discovery'>('doc');
     const [manualModeOverride, setManualModeOverride] = useState<'doc' | 'sitemap' | 'issue-discovery' | null>(null);
     const [companyDomain, setCompanyDomain] = useState('');
@@ -225,9 +230,20 @@ function App() {
         status: 'idle',
         progressMessages: []
     });
+    const [selectedRecommendations, setSelectedRecommendations] = useState<string[]>([]);
     const [progressExpanded, setProgressExpanded] = useState(true);
     const wsRef = useRef<WebSocket | null>(null);
     const progressEndRef = useRef<HTMLDivElement>(null);
+
+    // Fix Generation State
+    const [fixes, setFixes] = useState<Fix[]>([]);
+    const [isGeneratingFixes, setIsGeneratingFixes] = useState(false);
+    const [isApplyingFixes, setIsApplyingFixes] = useState(false);
+    const [showFixPanel, setShowFixPanel] = useState(false);
+    const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+    const [forceFreshScan, setForceFreshScan] = useState(false);
+    const [fixSuccessMessage, setFixSuccessMessage] = useState<string | null>(null);
+    const [lastModifiedFile, setLastModifiedFile] = useState<string | null>(null);
 
     // Auto-detect input type when URL changes (for Doc/Sitemap modes)
     useEffect(() => {
@@ -427,7 +443,214 @@ function App() {
         }
     };
 
+    const handleGenerateFixes = async () => {
+        setFixSuccessMessage(null);
+        setLastModifiedFile(null);
+        if (!analysisState.report) return;
+        if (!currentSessionId) {
+            console.error('No active session ID');
+            setAnalysisState(prev => ({
+                ...prev,
+                status: 'completed',
+                error: 'No active session found. Please run analysis first.'
+            }));
+            return;
+        }
+
+        setIsGeneratingFixes(true);
+        setShowFixPanel(false);
+        setAnalysisState(prev => ({
+            ...prev,
+            status: 'generating',
+            progressMessages: [
+                ...prev.progressMessages,
+                { type: 'info', message: 'Starting AI fix generation...', timestamp: Date.now() }
+            ]
+        }));
+
+        try {
+            // Map selected IDs back to recommendation actions
+            const selectedActions = selectedRecommendations.map(id => {
+                const [dim, indexStr] = id.split('-');
+                const index = parseInt(indexStr);
+                const result = (analysisState.report?.dimensions as any)[dim];
+                return result?.recommendations?.[index]?.action;
+            }).filter(Boolean);
+
+            // Map selected model to Bedrock ID (matching DimensionAnalyzer)
+            const modelMap: Record<string, string> = {
+                'claude': 'us.anthropic.claude-3-5-sonnet-20241022-v2:0',
+                'titan': 'amazon.titan-text-premier-v1:0',
+                'llama': 'us.meta.llama3-1-70b-instruct-v1:0',
+                'auto': 'us.anthropic.claude-3-5-sonnet-20241022-v2:0'
+            };
+            const bedrockModelId = modelMap[selectedModel] || modelMap['claude'];
+
+            const response = await fetch(`${API_BASE_URL}/generate-fixes`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    sessionId: currentSessionId,
+                    selectedRecommendations: selectedActions,
+                    modelId: bedrockModelId
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Fix generation failed: ${errorText}`);
+            }
+
+            const result = await response.json();
+            console.log('Fix generation result:', result);
+
+            setAnalysisState(prev => ({
+                ...prev,
+                status: 'completed',
+                progressMessages: [...prev.progressMessages, {
+                    type: 'success',
+                    message: `Generated ${result.fixCount} fixes`,
+                    timestamp: Date.now()
+                }]
+            }));
+
+            if (result.success && result.fixCount > 0) {
+                // Fetch the fixes from S3 via presigned URL or direct API
+                // For now, we'll fetch from the same session path
+                try {
+                    const fixesUrl = `${API_BASE_URL}/sessions/${currentSessionId}/fixes`;
+                    const fixesResponse = await fetch(fixesUrl);
+
+                    if (fixesResponse.ok) {
+                        const fixSession = await fixesResponse.json();
+                        setFixes(fixSession.fixes || []);
+                        setShowFixPanel(true);
+                        console.log('Loaded fixes:', fixSession.fixes);
+                    } else {
+                        // S3 might not be publicly accessible, show message
+                        console.warn('Could not fetch fixes from S3, they may not be publicly accessible');
+                        setAnalysisState(prev => ({
+                            ...prev,
+                            progressMessages: [...prev.progressMessages, {
+                                type: 'info',
+                                message: `Fixes generated but not yet accessible. Check S3: sessions/${currentSessionId}/fixes.json`,
+                                timestamp: Date.now()
+                            }]
+                        }));
+                        setShowFixPanel(false);
+                    }
+                } catch (fetchError) {
+                    console.error('Error fetching fixes:', fetchError);
+                    setShowFixPanel(false);
+                }
+            } else if (!result.success) {
+                // Handle success: false as an error
+                setAnalysisState(prev => ({
+                    ...prev,
+                    status: 'error',
+                    error: result.message || 'Failed to generate fixes',
+                    progressMessages: [...prev.progressMessages, {
+                        type: 'error',
+                        message: `Fix generation failed: ${result.message}`,
+                        timestamp: Date.now()
+                    }]
+                }));
+            } else {
+                setAnalysisState(prev => ({
+                    ...prev,
+                    status: 'completed',
+                    progressMessages: [...prev.progressMessages, {
+                        type: 'info',
+                        message: 'No fixes were generated for this document',
+                        timestamp: Date.now()
+                    }]
+                }));
+            }
+
+        } catch (error) {
+            console.error('Error generating fixes:', error);
+            setAnalysisState(prev => ({
+                ...prev,
+                status: 'error',
+                error: error instanceof Error ? error.message : 'Failed to generate fixes'
+            }));
+        } finally {
+            setIsGeneratingFixes(false);
+        }
+    };
+
+    const handleApplyFixes = async (selectedFixIds: string[]) => {
+        setFixSuccessMessage(null); // Clear previous messages
+        setLastModifiedFile(null);
+        setAnalysisState(prev => ({
+            ...prev,
+            status: 'applying',
+            progressMessages: [
+                ...prev.progressMessages,
+                { type: 'info', message: 'Applying selected fixes and purging CloudFront cache...', timestamp: Date.now() }
+            ]
+        }));
+        setIsApplyingFixes(true);
+        try {
+            const response = await fetch(`${API_BASE_URL}/apply-fixes`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    sessionId: currentSessionId,
+                    selectedFixIds
+                })
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                setAnalysisState(prev => ({
+                    ...prev,
+                    status: 'completed',
+                    report: undefined, // Clear report to force re-scan
+                }));
+                // Set prominent success message
+                setFixSuccessMessage(`${result.message}. Please click "Re-scan" to verify.`);
+                if (result.filename) {
+                    setLastModifiedFile(result.filename);
+                }
+
+                // Clear fixing and selection states to prevent persistence of old issues
+                setFixes([]);
+                setSelectedRecommendations([]);
+                setSelectedIssues([]);
+                setShowFixPanel(false);
+                setForceFreshScan(true);
+                setCurrentSessionId(null); // Force a new session for the re-scan
+
+                // Show a temporary success alert or scroll to progress
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } else {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to apply fixes');
+            }
+        } catch (e: any) {
+            console.error(e);
+            setAnalysisState(prev => ({
+                ...prev,
+                status: 'error',
+                error: `Failed to apply fixes: ${e.message}`,
+                progressMessages: [...prev.progressMessages, {
+                    type: 'error',
+                    message: `Failed to apply fixes: ${e.message}`,
+                    timestamp: Date.now()
+                }]
+            }));
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        } finally {
+            setIsApplyingFixes(false);
+        }
+    };
+
     const handleAnalyze = async () => {
+        setFixSuccessMessage(null);
+        setLastModifiedFile(null);
         const currentMode = manualModeOverride || selectedMode;
 
         // Validate inputs based on mode
@@ -457,6 +680,7 @@ function App() {
         setAnalysisState({ status: 'analyzing', progressMessages: [] });
 
         const sessionId = `session-${Date.now()}`;
+        setCurrentSessionId(sessionId); // Store session ID for later use
         const finalInputType = manualModeOverride || selectedMode;
 
         try {
@@ -530,9 +754,10 @@ function App() {
                         maxContextPages: 5
                     } : undefined,
                     cacheControl: {
-                        enabled: cacheEnabled
+                        enabled: forceFreshScan ? false : cacheEnabled
                     }
                 };
+                if (forceFreshScan) setForceFreshScan(false);
 
                 // Connect WebSocket
                 try {
@@ -542,7 +767,7 @@ function App() {
                 }
 
                 // Start analysis
-                const response = await fetch(`${API_BASE_URL}/analyze`, {
+                const response = await fetch(`${API_BASE_URL}/scan-doc`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(analysisRequest)
@@ -797,7 +1022,7 @@ function App() {
         markdown += `5. **Enhanced** with AI-generated improvement recommendations\n\n`;
 
         markdown += `---\n\n`;
-        markdown += `*Report generated by Lensy Documentation Quality Auditor*\n`;
+        markdown += `*Report generated by Documentation Quality Auditor*\n`;
         markdown += `*Analysis Date: ${analysisDate}*\n`;
         markdown += `*Total Processing Time: ${validationResults.processingTime}ms*\n`;
 
@@ -971,7 +1196,7 @@ function App() {
         }
 
         markdown += `---\n\n`;
-        markdown += `*Report generated by Lensy Documentation Quality Auditor*\n`;
+        markdown += `*Report generated by Documentation Quality Auditor*\n`;
         markdown += `*Analysis model: ${report.modelUsed}*\n`;
         markdown += `*Analysis time: ${(report.analysisTime / 1000).toFixed(1)}s*\n`;
 
@@ -998,20 +1223,18 @@ function App() {
         <div className="App">
             <AppBar position="static">
                 <Toolbar>
-                    <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-                        Lensy - Documentation Quality Auditor
+                    <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 700, letterSpacing: '-0.02em' }}>
+                        Documentation Quality Auditor
                     </Typography>
                 </Toolbar>
             </AppBar>
 
             <Container maxWidth="lg" sx={{ py: 4 }}>
-                <Typography variant="h4" component="h1" gutterBottom align="center">
-                    AI-Powered Documentation Analysis
+                <Typography variant="h3" component="h1" gutterBottom align="center" className="hero-title" sx={{ fontWeight: 700, mb: 1 }}>
+                    Technical Documentation that Works!
                 </Typography>
 
-                <Typography variant="subtitle1" align="center" color="text.secondary" sx={{ mb: 4 }}>
-                    Real-time analysis with cache-aware streaming
-                </Typography>
+
 
                 <Paper elevation={3} sx={{ p: 4, mb: 4 }}>
                     <Typography variant="h5" gutterBottom>
@@ -1187,10 +1410,11 @@ function App() {
                                 onChange={(e) => setSelectedModel(e.target.value as any)}
                                 disabled={analysisState.status === 'analyzing'}
                             >
-                                <MenuItem value="claude">Claude 4.5 Sonnet</MenuItem>
+                                <MenuItem value="claude">Claude 3.5 Sonnet</MenuItem>
                             </Select>
                         </FormControl>
 
+                        {/*
                         <Grid container spacing={2} sx={{ mb: 3 }}>
                             <Grid item xs={12} md={6}>
                                 <Card sx={{ bgcolor: 'background.paper', height: '100%' }}>
@@ -1245,6 +1469,7 @@ function App() {
                                 </Card>
                             </Grid>
                         </Grid>
+                        */}
 
                         <Button
                             variant="contained"
@@ -1255,9 +1480,21 @@ function App() {
                         >
                             {analysisState.status === 'analyzing' ? (
                                 <>
-                                    <CircularProgress size={20} sx={{ mr: 1 }} />
+                                    <CircularProgress size={20} color="inherit" sx={{ mr: 1.5 }} />
                                     Analyzing...
                                 </>
+                            ) : analysisState.status === 'generating' ? (
+                                <>
+                                    <CircularProgress size={20} color="inherit" sx={{ mr: 1.5 }} />
+                                    Generating Fixes...
+                                </>
+                            ) : analysisState.status === 'applying' ? (
+                                <>
+                                    <CircularProgress size={20} color="inherit" sx={{ mr: 1.5 }} />
+                                    Applying Fixes...
+                                </>
+                            ) : (fixSuccessMessage || (!analysisState.report && currentSessionId)) ? (
+                                'Re-scan Documentation'
                             ) : (
                                 `Start ${(manualModeOverride || selectedMode) === 'doc' ? 'Documentation' :
                                     (manualModeOverride || selectedMode) === 'sitemap' ? 'Sitemap Health' :
@@ -1316,6 +1553,38 @@ function App() {
                             </Box>
                         </Collapse>
                     </Paper>
+                )}
+
+                {/* Fix Success Message (Standalone) */}
+                {fixSuccessMessage && (
+                    <Alert
+                        severity="success"
+                        variant="standard"
+                        sx={{ mb: 4, '& .MuiAlert-message': { width: '100%' } }}
+                        icon={<CheckCircleIcon fontSize="inherit" />}
+                    >
+                        <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                            Fixes Applied Successfully
+                        </Typography>
+                        <Typography variant="body2">
+                            {fixSuccessMessage}
+                        </Typography>
+                        {lastModifiedFile && (
+                            <Box sx={{ mt: 2 }}>
+                                <Button
+                                    variant="outlined"
+                                    color="success"
+                                    size="small"
+                                    endIcon={<OpenInNewIcon />}
+                                    href={`https://d9gphnvbmrso2.cloudfront.net/${lastModifiedFile.replace(/\.md$/, '.html')}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    View as HTML
+                                </Button>
+                            </Box>
+                        )}
+                    </Alert>
                 )}
 
                 {/* Results */}
@@ -1888,33 +2157,71 @@ function App() {
                             </>
                         )}
 
-                        <Typography variant="h6" gutterBottom>Quality Dimensions</Typography>
+                        {/* Simplified Recommendations - Top 5 */}
+                        <Typography variant="h6" gutterBottom sx={{ mt: 4 }}>Top Issues to Fix</Typography>
+                        <Alert severity="info" sx={{ mb: 2 }}>
+                            Select the issues you would like Lensy to automatically fix for you.
+                        </Alert>
                         <Grid container spacing={2} sx={{ mb: 4 }}>
-                            {Object.entries(analysisState.report.dimensions).map(([dimension, result]) => (
-                                <Grid item xs={12} md={6} lg={4} key={dimension}>
-                                    <Card>
-                                        <CardContent>
-                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                                                <Typography variant="h6" sx={{ textTransform: 'capitalize' }}>
-                                                    {dimension}
-                                                </Typography>
-                                                <Chip
-                                                    label={result.score || 'N/A'}
-                                                    color={getScoreColor(result.score)}
-                                                    size="small"
+                            {(() => {
+                                // Flatten all recommendations from all dimensions
+                                const allRecs = Object.entries(analysisState.report.dimensions)
+                                    .flatMap(([dim, result]) => (result.recommendations || []).map(rec => ({ ...rec, dimension: dim })));
+
+                                // Take top 5
+                                const top5 = allRecs.slice(0, 5);
+
+                                return top5.map((rec: any, i: number) => {
+                                    const recId = `${rec.dimension}-${i}`;
+                                    const isSelected = selectedRecommendations.includes(recId);
+
+                                    return (
+                                        <Grid item xs={12} key={recId}>
+                                            <Paper
+                                                variant="outlined"
+                                                sx={{
+                                                    p: 2,
+                                                    bgcolor: isSelected ? 'rgba(33, 150, 243, 0.08)' : 'background.paper',
+                                                    borderColor: isSelected ? 'primary.main' : 'divider',
+                                                    borderRadius: 2,
+                                                    display: 'flex',
+                                                    alignItems: 'flex-start',
+                                                    cursor: 'pointer',
+                                                    '&:hover': { bgcolor: isSelected ? 'rgba(33, 150, 243, 0.12)' : 'rgba(255, 255, 255, 0.02)' }
+                                                }}
+                                                onClick={() => {
+                                                    if (isSelected) {
+                                                        setSelectedRecommendations(selectedRecommendations.filter(id => id !== recId));
+                                                    } else {
+                                                        setSelectedRecommendations([...selectedRecommendations, recId]);
+                                                    }
+                                                }}
+                                            >
+                                                <Checkbox
+                                                    checked={isSelected}
+                                                    sx={{ mt: -0.5, ml: -1 }}
                                                 />
-                                            </Box>
-                                            {result.findings.length > 0 && (
-                                                <Typography variant="body2" color="text.secondary">
-                                                    {result.findings.slice(0, 2).map((f, i) => (
-                                                        <div key={i}>• {f}</div>
-                                                    ))}
-                                                </Typography>
-                                            )}
-                                        </CardContent>
-                                    </Card>
-                                </Grid>
-                            ))}
+                                                <Box sx={{ ml: 1, flexGrow: 1 }}>
+                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                                                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                                            {rec.action}
+                                                        </Typography>
+                                                        <Chip
+                                                            label={rec.dimension}
+                                                            size="small"
+                                                            variant="outlined"
+                                                            sx={{ height: 20, fontSize: '0.65rem', textTransform: 'uppercase' }}
+                                                        />
+                                                    </Box>
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        Priority: {rec.priority?.toUpperCase()} • Impact: {rec.impact}
+                                                    </Typography>
+                                                </Box>
+                                            </Paper>
+                                        </Grid>
+                                    );
+                                });
+                            })()}
                         </Grid>
 
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 3 }}>
@@ -1929,7 +2236,28 @@ function App() {
                             >
                                 Export Report
                             </Button>
+
+                            {!analysisState.report.sitemapHealth && (
+                                <Button
+                                    variant="contained"
+                                    color="secondary"
+                                    onClick={handleGenerateFixes}
+                                    disabled={isGeneratingFixes || isApplyingFixes}
+                                    startIcon={isGeneratingFixes ? <CircularProgress size={20} color="inherit" /> : <AutoFixHighIcon />}
+                                    sx={{ ml: 2 }}
+                                >
+                                    {isGeneratingFixes ? 'Generating Fixes...' : 'Generate Auto-Fixes'}
+                                </Button>
+                            )}
                         </Box>
+
+                        {showFixPanel && (
+                            <FixReviewPanel
+                                fixes={fixes}
+                                onApplyFixes={handleApplyFixes}
+                                isApplying={isApplyingFixes}
+                            />
+                        )}
                     </Paper>
                 )}
             </Container>

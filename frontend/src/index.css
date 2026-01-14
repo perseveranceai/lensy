@@ -1,0 +1,151 @@
+:root {
+    /* Backgrounds */
+    --bg-primary: #0a0a0a;
+    --bg-secondary: #111111;
+    --bg-tertiary: #1a1a1a;
+
+    /* Text */
+    --text-primary: #fafafa;
+    --text-secondary: #e5e7eb;
+    --text-muted: #737373;
+    --text-code: #525252;
+
+    /* Borders & Dividers */
+    --border-subtle: #1f1f1f;
+    --border-default: #2a2a2a;
+    --border-strong: #3a3a3a;
+
+    /* Accents */
+    --accent-primary: #3b82f6;
+    --accent-hover: #60a5fa;
+    --accent-success: #22c55e;
+    --accent-warning: #f59e0b;
+    --accent-error: #ef4444;
+
+    /* Fonts */
+    --font-sans: 'Plus Jakarta Sans', 'DM Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Source Code Pro', 'SF Mono', Consolas, monospace;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: var(--font-sans);
+    background-color: var(--bg-primary);
+    color: var(--text-secondary);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-image:
+        linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+    background-size: 50px 50px;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.hero-title {
+    background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-muted) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* Material UI Overrides */
+.MuiAppBar-root {
+    background: rgba(10, 10, 10, 0.9) !important;
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border-subtle) !important;
+    box-shadow: none !important;
+}
+
+/* Cards and Papers - Rounded 12px */
+.MuiPaper-root {
+    background-color: var(--bg-secondary) !important;
+    border: 1px solid var(--border-subtle) !important;
+    border-radius: 12px !important;
+}
+
+/* Buttons - Rounded 6px */
+.MuiButton-root {
+    text-transform: none !important;
+    font-weight: 600 !important;
+    border-radius: 6px !important;
+    font-family: var(--font-sans) !important;
+    transition: all 0.2s ease !important;
+}
+
+.MuiButton-contained {
+    background-color: var(--text-primary) !important;
+    color: var(--bg-primary) !important;
+}
+
+.MuiButton-contained:hover {
+    background-color: var(--text-secondary) !important;
+    transform: translateY(-1px);
+}
+
+.MuiButton-outlined {
+    border-color: var(--border-default) !important;
+    color: var(--text-secondary) !important;
+}
+
+.MuiButton-outlined:hover {
+    background-color: var(--bg-tertiary) !important;
+    border-color: var(--border-strong) !important;
+}
+
+/* Form Inputs - Rounded 8px */
+.MuiOutlinedInput-root {
+    background-color: var(--bg-secondary) !important;
+    border-radius: 8px !important;
+}
+
+.MuiOutlinedInput-notchedOutline {
+    border-color: var(--border-default) !important;
+}
+
+.MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline {
+    border-color: var(--border-strong) !important;
+}
+
+.MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
+    border-color: var(--accent-primary) !important;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Other UI Elements */
+.MuiAlert-root {
+    border-radius: 8px !important;
+    font-family: var(--font-sans) !important;
+}
+
+.MuiChip-root {
+    font-family: var(--font-sans) !important;
+    font-weight: 500 !important;
+    border-radius: 16px !important;
+    /* Chips are pill-shaped by default, keeping it aesthetic */
+}
+
+.MuiTypography-root {
+    font-family: var(--font-sans) !important;
+}
+
+/* Code Blocks - Rounded 8px */
+pre,
+.code-block,
+.syntax-highlighter {
+    border-radius: 8px !important;
+}
