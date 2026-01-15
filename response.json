@@ -1,0 +1,1 @@
+{"statusCode":200,"headers":{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"},"body":"{\"success\":true,\"fixSessionId\":\"session-1768410597341\",\"fixCount\":5,\"message\":\"Successfully generated 5 fixes\"}"}

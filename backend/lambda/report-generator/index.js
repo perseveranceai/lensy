@@ -203,7 +203,7 @@ function generateMockDimensionResultsSimple(selectedModel, processedContent) {
         completeness: Math.max(60, Math.min(90, adjustedBase + (Math.random() * modelConfig.variance * 2 - modelConfig.variance)))
     };
     const mockFindings = {
-        relevance: ['Content is highly relevant to WordPress developers', 'Examples are practical and current'],
+        relevance: ['Content is highly relevant to developers', 'Examples are practical and current'],
         freshness: ['Most content is current', 'Some version references could be updated'],
         clarity: ['Well-structured content', 'Clear explanations'],
         accuracy: ['Code examples are syntactically correct', 'API usage is accurate'],
@@ -211,7 +211,7 @@ function generateMockDimensionResultsSimple(selectedModel, processedContent) {
     };
     const mockRecommendations = {
         relevance: [{ priority: 'medium', action: 'Add more beginner-friendly examples', impact: 'Improve accessibility for new developers' }],
-        freshness: [{ priority: 'high', action: 'Update WordPress version references to 6.4+', impact: 'Ensure compatibility information is current' }],
+        freshness: [{ priority: 'high', action: 'Update documentation version references', impact: 'Ensure compatibility information is current' }],
         clarity: [{ priority: 'low', action: 'Add more code comments in examples', impact: 'Improve code readability' }],
         accuracy: [],
         completeness: [{ priority: 'medium', action: 'Add section on error handling', impact: 'Provide more comprehensive coverage' }]

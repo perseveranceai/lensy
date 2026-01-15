@@ -3,6 +3,8 @@
     "version": "1.0.0",
     "main": "index.js",
     "dependencies": {
-        "@aws-sdk/client-bedrock-runtime": "^3.450.0"
+        "@aws-sdk/client-apigatewaymanagementapi": "^3.967.0",
+        "@aws-sdk/client-bedrock-runtime": "^3.450.0",
+        "@aws-sdk/lib-dynamodb": "^3.967.0"
     }
 }

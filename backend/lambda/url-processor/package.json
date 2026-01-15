@@ -3,6 +3,8 @@
     "version": "1.0.0",
     "main": "index.js",
     "dependencies": {
+        "@aws-sdk/client-apigatewaymanagementapi": "^3.967.0",
+        "@aws-sdk/lib-dynamodb": "^3.967.0",
         "jsdom": "^23.0.0",
         "turndown": "^7.1.2",
         "turndown-plugin-gfm": "^1.0.2"

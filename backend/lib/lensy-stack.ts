@@ -105,7 +105,7 @@ export class LensyStack extends cdk.Stack {
         const sitemapHealthChecker = createLambda('SitemapHealthCheckerFunction', 'sitemap-health-checker', 300, 256);
         const urlProcessor = createLambda('URLProcessorFunction', 'url-processor', 120, 512);
         const structureDetector = createLambda('StructureDetectorFunction', 'structure-detector', 60);
-        
+
         const dimensionAnalyzer = createLambda('DimensionAnalyzerFunction', 'dimension-analyzer', 300, 512, {
             PROCESSED_CONTENT_TABLE: processedContentTable.tableName,
             CACHE_TTL_DAYS: '7'
@@ -126,7 +126,12 @@ export class LensyStack extends cdk.Stack {
             actions: ['bedrock:InvokeModel'],
             resources: ['*'],
         }));
-        
+
+        fixGenerator.addToRolePolicy(new iam.PolicyStatement({
+            actions: ['bedrock:InvokeModel'],
+            resources: ['*'],
+        }));
+
         // 5. Step Functions Workflow
         const definitionString = `{"StartAt":"DetectInputType","States":{"DetectInputType":{"Next":"InputTypeChoice","Retry":[{"ErrorEquals":["Lambda.ClientExecutionTimeoutException","Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":6,"BackoffRate":2}],"Type":"Task","ResultPath":"$.inputTypeDetectorResult","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${inputTypeDetector.functionArn}","Payload.$":"$"}},"InputTypeChoice":{"Type":"Choice","Choices":[{"Variable":"$.inputTypeDetectorResult.Payload.inputType","StringEquals":"sitemap","Next":"ParseSitemap"}],"Default":"ProcessURL"},"ProcessURL":{"Next":"DetectStructure","Retry":[{"ErrorEquals":["Lambda.ClientExecutionTimeoutException","Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":6,"BackoffRate":2}],"Type":"Task","ResultPath":"$.urlProcessorResult","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${urlProcessor.functionArn}","Payload.$":"$"}},"DetectStructure":{"Next":"AnalyzeDimensions","Retry":[{"ErrorEquals":["Lambda.ClientExecutionTimeoutException","Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":6,"BackoffRate":2}],"Type":"Task","ResultPath":"$.structureDetectorResult","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${structureDetector.functionArn}","Payload.$":"$"}},"AnalyzeDimensions":{"Next":"GenerateReport","Retry":[{"ErrorEquals":["Lambda.ClientExecutionTimeoutException","Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":6,"BackoffRate":2}],"Type":"Task","ResultPath":"$.dimensionAnalyzerResult","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${dimensionAnalyzer.functionArn}","Payload.$":"$"}},"GenerateReport":{"End":true,"Retry":[{"ErrorEquals":["Lambda.ClientExecutionTimeoutException","Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":6,"BackoffRate":2}],"Type":"Task","ResultPath":"$.reportGeneratorResult","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${reportGenerator.functionArn}","Payload.$":"$"}},"CheckSitemapHealth":{"Next":"GenerateReport","Retry":[{"ErrorEquals":["Lambda.ClientExecutionTimeoutException","Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":6,"BackoffRate":2}],"Type":"Task","ResultPath":"$.sitemapHealthCheckerResult","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${sitemapHealthChecker.functionArn}","Payload.$":"$"}},"ParseSitemap":{"Next":"CheckSitemapHealth","Retry":[{"ErrorEquals":["Lambda.ClientExecutionTimeoutException","Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":6,"BackoffRate":2}],"Type":"Task","ResultPath":"$.sitemapParserResult","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${sitemapParser.functionArn}","Payload.$":"$"}}},"TimeoutSeconds":900}`;
 
@@ -134,6 +139,15 @@ export class LensyStack extends cdk.Stack {
             definitionBody: sfn.DefinitionBody.fromString(definitionString),
             timeout: cdk.Duration.minutes(15),
         });
+
+        // Grant Step Functions permission to invoke all Lambda functions
+        inputTypeDetector.grantInvoke(stateMachine);
+        sitemapParser.grantInvoke(stateMachine);
+        sitemapHealthChecker.grantInvoke(stateMachine);
+        urlProcessor.grantInvoke(stateMachine);
+        structureDetector.grantInvoke(stateMachine);
+        dimensionAnalyzer.grantInvoke(stateMachine);
+        reportGenerator.grantInvoke(stateMachine);
 
         // 6. API Handler and HTTP API
         const apiHandler = createLambda('ApiHandlerFunction', 'api-handler', 30, 256, {
@@ -169,6 +183,8 @@ export class LensyStack extends cdk.Stack {
         httpApi.addRoutes({ path: '/validate-issues', methods: [apigwv2.HttpMethod.POST], integration: apiIntegration });
         httpApi.addRoutes({ path: '/generate-fixes', methods: [apigwv2.HttpMethod.POST], integration: apiIntegration });
         httpApi.addRoutes({ path: '/apply-fixes', methods: [apigwv2.HttpMethod.POST], integration: apiIntegration });
+        httpApi.addRoutes({ path: '/sessions/{sessionId}/fixes', methods: [apigwv2.HttpMethod.GET], integration: apiIntegration });
+        httpApi.addRoutes({ path: '/get-fixes/{sessionId}', methods: [apigwv2.HttpMethod.GET], integration: apiIntegration });
 
         // 7. Outputs
         new cdk.CfnOutput(this, 'HttpApiUrl', {

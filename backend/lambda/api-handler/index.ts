@@ -21,6 +21,7 @@ interface AnalysisRequest {
 }
 
 export const handler: Handler<any, any> = async (event: any) => {
+    console.log("Lensy Production API - Deploy v1.1.0 Ready");
     console.log('API Handler received request:', JSON.stringify(event, null, 2));
 
     // Handle both API Gateway V1 and V2 event formats
@@ -72,6 +73,14 @@ export const handler: Handler<any, any> = async (event: any) => {
             return await handleStatusRequest(path, corsHeaders);
         }
 
+        if (httpMethod === 'GET' && (path?.startsWith('/sessions/') && path.endsWith('/fixes'))) {
+            return await handleGetFixesRequest(path, corsHeaders);
+        }
+
+        if (httpMethod === 'GET' && path?.startsWith('/get-fixes/')) {
+            return await handleGetFixesRequest(path, corsHeaders);
+        }
+
         return {
             statusCode: 404,
             headers: corsHeaders,
@@ -79,7 +88,14 @@ export const handler: Handler<any, any> = async (event: any) => {
                 error: 'Not found',
                 method: httpMethod,
                 path: path,
-                availableRoutes: ['POST /analyze', 'POST /discover-issues', 'POST /validate-issues', 'GET /status/{sessionId}']
+                availableRoutes: [
+                    'POST /analyze',
+                    'POST /discover-issues',
+                    'POST /validate-issues',
+                    'GET /status/{sessionId}',
+                    'GET /get-fixes/{sessionId}',
+                    'GET /sessions/{sessionId}/fixes'
+                ]
             })
         };
 
@@ -477,6 +493,11 @@ async function handleGenerateFixesRequest(body: string | null, corsHeaders: Reco
             const responsePayload = JSON.parse(new TextDecoder().decode(result.Payload));
             console.log('FixGenerator response:', responsePayload);
 
+            // Check for Lambda execution errors (e.g. Runtime.ImportModuleError)
+            if (responsePayload.errorType || responsePayload.errorMessage) {
+                throw new Error(`FixGenerator Lambda Error: ${responsePayload.errorMessage || responsePayload.errorType}`);
+            }
+
             // Handle both direct invocation response and proxy response
             const responseBody = responsePayload.body ? JSON.parse(responsePayload.body) : responsePayload;
             const statusCode = responsePayload.statusCode || 200;
@@ -521,6 +542,11 @@ async function handleApplyFixesRequest(body: string | null, corsHeaders: Record<
             const responsePayload = JSON.parse(new TextDecoder().decode(result.Payload));
             console.log('FixApplicator response:', responsePayload);
 
+            // Check for Lambda execution errors (e.g. Runtime.ImportModuleError)
+            if (responsePayload.errorType || responsePayload.errorMessage) {
+                throw new Error(`FixApplicator Lambda Error: ${responsePayload.errorMessage || responsePayload.errorType}`);
+            }
+
             // Handle both direct invocation response and proxy response
             const responseBody = responsePayload.body ? JSON.parse(responsePayload.body) : responsePayload;
             const statusCode = responsePayload.statusCode || 200;
@@ -539,6 +565,67 @@ async function handleApplyFixesRequest(body: string | null, corsHeaders: Record<
             statusCode: 500,
             headers: corsHeaders,
             body: JSON.stringify({ error: 'Fix application failed', message: error instanceof Error ? error.message : 'Unknown error' })
+        };
+    }
+}
+
+async function handleGetFixesRequest(path: string, corsHeaders: Record<string, string>) {
+    // Extract sessionId: 
+    // Format 1: /get-fixes/{sessionId}
+    // Format 2: /sessions/{sessionId}/fixes
+    const parts = path.split('/');
+    let sessionId = '';
+
+    if (path.startsWith('/get-fixes/')) {
+        sessionId = parts[2];
+    } else if (path.startsWith('/sessions/')) {
+        sessionId = parts[2];
+    }
+
+    if (!sessionId) {
+        return {
+            statusCode: 400,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: 'Session ID is required' })
+        };
+    }
+
+    try {
+        const bucketName = process.env.ANALYSIS_BUCKET || 'lensy-analysis-951411676525-us-east-1';
+        const fixesKey = `sessions/${sessionId}/fixes.json`;
+
+        console.log(`Fetching fixes for session ${sessionId} from ${bucketName}/${fixesKey}`);
+
+        const response = await s3Client.send(new GetObjectCommand({
+            Bucket: bucketName,
+            Key: fixesKey
+        }));
+
+        const content = await response.Body?.transformToString();
+        if (!content) throw new Error('Empty response from S3');
+
+        return {
+            statusCode: 200,
+            headers: corsHeaders,
+            body: content
+        };
+
+    } catch (error: any) {
+        console.error('Failed to get fixes:', error);
+        if (error.name === 'NoSuchKey') {
+            return {
+                statusCode: 404,
+                headers: corsHeaders,
+                body: JSON.stringify({ error: 'Fixes not found for this session', sessionId })
+            };
+        }
+        return {
+            statusCode: 500,
+            headers: corsHeaders,
+            body: JSON.stringify({
+                error: 'Failed to retrieve fixes',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            })
         };
     }
 }

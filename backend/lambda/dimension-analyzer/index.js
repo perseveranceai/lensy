@@ -440,7 +440,9 @@ async function analyzeDimension(dimension, processedContent, selectedModel) {
 function buildPromptForDimension(dimension, processedContent) {
     const contentType = processedContent.contentType || 'mixed';
     const weights = CONTENT_TYPE_WEIGHTS[contentType];
+    const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
     const baseContext = `
+Analysis Date: ${today}
 URL: ${processedContent.url}
 Content Type: ${contentType} (${dimension} weight: ${Math.round(weights[dimension] * 100)}%)
 Code Snippets: ${processedContent.codeSnippets?.length || 0}
@@ -448,7 +450,7 @@ Media Elements: ${processedContent.mediaElements?.length || 0}
 Total Links: ${processedContent.linkAnalysis?.totalLinks || 0}
 
 Content (first 3000 chars):
-${processedContent.markdownContent?.slice(0, 3000) || ''}
+${processedContent.markdownContent?.slice(0, 50000) || ''}
 `;
     // Add context analysis information if available
     let contextInfo = '';
@@ -473,7 +475,7 @@ CONTEXT ANALYSIS: Single page analysis (no related pages discovered)
     // Content-type-specific evaluation criteria
     const contentTypeGuidance = getContentTypeGuidance(contentType, dimension);
     const dimensionPrompts = {
-        relevance: `Analyze the RELEVANCE of this WordPress developer documentation.
+        relevance: `Analyze the RELEVANCE of this technical developer documentation.
 
 ${baseContext}
 ${contextInfo}
@@ -482,7 +484,7 @@ CONTENT TYPE SPECIFIC GUIDANCE:
 ${contentTypeGuidance}
 
 Evaluate:
-1. Is the content relevant to WordPress developers?
+1. Is the content relevant to the target developer audience?
 2. Are examples practical and applicable?
 3. Does it address real developer needs?
 4. Is the scope appropriate for the topic?
@@ -500,7 +502,7 @@ Respond in JSON format:
     }
   ]
 }`,
-        freshness: `Analyze the FRESHNESS of this WordPress developer documentation.
+        freshness: `Analyze the FRESHNESS of this technical developer documentation.
 
 ${baseContext}
 ${contextInfo}
@@ -512,7 +514,7 @@ Code Snippets with Version Info:
 ${processedContent.codeSnippets?.filter((s) => s.hasVersionInfo).map((s) => s.code.slice(0, 200)).join('\n---\n') || 'None'}
 
 Evaluate:
-1. Are WordPress version references current (6.4+)?
+1. Are version references current and accurate?
 2. Are code examples using modern practices?
 3. Are deprecated features flagged?
 4. Is the content up-to-date?
@@ -530,7 +532,7 @@ Respond in JSON format:
     }
   ]
 }`,
-        clarity: `Analyze the CLARITY of this WordPress developer documentation.
+        clarity: `Analyze the CLARITY of this technical developer documentation.
 
 ${baseContext}
 ${contextInfo}
@@ -557,7 +559,7 @@ Respond in JSON format:
     }
   ]
 }`,
-        accuracy: `Analyze the ACCURACY of this WordPress developer documentation.
+        accuracy: `Analyze the ACCURACY of this technical developer documentation.
 
 ${baseContext}
 ${contextInfo}
@@ -587,7 +589,7 @@ Respond in JSON format:
     }
   ]
 }`,
-        completeness: `Analyze the COMPLETENESS of this WordPress developer documentation.
+        completeness: `Analyze the COMPLETENESS of this technical developer documentation.
 
 ${baseContext}
 ${contextInfo}
@@ -626,7 +628,7 @@ function getContentTypeGuidance(contentType, dimension) {
     const guidance = {
         'api-reference': {
             relevance: 'API docs should focus on practical developer needs. Lower weight (15%) - inherently relevant.',
-            freshness: 'Critical for API docs (25% weight) - APIs change frequently. Check for current WordPress versions.',
+            freshness: 'Critical for API docs (25% weight) - APIs change frequently. Check for current version references.',
             clarity: 'Important (20% weight) - developers need clear parameter descriptions and return values.',
             accuracy: 'CRITICAL (30% weight) - wrong API info breaks developer code. Verify syntax and parameters.',
             completeness: 'Lower priority (10% weight) - can link to examples elsewhere. Focus on core API info.'

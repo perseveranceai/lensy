@@ -1442,7 +1442,7 @@ function removeNoiseElements(document: Document): number {
         'nav', 'header', 'footer', 'aside',
         '[role="navigation"]', '[role="banner"]', '[role="contentinfo"]',
 
-        // WordPress.org specific noise
+        // Platform specific noise
         '.site-header', '.site-footer', '.site-navigation',
         '#secondary', '.navigation', '.breadcrumb', '.breadcrumbs',
         '.edit-link', '.post-navigation', '.comments-area',
@@ -1470,7 +1470,7 @@ function removeNoiseElements(document: Document): number {
         // Skip links and accessibility helpers (not content)
         '.skip-link', '.skip-to-content',
 
-        // WordPress admin and edit links
+        // Common admin and edit links
         '.edit-post-link', '.admin-bar', '#wpadminbar'
     ];
 
@@ -1494,7 +1494,7 @@ function removeNoiseElements(document: Document): number {
  * Extract main content with better content detection
  */
 function extractMainContent(document: Document): Element {
-    // Strategy 1: WordPress.org specific content containers
+    // Strategy 1: Specific content containers
     const wpSelectors = [
         '.entry-content',
         '.post-content',
@@ -1557,7 +1557,7 @@ function configureTurndownService(): TurndownService {
         'meta', 'title', 'base'
     ]);
 
-    // Custom rule for WordPress callouts/notices
+    // Custom rule for platform callouts/notices
     turndown.addRule('callout', {
         filter: (node: any) => {
             return node.nodeName === 'DIV' &&
