@@ -443,7 +443,7 @@ All modes provide real-time progress feedback and generate detailed reports with
 6. THE existing dimension scoring SHALL be enhanced to reflect broken links in Completeness, deprecated code in Freshness, and syntax errors in Accuracy
 7. THE dashboard SHALL NOT create a new/separate UI — all updates integrate into the existing results view
 
-### Requirement 23: Markdown Report Export
+### Requirement 23: Markdown Report Export ✅ **COMPLETED (January 14, 2026)**
 
 **User Story:** As a user, I want to export a complete Markdown report of the analysis including dimension scores and all findings, so that I can share or reference the results outside of Lensy for outreach and documentation improvement planning.
 
@@ -803,3 +803,162 @@ All modes provide real-time progress feedback and generate detailed reports with
 - ✅ **Cache Cleanup**: Removed `sitemap-health-knock-app.json` with incorrect data
 - ✅ **Verification**: Sitemap health now shows 317/319 URLs (99% healthy) for knock.app
 - ✅ **Design Philosophy**: Normalize input rather than duplicate configuration keys
+
+## Ambient Remediation Mode Requirements
+
+### Requirement 41: Fix Generator (Separate AI Pass)
+
+**User Story:** As a documentation maintainer, after seeing analysis results, I want the system to generate precise, actionable fixes for each identified issue, so that I can review and apply them with confidence.
+
+#### Acceptance Criteria
+
+1. WHEN analysis completes with findings, THE System SHALL enable a "Generate Fixes" action (automatic or user-triggered)
+2. THE Fix_Generator SHALL make a separate AI call to Claude 3.5 Sonnet with the full document content and findings list
+3. FOR EACH finding, THE Fix_Generator SHALL extract: exact original text, start line, end line, and generate exact replacement text
+4. WHEN generating fixes for deprecated code, THE Fix_Generator SHALL provide the correct replacement syntax, not just identify the problem
+5. WHEN generating fixes for missing content, THE Fix_Generator SHALL generate the actual missing code/text following document style
+6. THE Fix_Generator SHALL assign a confidence score (0-100%) to each fix based on certainty of correctness
+7. WHEN confidence is below 70%, THE Fix_Generator SHALL flag the fix for human review with explanation
+8. THE Fix_Generator SHALL categorize fixes: CODE_UPDATE, LINK_FIX, CONTENT_ADDITION, VERSION_UPDATE, FORMATTING_FIX
+9. THE Fix_Generator SHALL validate that proposed fixes don't break document structure (valid Markdown)
+10. WHEN multiple issues overlap in the same code block, THE Fix_Generator SHALL generate a single combined fix
+11. THE Fix_Generator SHALL store results in S3 at `sessions/{sessionId}/fixes.json`
+12. THE Fix_Generator SHALL stream progress via WebSocket using ProgressPublisher
+
+### Requirement 42: Fix Preview and Diff Display
+
+**User Story:** As a documentation maintainer, I want to see a visual diff of proposed changes before applying them, so that I can review and approve fixes with confidence.
+
+#### Acceptance Criteria
+
+1. WHEN fixes are generated, THE System SHALL display a side-by-side diff view showing original content and proposed changes
+2. WHEN displaying diffs, THE System SHALL highlight additions in green, deletions in red, and modifications in yellow
+3. WHEN multiple fixes exist for a document, THE System SHALL allow users to expand/collapse individual fix previews
+4. THE System SHALL display the fix category, confidence score, and AI rationale for each proposed fix
+5. WHEN code changes are proposed, THE System SHALL use syntax highlighting appropriate to the detected language
+6. THE System SHALL provide a "View Full Document" option showing all fixes applied in context
+7. WHEN fixes have dependencies (e.g., updating a function name requires updating all call sites), THE System SHALL group related fixes together
+8. THE System SHALL allow users to select/deselect individual fixes before applying
+9. WHEN a fix is deselected, THE System SHALL recalculate any dependent fixes and warn of potential inconsistencies
+10. THE System SHALL provide a summary showing: total fixes, fixes by category, average confidence, and estimated time saved
+
+### Requirement 43: Fix Data Model and Storage
+
+**User Story:** As a system component, I need a consistent data structure for fixes, so that fixes can be stored, retrieved, and applied reliably.
+
+#### Acceptance Criteria
+
+1. THE System SHALL store fix proposals in S3 at `sessions/{sessionId}/fixes.json` following existing session storage conventions
+2. EACH fix object SHALL contain: id, documentUrl, category, originalContent, proposedContent, lineStart, lineEnd, confidence, rationale, dependencies[], status
+3. THE System SHALL support fix statuses: PROPOSED, APPROVED, REJECTED, APPLIED, FAILED
+4. WHEN fixes are generated, THE System SHALL create a Fix_Session object linking all fixes from a single audit
+5. THE System SHALL store the original document hash (using existing content hash logic from DynamoDB caching) to detect if the document changed between fix generation and application
+6. WHEN the source document has changed since fix generation, THE System SHALL warn the user and offer to regenerate fixes
+7. THE System SHALL support versioning of fix sessions to allow rollback
+8. THE System SHALL log all fix generation events with timestamps for audit trail
+9. WHEN storing fixes, THE System SHALL include the AI model used and prompt version for reproducibility
+10. THE System SHALL enforce a maximum of 50 fixes per document to prevent runaway fix generation
+
+### Requirement 44: AI-Powered Fix Generation
+
+**User Story:** As the system, I need to use AI effectively to generate accurate, contextual fixes that match the document's style and technical requirements.
+
+#### Acceptance Criteria
+
+1. WHEN generating fixes, THE Fix_Generator SHALL use Claude 3.5 Sonnet via AWS Bedrock (consistent with existing dimension analysis)
+2. THE Fix_Generator SHALL include the full document context (up to 8000 tokens) when generating fixes to ensure consistency
+3. WHEN generating code fixes, THE Fix_Generator SHALL verify the fix compiles/parses correctly before proposing
+4. THE Fix_Generator SHALL detect the document's style (formal/informal, technical level) and match generated content accordingly
+5. WHEN fixing deprecated APIs, THE Fix_Generator SHALL reference the official deprecation notice and migration guide if available
+6. THE Fix_Generator SHALL avoid over-fixing by only addressing issues identified in the audit (no scope creep)
+7. WHEN multiple valid fixes exist, THE Fix_Generator SHALL choose the most conservative option that solves the issue
+8. THE Fix_Generator SHALL include code comments explaining non-obvious changes when appropriate
+9. WHEN generating content additions, THE Fix_Generator SHALL follow the existing heading hierarchy and formatting conventions
+10. THE Fix_Generator SHALL track token usage and estimated cost for transparency (consistent with existing cost tracking)
+
+### Requirement 45: S3 Write-Back Capability
+
+**User Story:** As a documentation maintainer, I want to apply approved fixes directly to documentation stored in S3, so that I can update content without manual copying and pasting.
+
+#### Acceptance Criteria
+
+1. WHEN the user clicks "Apply Fix", THE Fix_Applicator SHALL write the updated content to the S3 Managed_Docs_Bucket
+2. BEFORE applying fixes, THE Fix_Applicator SHALL verify the document hash matches the original (using existing content hash logic) to prevent overwriting concurrent changes
+3. WHEN hash mismatch is detected, THE System SHALL abort the apply operation and prompt user to regenerate fixes
+4. THE Fix_Applicator SHALL create a backup of the original document at `backups/{documentKey}/{timestamp}.md` before applying changes
+5. WHEN applying multiple fixes to the same document, THE Fix_Applicator SHALL apply them in reverse line-order to preserve line numbers
+6. THE Fix_Applicator SHALL validate the resulting document is valid Markdown after applying fixes
+7. WHEN fix application fails, THE Fix_Applicator SHALL rollback to the backup and report the error
+8. THE System SHALL update the fix status to APPLIED or FAILED after each application attempt
+9. WHEN all fixes for a document are applied, THE System SHALL update the document's last-modified metadata
+10. THE Fix_Applicator SHALL support batch application of all approved fixes in a session with a single click
+11. THE Fix_Applicator SHALL stream progress updates via WebSocket using existing ProgressPublisher utility
+12. THE Fix_Applicator SHALL invalidate the DynamoDB cache entry for the modified document URL
+
+### Requirement 46: CloudFront Cache Invalidation
+
+**User Story:** As a documentation maintainer, I want applied fixes to be immediately visible on the documentation site, so that I can verify the changes without waiting for cache expiration.
+
+#### Acceptance Criteria
+
+1. AFTER successful fix application, THE System SHALL create a CloudFront invalidation for the updated document path
+2. THE System SHALL batch invalidations when multiple documents are updated in a single session
+3. WHEN invalidation is created, THE System SHALL display the invalidation ID and estimated completion time
+4. THE System SHALL poll invalidation status and notify the user when content is live
+5. WHEN invalidation fails, THE System SHALL retry up to 3 times with exponential backoff
+6. THE System SHALL track invalidation costs and display them in the session summary
+7. FOR demo purposes, THE System SHALL support disabling CloudFront caching entirely for immediate visibility
+8. THE System SHALL provide a "View Live" button that opens the CloudFront URL after invalidation completes
+9. WHEN cache invalidation is not required (caching disabled), THE System SHALL skip this step and proceed directly to verification
+10. THE System SHALL log all invalidation events for troubleshooting
+
+### Requirement 47: Fix Application UI Flow
+
+**User Story:** As a documentation maintainer, I want a clear, guided workflow for reviewing and applying fixes, so that I can efficiently process multiple fixes with confidence.
+
+#### Acceptance Criteria
+
+1. AFTER audit completes, THE System SHALL display a "Review Fixes" button if fixes were generated
+2. WHEN entering fix review mode, THE System SHALL display fixes grouped by document, then by category
+3. THE System SHALL provide "Select All", "Deselect All", and "Select High Confidence Only (>80%)" bulk actions
+4. WHEN a fix is selected, THE System SHALL show a detailed preview with diff view
+5. THE System SHALL display a running count of selected fixes and estimated changes
+6. WHEN user clicks "Apply Selected Fixes", THE System SHALL show a confirmation dialog with summary
+7. DURING fix application, THE System SHALL display real-time progress via WebSocket (consistent with existing progress streaming)
+8. AFTER all fixes are applied, THE System SHALL display a success summary with links to view updated documents
+9. WHEN some fixes fail, THE System SHALL clearly indicate which succeeded and which failed with reasons
+10. THE System SHALL provide an "Undo All" option within 5 minutes of application that restores backups
+
+### Requirement 48: Demo Mode and Sample Documentation
+
+**User Story:** As a presenter at CMS Kickoff 2026, I need a reliable demo environment with pre-configured sample documentation containing known issues, so that I can demonstrate the full audit-to-fix workflow.
+
+#### Acceptance Criteria
+
+1. THE System SHALL include a "Demo Mode" toggle that uses pre-configured S3 bucket and CloudFront distribution
+2. WHEN Demo Mode is enabled, THE System SHALL use the `lensy-demo-docs` S3 bucket with known issues
+3. THE Demo documentation SHALL include at least 4 documents: getting-started.md (clean), api-reference.md (deprecated code), webhooks.md (broken links), integration-guide.md (missing content)
+4. WHEN Demo Mode is active, THE System SHALL display a "DEMO" badge in the UI
+5. THE System SHALL provide a "Reset Demo" button that restores all demo documents to their original state with known issues
+6. WHEN resetting demo, THE System SHALL copy original documents from `demo-originals/` to the main bucket
+7. THE Demo documentation SHALL be themed around a fictional "Ambient AI SDK" to match the presentation topic
+8. THE System SHALL include a demo script document with suggested flow and talking points
+9. WHEN Demo Mode is active, THE System SHALL skip authentication and use demo credentials
+10. THE System SHALL log demo usage separately for analytics
+
+### Requirement 49: IAM and Security Configuration
+
+**User Story:** As a system administrator, I need the CMS integration to have appropriate AWS permissions, so that the system can read/write documentation securely.
+
+#### Acceptance Criteria
+
+1. THE System SHALL use a dedicated IAM role for S3 write operations separate from the read-only analysis role
+2. THE Fix_Applicator Lambda SHALL have PutObject, GetObject, and DeleteObject permissions only on the Managed_Docs_Bucket
+3. THE System SHALL use S3 bucket policies to restrict write access to the Fix_Applicator role only
+4. THE System SHALL enable S3 versioning on the Managed_Docs_Bucket for recovery
+5. THE System SHALL log all S3 write operations to CloudWatch for audit (consistent with existing CloudWatch logging)
+6. WHEN applying fixes, THE System SHALL validate the user has appropriate permissions (for future multi-tenant support)
+7. THE System SHALL encrypt all documents at rest using S3 SSE-S3
+8. THE System SHALL enforce HTTPS for all S3 and CloudFront access
+9. FOR demo purposes, THE System SHALL use simplified IAM policies but document production requirements
+10. THE System SHALL include IAM policy templates in the deployment documentation

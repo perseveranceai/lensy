@@ -31,6 +31,11 @@
 - **SitemapHealthChecker Integration**: Parallel sitemap health analysis ✅
 - **Frontend UI**: Three-mode selection with real-time updates ✅
 - **Report Export**: Markdown reports with sitemap health section ✅
+- **Critical Findings Display**: Integrated into dashboard ✅
+
+### 🎯 Recent Updates (January 14, 2026)
+- ✅ **Markdown Report Export**: Full implementation with critical findings and recommendations
+- ✅ **Clean Codebase**: Removed all test files for production readiness
 
 ### 🎯 Multi-Domain Support (3 Domains)
 
@@ -2570,3 +2575,130 @@ The frontend now displays configuration cards (Context Analysis and Cache Contro
 - **Visual Balance**: Equal-height cards create clean layout
 - **Responsive**: Adapts to mobile screens automatically
 - **Consistency**: Maintains Material-UI design system
+
+## Ambient Remediation Architecture (Phase 4)
+
+### High-Level Remediation Flow
+
+```mermaid
+graph TB
+    subgraph "Phase 1: Analysis (Existing)"
+        A[URL/Sitemap] --> B[Dimension Analyzer]
+        B --> C[Findings List]
+    end
+
+    subgraph "Phase 4: Remediation (New)"
+        C --> D[Fix Generator Lambda]
+        D --> E[Claude 3.5 Sonnet]
+        E --> F[Proposed Fixes JSON]
+        F --> G[Fix Review UI]
+        G --> H[User Approval]
+        H --> I[Fix Applicator Lambda]
+        I --> J[Managed Docs Bucket]
+        I --> K[CloudFront Invalidation]
+        J --> L[Live Documentation]
+    end
+```
+
+### Components
+
+#### FixGenerator (Lambda) - NEW
+- **Purpose**: Generates precise, actionable fixes for identified issues using a separate AI pass
+- **Input**: `{ documentContent: string, findings: Finding[], sessionId: string }`
+- **Output**: `{ fixes: Fix[], meta: FixSessionMeta }`
+- **Logic**:
+  1. Receives full document content and analysis findings
+  2. Construction prompt with specific "extract and replace" instructions
+  3. Invokes Claude 3.5 Sonnet to generate precise JSON fixes
+  4. Validates fix structure (line numbers, content matches)
+  5. Stores proposals in `sessions/{sessionId}/fixes.json`
+- **AI Model**: Claude 3.5 Sonnet (optimized for code generation accuracy)
+
+#### FixApplicator (Lambda) - NEW
+- **Purpose**: Applies approved fixes to S3-stored documentation and manages cache invalidation
+- **Input**: `{ selectedFixIds: string[], sessionId: string, force: boolean }`
+- **Output**: `{ success: boolean, appliedCount: number, backupPath: string }`
+- **Logic**:
+  1. Reads source document from S3 Managed Bucket
+  2. Verifies content hash matches original analysis (concurrency check)
+  3. Creates backup of current state to `backups/{docPath}/{timestamp}.md`
+  4. Applies fixes in reverse line-order to preserve offsets
+  5. Validates resulting Markdown structure
+  6. Writes updated content to S3
+  7. Triggers CloudFront invalidation
+  8. Invalidates internal DynamoDB cache
+- **Safety**: Rollback on failure, backup creation, hash verification
+
+### Data Models
+
+#### Fix Object
+```typescript
+interface Fix {
+  id: string;                    // Unique fix identifier
+  sessionId: string;             // Parent fix session
+  documentUrl: string;           // Source document URL
+  documentS3Key: string;         // S3 key for managed docs
+  category: FixCategory;         // CODE_UPDATE | LINK_FIX | etc.
+  severity: 'critical' | 'major' | 'minor';
+  
+  // Content
+  originalContent: string;       // Exact text being replaced
+  proposedContent: string;       // Replacement text
+  lineStart: number;             // Starting line in document
+  lineEnd: number;               // Ending line in document
+  
+  // Metadata
+  confidence: number;            // 0-100
+  rationale: string;             // AI explanation
+  dimension: DimensionType;      // Which audit dimension found this
+  findingId: string;             // Link to original finding
+  
+  // Dependencies
+  dependencies: string[];        // IDs of related fixes
+  conflicts: string[];           // IDs of conflicting fixes
+  
+  // Status
+  status: FixStatus;             // PROPOSED | APPROVED | REJECTED | APPLIED | FAILED
+  appliedAt?: string;
+  appliedBy?: string;
+  errorMessage?: string;
+}
+```
+
+#### FixSession Object
+```typescript
+interface FixSession {
+  sessionId: string;
+  documentUrl: string;
+  documentHash: string;          // Hash when fixes were generated
+  createdAt: string;
+  fixes: Fix[];
+  summary: {
+    totalFixes: number;
+    byCategory: Record<FixCategory, number>;
+    bySeverity: Record<string, number>;
+    averageConfidence: number;
+    estimatedTimeSaved: string;  // e.g., "2.5 hours"
+  };
+}
+```
+
+### Demo Environment Infrastructure
+
+#### S3 Demo Bucket
+- **Name**: `lensy-demo-docs`
+- **Structure**:
+  - `/` - Active documentation
+  - `/demo-originals/` - Pristine copies of "broken" docs for reset
+  - `/backups/` - Fix application backups
+- **Permissions**: Public read (via CloudFront), Write (FixApplicator Role only)
+
+#### CloudFront Distribution
+- **Origin**: `lensy-demo-docs` S3 bucket
+- **Cache Policy**: CachingDisabled (for demo) or short TTL
+- **Functions**: None (simple pass-through for demo)
+
+#### Demo Reset Logic
+- **Trigger**: User click "Reset Demo"
+- **Action**: FixApplicator (or specialized DemoManager Lambda) copies `/demo-originals/*` to `/`
+- **Result**: Documentation Restored to initial state with known issues

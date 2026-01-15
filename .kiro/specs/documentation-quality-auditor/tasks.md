@@ -11,9 +11,36 @@ This implementation plan creates a comprehensive documentation quality auditor u
 - ✅ **Issue Discovery Mode**: FULLY COMPLETE - All phases deployed
 - ✅ **Issue Validation**: Semantic search + AI recommendations working
 - ✅ **Sitemap Health Integration**: Domain-specific caching with accurate metrics
+- ✅ **Issues Validated**: Real issues from Stack Overflow validated with live docs
+- ✅ **Markdown Export**: Complete report generation with critical findings
 - ✅ **Production Ready**: Clean code, accurate reports, CEO-ready export
 
-**🎯 LATEST SESSION SUMMARY (January 11, 2026 - Session 2):**
+**🎯 LATEST SESSION SUMMARY (January 14, 2026 - Session 1):**
+
+**✅ COMPLETED:**
+1. **Markdown Report Export** (Requirement 23) ✅ **COMPLETE**
+   - ✅ Implemented `ReportExporter` component
+   - ✅ Integrated "Export Report" button in Dashboard
+   - ✅ Generated professional Markdown reports with:
+     - Executive summary
+     - Dimension scores & breakdown
+     - Critical findings (broken links, deprecated code)
+     - Detailed recommendations
+   - ✅ Tested with various documentation sites
+
+2. **Clean Up & Final Polish** ✅ **COMPLETE**
+   - ✅ Removed development test files
+   - ✅ Updated all specification documents
+   - ✅ Verified end-to-end functionality
+
+**📋 READY FOR DEPLOYMENT:**
+- All Phase 1 requirements complete
+- Report export functionality fully operational
+- Codebase clean and documented
+
+---
+
+**🎯 PREVIOUS SESSION SUMMARY (January 11, 2026 - Session 2):**
 
 **✅ COMPLETED:**
 1. **Spec Documentation Updates** ✅ **COMPLETE**
@@ -319,39 +346,44 @@ This implementation plan creates a comprehensive documentation quality auditor u
     - _Requirements: 22.6, 22.7_
 
 **Priority 4: Markdown Report Export (3-4 hours)**
-- [ ] 4.1 Implement ReportExporter component (2-3 hours)
-  - [ ] 4.1.1 Create Markdown report generation
-    - Generate structured Markdown with executive summary
-    - Include all dimension scores and breakdowns
-    - Add detailed critical findings with code examples
-    - Format with proper Markdown tables and code blocks
+- [x] 4.1 Implement ReportExporter component (2-3 hours)
+  - [x] 4.1.1 Create Markdown report generation
+    - ✅ Generate structured Markdown with executive summary
+    - ✅ Include all dimension scores and breakdowns
+    - ✅ Add detailed critical findings with code examples
+    - ✅ Format with proper Markdown tables and code blocks
     - _Requirements: 23.2, 23.3, 23.4, 23.6, 23.7_
+    - **Status: COMPLETE - Report generation working**
 
-  - [ ] 4.1.2 Add export functionality to dashboard
-    - Add "Export Report" button to existing dashboard
-    - Generate and download .md file on click
-    - Include analysis metadata (URL, date, scores)
+  - [x] 4.1.2 Add export functionality to dashboard
+    - ✅ Add "Export Report" button to existing dashboard
+    - ✅ Generate and download .md file on click
+    - ✅ Include analysis metadata (URL, date, scores)
     - _Requirements: 23.1, 23.5_
+    - **Status: COMPLETE - Export button working**
 
 **Priority 5: Testing and Integration (2-3 hours)**
-- [ ] 5.1 End-to-end testing of enhanced features
-  - [ ] 5.1.1 Test link validation with various documentation sites
-    - Test with internal broken links
-    - Test with healthy internal links
-    - Verify progress streaming works
-    - Confirm integration with Completeness scoring
+- [x] 5.1 End-to-end testing of enhanced features
+  - [x] 5.1.1 Test link validation with various documentation sites
+    - ✅ Test with internal broken links
+    - ✅ Test with healthy internal links
+    - ✅ Verify progress streaming works
+    - ✅ Confirm integration with Completeness scoring
+    - **Status: COMPLETE**
 
-  - [ ] 5.1.2 Test enhanced code analysis
-    - Test deprecated code detection across languages
-    - Test syntax error detection
-    - Verify confidence levels are appropriate
-    - Confirm integration with Freshness/Accuracy scoring
+  - [x] 5.1.2 Test enhanced code analysis
+    - ✅ Test deprecated code detection across languages
+    - ✅ Test syntax error detection
+    - ✅ Verify confidence levels are appropriate
+    - ✅ Confirm integration with Freshness/Accuracy scoring
+    - **Status: COMPLETE**
 
-  - [ ] 5.1.3 Test critical findings display and report export
-    - Verify Critical Findings section displays correctly
-    - Test report export functionality
-    - Confirm Markdown formatting is proper
-    - Test with various finding combinations (0 issues, multiple issues)
+  - [x] 5.1.3 Test critical findings display and report export
+    - ✅ Verify Critical Findings section displays correctly
+    - ✅ Test report export functionality
+    - ✅ Confirm Markdown formatting is proper
+    - ✅ Test with various finding combinations (0 issues, multiple issues)
+    - **Status: COMPLETE**
 
 **🎯 SUCCESS CRITERIA:**
 1. ✅ All three finding types report specific, verifiable details
@@ -1670,3 +1702,68 @@ This implementation plan creates a comprehensive documentation quality auditor u
 - Integration tests validate end-to-end workflows and multi-component interactions
 - Phase 2 tasks are deferred enhancements that don't block core functionality
 - All tests will be included in the source code as part of implementation
+## Phase 4: Ambient Remediation (CMS Integration)
+
+### Milestone 1: Identify Fixes (Fix Generator)
+
+- [ ] Task 4.1.1: Fix Generator Lambda (Separate AI Pass)
+  - Create `backend/lambda/fix-generator/index.ts`
+  - Implement S3 input reading (processed content + findings)
+  - Build prompt for Claude 3.5 Sonnet to extract exact replacements
+  - Parse and validate JSON fix objects
+  - Store in `sessions/{sessionId}/fixes.json`
+  - _Requirements: 41.1-41.12_
+
+- [ ] Task 4.1.2: UI Trigger and Review Panel
+  - Add "Generate Fixes" button to results dashboard
+  - Create `FixReviewPanel` component with checks and confidence scores
+  - Implement diff viewer using `diff` or `react-diff-viewer`
+  - Display confidence scores and AI rationale
+  - _Requirements: 42.1-42.10, 47.1-47.5_
+
+- [ ] Task 4.1.3: Fix Data Model and API
+  - Define `Fix` and `FixSession` interfaces
+  - Update API Gateway to route `/generate-fixes` to new Lambda
+  - _Requirements: 43.1-43.10_
+
+### Milestone 2: Apply Fixes (Fix Applicator)
+
+- [ ] Task 4.2.1: Fix Applicator Lambda
+  - Create `backend/lambda/fix-applicator/index.ts`
+  - Implement S3 read/write with hash verification
+  - Implement backup logic (`backups/`)
+  - Implement reverse-line-order application logic
+  - Update fix status (APPLIED/FAILED)
+  - _Requirements: 45.1-45.12_
+
+- [ ] Task 4.2.2: CloudFront Invalidation
+  - Add CloudFront invalidation logic to Applicator
+  - Poll for invalidation completion
+  - Return "Live URL" to frontend
+  - _Requirements: 46.1-46.10_
+
+- [ ] Task 4.2.3: Fix Application UI Flow
+  - Add "Apply Selected" button and confirmation dialog
+  - Stream application progress (applying, invalidating, done)
+  - Show "View Live" button upon completion
+  - Add "Undo/Rollback" capability
+  - _Requirements: 47.6-47.10_
+
+### Milestone 3: Demo Environment
+
+- [ ] Task 4.3.1: S3 Demo Infrastructure
+  - Create `lensy-demo-docs` bucket via CDK
+  - Upload sample docs (getting-started, api-reference, etc.) with known issues
+  - Configure `demo-originals/` folder for reset
+  - _Requirements: 48.1-48.3_
+
+- [ ] Task 4.3.2: Demo Mode UI
+  - Add global "Demo Mode" toggle
+  - Implement "Reset Demo" button triggering logic
+  - Display "DEMO ENVIRONMENT" badge
+  - _Requirements: 48.4-48.10_
+
+- [ ] Task 4.3.3: IAM and Security
+  - Create `FixApplicatorRole` with restricted S3 write policies
+  - Ensure public read access via CloudFront
+  - _Requirements: 49.1-49.10_
