@@ -6,7 +6,11 @@ node_modules/
 build/
 dist/
 # lib/
-!backend/lib/
+# !backend/lib/
+
+# Backend Build Artifacts (Keep lensy-stack.ts)
+backend/lib/*
+!backend/lib/lensy-stack.ts
 
 # CDK
 cdk.out/

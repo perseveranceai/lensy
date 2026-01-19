@@ -128,6 +128,7 @@ This is a 24-hour MVP implementation focusing on:
 - **Frontend**: ✅ Runs locally, connects to AWS backend
 - **API Endpoints**: ✅ Active at https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com/
 - **WebSocket**: ✅ Active at wss://g2l57hb9ak.execute-api.us-east-1.amazonaws.com/prod
+- **Cleanup**: ✅ Build artifacts cleaned, source preserved
 
 ## License
 
