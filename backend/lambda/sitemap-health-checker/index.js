@@ -78,6 +78,28 @@ const handler = async (event) => {
             processingTime: Date.now() - startTime
         });
         console.log(`Sitemap health check completed: ${healthyUrls}/${totalUrls} URLs healthy`);
+        // [NEW] Cache results by domain for Doc Mode reuse
+        try {
+            if (sitemapUrls.length > 0) {
+                // Extract domain from first URL
+                const firstUrl = new URL(sitemapUrls[0]);
+                const domain = firstUrl.hostname;
+                const normalizedDomain = normalizeDomain(domain);
+                // Construct cache key matches report-generator expectation
+                const cacheKey = `sitemap-health-${normalizedDomain.replace(/\./g, '-')}.json`;
+                console.log(`Caching domain-level health results to: ${cacheKey}`);
+                await s3Client.send(new client_s3_1.PutObjectCommand({
+                    Bucket: process.env.ANALYSIS_BUCKET,
+                    Key: cacheKey, // Root level, not session level
+                    Body: JSON.stringify(healthSummary, null, 2),
+                    ContentType: 'application/json'
+                }));
+            }
+        }
+        catch (error) {
+            console.warn('Failed to cache domain-level health results:', error);
+            // Non-blocking
+        }
         return {
             success: true,
             sessionId: event.sessionId,
@@ -120,6 +142,18 @@ const handler = async (event) => {
     }
 };
 exports.handler = handler;
+/**
+ * Normalize domain to match configuration keys
+ */
+function normalizeDomain(domain) {
+    // Remove protocol and trailing slashes
+    const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    // Handle specific mappings if needed (copying logic from issue-validator)
+    if (cleanDomain === 'knock.app') {
+        return 'docs.knock.app';
+    }
+    return cleanDomain;
+}
 /**
  * Perform bulk link validation for sitemap URLs
  * Requirements: 30.1, 30.2, 30.3, 30.8, 30.9, 30.10

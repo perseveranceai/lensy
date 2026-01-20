@@ -338,6 +338,58 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
 
             const actualAnalysisTime = Date.now() - analysisStartTime;
 
+            // [NEW] Try to fetch cached sitemap health data for Doc Mode
+            let cachedSitemapHealth = null;
+            try {
+                // Get URL from metadata or processed content
+                let targetUrl = '';
+                if (processedContent && processedContent.url) {
+                    targetUrl = processedContent.url;
+                } else {
+                    // Try metadata
+                    const metadataKey = `sessions/${sessionId}/metadata.json`;
+                    const metadataResponse = await s3.send(new GetObjectCommand({
+                        Bucket: bucketName,
+                        Key: metadataKey
+                    }));
+                    const metadataStr = await metadataResponse.Body.transformToString();
+                    const metadata = JSON.parse(metadataStr);
+                    targetUrl = metadata.url || '';
+                }
+
+                if (targetUrl) {
+                    const urlObj = new URL(targetUrl);
+                    const domain = urlObj.hostname;
+                    const normalizedDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
+                    // Handle special case matching issue-validator logic if needed
+                    const cleanDomain = normalizedDomain === 'knock.app' ? 'docs.knock.app' : normalizedDomain;
+
+                    const sitemapCacheKey = `sitemap-health-${cleanDomain.replace(/\./g, '-')}.json`;
+                    console.log(`Checking for cached sitemap health at key: ${sitemapCacheKey}`);
+
+                    const healthResponse = await s3.send(new GetObjectCommand({
+                        Bucket: bucketName,
+                        Key: sitemapCacheKey
+                    }));
+
+                    const healthContent = await healthResponse.Body.transformToString();
+                    const rawHealth = JSON.parse(healthContent);
+
+                    // Calculate missing counts that frontend expects
+                    cachedSitemapHealth = {
+                        ...rawHealth,
+                        brokenUrls: rawHealth.linkIssues?.filter((i: any) => i.issueType === '404').length || 0,
+                        accessDeniedUrls: rawHealth.linkIssues?.filter((i: any) => i.issueType === 'access-denied').length || 0,
+                        timeoutUrls: rawHealth.linkIssues?.filter((i: any) => i.issueType === 'timeout').length || 0,
+                        otherErrorUrls: rawHealth.linkIssues?.filter((i: any) => i.issueType === 'error').length || 0
+                    };
+                    console.log('Successfully retrieved cached sitemap health data for Doc Mode report');
+                }
+            } catch (err) {
+                console.log('No cached sitemap health data found for this domain (Doc Mode):', err);
+                // Non-blocking
+            }
+
             const validScores = Object.values(dimensionResults)
                 .filter((d: any) => d.score !== null && d.status === 'complete')
                 .map((d: any) => d.score);
@@ -386,8 +438,27 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
                 linkAnalysis: processedContent.linkAnalysis || processedContent.enhancedLinkAnalysis || {},
                 ...(contextAnalysis && { contextAnalysis }),
                 analysisTime: actualAnalysisTime,
-                retryCount: 0
+                retryCount: 0,
+                sitemapHealth: cachedSitemapHealth || undefined, // [NEW] Include if found
+                aiReadiness: undefined // Will be populated below
             };
+
+            console.log('DEBUG: About to fetch AI Readiness for session:', sessionId);
+
+            // [NEW] Try to fetch AI Readiness results
+            try {
+                const aiReadinessKey = `sessions/${sessionId}/ai-readiness-results.json`; // Fixed filename
+                console.log(`Attempting to fetch AI Readiness from key: ${aiReadinessKey}`);
+                const aiReadinessResponse = await s3.send(new GetObjectCommand({
+                    Bucket: bucketName,
+                    Key: aiReadinessKey
+                }));
+                const aiReadinessContent = await aiReadinessResponse.Body.transformToString();
+                report.aiReadiness = JSON.parse(aiReadinessContent);
+                console.log('Successfully retrieved AI Readiness results');
+            } catch (aiError) {
+                console.log('No AI Readiness results found:', aiError);
+            }
 
             return {
                 statusCode: 200,

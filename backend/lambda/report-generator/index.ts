@@ -14,6 +14,19 @@ interface DimensionResult {
     failureReason?: string;
     retryCount: number;
     processingTime: number;
+    spellingIssues?: { incorrect: string; correct: string; context: string }[];
+    codeIssues?: { type: string; location: string; description: string; codeFragment: string }[];
+    terminologyInconsistencies?: { variants: string[]; recommendation: string }[];
+}
+
+interface AIReadinessResult {
+    llmsTxt: { found: boolean; url: string; content?: string };
+    llmsFullTxt: { found: boolean; url: string };
+    robotsTxt: { found: boolean; aiDirectives: Array<{ userAgent: string; rule: 'Allow' | 'Disallow' }> };
+    markdownExports: { available: boolean; sampleUrls: string[] };
+    structuredData: { hasJsonLd: boolean; schemaTypes: string[] };
+    overallScore: number;
+    recommendations: string[];
 }
 
 interface Recommendation {
@@ -56,6 +69,7 @@ interface FinalReport {
     };
     analysisTime: number;
     retryCount: number;
+    aiReadiness?: AIReadinessResult;
 }
 
 interface ContextAnalysisSummary {
@@ -241,6 +255,66 @@ export const handler: Handler<any, ReportGeneratorResponse> = async (event: any)
                 console.log('Could not retrieve dimension results from S3:', error);
             }
 
+            // Retrieve AI readiness results from S3
+            let aiReadinessResults: AIReadinessResult | undefined;
+            try {
+                const aiReadinessKey = `sessions/${sessionId}/ai-readiness-results.json`;
+                const aiReadinessResponse = await s3Client.send(new GetObjectCommand({
+                    Bucket: bucketName,
+                    Key: aiReadinessKey
+                }));
+
+                if (aiReadinessResponse.Body) {
+                    const content = await aiReadinessResponse.Body.transformToString();
+                    aiReadinessResults = JSON.parse(content);
+                    console.log('Retrieved AI readiness results from S3');
+                }
+            } catch (error) {
+                console.log('Could not retrieve AI readiness results from S3 (might be skipped or failed):', error);
+            }
+
+            // [NEW] Attempt to retrieve cached Sitemap Health results for the domain
+            // This is for including domain-level health in single-page doc reports
+            let cachedSitemapHealth = null;
+            try {
+                // Extract domain from URL
+                const urlObj = new URL(url);
+                const domain = urlObj.hostname; // e.g. docs.ai12z.net
+                const normalizedDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
+
+                // Construct cache key matches issue-validator logic
+                const sitemapCacheKey = `sitemap-health-${normalizedDomain.replace(/\./g, '-')}.json`;
+
+                console.log(`Checking for cached sitemap health at key: ${sitemapCacheKey}`);
+                const sitemapHealthResponse = await s3Client.send(new GetObjectCommand({
+                    Bucket: bucketName,
+                    Key: sitemapCacheKey
+                }));
+
+                if (sitemapHealthResponse.Body) {
+                    const content = await sitemapHealthResponse.Body.transformToString();
+                    const healthData = JSON.parse(content);
+
+                    // Transform to internal format if needed, but it matches the interface
+                    cachedSitemapHealth = {
+                        totalUrls: healthData.totalUrls,
+                        healthyUrls: healthData.healthyUrls,
+                        brokenUrls: healthData.brokenUrls,
+                        accessDeniedUrls: healthData.accessDeniedUrls,
+                        timeoutUrls: healthData.timeoutUrls,
+                        otherErrorUrls: healthData.otherErrorUrls,
+                        healthPercentage: healthData.healthPercentage,
+                        linkIssues: healthData.linkIssues || [],
+                        processingTime: healthData.processingTime || 0
+                    };
+                    console.log('Successfully retrieved cached sitemap health data');
+                }
+            } catch (error) {
+                console.log('No cached sitemap health data found (optional):', error);
+            }
+
+
+
             // Use real dimension results if available, otherwise fall back to mock
             const finalDimensionResults = dimensionResults || generateMockDimensionResultsSimple(selectedModel, processedContent);
 
@@ -285,7 +359,9 @@ export const handler: Handler<any, ReportGeneratorResponse> = async (event: any)
                 linkAnalysis,
                 contextAnalysis,
                 analysisTime: totalTime,
-                retryCount: 0
+                retryCount: 0,
+                aiReadiness: aiReadinessResults,
+                sitemapHealth: cachedSitemapHealth || undefined // Include if found
             };
 
             console.log(`Report generated: ${overallScore}/100 overall score (${validScores.length}/5 dimensions)`);
@@ -519,6 +595,7 @@ function createEmptyReport(): FinalReport {
             analysisScope: 'current-page-only'
         },
         analysisTime: 0,
-        retryCount: 0
+        retryCount: 0,
+        aiReadiness: undefined
     };
 }
