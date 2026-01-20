@@ -88,6 +88,13 @@ const CONTENT_TYPE_WEIGHTS = {
         accuracy: 0.20,
         completeness: 0.05 // Lower - Can be incremental
     },
+    'product-guide': {
+        relevance: 0.20,
+        freshness: 0.15,
+        clarity: 0.35,
+        accuracy: 0.20,
+        completeness: 0.10 // Lower - Can be task-focused
+    },
     'mixed': {
         relevance: 0.20,
         freshness: 0.20,
@@ -434,7 +441,10 @@ async function analyzeDimension(dimension, processedContent, selectedModel) {
         findings: analysis.findings || [],
         recommendations: analysis.recommendations || [],
         retryCount: 0,
-        processingTime: 0 // Will be set by caller
+        processingTime: 0,
+        spellingIssues: analysis.spellingIssues,
+        codeIssues: analysis.codeIssues,
+        terminologyInconsistencies: analysis.terminologyInconsistencies
     };
 }
 function buildPromptForDimension(dimension, processedContent) {
@@ -532,7 +542,7 @@ Respond in JSON format:
     }
   ]
 }`,
-        clarity: `Analyze the CLARITY of this technical developer documentation.
+        clarity: `Analyze the CLARITY of this technical documentation.
 
 ${baseContext}
 ${contextInfo}
@@ -540,17 +550,26 @@ ${contextInfo}
 CONTENT TYPE SPECIFIC GUIDANCE:
 ${contentTypeGuidance}
 
+CRITICAL: CHECK FOR SPELLING AND TYPOS
+Scan the ENTIRE content for spelling errors and typos. This is a high-priority check.
+
 Evaluate:
 1. Is the content well-structured and organized?
-2. Are explanations clear and understandable?
-3. Are code examples well-commented?
-4. Is technical jargon explained?
-5. If context pages are available, does this page clearly explain its relationship to parent/child/sibling pages?
+2. SPELLING & TYPOS: Identify any misspelled words or typos (e.g., "clech" vs "check", "teh" vs "the").
+3. TERMINOLOGY: Is terminology consistent (e.g., "Agent" vs "Bot")?
+4. Is technical jargon explained for the target audience?
+5. Are instructions easy to follow?
 
 Respond in JSON format:
 {
   "score": 0-100,
   "findings": ["finding 1", "finding 2"],
+  "spellingIssues": [
+    {"incorrect": "word", "correct": "word", "context": "surrounding text snippet"}
+  ],
+  "terminologyInconsistencies": [
+    {"variants": ["term1", "term2"], "recommendation": "Use 'term1' consistently"}
+  ],
   "recommendations": [
     {
       "priority": "high|medium|low",
@@ -559,10 +578,12 @@ Respond in JSON format:
     }
   ]
 }`,
-        accuracy: `Analyze the ACCURACY of this technical developer documentation.
+        accuracy: `Analyze the ACCURACY of this technical documentation.
 
 ${baseContext}
 ${contextInfo}
+
+IMPORTANT: Today's date is ${today}. Do NOT flag dates as "future-dated" if they are on or before today's date.
 
 CONTENT TYPE SPECIFIC GUIDANCE:
 ${contentTypeGuidance}
@@ -572,15 +593,24 @@ ${processedContent.codeSnippets?.map((s) => `Language: ${s.language}\n${s.code.s
 
 Evaluate:
 1. Are code examples syntactically correct?
-2. Is API usage accurate?
-3. Are technical details correct?
-4. Are there any misleading statements?
-5. If context pages are available, is the information consistent with related documentation?
+2. JSON VALIDATION: Are JSON configuration examples valid? Check for missing quotes, trailing commas, or unbalanced braces.
+3. CONFIGURATION: Are placeholder values (e.g., <YOUR_KEY>) clearly marked?
+4. Is API usage accurate?
+5. Are there any misleading statements?
+6. DATE ACCURACY: Only flag dates as "future-dated" if they are AFTER ${today}.
 
 Respond in JSON format:
 {
   "score": 0-100,
   "findings": ["finding 1", "finding 2"],
+  "codeIssues": [
+    {
+      "type": "json-syntax" | "config-incomplete" | "other",
+      "location": "description of location",
+      "description": "what is wrong",
+      "codeFragment": "snippet"
+    }
+  ],
   "recommendations": [
     {
       "priority": "high|medium|low",
@@ -667,6 +697,13 @@ function getContentTypeGuidance(contentType, dimension) {
             clarity: 'Important (20% weight) - must be scannable and well-organized for quick lookup.',
             accuracy: 'CRITICAL (35% weight) - reference material must be completely accurate.',
             completeness: 'Lower priority (10% weight) - can be comprehensive in scope elsewhere.'
+        },
+        'product-guide': {
+            relevance: 'Medium (20%) - must help non-technical users achieve goals.',
+            freshness: 'Medium (15%) - check if screenshots match described UI.',
+            clarity: 'CRITICAL (35%) - check for TYPOS, spelling errors, and jargon. Must be crystal clear.',
+            accuracy: 'Important (20%) - validate all JSON payloads and curl commands.',
+            completeness: 'Low (10%) - focus on happy-path task completion.'
         },
         'troubleshooting': {
             relevance: 'High importance (25% weight) - must address real, common problems developers face.',

@@ -407,6 +407,10 @@ const DOMAIN_SITEMAP_CONFIG: Record<string, { sitemapUrl: string; docFilter: str
     'docs.knock.app': {
         sitemapUrl: 'https://docs.knock.app/sitemap.xml',
         docFilter: '/'
+    },
+    'docs.ai12z.net': {
+        sitemapUrl: 'https://docs.ai12z.net/sitemap.xml',
+        docFilter: '/docs/'
     }
 };
 

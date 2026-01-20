@@ -25,7 +25,7 @@ interface DocumentStructure {
     type: 'single_topic' | 'multi_topic';
     topics: Topic[];
     confidence: number;
-    contentType: 'api-docs' | 'tutorial' | 'reference' | 'mixed';
+    contentType: 'api-docs' | 'tutorial' | 'reference' | 'product-guide' | 'mixed';
 }
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
@@ -113,13 +113,20 @@ Please analyze:
 2. What are the main topics covered?
 3. How confident are you in this analysis (0-100)?
 
-Respond in JSON format:
+RESPOND IN JSON FORMAT:
 {
   "type": "single_topic" or "multi_topic",
   "topics": [{"name": "topic name", "pageCount": 1, "urls": []}],
   "confidence": 85,
-  "contentType": "api-docs" | "tutorial" | "reference" | "mixed"
-}`;
+  "contentType": "api-docs" | "tutorial" | "reference" | "product-guide" | "mixed"
+}
+
+GUIDANCE FOR CONTENT TYPE:
+- "api-docs": heavy code use, parameter lists, method signatures
+- "tutorial": step-by-step coding instructions, prerequisites
+- "product-guide": UI-focused instructions (Click X, Select Y), screenshots, JSON configs, non-technical language
+- "reference": tables, configurations, specs
+- "mixed": combination of above`;
 
     try {
         const modelId = getModelId(selectedModel);
@@ -174,7 +181,7 @@ Respond in JSON format:
                 urls: []
             }],
             confidence: 50,
-            contentType: contentType as any
+            contentType: (contentType === 'product-guide' ? 'product-guide' : contentType) as any
         };
     }
 }

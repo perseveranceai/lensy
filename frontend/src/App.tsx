@@ -29,7 +29,8 @@ import {
     ListItemIcon,
     Collapse,
     IconButton,
-    Checkbox
+    Checkbox,
+    Divider
 } from '@mui/material';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -44,6 +45,49 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import FixReviewPanel, { Fix } from './components/FixReviewPanel';
+
+// [NEW] Collapsible Component Helper
+const CollapsibleCard = ({ title, children, defaultExpanded = true, count = 0, color = "default" }: any) => {
+    const [expanded, setExpanded] = useState(defaultExpanded);
+    return (
+        <Card sx={{ mb: 4, borderLeft: color !== 'default' ? 6 : 0, borderColor: `${color}.main` }}>
+            <Box
+                sx={{
+                    p: 2,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    bgcolor: 'action.hover'
+                }}
+                onClick={() => setExpanded(!expanded)}
+            >
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <Typography variant="h6" component="div">
+                        {title}
+                    </Typography>
+                    {count > 0 && (
+                        <Chip
+                            label={count}
+                            size="small"
+                            color={color === 'error' ? 'error' : color === 'warning' ? 'warning' : 'default'}
+                            sx={{ ml: 2, fontWeight: 'bold' }}
+                        />
+                    )}
+                </Box>
+                <IconButton size="small">
+                    {expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                </IconButton>
+            </Box>
+            <Collapse in={expanded}>
+                <Divider />
+                <CardContent>
+                    {children}
+                </CardContent>
+            </Collapse>
+        </Card>
+    );
+};
 
 interface AnalysisRequest {
     url: string;
@@ -71,6 +115,32 @@ interface DimensionResult {
     }>;
     retryCount: number;
     processingTime: number;
+    // New structured findings
+    spellingIssues?: Array<{
+        incorrect: string;
+        correct: string;
+        context: string;
+    }>;
+    codeIssues?: Array<{
+        type: string;
+        location: string;
+        description: string;
+        codeFragment: string;
+    }>;
+    terminologyInconsistencies?: Array<{
+        variants: string[];
+        recommendation: string;
+    }>;
+}
+
+interface AIReadinessResult {
+    llmsTxt: { found: boolean; url: string; content?: string };
+    llmsFullTxt: { found: boolean; url: string };
+    robotsTxt: { found: boolean; aiDirectives: Array<{ userAgent: string; rule: 'Allow' | 'Disallow' }> };
+    markdownExports: { available: boolean; sampleUrls: string[] };
+    structuredData: { hasJsonLd: boolean; schemaTypes: string[] };
+    overallScore: number;
+    recommendations: string[];
 }
 
 interface FinalReport {
@@ -179,6 +249,7 @@ interface FinalReport {
     };
     analysisTime: number;
     retryCount: number;
+    aiReadiness?: AIReadinessResult;
 }
 
 interface ProgressMessage {
@@ -1055,7 +1126,8 @@ function App() {
         markdown += `**Analyzed:** ${analysisDate}\n`;
 
         // Handle sitemap mode vs doc mode scoring
-        if (report.sitemapHealth) {
+        // Only use sitemap layout if we are explicitly in sitemap mode
+        if ((manualModeOverride || selectedMode) === 'sitemap' && report.sitemapHealth) {
             // SITEMAP MODE: Show health percentage
             markdown += `**Overall Health:** ${report.sitemapHealth.healthPercentage}%\n`;
             markdown += `**Total URLs Checked:** ${report.sitemapHealth.totalUrls}\n`;
@@ -1121,6 +1193,46 @@ function App() {
             Object.entries(report.dimensions).forEach(([dimension, result]) => {
                 markdown += `**${dimension.charAt(0).toUpperCase() + dimension.slice(1)}:** ${result.score || 'N/A'}/10\n`;
             });
+
+            // AI Readiness Assessment
+            if (report.aiReadiness) {
+                markdown += `\n## AI-READINESS ASSESSMENT\n\n`;
+                markdown += `**Overall AI Score:** ${report.aiReadiness.overallScore}/100\n\n`;
+
+                markdown += `### Key Checks\n`;
+                markdown += `- **llms.txt:** ${report.aiReadiness.llmsTxt.found ? '✅ Found' : '❌ Missing'}\n`;
+                markdown += `- **llms-full.txt:** ${report.aiReadiness.llmsFullTxt.found ? '✅ Found' : '❌ Missing'}\n`;
+                markdown += `- **Robots.txt AI Rules:** ${report.aiReadiness.robotsTxt.aiDirectives.length > 0 ? '✅ ' + report.aiReadiness.robotsTxt.aiDirectives.length + ' rules found' : '⚠️ No specific AI rules'}\n`;
+                markdown += `- **Structured Data (JSON-LD):** ${report.aiReadiness.structuredData.hasJsonLd ? '✅ Found' : '❌ Missing'}\n`;
+
+                if (report.aiReadiness.recommendations.length > 0) {
+                    markdown += `\n### Recommendations\n`;
+                    report.aiReadiness.recommendations.forEach(rec => markdown += `- ${rec}\n`);
+                }
+            }
+
+            // Spelling & Typos
+            const spellingIssues = report.dimensions.clarity?.spellingIssues || [];
+            if (spellingIssues.length > 0) {
+                markdown += `\n## SPELLING & TYPOS (${spellingIssues.length})\n\n`;
+                markdown += `| Incorrect | Correct | Context |\n`;
+                markdown += `|-----------|---------|---------|\n`;
+                spellingIssues.forEach(m => {
+                    markdown += `| ${m.incorrect} | **${m.correct}** | ...${m.context.replace(/\|/g, '-').replace(/\n/g, ' ')}... |\n`;
+                });
+            }
+
+            // Configuration & Code Issues
+            const configIssues = report.dimensions.accuracy?.codeIssues || [];
+            if (configIssues.length > 0) {
+                markdown += `\n## CONFIGURATION & CODE ISSUES (${configIssues.length})\n\n`;
+                configIssues.forEach((issue, i) => {
+                    markdown += `### ${i + 1}. ${issue.type.toUpperCase()}\n`;
+                    markdown += `**Description:** ${issue.description}\n`;
+                    markdown += `**Location:** ${issue.location}\n`;
+                    markdown += `\`\`\`\n${issue.codeFragment}\n\`\`\`\n\n`;
+                });
+            }
 
             markdown += `\n## CRITICAL FINDINGS\n\n`;
 
@@ -1193,6 +1305,26 @@ function App() {
                     });
                 }
             });
+
+            // [NEW] Sitemap Health Status (Domain-level)
+            if (report.sitemapHealth) {
+                markdown += `\n## SITEMAP HEALTH (Domain Level)\n\n`;
+                markdown += `**Health Score:** ${report.sitemapHealth.healthPercentage}/100\n`;
+                markdown += `**Total URLs:** ${report.sitemapHealth.totalUrls}\n`;
+                markdown += `**Broken URLs:** ${report.sitemapHealth.brokenUrls}\n\n`;
+
+                if (report.sitemapHealth.brokenUrls > 0) {
+                    const broken = report.sitemapHealth.linkIssues.filter(i => i.issueType === '404').slice(0, 10);
+                    markdown += `### Top Broken Links\n`;
+                    broken.forEach(link => {
+                        markdown += `- \`${link.url}\` (404)\n`;
+                    });
+                    if (report.sitemapHealth.brokenUrls > 10) {
+                        markdown += `- ...and ${report.sitemapHealth.brokenUrls - 10} more\n`;
+                    }
+                    markdown += `\n`;
+                }
+            }
         }
 
         markdown += `---\n\n`;
@@ -1201,22 +1333,27 @@ function App() {
         markdown += `*Analysis time: ${(report.analysisTime / 1000).toFixed(1)}s*\n`;
 
         // Create and download file
-        const blob = new Blob([markdown], { type: 'text/markdown' });
-        const url_obj = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url_obj;
-        const filename = report.sitemapHealth
+        // [FIX] Use data URL instead of blob URL for better Chrome compatibility
+        const isSitemapMode = (manualModeOverride || selectedMode) === 'sitemap';
+        const filename = isSitemapMode && report.sitemapHealth
             ? `sitemap-health-report-${new Date().toISOString().split('T')[0]}.md`
             : `documentation-quality-report-${new Date().toISOString().split('T')[0]}.md`;
+
+        // Encode markdown as data URL
+        const dataUrl = 'data:text/markdown;charset=utf-8,' + encodeURIComponent(markdown);
+
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = dataUrl;
         a.download = filename;
+
         document.body.appendChild(a);
         a.click();
 
-        // Delay cleanup to ensure download starts
+        // Cleanup
         setTimeout(() => {
             document.body.removeChild(a);
-            URL.revokeObjectURL(url_obj);
-        }, 1000);
+        }, 100);
     };
 
     return (
@@ -1950,13 +2087,14 @@ function App() {
 
                         {/* Sitemap Health Summary (only for sitemap mode) */}
                         {analysisState.report.sitemapHealth && (
-                            <>
-                                <Typography variant="h6" gutterBottom sx={{ mt: 4 }}>
-                                    Sitemap Health Summary
-                                </Typography>
-                                <Grid container spacing={3} sx={{ mb: 4 }}>
+                            <CollapsibleCard
+                                title="Sitemap Health Summary"
+                                defaultExpanded={true}
+                                color={analysisState.report.sitemapHealth.healthPercentage < 100 ? 'warning' : 'success'}
+                            >
+                                <Grid container spacing={3}>
                                     <Grid item xs={12} md={3}>
-                                        <Card>
+                                        <Card variant="outlined">
                                             <CardContent sx={{ textAlign: 'center' }}>
                                                 <Typography variant="h3" color="primary">
                                                     {analysisState.report.sitemapHealth.totalUrls}
@@ -1966,7 +2104,7 @@ function App() {
                                         </Card>
                                     </Grid>
                                     <Grid item xs={12} md={3}>
-                                        <Card>
+                                        <Card variant="outlined">
                                             <CardContent sx={{ textAlign: 'center' }}>
                                                 <Typography variant="h3" color="success.main">
                                                     {analysisState.report.sitemapHealth.healthyUrls}
@@ -1979,7 +2117,7 @@ function App() {
                                         </Card>
                                     </Grid>
                                     <Grid item xs={12} md={3}>
-                                        <Card>
+                                        <Card variant="outlined">
                                             <CardContent sx={{ textAlign: 'center' }}>
                                                 <Typography variant="h3" color="error.main">
                                                     {analysisState.report.sitemapHealth.brokenUrls}
@@ -1989,7 +2127,7 @@ function App() {
                                         </Card>
                                     </Grid>
                                     <Grid item xs={12} md={3}>
-                                        <Card>
+                                        <Card variant="outlined">
                                             <CardContent sx={{ textAlign: 'center' }}>
                                                 <Typography variant="h3" color="warning.main">
                                                     {analysisState.report.sitemapHealth.accessDeniedUrls +
@@ -2006,223 +2144,359 @@ function App() {
                                         </Card>
                                     </Grid>
                                 </Grid>
-
-                                {/* Expandable Broken URLs List */}
                                 {analysisState.report.sitemapHealth.linkIssues.length > 0 && (
-                                    <Card sx={{ mb: 4 }}>
-                                        <CardContent>
-                                            <Typography variant="h6" gutterBottom>
-                                                Link Issues Details ({analysisState.report.sitemapHealth.linkIssues.length})
-                                            </Typography>
-                                            <Box sx={{ maxHeight: 300, overflow: 'auto' }}>
-                                                {analysisState.report.sitemapHealth.linkIssues.map((issue, index) => (
-                                                    <Box key={index} sx={{ mb: 1, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
-                                                        <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                                    <Box sx={{ mt: 3 }}>
+                                        <Divider sx={{ my: 2 }} />
+                                        <Typography variant="h6" gutterBottom>
+                                            Link Issues Details ({analysisState.report.sitemapHealth.linkIssues.length})
+                                        </Typography>
+                                        <Box sx={{ maxHeight: 300, overflow: 'auto', border: 1, borderColor: 'divider', borderRadius: 1, p: 2 }}>
+                                            {analysisState.report.sitemapHealth.linkIssues.map((issue, index) => (
+                                                <Box key={index} sx={{ mb: 1, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
+                                                    <Typography variant="body2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
+                                                        <span style={{ marginRight: '8px' }}>
                                                             {issue.issueType === '404' ? '🔴' :
                                                                 issue.issueType === 'access-denied' ? '🟡' :
-                                                                    issue.issueType === 'timeout' ? '🟠' : '⚫'} {issue.url}
+                                                                    issue.issueType === 'timeout' ? '🟠' : '⚫'}
+                                                        </span>
+                                                        {issue.url}
+                                                    </Typography>
+                                                    <Typography variant="body2" color="text.secondary" sx={{ ml: 4 }}>
+                                                        {issue.errorMessage}
+                                                    </Typography>
+                                                </Box>
+                                            ))}
+                                        </Box>
+                                    </Box>
+                                )}
+                            </CollapsibleCard>
+                        )}
+
+
+                        {/* AI Readiness Section */}
+                        {analysisState.report.aiReadiness && (
+                            <CollapsibleCard
+                                title="AI Readiness Assessment"
+                                defaultExpanded={false}
+                                color={analysisState.report.aiReadiness.overallScore < 80 ? 'warning' : 'success'}
+                                count={analysisState.report.aiReadiness.overallScore + '/100'}
+                            >
+                                <Grid container spacing={2}>
+                                    <Grid item xs={12} md={6}>
+                                        <Card variant="outlined" sx={{ height: '100%' }}>
+                                            <CardContent>
+                                                <Typography variant="h6" gutterBottom>Configuration Checks</Typography>
+                                                <List dense>
+                                                    <ListItem>
+                                                        <ListItemIcon>
+                                                            {analysisState.report.aiReadiness.llmsTxt.found ? <CheckCircleIcon color="success" /> : <ErrorIcon color="error" />}
+                                                        </ListItemIcon>
+                                                        <ListItemText
+                                                            primary="llms.txt"
+                                                            secondary={analysisState.report.aiReadiness.llmsTxt.found ? "Found" : "Missing"}
+                                                        />
+                                                    </ListItem>
+                                                    <ListItem>
+                                                        <ListItemIcon>
+                                                            {analysisState.report.aiReadiness.llmsFullTxt.found ? <CheckCircleIcon color="success" /> : <ErrorIcon color="error" />}
+                                                        </ListItemIcon>
+                                                        <ListItemText
+                                                            primary="llms-full.txt"
+                                                            secondary={analysisState.report.aiReadiness.llmsFullTxt.found ? "Found" : "Missing"}
+                                                        />
+                                                    </ListItem>
+                                                    <ListItem>
+                                                        <ListItemIcon>
+                                                            {analysisState.report.aiReadiness.structuredData.hasJsonLd ? <CheckCircleIcon color="success" /> : <ErrorIcon color="error" />}
+                                                        </ListItemIcon>
+                                                        <ListItemText
+                                                            primary="JSON-LD Structured Data"
+                                                            secondary={analysisState.report.aiReadiness.structuredData.hasJsonLd ? "Found" : "Missing"}
+                                                        />
+                                                    </ListItem>
+                                                </List>
+                                            </CardContent>
+                                        </Card>
+                                    </Grid>
+                                    <Grid item xs={12} md={6}>
+                                        <Card variant="outlined" sx={{ height: '100%' }}>
+                                            <CardContent>
+                                                <Typography variant="h6" gutterBottom>Robots & Access</Typography>
+                                                <List dense>
+                                                    <ListItem>
+                                                        <ListItemIcon>
+                                                            {analysisState.report.aiReadiness.robotsTxt.aiDirectives.length > 0 ? <CheckCircleIcon color="success" /> : <InfoIcon color="action" />}
+                                                        </ListItemIcon>
+                                                        <ListItemText
+                                                            primary="Robots.txt AI Rules"
+                                                            secondary={analysisState.report.aiReadiness.robotsTxt.aiDirectives.length > 0 ? `${analysisState.report.aiReadiness.robotsTxt.aiDirectives.length} rules found` : "No specific AI rules found"}
+                                                        />
+                                                    </ListItem>
+                                                    <ListItem>
+                                                        <ListItemIcon>
+                                                            {analysisState.report.aiReadiness.markdownExports.available ? <CheckCircleIcon color="success" /> : <InfoIcon color="action" />}
+                                                        </ListItemIcon>
+                                                        <ListItemText
+                                                            primary="Markdown Exports"
+                                                            secondary={analysisState.report.aiReadiness.markdownExports.available ? "Available" : "Not detected"}
+                                                        />
+                                                    </ListItem>
+                                                </List>
+                                            </CardContent>
+                                        </Card>
+                                    </Grid>
+                                    {analysisState.report.aiReadiness.recommendations.length > 0 && (
+                                        <Grid item xs={12}>
+                                            <Alert severity="info">
+                                                <Typography variant="subtitle2">Recommendations:</Typography>
+                                                <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
+                                                    {analysisState.report.aiReadiness.recommendations.map((rec, i) => (
+                                                        <li key={i}>{rec}</li>
+                                                    ))}
+                                                </ul>
+                                            </Alert>
+                                        </Grid>
+                                    )}
+                                </Grid>
+                            </CollapsibleCard>
+                        )}
+
+                        {/* Dimension Analysis Section */}
+                        <CollapsibleCard
+                            title="Dimension Analysis"
+                            defaultExpanded={false}
+                        >
+                            <Grid container spacing={3}>
+                                {Object.entries(analysisState.report.dimensions).map(([dimension, result]: [string, any]) => (
+                                    <Grid item xs={12} md={6} key={dimension}>
+                                        <Card variant="outlined">
+                                            <CardContent>
+                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                                    <Typography variant="h6" sx={{ textTransform: 'capitalize' }}>
+                                                        {dimension}
+                                                    </Typography>
+                                                    <Chip
+                                                        label={`${result.score}/10`}
+                                                        color={getScoreColor((result.score || 0) * 10)}
+                                                        variant="outlined"
+                                                        sx={{ fontWeight: 'bold' }}
+                                                    />
+                                                </Box>
+                                                {result.findings && result.findings.length > 0 ? (
+                                                    <List dense>
+                                                        {result.findings.slice(0, 3).map((finding: string, i: number) => (
+                                                            <ListItem key={i} disableGutters>
+                                                                <ListItemIcon sx={{ minWidth: 30 }}>
+                                                                    <InfoIcon fontSize="small" color="info" />
+                                                                </ListItemIcon>
+                                                                <ListItemText primary={finding} primaryTypographyProps={{ variant: 'body2' }} />
+                                                            </ListItem>
+                                                        ))}
+                                                        {result.findings.length > 3 && (
+                                                            <Typography variant="caption" color="text.secondary" sx={{ ml: 4 }}>
+                                                                ...and {result.findings.length - 3} more
+                                                            </Typography>
+                                                        )}
+                                                    </List>
+                                                ) : (
+                                                    <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                                                        No major findings.
+                                                    </Typography>
+                                                )}
+                                            </CardContent>
+                                        </Card>
+                                    </Grid>
+                                ))}
+                            </Grid>
+                        </CollapsibleCard>
+                        <CollapsibleCard
+                            title="Critical Findings (Top Issues)"
+                            defaultExpanded={true}
+                            color="error"
+                        >
+                            <Grid container spacing={2}>
+                                {/* Link Issues */}
+                                <Grid item xs={12} md={4}>
+                                    <Card>
+                                        <CardContent>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                                                {analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.length ? (
+                                                    <>
+                                                        <ErrorIcon sx={{ color: 'warning.main', mr: 1 }} />
+                                                        <Typography variant="h6">
+                                                            Link Issues: {analysisState.report.linkAnalysis.linkValidation.linkIssueFindings.length}
+                                                            {(() => {
+                                                                const broken = analysisState.report.linkAnalysis.linkValidation.linkIssueFindings.filter((l: any) => l.issueType === '404').length;
+                                                                return broken > 0 ? ` (${broken} broken)` : '';
+                                                            })()}
                                                         </Typography>
-                                                        <Typography variant="body2" color="text.secondary">
-                                                            {issue.errorMessage}
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <CheckCircleIcon sx={{ color: 'success.main', mr: 1 }} />
+                                                        <Typography variant="h6">
+                                                            Link Issues: None found
                                                         </Typography>
-                                                    </Box>
-                                                ))}
+                                                    </>
+                                                )}
                                             </Box>
+                                            {analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.slice(0, 2).map((link: any, i: number) => (
+                                                <Typography key={i} variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                                                    • {link.anchorText} → {link.issueType === '404' ? '404' : link.issueType === 'access-denied' ? '403' : link.status}
+                                                </Typography>
+                                            ))}
+                                            {(analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.length || 0) > 2 && (
+                                                <Typography variant="body2" color="text.secondary">
+                                                    ... and {(analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.length || 0) - 2} more
+                                                </Typography>
+                                            )}
                                         </CardContent>
                                     </Card>
-                                )}
-                            </>
-                        )}
-
-                        {/* Critical Findings Section (only for doc mode) */}
-                        {!analysisState.report.sitemapHealth && (
-                            <>
-                                <Typography variant="h6" gutterBottom sx={{ mt: 4 }}>
-                                    Critical Findings
-                                </Typography>
-                                <Grid container spacing={2} sx={{ mb: 4 }}>
-                                    {/* Link Issues */}
-                                    <Grid item xs={12} md={4}>
-                                        <Card>
-                                            <CardContent>
-                                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                                                    {analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.length ? (
-                                                        <>
-                                                            <ErrorIcon sx={{ color: 'warning.main', mr: 1 }} />
-                                                            <Typography variant="h6">
-                                                                Link Issues: {analysisState.report.linkAnalysis.linkValidation.linkIssueFindings.length}
-                                                                {(() => {
-                                                                    const broken = analysisState.report.linkAnalysis.linkValidation.linkIssueFindings.filter((l: any) => l.issueType === '404').length;
-                                                                    return broken > 0 ? ` (${broken} broken)` : '';
-                                                                })()}
-                                                            </Typography>
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <CheckCircleIcon sx={{ color: 'success.main', mr: 1 }} />
-                                                            <Typography variant="h6">
-                                                                Link Issues: None found
-                                                            </Typography>
-                                                        </>
-                                                    )}
-                                                </Box>
-                                                {analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.slice(0, 2).map((link: any, i: number) => (
-                                                    <Typography key={i} variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                                                        • {link.anchorText} → {link.issueType === '404' ? '404' : link.issueType === 'access-denied' ? '403' : link.status}
-                                                    </Typography>
-                                                ))}
-                                                {(analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.length || 0) > 2 && (
-                                                    <Typography variant="body2" color="text.secondary">
-                                                        ... and {(analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.length || 0) - 2} more
-                                                    </Typography>
-                                                )}
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-
-                                    {/* Deprecated Code */}
-                                    <Grid item xs={12} md={4}>
-                                        <Card>
-                                            <CardContent>
-                                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                                                    {analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length ? (
-                                                        <>
-                                                            <ErrorIcon sx={{ color: 'warning.main', mr: 1 }} />
-                                                            <Typography variant="h6">
-                                                                Deprecated Code: {analysisState.report.codeAnalysis.enhancedAnalysis.deprecatedFindings.length}
-                                                            </Typography>
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <CheckCircleIcon sx={{ color: 'success.main', mr: 1 }} />
-                                                            <Typography variant="h6">
-                                                                Deprecated Code: None found
-                                                            </Typography>
-                                                        </>
-                                                    )}
-                                                </Box>
-                                                {analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.slice(0, 2).map((finding, i) => (
-                                                    <Typography key={i} variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                                                        • {finding.method} (deprecated in {finding.deprecatedIn})
-                                                    </Typography>
-                                                ))}
-                                                {(analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length || 0) > 2 && (
-                                                    <Typography variant="body2" color="text.secondary">
-                                                        ... and {(analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length || 0) - 2} more
-                                                    </Typography>
-                                                )}
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-
-                                    {/* Syntax Errors */}
-                                    <Grid item xs={12} md={4}>
-                                        <Card>
-                                            <CardContent>
-                                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                                                    {analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.length ? (
-                                                        <>
-                                                            <ErrorIcon sx={{ color: 'error.main', mr: 1 }} />
-                                                            <Typography variant="h6">
-                                                                Syntax Errors: {analysisState.report.codeAnalysis.enhancedAnalysis.syntaxErrorFindings.length}
-                                                            </Typography>
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <CheckCircleIcon sx={{ color: 'success.main', mr: 1 }} />
-                                                            <Typography variant="h6">
-                                                                Syntax Errors: None found
-                                                            </Typography>
-                                                        </>
-                                                    )}
-                                                </Box>
-                                                {analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.slice(0, 2).map((error, i) => (
-                                                    <Typography key={i} variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                                                        • {error.errorType}: {error.description}
-                                                    </Typography>
-                                                ))}
-                                                {(analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.length || 0) > 2 && (
-                                                    <Typography variant="body2" color="text.secondary">
-                                                        ... and {(analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.length || 0) - 2} more
-                                                    </Typography>
-                                                )}
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
                                 </Grid>
 
-                                <Alert severity="info" sx={{ mb: 4 }}>
-                                    See full report for complete details on all findings and recommendations.
-                                </Alert>
-                            </>
-                        )}
+                                {/* Deprecated Code */}
+                                <Grid item xs={12} md={4}>
+                                    <Card>
+                                        <CardContent>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                                                {analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length ? (
+                                                    <>
+                                                        <ErrorIcon sx={{ color: 'warning.main', mr: 1 }} />
+                                                        <Typography variant="h6">
+                                                            Deprecated Code: {analysisState.report.codeAnalysis.enhancedAnalysis.deprecatedFindings.length}
+                                                        </Typography>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <CheckCircleIcon sx={{ color: 'success.main', mr: 1 }} />
+                                                        <Typography variant="h6">
+                                                            Deprecated Code: None found
+                                                        </Typography>
+                                                    </>
+                                                )}
+                                            </Box>
+                                            {analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.slice(0, 2).map((finding, i) => (
+                                                <Typography key={i} variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                                                    • {finding.method} (deprecated in {finding.deprecatedIn})
+                                                </Typography>
+                                            ))}
+                                            {(analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length || 0) > 2 && (
+                                                <Typography variant="body2" color="text.secondary">
+                                                    ... and {(analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length || 0) - 2} more
+                                                </Typography>
+                                            )}
+                                        </CardContent>
+                                    </Card>
+                                </Grid>
+
+                                {/* Syntax Errors */}
+                                <Grid item xs={12} md={4}>
+                                    <Card>
+                                        <CardContent>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                                                {analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.length ? (
+                                                    <>
+                                                        <ErrorIcon sx={{ color: 'error.main', mr: 1 }} />
+                                                        <Typography variant="h6">
+                                                            Syntax Errors: {analysisState.report.codeAnalysis.enhancedAnalysis.syntaxErrorFindings.length}
+                                                        </Typography>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <CheckCircleIcon sx={{ color: 'success.main', mr: 1 }} />
+                                                        <Typography variant="h6">
+                                                            Syntax Errors: None found
+                                                        </Typography>
+                                                    </>
+                                                )}
+                                            </Box>
+                                            {analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.slice(0, 2).map((error, i) => (
+                                                <Typography key={i} variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                                                    • {error.errorType}: {error.description}
+                                                </Typography>
+                                            ))}
+                                            {(analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.length || 0) > 2 && (
+                                                <Typography variant="body2" color="text.secondary">
+                                                    ... and {(analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.length || 0) - 2} more
+                                                </Typography>
+                                            )}
+                                        </CardContent>
+                                    </Card>
+                                </Grid>
+                            </Grid>
+
+                            <Alert severity="info" sx={{ mb: 4 }}>
+                                See full report for complete details on all findings and recommendations.
+                            </Alert>
+                        </CollapsibleCard>
 
                         {/* Simplified Recommendations - Top 5 */}
-                        <Typography variant="h6" gutterBottom sx={{ mt: 4 }}>Top Issues to Fix</Typography>
-                        <Alert severity="info" sx={{ mb: 2 }}>
-                            Select the issues you would like Lensy to automatically fix for you.
-                        </Alert>
-                        <Grid container spacing={2} sx={{ mb: 4 }}>
-                            {(() => {
-                                // Flatten all recommendations from all dimensions
-                                const allRecs = Object.entries(analysisState.report.dimensions)
-                                    .flatMap(([dim, result]) => (result.recommendations || []).map(rec => ({ ...rec, dimension: dim })));
+                        <CollapsibleCard title="Select Fixes (Recommendations)" defaultExpanded={false} color="info">
+                            <Alert severity="info" sx={{ mb: 2 }}>
+                                Select the issues you would like Lensy to automatically fix for you.
+                            </Alert>
+                            <Grid container spacing={2}>
+                                {(() => {
+                                    // Flatten all recommendations from all dimensions
+                                    const allRecs = Object.entries(analysisState.report.dimensions)
+                                        .flatMap(([dim, result]) => (result.recommendations || []).map(rec => ({ ...rec, dimension: dim })));
 
-                                // Take top 5
-                                const top5 = allRecs.slice(0, 5);
+                                    // Take top 5
+                                    const top5 = allRecs.slice(0, 5);
 
-                                return top5.map((rec: any, i: number) => {
-                                    const recId = `${rec.dimension}-${i}`;
-                                    const isSelected = selectedRecommendations.includes(recId);
+                                    return top5.map((rec: any, i: number) => {
+                                        const recId = `${rec.dimension}-${i}`;
+                                        const isSelected = selectedRecommendations.includes(recId);
 
-                                    return (
-                                        <Grid item xs={12} key={recId}>
-                                            <Paper
-                                                variant="outlined"
-                                                sx={{
-                                                    p: 2,
-                                                    bgcolor: isSelected ? 'rgba(33, 150, 243, 0.08)' : 'background.paper',
-                                                    borderColor: isSelected ? 'primary.main' : 'divider',
-                                                    borderRadius: 2,
-                                                    display: 'flex',
-                                                    alignItems: 'flex-start',
-                                                    cursor: 'pointer',
-                                                    '&:hover': { bgcolor: isSelected ? 'rgba(33, 150, 243, 0.12)' : 'rgba(255, 255, 255, 0.02)' }
-                                                }}
-                                                onClick={() => {
-                                                    if (isSelected) {
-                                                        setSelectedRecommendations(selectedRecommendations.filter(id => id !== recId));
-                                                    } else {
-                                                        setSelectedRecommendations([...selectedRecommendations, recId]);
-                                                    }
-                                                }}
-                                            >
-                                                <Checkbox
-                                                    checked={isSelected}
-                                                    sx={{ mt: -0.5, ml: -1 }}
-                                                />
-                                                <Box sx={{ ml: 1, flexGrow: 1 }}>
-                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
-                                                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                                            {rec.action}
+                                        return (
+                                            <Grid item xs={12} key={recId}>
+                                                <Paper
+                                                    variant="outlined"
+                                                    sx={{
+                                                        p: 2,
+                                                        bgcolor: isSelected ? 'rgba(33, 150, 243, 0.08)' : 'background.paper',
+                                                        borderColor: isSelected ? 'primary.main' : 'divider',
+                                                        borderRadius: 2,
+                                                        display: 'flex',
+                                                        alignItems: 'flex-start',
+                                                        cursor: 'pointer',
+                                                        '&:hover': { bgcolor: isSelected ? 'rgba(33, 150, 243, 0.12)' : 'rgba(255, 255, 255, 0.02)' }
+                                                    }}
+                                                    onClick={() => {
+                                                        if (isSelected) {
+                                                            setSelectedRecommendations(selectedRecommendations.filter(id => id !== recId));
+                                                        } else {
+                                                            setSelectedRecommendations([...selectedRecommendations, recId]);
+                                                        }
+                                                    }}
+                                                >
+                                                    <Checkbox
+                                                        checked={isSelected}
+                                                        sx={{ mt: -0.5, ml: -1 }}
+                                                    />
+                                                    <Box sx={{ ml: 1, flexGrow: 1 }}>
+                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                                                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                                                {rec.action}
+                                                            </Typography>
+                                                            <Chip
+                                                                label={rec.dimension}
+                                                                size="small"
+                                                                variant="outlined"
+                                                                sx={{ height: 20, fontSize: '0.65rem', textTransform: 'uppercase' }}
+                                                            />
+                                                        </Box>
+                                                        <Typography variant="caption" color="text.secondary">
+                                                            Priority: {rec.priority?.toUpperCase()} • Impact: {rec.impact}
                                                         </Typography>
-                                                        <Chip
-                                                            label={rec.dimension}
-                                                            size="small"
-                                                            variant="outlined"
-                                                            sx={{ height: 20, fontSize: '0.65rem', textTransform: 'uppercase' }}
-                                                        />
                                                     </Box>
-                                                    <Typography variant="caption" color="text.secondary">
-                                                        Priority: {rec.priority?.toUpperCase()} • Impact: {rec.impact}
-                                                    </Typography>
-                                                </Box>
-                                            </Paper>
-                                        </Grid>
-                                    );
-                                });
-                            })()}
-                        </Grid>
+                                                </Paper>
+                                            </Grid>
+                                        );
+                                    });
+                                })()}
+                            </Grid>
+                        </CollapsibleCard>
 
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 3 }}>
                             <Typography variant="body2" color="text.secondary">
@@ -2261,7 +2535,7 @@ function App() {
                     </Paper>
                 )}
             </Container>
-        </div>
+        </div >
     );
 }
 
