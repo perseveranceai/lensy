@@ -35,6 +35,7 @@ import {
 import AnalyticsIcon from '@mui/icons-material/Analytics';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
+import WarningIcon from '@mui/icons-material/Warning';
 import InfoIcon from '@mui/icons-material/Info';
 import CachedIcon from '@mui/icons-material/Cached';
 import FlashOnIcon from '@mui/icons-material/FlashOn';
@@ -49,8 +50,29 @@ import FixReviewPanel, { Fix } from './components/FixReviewPanel';
 // [NEW] Collapsible Component Helper
 const CollapsibleCard = ({ title, children, defaultExpanded = true, count = 0, color = "default" }: any) => {
     const [expanded, setExpanded] = useState(defaultExpanded);
+
+    // Status-based color mapping
+    const colorMap: Record<string, { border: string, bg: string, text: string }> = {
+        error: { border: '#ef4444', bg: 'rgba(239,68,68,0.08)', text: '#ef4444' },
+        warning: { border: '#f59e0b', bg: 'rgba(245,158,11,0.08)', text: '#f59e0b' },
+        success: { border: '#22c55e', bg: 'rgba(34,197,94,0.08)', text: '#22c55e' },
+        info: { border: '#3b82f6', bg: 'rgba(59,130,246,0.08)', text: '#3b82f6' },
+        default: { border: 'var(--border-default)', bg: 'transparent', text: 'var(--text-primary)' }
+    };
+
+    const statusColor = colorMap[color] || colorMap.default;
+
     return (
-        <Card sx={{ mb: 4, borderLeft: color !== 'default' ? 6 : 0, borderColor: `${color}.main` }}>
+        <Card sx={{
+            mb: 4,
+            borderTop: color !== 'default' ? `4px solid ${statusColor.border}` : 'none',
+            borderLeft: color !== 'default' ? `3px solid ${statusColor.border}` : 'none',
+            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            bgcolor: expanded ? 'rgba(0,0,0,0.2)' : (color !== 'default' ? statusColor.bg : 'var(--bg-secondary)'),
+            border: expanded ? '1px solid rgba(255,255,255,0.08)' : '1px solid var(--border-subtle)',
+            boxShadow: expanded ? '0 8px 32px rgba(0,0,0,0.4)' : 'none',
+            overflow: 'hidden'
+        }}>
             <Box
                 sx={{
                     p: 2,
@@ -58,12 +80,19 @@ const CollapsibleCard = ({ title, children, defaultExpanded = true, count = 0, c
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     cursor: 'pointer',
-                    bgcolor: 'action.hover'
+                    bgcolor: expanded ? 'rgba(255,255,255,0.02)' : 'transparent',
+                    '&:hover': {
+                        bgcolor: 'rgba(255,255,255,0.05)'
+                    }
                 }}
                 onClick={() => setExpanded(!expanded)}
             >
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Typography variant="h6" component="div">
+                    <Typography variant="h6" component="div" sx={{
+                        fontWeight: 600,
+                        color: expanded ? 'var(--text-primary)' : 'var(--text-secondary)',
+                        letterSpacing: '-0.01em'
+                    }}>
                         {title}
                     </Typography>
                     {count > 0 && (
@@ -71,17 +100,17 @@ const CollapsibleCard = ({ title, children, defaultExpanded = true, count = 0, c
                             label={count}
                             size="small"
                             color={color === 'error' ? 'error' : color === 'warning' ? 'warning' : 'default'}
-                            sx={{ ml: 2, fontWeight: 'bold' }}
+                            sx={{ ml: 2, fontWeight: 700, height: 20 }}
                         />
                     )}
                 </Box>
-                <IconButton size="small">
+                <IconButton size="small" sx={{ color: 'var(--text-muted)' }}>
                     {expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
                 </IconButton>
             </Box>
             <Collapse in={expanded}>
-                <Divider />
-                <CardContent>
+                <Divider sx={{ borderColor: 'rgba(255,255,255,0.05)' }} />
+                <CardContent sx={{ p: 3 }}>
                     {children}
                 </CardContent>
             </Collapse>
@@ -253,7 +282,7 @@ interface FinalReport {
 }
 
 interface ProgressMessage {
-    type: 'info' | 'success' | 'error' | 'progress' | 'cache-hit' | 'cache-miss';
+    type: 'info' | 'success' | 'error' | 'warning' | 'progress' | 'cache-hit' | 'cache-miss';
     message: string;
     timestamp: number;
     phase?: 'url-processing' | 'structure-detection' | 'dimension-analysis' | 'report-generation';
@@ -400,6 +429,7 @@ function App() {
     const pollForResults = async (sessionId: string) => {
         const maxAttempts = 60;
         let attempts = 0;
+        let lastPhase = '';
 
         const poll = async () => {
             try {
@@ -414,10 +444,36 @@ function App() {
                 if (statusResponse.ok) {
                     const statusData = await statusResponse.json();
 
+                    // Add progress messages based on status
+                    if (statusData.status && statusData.status !== lastPhase) {
+                        lastPhase = statusData.status;
+                        const phaseMessages: Record<string, string> = {
+                            'processing': 'Processing URL and fetching content...',
+                            'analyzing': 'Running AI-powered dimension analysis...',
+                            'link-validation': 'Validating links and checking for broken URLs...',
+                            'code-analysis': 'Analyzing code snippets for issues...',
+                            'ai-readiness': 'Checking AI readiness indicators...',
+                            'sitemap-health': 'Analyzing sitemap health...',
+                            'generating-report': 'Generating final report...'
+                        };
+
+                        const message = phaseMessages[statusData.status] || `Analysis phase: ${statusData.status}`;
+                        setAnalysisState(prev => ({
+                            ...prev,
+                            progressMessages: [...prev.progressMessages, { type: 'progress', message, timestamp: Date.now() }]
+                        }));
+                    }
+
                     if (statusData.report) {
                         if (wsRef.current) {
                             wsRef.current.close();
                         }
+
+                        // Add completion message
+                        setAnalysisState(prev => ({
+                            ...prev,
+                            progressMessages: [...prev.progressMessages, { type: 'success', message: 'Analysis complete! Generating results...', timestamp: Date.now() }]
+                        }));
 
                         setAnalysisState(prev => ({
                             ...prev,
@@ -426,6 +482,18 @@ function App() {
                         }));
                         return;
                     }
+                }
+
+                // Add periodic "still working" message every 15 seconds (3 polls)
+                if (attempts % 3 === 0 && attempts < maxAttempts) {
+                    setAnalysisState(prev => ({
+                        ...prev,
+                        progressMessages: [...prev.progressMessages, {
+                            type: 'info',
+                            message: `Still analyzing... (${Math.round(attempts * 5 / 60)}+ minutes elapsed)`,
+                            timestamp: Date.now()
+                        }]
+                    }));
                 }
 
                 if (attempts >= maxAttempts) {
@@ -748,7 +816,12 @@ function App() {
             }
         }
 
-        setAnalysisState({ status: 'analyzing', progressMessages: [] });
+        setAnalysisState({
+            status: 'analyzing',
+            progressMessages: [
+                { type: 'info', message: 'Starting analysis...', timestamp: Date.now() }
+            ]
+        });
 
         const sessionId = `session-${Date.now()}`;
         setCurrentSessionId(sessionId); // Store session ID for later use
@@ -833,11 +906,21 @@ function App() {
                 // Connect WebSocket
                 try {
                     await connectWebSocket(sessionId);
+                    setAnalysisState(prev => ({
+                        ...prev,
+                        progressMessages: [...prev.progressMessages, { type: 'info', message: 'Real-time updates connected', timestamp: Date.now() }]
+                    }));
                 } catch (wsError) {
                     console.warn('WebSocket failed, using polling only:', wsError);
+                    // Silently fall back to polling - no need to alarm users
                 }
 
                 // Start analysis
+                setAnalysisState(prev => ({
+                    ...prev,
+                    progressMessages: [...prev.progressMessages, { type: 'info', message: 'Submitting analysis request...', timestamp: Date.now() }]
+                }));
+
                 const response = await fetch(`${API_BASE_URL}/scan-doc`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -852,7 +935,12 @@ function App() {
 
                 setAnalysisState(prev => ({
                     ...prev,
-                    executionArn: result.executionArn
+                    executionArn: result.executionArn,
+                    progressMessages: [...prev.progressMessages, {
+                        type: 'success',
+                        message: 'Request accepted! Analysis started on server...',
+                        timestamp: Date.now()
+                    }]
                 }));
 
                 pollForResults(sessionId);
@@ -890,6 +978,8 @@ function App() {
                 return <CheckCircleIcon sx={{ color: 'success.main' }} />;
             case 'error':
                 return <ErrorIcon sx={{ color: 'error.main' }} />;
+            case 'warning':
+                return <WarningIcon sx={{ color: 'warning.main' }} />;
             case 'cache-hit':
                 return <FlashOnIcon sx={{ color: 'success.main' }} />;
             case 'cache-miss':
@@ -1236,6 +1326,22 @@ function App() {
 
             markdown += `\n## CRITICAL FINDINGS\n\n`;
 
+            // URL Slug Analysis - NEW
+            const urlSlugAnalysis = (report as any).urlSlugAnalysis;
+            if (urlSlugAnalysis && urlSlugAnalysis.issues && urlSlugAnalysis.issues.length > 0) {
+                markdown += `### URL Slug Issues (${urlSlugAnalysis.issues.length}) ⚠️\n\n`;
+                markdown += `| Segment | Issue | Suggestion | Confidence |\n`;
+                markdown += `|---------|-------|------------|------------|\n`;
+                urlSlugAnalysis.issues.forEach((issue: any) => {
+                    markdown += `| ${issue.segment} | Likely typo | **${issue.suggestion}** | ${issue.confidence} |\n`;
+                });
+                markdown += `\n**Impact:** URL typos are particularly problematic because:\n`;
+                markdown += `- Developers bookmark and share these URLs, perpetuating the mistake\n`;
+                markdown += `- Fixing later requires setting up redirects\n`;
+                markdown += `- It signals lack of automated quality checks in the documentation pipeline\n\n`;
+                markdown += `**Recommendation:** Consider fixing this URL and setting up a 301 redirect from the old URL to maintain existing bookmarks.\n\n`;
+            }
+
             // Link Issues (404s and other errors)
             const linkIssues = report.linkAnalysis.linkValidation?.linkIssueFindings || [];
             const brokenLinks = linkIssues.filter((link: any) => link.issueType === '404');
@@ -1358,291 +1464,196 @@ function App() {
 
     return (
         <div className="App">
-            <AppBar position="static">
+            <AppBar position="static" elevation={0}>
                 <Toolbar>
-                    <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 700, letterSpacing: '-0.02em' }}>
-                        Documentation Quality Auditor
-                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', mr: 2 }}>
+                            <Box sx={{
+                                height: 56,
+                                width: 56,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                overflow: 'hidden',
+                                borderRadius: '10px',
+                                border: '1px solid rgba(255,255,255,0.2)',
+                                bgcolor: 'rgba(255,255,255,0.1)',
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+                            }}>
+                                <img src="/logo.png" alt="Perseverance AI Logo" style={{ height: '130%', width: 'auto', objectFit: 'cover' }} />
+                            </Box>
+                        </Box>
+                        <Typography variant="h6" component="div" sx={{ fontWeight: 700, letterSpacing: '-0.01em' }}>
+                            Perseverance AI
+                        </Typography>
+                    </Box>
                 </Toolbar>
             </AppBar>
 
             <Container maxWidth="lg" sx={{ py: 4 }}>
                 <Typography variant="h3" component="h1" gutterBottom align="center" className="hero-title" sx={{ fontWeight: 700, mb: 1 }}>
-                    Technical Documentation that Works!
+                    Lensy Documentation Auditor
+                </Typography>
+                <Typography variant="body1" align="center" sx={{ color: 'text.secondary', mb: 4 }}>
+                    By Perseverance AI — Stop shipping stale docs. Keep your docs as fresh as your code.
                 </Typography>
 
+                <Paper sx={{ p: 4, mb: 4 }}>
+                    <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
+                        <Chip
+                            label="Doc mode"
+                            onClick={() => { setSelectedMode('doc'); setManualModeOverride('doc'); }}
+                            color={selectedMode === 'doc' ? 'primary' : 'default'}
+                            variant={selectedMode === 'doc' ? 'filled' : 'outlined'}
+                            sx={{ fontWeight: 600 }}
+                        />
+                    </Box>
 
-
-                <Paper elevation={3} sx={{ p: 4, mb: 4 }}>
-                    <Typography variant="h5" gutterBottom>
-                        Analyze Documentation
-                    </Typography>
-
-                    <Box component="form" sx={{ mt: 2 }}>
-                        {/* Mode Selection Dropdown */}
-                        <FormControl fullWidth sx={{ mb: 3 }}>
-                            <InputLabel>Analysis Mode</InputLabel>
-                            <Select
-                                value={manualModeOverride || selectedMode}
-                                label="Analysis Mode"
-                                onChange={(e) => {
-                                    const newMode = e.target.value as 'doc' | 'sitemap' | 'issue-discovery';
-                                    setManualModeOverride(newMode);
-                                    setSelectedMode(newMode);
-                                }}
-                                disabled={analysisState.status === 'analyzing'}
-                            >
-                                <MenuItem value="doc">Doc Mode - Individual Page Analysis</MenuItem>
-                                <MenuItem value="sitemap">Sitemap Mode - Bulk Link Health Check</MenuItem>
-                                <MenuItem value="issue-discovery">Issue Discovery Mode - Real Developer Problems</MenuItem>
-                            </Select>
-                        </FormControl>
-
-                        {/* Dynamic Fields Based on Selected Mode */}
-                        {(manualModeOverride || selectedMode) === 'doc' && (
-                            <TextField
-                                fullWidth
-                                label="Documentation URL"
-                                value={url}
-                                onChange={(e) => setUrl(e.target.value)}
-                                placeholder="https://developer.wordpress.org/..."
-                                sx={{ mb: 3 }}
-                                disabled={analysisState.status === 'analyzing'}
-                                helperText="Analyze individual documentation page quality across 5 dimensions"
-                            />
-                        )}
-
-                        {(manualModeOverride || selectedMode) === 'sitemap' && (
-                            <TextField
-                                fullWidth
-                                label="Sitemap URL"
-                                value={url}
-                                onChange={(e) => setUrl(e.target.value)}
-                                placeholder="https://example.com/sitemap.xml"
-                                sx={{ mb: 3 }}
-                                disabled={analysisState.status === 'analyzing'}
-                                helperText="Analyze entire documentation portal for broken links and developer journeys"
-                            />
-                        )}
-
-                        {(manualModeOverride || selectedMode) === 'issue-discovery' && (
-                            <>
-                                <TextField
-                                    fullWidth
-                                    label="Company Domain"
-                                    value={companyDomain}
-                                    onChange={(e) => {
-                                        setCompanyDomain(e.target.value);
-                                        // Clear issues when domain changes
-                                        if (discoveredIssues.length > 0) {
-                                            setDiscoveredIssues([]);
-                                            setSelectedIssues([]);
-                                        }
-                                    }}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter' || e.key === 'Tab') {
+                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+                        <Box sx={{ flexGrow: 1 }}>
+                            {selectedMode === 'issue-discovery' ? (
+                                <>
+                                    <TextField
+                                        fullWidth
+                                        label="Company Domain (e.g. stripe.com)"
+                                        variant="outlined"
+                                        value={companyDomain}
+                                        onChange={(e) => {
+                                            setCompanyDomain(e.target.value);
+                                            if (discoveredIssues.length > 0) {
+                                                setDiscoveredIssues([]);
+                                                setSelectedIssues([]);
+                                            }
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' || e.key === 'Tab') {
+                                                if (companyDomain.trim().length > 3) {
+                                                    searchForDeveloperIssues(companyDomain.trim());
+                                                }
+                                            }
+                                        }}
+                                        onBlur={() => {
                                             if (companyDomain.trim().length > 3) {
                                                 searchForDeveloperIssues(companyDomain.trim());
                                             }
-                                        }
-                                    }}
-                                    onBlur={() => {
-                                        // Also trigger search on blur (when user clicks away)
-                                        if (companyDomain.trim().length > 3) {
-                                            searchForDeveloperIssues(companyDomain.trim());
-                                        }
-                                    }}
-                                    placeholder="resend.com, liveblocks.io, or docs.knock.app"
-                                    sx={{ mb: 3 }}
-                                    disabled={analysisState.status === 'analyzing'}
-                                    helperText="Domain of the documentation portal to investigate (press Tab or Enter to search)"
-                                />
+                                        }}
+                                        placeholder="resend.com, liveblocks.io, or docs.knock.app"
+                                        disabled={analysisState.status === 'analyzing'}
+                                        helperText="Domain to investigate"
+                                    />
 
-                                {/* Dynamic Issues Discovery */}
-                                {isSearchingIssues && (
-                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                                        <CircularProgress size={20} sx={{ mr: 2 }} />
-                                        <Typography variant="body2" color="text.secondary">
-                                            Searching for developer complaints online...
-                                        </Typography>
-                                    </Box>
-                                )}
+                                    {isSearchingIssues && (
+                                        <Box sx={{ display: 'flex', alignItems: 'center', mt: 2, mb: 1 }}>
+                                            <CircularProgress size={16} sx={{ mr: 1.5 }} />
+                                            <Typography variant="caption" color="text.secondary">
+                                                Searching for developer complaints online...
+                                            </Typography>
+                                        </Box>
+                                    )}
 
-                                {discoveredIssues.length > 0 && (
-                                    <Box sx={{ mb: 3 }}>
-                                        <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 'bold' }}>
-                                            Top Issues Found ({discoveredIssues.length}) - Select to analyze:
-                                        </Typography>
-                                        <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
-                                            {discoveredIssues.map((issue, index) => (
-                                                <Box
-                                                    key={issue.id}
-                                                    sx={{
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        p: 1.5,
-                                                        borderBottom: index < discoveredIssues.length - 1 ? '1px solid' : 'none',
-                                                        borderBottomColor: 'divider',
-                                                        bgcolor: selectedIssues.includes(issue.id) ? 'primary.dark' : 'background.paper',
-                                                        '&:hover': {
-                                                            bgcolor: selectedIssues.includes(issue.id) ? 'primary.main' : 'action.hover',
-                                                        },
-                                                        cursor: 'pointer',
-                                                        transition: 'background-color 0.2s'
-                                                    }}
-                                                    onClick={() => {
-                                                        if (selectedIssues.includes(issue.id)) {
-                                                            setSelectedIssues(selectedIssues.filter(id => id !== issue.id));
-                                                        } else {
-                                                            setSelectedIssues([...selectedIssues, issue.id]);
-                                                        }
-                                                    }}
-                                                >
-                                                    <Switch
-                                                        checked={selectedIssues.includes(issue.id)}
-                                                        onChange={() => { }} // Handled by parent onClick
-                                                        disabled={analysisState.status === 'analyzing'}
-                                                        size="small"
-                                                        sx={{ mr: 2 }}
-                                                    />
-                                                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                                                            <Typography variant="body2" sx={{ fontWeight: 'bold', flex: 1 }}>
-                                                                {issue.title}
+                                    {discoveredIssues.length > 0 && (
+                                        <Box sx={{ mt: 3, mb: 1 }}>
+                                            <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 700, color: 'var(--text-primary)' }}>
+                                                Top Issues Found ({discoveredIssues.length}) — Select to analyze:
+                                            </Typography>
+                                            <Box sx={{ border: '1px solid', borderColor: 'var(--border-subtle)', borderRadius: 2, overflow: 'hidden' }}>
+                                                {discoveredIssues.map((issue, index) => (
+                                                    <Box
+                                                        key={issue.id}
+                                                        sx={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            p: 1.5,
+                                                            borderBottom: index < discoveredIssues.length - 1 ? '1px solid' : 'none',
+                                                            borderBottomColor: 'var(--border-subtle)',
+                                                            bgcolor: selectedIssues.includes(issue.id) ? 'rgba(59, 130, 246, 0.05)' : 'transparent',
+                                                            '&:hover': {
+                                                                bgcolor: 'rgba(255, 255, 255, 0.02)',
+                                                            },
+                                                            cursor: 'pointer',
+                                                            transition: 'all 0.2s'
+                                                        }}
+                                                        onClick={() => {
+                                                            if (selectedIssues.includes(issue.id)) {
+                                                                setSelectedIssues(selectedIssues.filter(id => id !== issue.id));
+                                                            } else {
+                                                                setSelectedIssues([...selectedIssues, issue.id]);
+                                                            }
+                                                        }}
+                                                    >
+                                                        <Checkbox
+                                                            checked={selectedIssues.includes(issue.id)}
+                                                            disabled={analysisState.status === 'analyzing'}
+                                                            size="small"
+                                                            sx={{ mr: 1 }}
+                                                        />
+                                                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
+                                                                <Typography variant="body2" sx={{ fontWeight: 600, flex: 1, fontSize: '0.875rem' }}>
+                                                                    {issue.title}
+                                                                </Typography>
+                                                                <Chip
+                                                                    label={`${issue.frequency}`}
+                                                                    size="small"
+                                                                    sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }}
+                                                                />
+                                                            </Box>
+                                                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.75rem' }}>
+                                                                {issue.description}
                                                             </Typography>
-                                                            <Chip
-                                                                label={`${issue.frequency}`}
-                                                                size="small"
-                                                                color="primary"
-                                                                variant="outlined"
-                                                                sx={{ minWidth: 'auto', height: 20, fontSize: '0.7rem' }}
-                                                            />
                                                         </Box>
-                                                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.2 }}>
-                                                            {issue.description}
-                                                        </Typography>
-                                                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem', opacity: 0.7 }}>
-                                                            {issue.sources.slice(0, 2).join(', ')}{issue.sources.length > 2 && ` +${issue.sources.length - 2}`}
-                                                        </Typography>
                                                     </Box>
-                                                </Box>
-                                            ))}
+                                                ))}
+                                            </Box>
                                         </Box>
-                                    </Box>
-                                )}
-
-                                {companyDomain.trim().length > 3 && discoveredIssues.length === 0 && !isSearchingIssues && (
-                                    <Alert severity="info" sx={{ mb: 3 }}>
-                                        No developer issues found for "{companyDomain}". Try a different domain or check the spelling.
-                                    </Alert>
-                                )}
-                            </>
-                        )}
-
-                        <FormControl fullWidth sx={{ mb: 3 }}>
-                            <InputLabel>AI Model</InputLabel>
-                            <Select
-                                value={selectedModel}
-                                label="AI Model"
-                                onChange={(e) => setSelectedModel(e.target.value as any)}
-                                disabled={analysisState.status === 'analyzing'}
-                            >
-                                <MenuItem value="claude">Claude 3.5 Sonnet</MenuItem>
-                            </Select>
-                        </FormControl>
-
-                        {/*
-                        <Grid container spacing={2} sx={{ mb: 3 }}>
-                            <Grid item xs={12} md={6}>
-                                <Card sx={{ bgcolor: 'background.paper', height: '100%' }}>
-                                    <CardContent>
-                                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                            <AnalyticsIcon sx={{ mr: 1, color: 'primary.main' }} />
-                                            <Typography variant="h6">Context Analysis</Typography>
-                                        </Box>
-                                        <FormControlLabel
-                                            control={
-                                                <Switch
-                                                    checked={contextAnalysisEnabled}
-                                                    onChange={(e) => setContextAnalysisEnabled(e.target.checked)}
-                                                    disabled={analysisState.status === 'analyzing' || (manualModeOverride || selectedMode) !== 'doc'}
-                                                />
-                                            }
-                                            label="Include related pages"
-                                        />
-                                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                                            {(manualModeOverride || selectedMode) !== 'doc'
-                                                ? 'Context analysis only available in Doc Mode'
-                                                : 'Analyze parent, child, and sibling pages for better context'
-                                            }
-                                        </Typography>
-                                    </CardContent>
-                                </Card>
-                            </Grid>
-
-                            <Grid item xs={12} md={6}>
-                                <Card sx={{ bgcolor: 'background.paper', height: '100%' }}>
-                                    <CardContent>
-                                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                            <CachedIcon sx={{ mr: 1, color: 'primary.main' }} />
-                                            <Typography variant="h6">Cache Control</Typography>
-                                        </Box>
-                                        <FormControlLabel
-                                            control={
-                                                <Switch
-                                                    checked={cacheEnabled}
-                                                    onChange={(e) => setCacheEnabled(e.target.checked)}
-                                                    disabled={analysisState.status === 'analyzing'}
-                                                />
-                                            }
-                                            label="Enable caching"
-                                        />
-                                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                                            {cacheEnabled
-                                                ? 'Results will be cached for faster subsequent analyses'
-                                                : '⚠️ Testing mode: Cache disabled - fresh analysis every time'}
-                                        </Typography>
-                                    </CardContent>
-                                </Card>
-                            </Grid>
-                        </Grid>
-                        */}
+                                    )}
+                                </>
+                            ) : (
+                                <TextField
+                                    fullWidth
+                                    label={selectedMode === 'sitemap' ? "Sitemap URL" : "Documentation URL"}
+                                    variant="outlined"
+                                    value={url}
+                                    onChange={(e) => setUrl(e.target.value)}
+                                    placeholder={selectedMode === 'sitemap' ? "https://example.com/sitemap.xml" : "https://docs.example.com/getting-started"}
+                                    disabled={analysisState.status === 'analyzing'}
+                                />
+                            )}
+                        </Box>
 
                         <Button
                             variant="contained"
-                            size="large"
                             onClick={handleAnalyze}
                             disabled={analysisState.status === 'analyzing'}
-                            fullWidth
+                            sx={{
+                                height: 56,
+                                minWidth: 120,
+                                px: 4,
+                                boxShadow: '0 0 20px rgba(59, 130, 246, 0.15)',
+                                '&:hover': {
+                                    boxShadow: '0 0 30px rgba(59, 130, 246, 0.25)',
+                                }
+                            }}
                         >
                             {analysisState.status === 'analyzing' ? (
-                                <>
-                                    <CircularProgress size={20} color="inherit" sx={{ mr: 1.5 }} />
-                                    Analyzing...
-                                </>
+                                <CircularProgress size={20} color="inherit" />
                             ) : analysisState.status === 'generating' ? (
-                                <>
-                                    <CircularProgress size={20} color="inherit" sx={{ mr: 1.5 }} />
-                                    Generating Fixes...
-                                </>
+                                'Generating...'
                             ) : analysisState.status === 'applying' ? (
-                                <>
-                                    <CircularProgress size={20} color="inherit" sx={{ mr: 1.5 }} />
-                                    Applying Fixes...
-                                </>
+                                'Applying...'
                             ) : (fixSuccessMessage || (!analysisState.report && currentSessionId)) ? (
-                                'Re-scan Documentation'
+                                'Re-scan'
                             ) : (
-                                `Start ${(manualModeOverride || selectedMode) === 'doc' ? 'Documentation' :
-                                    (manualModeOverride || selectedMode) === 'sitemap' ? 'Sitemap Health' :
-                                        'Issue Discovery'
-                                } Analysis`
+                                'Start'
                             )}
                         </Button>
                     </Box>
 
+                    {/* AI Model Selection hidden per branding guidelines */}
+                    <input type="hidden" name="selectedModel" value={selectedModel} />
+
                     {analysisState.status === 'error' && (
-                        <Alert severity="error" sx={{ mt: 2 }}>
+                        <Alert severity="error" sx={{ mt: 3 }}>
                             {analysisState.error}
                         </Alert>
                     )}
@@ -1679,7 +1690,8 @@ function App() {
                                                         color: msg.type === 'error' ? 'error.main' :
                                                             msg.type === 'success' ? 'success.main' :
                                                                 msg.type === 'cache-hit' ? 'success.main' :
-                                                                    'text.primary'
+                                                                    msg.type === 'warning' ? 'warning.main' :
+                                                                        'text.primary'
                                                     }
                                                 }}
                                             />
@@ -2423,6 +2435,43 @@ function App() {
                                         </CardContent>
                                     </Card>
                                 </Grid>
+
+                                {/* URL Slug Issues - NEW */}
+                                {(analysisState.report as any).urlSlugAnalysis && (
+                                    <Grid item xs={12} md={4}>
+                                        <Card>
+                                            <CardContent>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                                                    {(analysisState.report as any).urlSlugAnalysis.issues?.length ? (
+                                                        <>
+                                                            <ErrorIcon sx={{ color: 'warning.main', mr: 1 }} />
+                                                            <Typography variant="h6">
+                                                                URL Slug Issues: {(analysisState.report as any).urlSlugAnalysis.issues.length}
+                                                            </Typography>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <CheckCircleIcon sx={{ color: 'success.main', mr: 1 }} />
+                                                            <Typography variant="h6">
+                                                                URL Slug Quality: Clean
+                                                            </Typography>
+                                                        </>
+                                                    )}
+                                                </Box>
+                                                {(analysisState.report as any).urlSlugAnalysis.issues?.slice(0, 2).map((issue: any, i: number) => (
+                                                    <Typography key={i} variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                                                        • "{issue.segment}" → "{issue.suggestion}"
+                                                    </Typography>
+                                                ))}
+                                                {((analysisState.report as any).urlSlugAnalysis.issues?.length || 0) > 2 && (
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        ... and {((analysisState.report as any).urlSlugAnalysis.issues?.length || 0) - 2} more
+                                                    </Typography>
+                                                )}
+                                            </CardContent>
+                                        </Card>
+                                    </Grid>
+                                )}
                             </Grid>
 
                             <Alert severity="info" sx={{ mb: 4 }}>

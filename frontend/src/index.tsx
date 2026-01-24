@@ -3,87 +3,81 @@ import ReactDOM from 'react-dom/client';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import App from './App';
+import './index.css';
 
 const theme = createTheme({
     palette: {
         mode: 'dark',
         primary: {
-            main: '#60a5fa', // Soft blue for primary actions
-        },
-        secondary: {
-            main: '#f472b6', // Soft pink for secondary actions
+            main: '#3b82f6', // --accent-primary
         },
         background: {
-            default: '#0f172a', // Deep dark blue-gray background
-            paper: '#1e293b',   // Slightly lighter for cards/papers
+            default: '#0a0a0a', // --bg-primary
+            paper: '#111111',   // --bg-secondary
         },
         text: {
-            primary: '#f1f5f9',   // Very light gray for primary text
-            secondary: '#cbd5e1', // Medium light gray for secondary text
+            primary: '#fafafa',   // --text-primary
+            secondary: '#e5e7eb', // --text-secondary
         },
-        success: {
-            main: '#34d399', // Soft green
-        },
-        warning: {
-            main: '#fbbf24', // Soft amber
-        },
-        error: {
-            main: '#f87171', // Soft red
-        },
-        info: {
-            main: '#60a5fa', // Soft blue
-        },
+        divider: '#1f1f1f', // --border-subtle
     },
     typography: {
-        fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
+        fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         h1: {
-            color: '#f1f5f9',
+            fontWeight: 700,
+            letterSpacing: '-0.02em',
         },
         h2: {
-            color: '#f1f5f9',
+            fontWeight: 700,
+            letterSpacing: '-0.01em',
         },
         h3: {
-            color: '#f1f5f9',
+            fontWeight: 700,
+            letterSpacing: '-0.01em',
         },
         h4: {
-            color: '#f1f5f9',
+            fontWeight: 600,
         },
         h5: {
-            color: '#f1f5f9',
+            fontWeight: 600,
         },
         h6: {
-            color: '#f1f5f9',
-        },
-        body1: {
-            color: '#e2e8f0',
-        },
-        body2: {
-            color: '#cbd5e1',
+            fontWeight: 600,
         },
     },
     components: {
         MuiAppBar: {
             styleOverrides: {
                 root: {
-                    backgroundColor: '#1e293b',
-                    color: '#f1f5f9',
-                },
-            },
-        },
-        MuiCard: {
-            styleOverrides: {
-                root: {
-                    backgroundColor: '#1e293b',
-                    borderRadius: 12,
-                    border: '1px solid #334155',
+                    backgroundColor: 'rgba(10, 10, 10, 0.9)',
+                    backdropFilter: 'blur(12px)',
+                    borderBottom: '1px solid #1f1f1f',
                 },
             },
         },
         MuiPaper: {
             styleOverrides: {
                 root: {
-                    backgroundColor: '#1e293b',
-                    color: '#f1f5f9',
+                    backgroundColor: '#111111',
+                    borderRadius: 12,
+                    border: '1px solid #1f1f1f',
+                },
+            },
+        },
+        MuiButton: {
+            styleOverrides: {
+                root: {
+                    borderRadius: 6,
+                    textTransform: 'none',
+                    fontWeight: 600,
+                },
+            },
+        },
+        MuiChip: {
+            styleOverrides: {
+                root: {
+                    borderRadius: 16,
+                    fontWeight: 500,
                 },
             },
         },
@@ -91,37 +85,8 @@ const theme = createTheme({
             styleOverrides: {
                 root: {
                     '& .MuiOutlinedInput-root': {
-                        color: '#f1f5f9',
-                        '& fieldset': {
-                            borderColor: '#475569',
-                        },
-                        '&:hover fieldset': {
-                            borderColor: '#60a5fa',
-                        },
-                        '&.Mui-focused fieldset': {
-                            borderColor: '#60a5fa',
-                        },
+                        borderRadius: 8,
                     },
-                    '& .MuiInputLabel-root': {
-                        color: '#cbd5e1',
-                    },
-                },
-            },
-        },
-        MuiChip: {
-            styleOverrides: {
-                root: {
-                    backgroundColor: '#334155',
-                    color: '#f1f5f9',
-                },
-            },
-        },
-        MuiAlert: {
-            styleOverrides: {
-                root: {
-                    backgroundColor: '#1e293b',
-                    color: '#f1f5f9',
-                    border: '1px solid #334155',
                 },
             },
         },

@@ -130,3 +130,4 @@ Thumbs.db
 
 # Local development
 *.local
+requirements/

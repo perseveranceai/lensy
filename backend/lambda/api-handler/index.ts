@@ -437,6 +437,7 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
                 },
                 linkAnalysis: processedContent.linkAnalysis || processedContent.enhancedLinkAnalysis || {},
                 ...(contextAnalysis && { contextAnalysis }),
+                urlSlugAnalysis: processedContent.urlSlugAnalysis || undefined, // [NEW] Include URL slug analysis
                 analysisTime: actualAnalysisTime,
                 retryCount: 0,
                 sitemapHealth: cachedSitemapHealth || undefined, // [NEW] Include if found

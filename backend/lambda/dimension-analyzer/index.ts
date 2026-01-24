@@ -308,9 +308,35 @@ export const handler: Handler<any, DimensionAnalyzerResponse> = async (event) =>
 
         // Apply content-type-aware scoring
         const contentType = processedContent.contentType as DocumentationType || 'mixed';
-        const weightedResults = applyContentTypeWeights(dimensionResults, contentType);
+        let weightedResults = applyContentTypeWeights(dimensionResults, contentType);
+
+        // [NEW] Requirement 20: Apply penalties for URL slug typos to Clarity score
+        if (processedContent.urlSlugAnalysis?.issues?.length > 0 && weightedResults.clarity) {
+            const issues = processedContent.urlSlugAnalysis.issues;
+            let penalty = 0;
+
+            issues.forEach((issue: any) => {
+                if (issue.confidence === 'HIGH') penalty += 5;
+                else if (issue.confidence === 'MEDIUM') penalty += 3;
+            });
+
+            // Cap total penalty at 25 points
+            const finalPenalty = Math.min(25, penalty);
+
+            if (finalPenalty > 0 && weightedResults.clarity.score !== null) {
+                const originalClarity = weightedResults.clarity.score;
+                weightedResults.clarity.score = Math.max(0, originalClarity - finalPenalty);
+
+                weightedResults.clarity.findings.push(
+                    `⚠️ Clarity score reduced by ${finalPenalty} points due to ${issues.length} URL slug quality issues (typos detected).`
+                );
+
+                console.log(`Applied URL slug penalty: -${finalPenalty} points to Clarity (from ${originalClarity} to ${weightedResults.clarity.score})`);
+            }
+        }
 
         console.log(`Applied content-type-aware weights for: ${contentType}`);
+
         console.log('All dimensions analyzed in parallel');
 
         // Store dimension results in S3 session location

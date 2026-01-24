@@ -50,6 +50,18 @@ interface FinalReport {
     mediaAnalysis: MediaAnalysisSummary;
     linkAnalysis: LinkAnalysisSummary;
     contextAnalysis?: ContextAnalysisSummary;
+    urlSlugAnalysis?: {
+        analyzedUrl: string;
+        pathSegments: string[];
+        issues: Array<{
+            segment: string;
+            fullPath: string;
+            suggestion: string;
+            confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+            editDistance: number;
+        }>;
+        overallStatus: 'clean' | 'issues-found';
+    };
     // NEW: Sitemap health analysis for sitemap journey mode
     sitemapHealth?: {
         totalUrls: number;
@@ -358,6 +370,7 @@ export const handler: Handler<any, ReportGeneratorResponse> = async (event: any)
                 mediaAnalysis,
                 linkAnalysis,
                 contextAnalysis,
+                urlSlugAnalysis: processedContent?.urlSlugAnalysis, // NEW: Add URL slug analysis
                 analysisTime: totalTime,
                 retryCount: 0,
                 aiReadiness: aiReadinessResults,

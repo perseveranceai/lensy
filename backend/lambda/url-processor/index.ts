@@ -88,6 +88,21 @@ interface ContextAnalysisResult {
     totalPagesAnalyzed: number;
 }
 
+interface UrlSlugIssue {
+    segment: string;           // The problematic word
+    fullPath: string;          // Where in the URL it appears
+    suggestion: string;        // Recommended correction
+    confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+    editDistance: number;      // Levenshtein distance from suggestion
+}
+
+interface UrlSlugAnalysis {
+    analyzedUrl: string;
+    pathSegments: string[];
+    issues: UrlSlugIssue[];
+    overallStatus: 'clean' | 'issues-found';
+}
+
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
 const bedrockClient = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'us-east-1' });
 const dynamoClient = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' });
@@ -140,6 +155,159 @@ function normalizeUrl(url: string): string {
     }
 }
 
+/**
+ * Technical terms allowlist - common abbreviations and tech terms that shouldn't be flagged as typos
+ */
+const TECH_TERMS_ALLOWLIST = [
+    // Common abbreviations
+    'api', 'cli', 'sdk', 'cdn', 'url', 'uri', 'sql', 'css', 'html', 'json', 'xml', 'yaml', 'jwt', 'oauth',
+    // Dev shorthand
+    'async', 'sync', 'auth', 'config', 'init', 'env', 'repo', 'src', 'dist', 'dev', 'prod', 'docs', 'utils',
+    // Common tech terms
+    'webhook', 'frontend', 'backend', 'middleware', 'microservice', 'kubernetes', 'nginx', 'redis',
+    // Version/path segments to skip
+    'v1', 'v2', 'v3', 'next', 'latest', 'beta', 'alpha', 'guides', 'guide', 'tutorial', 'tutorials',
+    // File extensions and common path segments
+    'html', 'htm', 'php', 'jsp', 'aspx', 'pdf', 'md', 'txt',
+    // Common documentation terms
+    'quickstart', 'getting', 'started', 'getstarted', 'intro', 'overview', 'faq', 'faqs'
+];
+
+/**
+ * Common typos dictionary - maps misspelled words to correct spellings
+ */
+const COMMON_TYPOS: { [key: string]: string } = {
+    'steteful': 'stateful',
+    'configration': 'configuration',
+    'authenication': 'authentication',
+    'initalize': 'initialize',
+    'asyncronous': 'asynchronous',
+    'retreive': 'retrieve',
+    'recieve': 'receive',
+    'occured': 'occurred',
+    'seperate': 'separate',
+    'enviroment': 'environment',
+    'persistance': 'persistence',
+    'refrence': 'reference',
+    'defintion': 'definition',
+    'exection': 'execution',
+    'implmentation': 'implementation',
+    'documention': 'documentation',
+    'compatiblity': 'compatibility',
+    'availablity': 'availability',
+    'performace': 'performance'
+};
+
+/**
+ * Calculate Levenshtein distance between two strings
+ */
+function levenshteinDistance(a: string, b: string): number {
+    const matrix: number[][] = [];
+
+    for (let i = 0; i <= b.length; i++) {
+        matrix[i] = [i];
+    }
+
+    for (let j = 0; j <= a.length; j++) {
+        matrix[0][j] = j;
+    }
+
+    for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] = Math.min(
+                    matrix[i - 1][j - 1] + 1, // substitution
+                    matrix[i][j - 1] + 1,     // insertion
+                    matrix[i - 1][j] + 1      // deletion
+                );
+            }
+        }
+    }
+
+    return matrix[b.length][a.length];
+}
+
+/**
+ * Analyze URL slug quality for typos and misspellings
+ */
+function analyzeUrlSlugQuality(url: string): UrlSlugAnalysis {
+    try {
+        const urlObj = new URL(url);
+        const pathname = urlObj.pathname;
+
+        // Extract filename without extension
+        const pathParts = pathname.split('/').filter(part => part.length > 0);
+        const lastPart = pathParts[pathParts.length - 1] || '';
+        const filenameWithoutExt = lastPart.replace(/\.(html?|php|jsp|aspx|pdf|md|txt)$/i, '');
+
+        // Combine all path parts for analysis
+        const allParts = [...pathParts.slice(0, -1), filenameWithoutExt].filter(p => p.length > 0);
+
+        // Split by hyphens and underscores to get individual words
+        const segments: string[] = [];
+        allParts.forEach(part => {
+            const words = part.split(/[-_]/);
+            segments.push(...words);
+        });
+
+        // Filter out empty segments and normalize
+        const normalizedSegments = segments
+            .filter(seg => seg.length > 0)
+            .map(seg => seg.toLowerCase());
+
+        const issues: UrlSlugIssue[] = [];
+
+        // Check each segment
+        normalizedSegments.forEach(segment => {
+            // Skip if in allowlist
+            if (TECH_TERMS_ALLOWLIST.includes(segment)) {
+                return;
+            }
+
+            // Skip very short segments (likely abbreviations)
+            if (segment.length <= 2) {
+                return;
+            }
+
+            // Skip numeric segments
+            if (/^\d+$/.test(segment)) {
+                return;
+            }
+
+            // Check against common typos
+            if (COMMON_TYPOS[segment]) {
+                const suggestion = COMMON_TYPOS[segment];
+                const editDist = levenshteinDistance(segment, suggestion);
+
+                issues.push({
+                    segment,
+                    fullPath: pathname,
+                    suggestion,
+                    confidence: 'HIGH',
+                    editDistance: editDist
+                });
+            }
+        });
+
+        return {
+            analyzedUrl: url,
+            pathSegments: normalizedSegments,
+            issues,
+            overallStatus: issues.length > 0 ? 'issues-found' : 'clean'
+        };
+    } catch (error) {
+        console.error('URL slug analysis failed:', error);
+        return {
+            analyzedUrl: url,
+            pathSegments: [],
+            issues: [],
+            overallStatus: 'clean'
+        };
+    }
+}
+
 export const handler: Handler<URLProcessorEvent, URLProcessorResponse> = async (event) => {
     console.log('Processing URL:', event.url);
 
@@ -149,6 +317,19 @@ export const handler: Handler<URLProcessorEvent, URLProcessorResponse> = async (
     try {
         // Send initial progress
         await progress.progress('Processing URL...', 'url-processing');
+
+        // NEW: Analyze URL slug quality early in the pipeline
+        await progress.info('Analyzing URL slug quality...');
+        const urlSlugAnalysis = analyzeUrlSlugQuality(event.url);
+
+        if (urlSlugAnalysis.overallStatus === 'issues-found') {
+            urlSlugAnalysis.issues.forEach(issue => {
+                console.log(`⚠️ URL slug issue detected: '${issue.segment}' → '${issue.suggestion}' (confidence: ${issue.confidence})`);
+            });
+            await progress.info(`⚠️ Found ${urlSlugAnalysis.issues.length} URL slug issue(s)`);
+        } else {
+            console.log('✓ URL slug quality: No issues found');
+        }
 
         // Check if caching is enabled (default to true for backward compatibility)
         const cacheEnabled = event.cacheControl?.enabled !== false;
@@ -311,6 +492,7 @@ export const handler: Handler<URLProcessorEvent, URLProcessorResponse> = async (
             mediaElements: mediaElements.slice(0, 10), // Limit media elements
             codeSnippets: codeSnippets.slice(0, 15), // Limit code snippets
             contentType,
+            urlSlugAnalysis, // NEW: Add URL slug analysis results
             linkAnalysis: {
                 ...linkAnalysis,
                 linkValidation: {

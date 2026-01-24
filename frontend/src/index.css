@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&display=swap');
+
 :root {
     /* Backgrounds */
     --bg-primary: #0a0a0a;
@@ -23,8 +25,11 @@
     --accent-error: #ef4444;
 
     /* Fonts */
-    --font-sans: 'Plus Jakarta Sans', 'DM Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    --font-mono: 'JetBrains Mono', 'Fira Code', 'Source Code Pro', 'SF Mono', Consolas, monospace;
+    --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-heading: 'Inter', sans-serif;
+    --font-subheading: 'Inter', sans-serif;
+    --font-serif: 'Inter', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
 }
 
 * {
@@ -34,7 +39,7 @@
 }
 
 body {
-    font-family: var(--font-sans);
+    font-family: var(--font-ui);
     background-color: var(--bg-primary);
     color: var(--text-secondary);
     line-height: 1.6;
@@ -47,20 +52,27 @@ body {
 }
 
 h1,
-h2,
+h2 {
+    color: var(--text-primary);
+    font-family: var(--font-heading) !important;
+    font-weight: 700;
+}
+
 h3,
 h4,
 h5,
 h6 {
     color: var(--text-primary);
+    font-family: var(--font-subheading);
     font-weight: 600;
+    letter-spacing: -0.01em;
 }
 
 .hero-title {
-    background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-muted) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    font-family: var(--font-heading) !important;
+    font-weight: 700;
+    font-size: 3.5rem !important;
+    color: var(--text-primary);
 }
 
 /* Material UI Overrides */
@@ -83,7 +95,7 @@ h6 {
     text-transform: none !important;
     font-weight: 600 !important;
     border-radius: 6px !important;
-    font-family: var(--font-sans) !important;
+    font-family: var(--font-ui) !important;
     transition: all 0.2s ease !important;
 }
 
@@ -129,18 +141,17 @@ h6 {
 /* Other UI Elements */
 .MuiAlert-root {
     border-radius: 8px !important;
-    font-family: var(--font-sans) !important;
+    font-family: var(--font-ui) !important;
 }
 
 .MuiChip-root {
-    font-family: var(--font-sans) !important;
+    font-family: var(--font-ui) !important;
     font-weight: 500 !important;
     border-radius: 16px !important;
-    /* Chips are pill-shaped by default, keeping it aesthetic */
 }
 
 .MuiTypography-root {
-    font-family: var(--font-sans) !important;
+    font-family: var(--font-ui) !important;
 }
 
 /* Code Blocks - Rounded 8px */
