@@ -131,3 +131,8 @@ Thumbs.db
 # Local development
 *.local
 requirements/
+
+# Generated workflow definitions
+workflow-definition.json
+workflow-definition-minified.json
+local_wf.json

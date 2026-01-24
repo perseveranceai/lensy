@@ -379,6 +379,7 @@ async function handleStatusRequest(path, corsHeaders) {
                 },
                 linkAnalysis: processedContent.linkAnalysis || processedContent.enhancedLinkAnalysis || {},
                 ...(contextAnalysis && { contextAnalysis }),
+                urlSlugAnalysis: processedContent.urlSlugAnalysis || undefined,
                 analysisTime: actualAnalysisTime,
                 retryCount: 0,
                 sitemapHealth: cachedSitemapHealth || undefined,

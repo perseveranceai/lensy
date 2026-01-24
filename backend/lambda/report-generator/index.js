@@ -203,6 +203,7 @@ const handler = async (event) => {
                 mediaAnalysis,
                 linkAnalysis,
                 contextAnalysis,
+                urlSlugAnalysis: processedContent?.urlSlugAnalysis,
                 analysisTime: totalTime,
                 retryCount: 0,
                 aiReadiness: aiReadinessResults,
