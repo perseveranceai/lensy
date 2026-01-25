@@ -53,6 +53,7 @@ export class LensyStack extends cdk.Stack {
             timeout: cdk.Duration.seconds(30),
             environment: {
                 WS_CONNECTIONS_TABLE: webSocketConnectionsTable.tableName,
+                CONNECTIONS_TABLE: webSocketConnectionsTable.tableName,
             }
         });
         webSocketConnectionsTable.grantReadWriteData(webSocketHandler);
@@ -74,6 +75,7 @@ export class LensyStack extends cdk.Stack {
         });
 
         const wsEndpoint = `https://${webSocketApi.apiId}.execute-api.${this.region}.amazonaws.com/prod`;
+        webSocketHandler.addEnvironment('WEBSOCKET_API_ENDPOINT', wsEndpoint);
 
         // 4. Functional Lambdas
         const commonEnv = {
@@ -163,7 +165,7 @@ export class LensyStack extends cdk.Stack {
         aiReadinessChecker.grantInvoke(stateMachine);
 
         // 6. API Handler and HTTP API
-        const apiHandler = createLambda('ApiHandlerFunction', 'api-handler', 30, 256, {
+        const apiHandler = createLambda('ApiHandlerFunction', 'api-handler', 90, 256, {
             STATE_MACHINE_ARN: stateMachine.stateMachineArn,
             ISSUE_DISCOVERER_FUNCTION_NAME: issueDiscoverer.functionName,
             ISSUE_VALIDATOR_FUNCTION_NAME: issueValidator.functionName,

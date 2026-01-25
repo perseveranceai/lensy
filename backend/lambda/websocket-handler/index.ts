@@ -7,7 +7,7 @@ const dynamoClient = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
 
 // Table to store WebSocket connections
-const CONNECTIONS_TABLE = process.env.CONNECTIONS_TABLE || 'lensy-websocket-connections';
+const CONNECTIONS_TABLE = process.env.WS_CONNECTIONS_TABLE || process.env.CONNECTIONS_TABLE || 'lensy-websocket-connections';
 
 interface WebSocketEvent {
     requestContext: {
@@ -32,6 +32,8 @@ export const handler: Handler<WebSocketEvent, any> = async (event) => {
                 return await handleDisconnect(connectionId);
             case 'subscribe':
                 return await handleSubscribe(connectionId, event.body);
+            case 'ping':
+                return await handlePing(connectionId);
             default:
                 console.log('Unknown route:', routeKey);
                 return { statusCode: 400, body: 'Unknown route' };
@@ -101,6 +103,22 @@ async function handleSubscribe(connectionId: string, body?: string): Promise<any
     }));
 
     return { statusCode: 200, body: 'Subscribed' };
+}
+
+async function handlePing(connectionId: string): Promise<any> {
+    const endpoint = process.env.WEBSOCKET_API_ENDPOINT;
+    if (!endpoint) return { statusCode: 200, body: 'Pong (no endpoint)' };
+
+    const client = new ApiGatewayManagementApiClient({ endpoint });
+    try {
+        await client.send(new PostToConnectionCommand({
+            ConnectionId: connectionId,
+            Data: JSON.stringify({ message: 'pong', timestamp: Date.now() })
+        }));
+    } catch (error) {
+        console.error('Failed to send pong:', error);
+    }
+    return { statusCode: 200, body: 'Pong' };
 }
 
 // Helper function to send progress updates (called by other Lambdas)

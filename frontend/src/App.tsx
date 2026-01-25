@@ -285,7 +285,7 @@ interface ProgressMessage {
     type: 'info' | 'success' | 'error' | 'warning' | 'progress' | 'cache-hit' | 'cache-miss';
     message: string;
     timestamp: number;
-    phase?: 'url-processing' | 'structure-detection' | 'dimension-analysis' | 'report-generation';
+    phase?: 'url-processing' | 'structure-detection' | 'dimension-analysis' | 'report-generation' | 'fix-generation';
     metadata?: {
         dimension?: string;
         score?: number;
@@ -333,6 +333,7 @@ function App() {
     const [selectedRecommendations, setSelectedRecommendations] = useState<string[]>([]);
     const [progressExpanded, setProgressExpanded] = useState(true);
     const wsRef = useRef<WebSocket | null>(null);
+    const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const progressEndRef = useRef<HTMLDivElement>(null);
 
     // Fix Generation State
@@ -381,8 +382,52 @@ function App() {
         };
     }, []);
 
+    const fetchFixesForSession = async (sessionId: string) => {
+        try {
+            const fixesUrl = `${API_BASE_URL}/sessions/${sessionId}/fixes`;
+            const fixesResponse = await fetch(fixesUrl);
+
+            if (fixesResponse.ok) {
+                const fixSession = await fixesResponse.json();
+                setFixes(fixSession.fixes || []);
+                setShowFixPanel(true);
+                console.log('Loaded fixes:', fixSession.fixes);
+                setAnalysisState(prev => ({
+                    ...prev,
+                    status: 'completed'
+                }));
+            } else {
+                console.warn('Could not fetch fixes from S3');
+                setAnalysisState(prev => ({
+                    ...prev,
+                    progressMessages: [...prev.progressMessages, {
+                        type: 'info',
+                        message: 'Fixes ready but not accessible. Please retry re-scan later.',
+                        timestamp: Date.now()
+                    }]
+                }));
+            }
+        } catch (fetchError) {
+            console.error('Error fetching fixes:', fetchError);
+        } finally {
+            setIsGeneratingFixes(false);
+        }
+    };
+
     const connectWebSocket = (sessionId: string): Promise<WebSocket> => {
+        // If already connected and ready, just return the existing socket
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            console.log('Reusing existing WebSocket connection');
+            // Re-subscribe just in case (the backend handler is idempotent for subscriptions)
+            wsRef.current.send(JSON.stringify({
+                action: 'subscribe',
+                sessionId
+            }));
+            return Promise.resolve(wsRef.current);
+        }
+
         return new Promise((resolve, reject) => {
+            console.log('Connecting new WebSocket...');
             const ws = new WebSocket(WEBSOCKET_URL);
             let subscribed = false;
 
@@ -394,6 +439,15 @@ function App() {
                     sessionId
                 }));
                 subscribed = true;
+
+                // Set up heartbeat (ping) every 20 seconds to prevent timeout
+                if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+                pingIntervalRef.current = setInterval(() => {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ action: 'ping' }));
+                    }
+                }, 20000);
+
                 resolve(ws);
             };
 
@@ -407,12 +461,22 @@ function App() {
             ws.onmessage = (event) => {
                 try {
                     const message: ProgressMessage = JSON.parse(event.data);
+                    // Use console.debug for heartbeat to avoid clutter
+                    if (message.message === 'pong') return;
+
                     console.log('Progress update:', message);
 
                     setAnalysisState(prev => ({
                         ...prev,
                         progressMessages: [...prev.progressMessages, message]
                     }));
+
+                    // [NEW] Handle success message from FixGenerator during async invocation
+                    // backend ProgressPublisher.success metadata contains fixCount, but no phase
+                    if (message.type === 'success' && (message.phase === 'fix-generation' || message.metadata?.fixCount !== undefined) && (message.metadata?.fixCount || 0) > 0) {
+                        console.log('Fix generation complete via WebSocket, fetching fixes...');
+                        fetchFixesForSession(sessionId);
+                    }
                 } catch (error) {
                     console.error('Error parsing WebSocket message:', error);
                 }
@@ -420,6 +484,10 @@ function App() {
 
             ws.onclose = () => {
                 console.log('WebSocket disconnected');
+                if (pingIntervalRef.current) {
+                    clearInterval(pingIntervalRef.current);
+                    pingIntervalRef.current = null;
+                }
             };
 
             wsRef.current = ws;
@@ -465,9 +533,7 @@ function App() {
                     }
 
                     if (statusData.report) {
-                        if (wsRef.current) {
-                            wsRef.current.close();
-                        }
+                        // Keep connection for fix generation
 
                         // Add completion message
                         setAnalysisState(prev => ({
@@ -596,6 +662,9 @@ function App() {
             return;
         }
 
+        // Ensure WebSocket is connected before generating fixes
+        await connectWebSocket(currentSessionId);
+
         setIsGeneratingFixes(true);
         setShowFixPanel(false);
         setAnalysisState(prev => ({
@@ -616,7 +685,7 @@ function App() {
                 return result?.recommendations?.[index]?.action;
             }).filter(Boolean);
 
-            // Map selected model to Bedrock ID (matching DimensionAnalyzer)
+            // ... (model mapping logic)
             const modelMap: Record<string, string> = {
                 'claude': 'us.anthropic.claude-3-5-sonnet-20241022-v2:0',
                 'titan': 'amazon.titan-text-premier-v1:0',
@@ -643,69 +712,33 @@ function App() {
             const result = await response.json();
             console.log('Fix generation result:', result);
 
-            setAnalysisState(prev => ({
-                ...prev,
-                status: 'completed',
-                progressMessages: [...prev.progressMessages, {
-                    type: 'success',
-                    message: `Generated ${result.fixCount} fixes`,
-                    timestamp: Date.now()
-                }]
-            }));
-
-            if (result.success && result.fixCount > 0) {
-                // Fetch the fixes from S3 via presigned URL or direct API
-                // For now, we'll fetch from the same session path
-                try {
-                    const fixesUrl = `${API_BASE_URL}/sessions/${currentSessionId}/fixes`;
-                    const fixesResponse = await fetch(fixesUrl);
-
-                    if (fixesResponse.ok) {
-                        const fixSession = await fixesResponse.json();
-                        setFixes(fixSession.fixes || []);
-                        setShowFixPanel(true);
-                        console.log('Loaded fixes:', fixSession.fixes);
-                    } else {
-                        // S3 might not be publicly accessible, show message
-                        console.warn('Could not fetch fixes from S3, they may not be publicly accessible');
-                        setAnalysisState(prev => ({
-                            ...prev,
-                            progressMessages: [...prev.progressMessages, {
-                                type: 'info',
-                                message: `Fixes generated but not yet accessible. Check S3: sessions/${currentSessionId}/fixes.json`,
-                                timestamp: Date.now()
-                            }]
-                        }));
-                        setShowFixPanel(false);
-                    }
-                } catch (fetchError) {
-                    console.error('Error fetching fixes:', fetchError);
-                    setShowFixPanel(false);
-                }
-            } else if (!result.success) {
-                // Handle success: false as an error
+            // [NEW] Handle 202 Accepted (async) vs 200 OK (sync)
+            if (response.status === 202) {
                 setAnalysisState(prev => ({
                     ...prev,
-                    status: 'error',
-                    error: result.message || 'Failed to generate fixes',
+                    status: 'generating', // Keep in generating state until WebSocket message
                     progressMessages: [...prev.progressMessages, {
-                        type: 'error',
-                        message: `Fix generation failed: ${result.message}`,
+                        type: 'info',
+                        message: 'Fix generation request accepted. Waiting for completion...',
                         timestamp: Date.now()
                     }]
                 }));
             } else {
+                // Handle legacy sync response if any
                 setAnalysisState(prev => ({
                     ...prev,
                     status: 'completed',
                     progressMessages: [...prev.progressMessages, {
-                        type: 'info',
-                        message: 'No fixes were generated for this document',
+                        type: 'success',
+                        message: `Generated ${result.fixCount} fixes`,
                         timestamp: Date.now()
                     }]
                 }));
-            }
 
+                if (result.success && result.fixCount > 0 && currentSessionId) {
+                    fetchFixesForSession(currentSessionId);
+                }
+            }
         } catch (error) {
             console.error('Error generating fixes:', error);
             setAnalysisState(prev => ({
@@ -713,7 +746,6 @@ function App() {
                 status: 'error',
                 error: error instanceof Error ? error.message : 'Failed to generate fixes'
             }));
-        } finally {
             setIsGeneratingFixes(false);
         }
     };

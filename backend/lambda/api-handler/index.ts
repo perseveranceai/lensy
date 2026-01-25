@@ -553,35 +553,24 @@ async function handleGenerateFixesRequest(body: string | null, corsHeaders: Reco
     if (!request.sessionId) return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Missing required field: sessionId' }) };
 
     try {
-        console.log(`Invoking FixGenerator for session ${request.sessionId}`);
+        console.log(`Invoking FixGenerator ASYNC for session ${request.sessionId}`);
         const invokeParams = {
             FunctionName: process.env.FIX_GENERATOR_FUNCTION_NAME || 'LensyStack-FixGeneratorFunction',
-            Payload: JSON.stringify({ body: JSON.stringify(request) }) // Pass as API Gateway proxy event body
+            InvocationType: 'Event' as const, // Asynchronous invocation
+            Payload: JSON.stringify({ body: JSON.stringify(request) })
         };
 
-        const result = await lambdaClient.send(new InvokeCommand(invokeParams));
+        await lambdaClient.send(new InvokeCommand(invokeParams));
 
-        if (result.Payload) {
-            const responsePayload = JSON.parse(new TextDecoder().decode(result.Payload));
-            console.log('FixGenerator response:', responsePayload);
-
-            // Check for Lambda execution errors (e.g. Runtime.ImportModuleError)
-            if (responsePayload.errorType || responsePayload.errorMessage) {
-                throw new Error(`FixGenerator Lambda Error: ${responsePayload.errorMessage || responsePayload.errorType}`);
-            }
-
-            // Handle both direct invocation response and proxy response
-            const responseBody = responsePayload.body ? JSON.parse(responsePayload.body) : responsePayload;
-            const statusCode = responsePayload.statusCode || 200;
-
-            return {
-                statusCode,
-                headers: corsHeaders,
-                body: JSON.stringify(responseBody)
-            };
-        } else {
-            throw new Error('No response payload from FixGenerator');
-        }
+        return {
+            statusCode: 202,
+            headers: corsHeaders,
+            body: JSON.stringify({
+                success: true,
+                message: 'Fix generation started asynchronously',
+                sessionId: request.sessionId
+            })
+        };
     } catch (error) {
         console.error('Fix generation failed:', error);
         return {
