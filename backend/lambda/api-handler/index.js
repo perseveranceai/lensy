@@ -287,52 +287,28 @@ async function handleStatusRequest(path, corsHeaders) {
                 console.log('No metadata found, using default model and current time');
             }
             const actualAnalysisTime = Date.now() - analysisStartTime;
-            // [NEW] Try to fetch cached sitemap health data for Doc Mode
+            // [NEW] Try to fetch cached sitemap health data for Doc Mode (session-specific)
             let cachedSitemapHealth = null;
             try {
-                // Get URL from metadata or processed content
-                let targetUrl = '';
-                if (processedContent && processedContent.url) {
-                    targetUrl = processedContent.url;
-                }
-                else {
-                    // Try metadata
-                    const metadataKey = `sessions/${sessionId}/metadata.json`;
-                    const metadataResponse = await s3.send(new GetObjectCommand({
-                        Bucket: bucketName,
-                        Key: metadataKey
-                    }));
-                    const metadataStr = await metadataResponse.Body.transformToString();
-                    const metadata = JSON.parse(metadataStr);
-                    targetUrl = metadata.url || '';
-                }
-                if (targetUrl) {
-                    const urlObj = new URL(targetUrl);
-                    const domain = urlObj.hostname;
-                    const normalizedDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
-                    // Handle special case matching issue-validator logic if needed
-                    const cleanDomain = normalizedDomain === 'knock.app' ? 'docs.knock.app' : normalizedDomain;
-                    const sitemapCacheKey = `sitemap-health-${cleanDomain.replace(/\./g, '-')}.json`;
-                    console.log(`Checking for cached sitemap health at key: ${sitemapCacheKey}`);
-                    const healthResponse = await s3.send(new GetObjectCommand({
-                        Bucket: bucketName,
-                        Key: sitemapCacheKey
-                    }));
-                    const healthContent = await healthResponse.Body.transformToString();
-                    const rawHealth = JSON.parse(healthContent);
-                    // Calculate missing counts that frontend expects
-                    cachedSitemapHealth = {
-                        ...rawHealth,
-                        brokenUrls: rawHealth.linkIssues?.filter((i) => i.issueType === '404').length || 0,
-                        accessDeniedUrls: rawHealth.linkIssues?.filter((i) => i.issueType === 'access-denied').length || 0,
-                        timeoutUrls: rawHealth.linkIssues?.filter((i) => i.issueType === 'timeout').length || 0,
-                        otherErrorUrls: rawHealth.linkIssues?.filter((i) => i.issueType === 'error').length || 0
-                    };
-                    console.log('Successfully retrieved cached sitemap health data for Doc Mode report');
-                }
+                const sitemapHealthKey = `sessions/${sessionId}/doc-mode-sitemap-health.json`;
+                console.log(`Attempting to fetch Doc Mode sitemap health from key: ${sitemapHealthKey}`);
+                const healthResponse = await s3.send(new GetObjectCommand({
+                    Bucket: bucketName,
+                    Key: sitemapHealthKey
+                }));
+                const healthContent = await healthResponse.Body.transformToString();
+                const rawHealth = JSON.parse(healthContent);
+                cachedSitemapHealth = {
+                    ...rawHealth,
+                    brokenUrls: rawHealth.brokenUrls || 0,
+                    accessDeniedUrls: rawHealth.accessDeniedUrls || 0,
+                    timeoutUrls: rawHealth.timeoutUrls || 0,
+                    otherErrorUrls: rawHealth.otherErrorUrls || 0
+                };
+                console.log('Successfully retrieved Doc Mode sitemap health data');
             }
             catch (err) {
-                console.log('No cached sitemap health data found for this domain (Doc Mode):', err);
+                console.log('No Doc Mode sitemap health data found:', err);
                 // Non-blocking
             }
             const validScores = Object.values(dimensionResults)

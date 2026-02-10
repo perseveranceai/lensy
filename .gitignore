@@ -131,6 +131,7 @@ Thumbs.db
 # Local development
 *.local
 requirements/
+.kiro/
 
 # Generated workflow definitions
 workflow-definition.json

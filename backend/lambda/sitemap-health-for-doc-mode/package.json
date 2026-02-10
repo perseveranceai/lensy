@@ -1,0 +1,18 @@
+{
+    "name": "sitemap-health-for-doc-mode",
+    "version": "1.0.0",
+    "description": "Lambda to discover and check sitemap health for Doc Mode",
+    "main": "index.js",
+    "scripts": {
+        "build": "tsc"
+    },
+    "dependencies": {
+        "@aws-sdk/client-s3": "^3.400.0",
+        "@aws-sdk/client-lambda": "^3.400.0",
+        "@aws-sdk/client-apigatewaymanagementapi": "^3.400.0"
+    },
+    "devDependencies": {
+        "@types/node": "^20.0.0",
+        "typescript": "^5.0.0"
+    }
+}

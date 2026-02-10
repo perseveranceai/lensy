@@ -134,38 +134,72 @@ const handler = async (event) => {
             // [NEW] Attempt to retrieve cached Sitemap Health results for the domain
             // This is for including domain-level health in single-page doc reports
             let cachedSitemapHealth = null;
+            // First, try to get doc-mode sitemap health (from parallel execution)
             try {
-                // Extract domain from URL
-                const urlObj = new URL(url);
-                const domain = urlObj.hostname; // e.g. docs.ai12z.net
-                const normalizedDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
-                // Construct cache key matches issue-validator logic
-                const sitemapCacheKey = `sitemap-health-${normalizedDomain.replace(/\./g, '-')}.json`;
-                console.log(`Checking for cached sitemap health at key: ${sitemapCacheKey}`);
-                const sitemapHealthResponse = await s3Client.send(new client_s3_1.GetObjectCommand({
+                const docModeSitemapKey = `sessions/${sessionId}/doc-mode-sitemap-health.json`;
+                console.log(`Checking for doc-mode sitemap health at key: ${docModeSitemapKey}`);
+                const docModeResponse = await s3Client.send(new client_s3_1.GetObjectCommand({
                     Bucket: bucketName,
-                    Key: sitemapCacheKey
+                    Key: docModeSitemapKey
                 }));
-                if (sitemapHealthResponse.Body) {
-                    const content = await sitemapHealthResponse.Body.transformToString();
+                if (docModeResponse.Body) {
+                    const content = await docModeResponse.Body.transformToString();
                     const healthData = JSON.parse(content);
-                    // Transform to internal format if needed, but it matches the interface
-                    cachedSitemapHealth = {
-                        totalUrls: healthData.totalUrls,
-                        healthyUrls: healthData.healthyUrls,
-                        brokenUrls: healthData.brokenUrls,
-                        accessDeniedUrls: healthData.accessDeniedUrls,
-                        timeoutUrls: healthData.timeoutUrls,
-                        otherErrorUrls: healthData.otherErrorUrls,
-                        healthPercentage: healthData.healthPercentage,
-                        linkIssues: healthData.linkIssues || [],
-                        processingTime: healthData.processingTime || 0
-                    };
-                    console.log('Successfully retrieved cached sitemap health data');
+                    if (healthData.sitemapStatus === 'success') {
+                        cachedSitemapHealth = {
+                            totalUrls: healthData.totalUrls,
+                            healthyUrls: healthData.healthyUrls,
+                            brokenUrls: healthData.linkIssues?.filter((i) => i.issueType === '404').length || 0,
+                            accessDeniedUrls: healthData.linkIssues?.filter((i) => i.issueType === 'access-denied').length || 0,
+                            timeoutUrls: healthData.linkIssues?.filter((i) => i.issueType === 'timeout').length || 0,
+                            otherErrorUrls: healthData.linkIssues?.filter((i) => i.issueType === 'error').length || 0,
+                            healthPercentage: healthData.healthPercentage,
+                            linkIssues: healthData.linkIssues || [],
+                            processingTime: healthData.processingTime || 0
+                        };
+                        console.log('Successfully retrieved doc-mode sitemap health data');
+                    }
+                    else {
+                        console.log(`Doc-mode sitemap health status: ${healthData.sitemapStatus}`);
+                    }
                 }
             }
-            catch (error) {
-                console.log('No cached sitemap health data found (optional):', error);
+            catch (docModeError) {
+                console.log('No doc-mode sitemap health found, trying cached sitemap health');
+                // Fallback to cached sitemap health from previous Sitemap Mode run
+                try {
+                    // Extract domain from URL
+                    const urlObj = new URL(url);
+                    const domain = urlObj.hostname; // e.g. docs.ai12z.net
+                    const normalizedDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
+                    // Construct cache key matches issue-validator logic
+                    const sitemapCacheKey = `sitemap-health-${normalizedDomain.replace(/\./g, '-')}.json`;
+                    console.log(`Checking for cached sitemap health at key: ${sitemapCacheKey}`);
+                    const sitemapHealthResponse = await s3Client.send(new client_s3_1.GetObjectCommand({
+                        Bucket: bucketName,
+                        Key: sitemapCacheKey
+                    }));
+                    if (sitemapHealthResponse.Body) {
+                        const content = await sitemapHealthResponse.Body.transformToString();
+                        const healthData = JSON.parse(content);
+                        // Transform to internal format if needed, but it matches the interface
+                        cachedSitemapHealth = {
+                            totalUrls: healthData.totalUrls,
+                            healthyUrls: healthData.healthyUrls,
+                            brokenUrls: healthData.brokenUrls,
+                            accessDeniedUrls: healthData.accessDeniedUrls,
+                            timeoutUrls: healthData.timeoutUrls,
+                            otherErrorUrls: healthData.otherErrorUrls,
+                            healthPercentage: healthData.healthPercentage,
+                            linkIssues: healthData.linkIssues || [],
+                            processingTime: healthData.processingTime || 0
+                        };
+                        console.log('Successfully retrieved cached sitemap health data');
+                    }
+                }
+                catch (error) {
+                    console.log('No cached sitemap health data found (optional):', error);
+                }
             }
             // Use real dimension results if available, otherwise fall back to mock
             const finalDimensionResults = dimensionResults || generateMockDimensionResultsSimple(selectedModel, processedContent);

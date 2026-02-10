@@ -181,13 +181,16 @@ async function parseSitemapRecursively(
         const parsedXml: ParsedSitemap = await new Promise((resolve, reject) => {
             parseString(xmlContent, {
                 explicitArray: true,
-                ignoreAttrs: false,
-                trim: true
+                ignoreAttrs: true,  // Changed to true to simplify parsing
+                trim: true,
+                xmlns: true  // Handle XML namespaces properly
             }, (err: any, result: any) => {
                 if (err) reject(err);
                 else resolve(result);
             });
         });
+
+        console.log('Parsed XML structure:', JSON.stringify(parsedXml, null, 2).substring(0, 500));
 
         let allUrls: string[] = [];
         let nestedSitemapCount = 0;
@@ -198,19 +201,26 @@ async function parseSitemapRecursively(
 
             for (const nestedSitemap of parsedXml.sitemapindex.sitemap) {
                 if (nestedSitemap.loc && nestedSitemap.loc[0]) {
-                    const nestedUrl = nestedSitemap.loc[0].trim();
-                    console.log(`Processing nested sitemap: ${nestedUrl}`);
+                    // Handle both namespace and non-namespace formats
+                    const locValue = typeof nestedSitemap.loc[0] === 'string'
+                        ? nestedSitemap.loc[0]
+                        : (nestedSitemap.loc[0] as any)._ || nestedSitemap.loc[0];
 
-                    const nestedResult = await parseSitemapRecursively(
-                        nestedUrl,
-                        progress,
-                        depth + 1,
-                        maxDepth,
-                        processedUrls
-                    );
+                    const nestedUrl = typeof locValue === 'string' ? locValue.trim() : '';
+                    if (nestedUrl) {
+                        console.log(`Processing nested sitemap: ${nestedUrl}`);
 
-                    allUrls.push(...nestedResult.urls);
-                    nestedSitemapCount += 1 + nestedResult.nestedSitemaps;
+                        const nestedResult = await parseSitemapRecursively(
+                            nestedUrl,
+                            progress,
+                            depth + 1,
+                            maxDepth,
+                            processedUrls
+                        );
+
+                        allUrls.push(...nestedResult.urls);
+                        nestedSitemapCount += 1 + nestedResult.nestedSitemaps;
+                    }
                 }
             }
         }
@@ -221,7 +231,14 @@ async function parseSitemapRecursively(
 
             for (const urlEntry of parsedXml.urlset.url) {
                 if (urlEntry.loc && urlEntry.loc[0]) {
-                    const url = urlEntry.loc[0].trim();
+                    // Handle both namespace and non-namespace formats
+                    // With xmlns: true, loc[0] is an object with '_' property
+                    // Without xmlns, loc[0] is a string
+                    const locValue = typeof urlEntry.loc[0] === 'string'
+                        ? urlEntry.loc[0]
+                        : (urlEntry.loc[0] as any)._ || urlEntry.loc[0];
+
+                    const url = typeof locValue === 'string' ? locValue.trim() : '';
                     if (url && isValidUrl(url)) {
                         allUrls.push(url);
                     }

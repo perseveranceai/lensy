@@ -248,20 +248,21 @@ interface FinalReport {
     };
     // NEW: Sitemap health analysis for sitemap journey mode
     sitemapHealth?: {
-        totalUrls: number;
-        healthyUrls: number;
-        brokenUrls: number;
-        accessDeniedUrls: number;
-        timeoutUrls: number;
-        otherErrorUrls: number;
-        healthPercentage: number;
-        linkIssues: Array<{
+        totalUrls?: number;
+        healthyUrls?: number;
+        brokenUrls?: number;
+        accessDeniedUrls?: number;
+        timeoutUrls?: number;
+        otherErrorUrls?: number;
+        healthPercentage?: number;
+        linkIssues?: Array<{
             url: string;
             status: number | string;
             errorMessage: string;
             issueType: '404' | 'access-denied' | 'timeout' | 'error';
         }>;
         processingTime: number;
+        error?: string; // New field for sitemap-level errors
     };
     cacheStatus: 'hit' | 'miss';
     contextAnalysis?: {
@@ -1264,7 +1265,7 @@ function App() {
             markdown += `- **Other Errors:** ${report.sitemapHealth.otherErrorUrls}\n\n`;
 
             // Show broken links if any
-            if (report.sitemapHealth.linkIssues.length > 0) {
+            if (report.sitemapHealth.linkIssues && report.sitemapHealth.linkIssues.length > 0) {
                 markdown += `## LINK ISSUES DETAILS\n\n`;
 
                 const brokenLinks = report.sitemapHealth.linkIssues.filter(issue => issue.issueType === '404');
@@ -1303,18 +1304,33 @@ function App() {
                         markdown += `   Error: ${issue.errorMessage}\n\n`;
                     });
                 }
+            } else if (report.sitemapHealth.error) {
+                markdown += `## SITEMAP HEALTH ERROR\n\n`;
+                markdown += `⚠️ **Check Failed:** ${report.sitemapHealth.error}\n\n`;
             } else {
                 markdown += `## LINK ISSUES\n\n✓ No broken links found - all URLs are healthy!\n\n`;
             }
 
-        } else {
-            // DOC MODE: Original scoring logic
+        } else if ((manualModeOverride || selectedMode) === 'doc') {
+            // DOC MODE
             markdown += `**Overall Score:** ${report.overallScore}/10\n\n`;
 
             markdown += `## DIMENSION SCORES\n\n`;
             Object.entries(report.dimensions).forEach(([dimension, result]) => {
                 markdown += `**${dimension.charAt(0).toUpperCase() + dimension.slice(1)}:** ${result.score || 'N/A'}/10\n`;
             });
+
+            // DOC MODE SITEMAP HEALTH (if available)
+            if (report.sitemapHealth) {
+                markdown += `\n## SITEMAP HEALTH SUMMARY\n\n`;
+                if (report.sitemapHealth.error) {
+                    markdown += `⚠️ **Check Failed:** ${report.sitemapHealth.error}\n\n`;
+                } else {
+                    markdown += `- **Total URLs:** ${report.sitemapHealth.totalUrls}\n`;
+                    markdown += `- **Healthy:** ${report.sitemapHealth.healthyUrls} (${report.sitemapHealth.healthPercentage}%)\n`;
+                    markdown += `- **Broken (404):** ${report.sitemapHealth.brokenUrls}\n`;
+                }
+            }
 
             // AI Readiness Assessment
             if (report.aiReadiness) {
@@ -1445,22 +1461,30 @@ function App() {
             });
 
             // [NEW] Sitemap Health Status (Domain-level)
+            console.log('Exporting report, sitemapHealth:', report.sitemapHealth);
             if (report.sitemapHealth) {
                 markdown += `\n## SITEMAP HEALTH (Domain Level)\n\n`;
-                markdown += `**Health Score:** ${report.sitemapHealth.healthPercentage}/100\n`;
-                markdown += `**Total URLs:** ${report.sitemapHealth.totalUrls}\n`;
-                markdown += `**Broken URLs:** ${report.sitemapHealth.brokenUrls}\n\n`;
 
-                if (report.sitemapHealth.brokenUrls > 0) {
-                    const broken = report.sitemapHealth.linkIssues.filter(i => i.issueType === '404').slice(0, 10);
-                    markdown += `### Top Broken Links\n`;
-                    broken.forEach(link => {
-                        markdown += `- \`${link.url}\` (404)\n`;
-                    });
-                    if (report.sitemapHealth.brokenUrls > 10) {
-                        markdown += `- ...and ${report.sitemapHealth.brokenUrls - 10} more\n`;
+                if (report.sitemapHealth.error) {
+                    markdown += `⚠️ **Check Failed:** ${report.sitemapHealth.error}\n\n`;
+                } else {
+                    markdown += `**Health Score:** ${report.sitemapHealth.healthPercentage}/100\n`;
+                    markdown += `**Total URLs:** ${report.sitemapHealth.totalUrls}\n`;
+                    markdown += `**Broken URLs:** ${report.sitemapHealth.brokenUrls}\n\n`;
+                }
+
+                if (report.sitemapHealth && (report.sitemapHealth.brokenUrls || 0) > 0) {
+                    if (report.sitemapHealth.linkIssues) {
+                        const broken = report.sitemapHealth.linkIssues.filter(i => i.issueType === '404').slice(0, 10);
+                        markdown += `### Top Broken Links\n`;
+                        broken.forEach(link => {
+                            markdown += `- \`${link.url}\` (404)\n`;
+                        });
+                        if ((report.sitemapHealth.brokenUrls || 0) > 10) {
+                            markdown += `- ...and ${(report.sitemapHealth.brokenUrls || 0) - 10} more\n`;
+                        }
+                        markdown += `\n`;
                     }
-                    markdown += `\n`;
                 }
             }
         }
@@ -2129,89 +2153,98 @@ function App() {
                             </Grid>
                         </Grid>
 
-                        {/* Sitemap Health Summary (only for sitemap mode) */}
+                        {/* Sitemap Health Summary (only for sitemap mode or if doc mode has health data) */}
                         {analysisState.report.sitemapHealth && (
                             <CollapsibleCard
                                 title="Sitemap Health Summary"
                                 defaultExpanded={true}
-                                color={analysisState.report.sitemapHealth.healthPercentage < 100 ? 'warning' : 'success'}
+                                color={analysisState.report.sitemapHealth.error ? 'error' : ((analysisState.report.sitemapHealth.healthPercentage || 0) < 100 ? 'warning' : 'success')}
                             >
-                                <Grid container spacing={3}>
-                                    <Grid item xs={12} md={3}>
-                                        <Card variant="outlined">
-                                            <CardContent sx={{ textAlign: 'center' }}>
-                                                <Typography variant="h3" color="primary">
-                                                    {analysisState.report.sitemapHealth.totalUrls}
+                                {analysisState.report.sitemapHealth.error ? (
+                                    <Alert severity="error" sx={{ mb: 2 }}>
+                                        <Typography variant="subtitle1" fontWeight="bold">Sitemap Check Failed</Typography>
+                                        <Typography variant="body2">{analysisState.report.sitemapHealth.error}</Typography>
+                                    </Alert>
+                                ) : (
+                                    <>
+                                        <Grid container spacing={3}>
+                                            <Grid item xs={12} md={3}>
+                                                <Card variant="outlined">
+                                                    <CardContent sx={{ textAlign: 'center' }}>
+                                                        <Typography variant="h3" color="primary">
+                                                            {analysisState.report.sitemapHealth.totalUrls}
+                                                        </Typography>
+                                                        <Typography variant="h6">Total URLs</Typography>
+                                                    </CardContent>
+                                                </Card>
+                                            </Grid>
+                                            <Grid item xs={12} md={3}>
+                                                <Card variant="outlined">
+                                                    <CardContent sx={{ textAlign: 'center' }}>
+                                                        <Typography variant="h3" color="success.main">
+                                                            {analysisState.report.sitemapHealth.healthyUrls}
+                                                        </Typography>
+                                                        <Typography variant="h6">Healthy</Typography>
+                                                        <Typography variant="body2" color="text.secondary">
+                                                            {analysisState.report.sitemapHealth.healthPercentage}%
+                                                        </Typography>
+                                                    </CardContent>
+                                                </Card>
+                                            </Grid>
+                                            <Grid item xs={12} md={3}>
+                                                <Card variant="outlined">
+                                                    <CardContent sx={{ textAlign: 'center' }}>
+                                                        <Typography variant="h3" color="error.main">
+                                                            {analysisState.report.sitemapHealth.brokenUrls}
+                                                        </Typography>
+                                                        <Typography variant="h6">Broken (404)</Typography>
+                                                    </CardContent>
+                                                </Card>
+                                            </Grid>
+                                            <Grid item xs={12} md={3}>
+                                                <Card variant="outlined">
+                                                    <CardContent sx={{ textAlign: 'center' }}>
+                                                        <Typography variant="h3" color="warning.main">
+                                                            {(analysisState.report.sitemapHealth.accessDeniedUrls || 0) +
+                                                                (analysisState.report.sitemapHealth.timeoutUrls || 0) +
+                                                                (analysisState.report.sitemapHealth.otherErrorUrls || 0)}
+                                                        </Typography>
+                                                        <Typography variant="h6">Other Issues</Typography>
+                                                        <Typography variant="body2" color="text.secondary">
+                                                            {(analysisState.report.sitemapHealth.accessDeniedUrls || 0)} access denied, {' '}
+                                                            {(analysisState.report.sitemapHealth.timeoutUrls || 0)} timeout, {' '}
+                                                            {(analysisState.report.sitemapHealth.otherErrorUrls || 0)} errors
+                                                        </Typography>
+                                                    </CardContent>
+                                                </Card>
+                                            </Grid>
+                                        </Grid>
+                                        {(analysisState.report.sitemapHealth.linkIssues?.length || 0) > 0 && (
+                                            <Box sx={{ mt: 3 }}>
+                                                <Divider sx={{ my: 2 }} />
+                                                <Typography variant="h6" gutterBottom>
+                                                    Link Issues Details ({(analysisState.report.sitemapHealth.linkIssues?.length || 0)})
                                                 </Typography>
-                                                <Typography variant="h6">Total URLs</Typography>
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                    <Grid item xs={12} md={3}>
-                                        <Card variant="outlined">
-                                            <CardContent sx={{ textAlign: 'center' }}>
-                                                <Typography variant="h3" color="success.main">
-                                                    {analysisState.report.sitemapHealth.healthyUrls}
-                                                </Typography>
-                                                <Typography variant="h6">Healthy</Typography>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    {analysisState.report.sitemapHealth.healthPercentage}%
-                                                </Typography>
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                    <Grid item xs={12} md={3}>
-                                        <Card variant="outlined">
-                                            <CardContent sx={{ textAlign: 'center' }}>
-                                                <Typography variant="h3" color="error.main">
-                                                    {analysisState.report.sitemapHealth.brokenUrls}
-                                                </Typography>
-                                                <Typography variant="h6">Broken (404)</Typography>
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                    <Grid item xs={12} md={3}>
-                                        <Card variant="outlined">
-                                            <CardContent sx={{ textAlign: 'center' }}>
-                                                <Typography variant="h3" color="warning.main">
-                                                    {analysisState.report.sitemapHealth.accessDeniedUrls +
-                                                        analysisState.report.sitemapHealth.timeoutUrls +
-                                                        analysisState.report.sitemapHealth.otherErrorUrls}
-                                                </Typography>
-                                                <Typography variant="h6">Other Issues</Typography>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    {analysisState.report.sitemapHealth.accessDeniedUrls} access denied, {' '}
-                                                    {analysisState.report.sitemapHealth.timeoutUrls} timeout, {' '}
-                                                    {analysisState.report.sitemapHealth.otherErrorUrls} errors
-                                                </Typography>
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                </Grid>
-                                {analysisState.report.sitemapHealth.linkIssues.length > 0 && (
-                                    <Box sx={{ mt: 3 }}>
-                                        <Divider sx={{ my: 2 }} />
-                                        <Typography variant="h6" gutterBottom>
-                                            Link Issues Details ({analysisState.report.sitemapHealth.linkIssues.length})
-                                        </Typography>
-                                        <Box sx={{ maxHeight: 300, overflow: 'auto', border: 1, borderColor: 'divider', borderRadius: 1, p: 2 }}>
-                                            {analysisState.report.sitemapHealth.linkIssues.map((issue, index) => (
-                                                <Box key={index} sx={{ mb: 1, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
-                                                    <Typography variant="body2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
-                                                        <span style={{ marginRight: '8px' }}>
-                                                            {issue.issueType === '404' ? '🔴' :
-                                                                issue.issueType === 'access-denied' ? '🟡' :
-                                                                    issue.issueType === 'timeout' ? '🟠' : '⚫'}
-                                                        </span>
-                                                        {issue.url}
-                                                    </Typography>
-                                                    <Typography variant="body2" color="text.secondary" sx={{ ml: 4 }}>
-                                                        {issue.errorMessage}
-                                                    </Typography>
+                                                <Box sx={{ maxHeight: 300, overflow: 'auto', border: 1, borderColor: 'divider', borderRadius: 1, p: 2 }}>
+                                                    {(analysisState.report.sitemapHealth.linkIssues || []).map((issue, index) => (
+                                                        <Box key={index} sx={{ mb: 1, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
+                                                            <Typography variant="body2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
+                                                                <span style={{ marginRight: '8px' }}>
+                                                                    {issue.issueType === '404' ? '🔴' :
+                                                                        issue.issueType === 'access-denied' ? '🟡' :
+                                                                            issue.issueType === 'timeout' ? '🟠' : '⚫'}
+                                                                </span>
+                                                                {issue.url}
+                                                            </Typography>
+                                                            <Typography variant="body2" color="text.secondary" sx={{ ml: 4 }}>
+                                                                {issue.errorMessage}
+                                                            </Typography>
+                                                        </Box>
+                                                    ))}
                                                 </Box>
-                                            ))}
-                                        </Box>
-                                    </Box>
+                                            </Box>
+                                        )}
+                                    </>
                                 )}
                             </CollapsibleCard>
                         )}
