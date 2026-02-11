@@ -2,17 +2,28 @@ import React from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 
 const COOKIE_NAME = 'perseverance_console_token';
+const EMAIL_COOKIE_NAME = 'perseverance_console_email';
 
 function clearCookie(name: string) {
     document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Strict; Secure`;
+}
+
+function getCookie(name: string): string | null {
+    const match = document.cookie.split(';').find(c => c.trim().startsWith(name + '='));
+    if (!match) return null;
+    const val = match.trim().split('=')[1];
+    return val ? decodeURIComponent(val) : null;
 }
 
 function ConsoleLayout() {
     const navigate = useNavigate();
     const location = useLocation();
 
+    const userEmail = getCookie(EMAIL_COOKIE_NAME);
+
     const handleSignOut = () => {
         clearCookie(COOKIE_NAME);
+        clearCookie(EMAIL_COOKIE_NAME);
         navigate('/login');
     };
 
@@ -128,7 +139,17 @@ function ConsoleLayout() {
                         )}
                     </div>
 
-                    {/* Right: Sign Out — white text, ghost button style matching website .btn-secondary */}
+                    {/* Right: User email + Sign Out */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        {userEmail && (
+                            <span style={{
+                                fontFamily: 'var(--font-sans, var(--font-ui))',
+                                fontSize: '0.8125rem',
+                                color: 'var(--text-muted)',
+                            }}>
+                                {userEmail}
+                            </span>
+                        )}
                     <button
                         onClick={handleSignOut}
                         style={{
@@ -156,6 +177,7 @@ function ConsoleLayout() {
                     >
                         Sign Out
                     </button>
+                    </div>
                 </nav>
             </header>
 

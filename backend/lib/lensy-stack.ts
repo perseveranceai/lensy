@@ -50,6 +50,15 @@ export class LensyStack extends cdk.Stack {
             partitionKey: { name: 'sessionId', type: dynamodb.AttributeType.STRING },
         });
 
+        // 2b. Console Access Log — audit trail for login events (IP protection)
+        const consoleAccessLogTable = new dynamodb.Table(this, 'ConsoleAccessLogTable', {
+            partitionKey: { name: 'email', type: dynamodb.AttributeType.STRING },
+            sortKey: { name: 'loginTimestamp', type: dynamodb.AttributeType.STRING },
+            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+            timeToLiveAttribute: 'ttl',
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+        });
+
         // 3. WebSocket API
         const webSocketHandler = new lambda.Function(this, 'WebSocketHandlerFunction', {
             runtime: lambda.Runtime.NODEJS_20_X,
@@ -216,6 +225,22 @@ export class LensyStack extends cdk.Stack {
         httpApi.addRoutes({ path: '/sessions/{sessionId}/fixes', methods: [apigwv2.HttpMethod.GET], integration: apiIntegration });
         httpApi.addRoutes({ path: '/get-fixes/{sessionId}', methods: [apigwv2.HttpMethod.GET], integration: apiIntegration });
 
+        // 6b. Console Login Logger — records login events for audit trail
+        const consoleLoginLogger = new lambda.Function(this, 'ConsoleLoginLoggerFunction', {
+            runtime: lambda.Runtime.NODEJS_20_X,
+            handler: 'index.handler',
+            code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/console-login-logger')),
+            timeout: cdk.Duration.seconds(10),
+            memorySize: 128,
+            environment: {
+                ACCESS_LOG_TABLE: consoleAccessLogTable.tableName,
+            },
+        });
+        consoleAccessLogTable.grantReadWriteData(consoleLoginLogger);
+
+        const loginLoggerIntegration = new apigwv2_integrations.HttpLambdaIntegration('LoginLoggerIntegration', consoleLoginLogger);
+        httpApi.addRoutes({ path: '/console/log-login', methods: [apigwv2.HttpMethod.POST], integration: loginLoggerIntegration });
+
         // ============================================
         // 7. Console Frontend Infrastructure
         //    console.perseveranceai.com
@@ -260,8 +285,10 @@ function handler(event) {
     var cookies = request.cookies;
     var uri = request.uri;
 
-    // Bypass auth for login page and static assets
+    // Bypass auth for login page, legal pages, and static assets
     if (uri === '/login' || uri === '/login/' ||
+        uri === '/terms' || uri === '/terms/' ||
+        uri === '/privacy' || uri === '/privacy/' ||
         uri.startsWith('/static/') ||
         uri.endsWith('.ico') || uri.endsWith('.png') || uri.endsWith('.svg') ||
         uri.endsWith('.woff') || uri.endsWith('.woff2') ||

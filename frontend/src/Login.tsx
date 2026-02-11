@@ -16,14 +16,25 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
  */
 
 const COOKIE_NAME = 'perseverance_console_token';
+const EMAIL_COOKIE_NAME = 'perseverance_console_email';
 const EXPIRY_HOURS = 48;
+const API_BASE_URL = 'https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com';
 
 function setCookie(name: string, value: string, hours: number) {
     const expires = new Date(Date.now() + hours * 60 * 60 * 1000).toUTCString();
     document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Strict; Secure`;
 }
 
+/** Simple SHA-256 hash using Web Crypto API (never store/send plaintext access codes) */
+async function sha256(message: string): Promise<string> {
+    const msgBuffer = new TextEncoder().encode(message);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 function Login() {
+    const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [agreedToTerms, setAgreedToTerms] = useState(false);
@@ -32,14 +43,34 @@ function Login() {
     const [error, setError] = useState(authError ? 'Invalid or expired access code. Please try again.' : '');
     const navigate = useNavigate();
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!email.trim() || !email.includes('@')) {
+            setError('Please enter a valid email address.');
+            return;
+        }
         setLoading(true);
         setError('');
 
-        // Set cookie with password:timestamp — CloudFront Function validates server-side
+        // Set auth cookie with password:timestamp — CloudFront Function validates server-side
         const token = `${password}:${Date.now()}`;
         setCookie(COOKIE_NAME, token, EXPIRY_HOURS);
+
+        // Set email cookie (for display in console header)
+        setCookie(EMAIL_COOKIE_NAME, encodeURIComponent(email.trim().toLowerCase()), EXPIRY_HOURS);
+
+        // Fire-and-forget: log the login event for audit trail
+        sha256(password).then(accessCodeHash => {
+            fetch(`${API_BASE_URL}/console/log-login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: email.trim().toLowerCase(),
+                    accessCodeHash,
+                    userAgent: navigator.userAgent,
+                }),
+            }).catch(() => { /* silently fail — don't block login */ });
+        });
 
         // Brief delay for UX, then redirect to console
         setTimeout(() => {
@@ -121,6 +152,50 @@ function Login() {
                     padding: '2rem',
                 }}>
                     <form onSubmit={handleSubmit}>
+                        {/* Email field */}
+                        <div style={{ marginBottom: '1rem', textAlign: 'left' }}>
+                            <label style={{
+                                display: 'block',
+                                fontFamily: 'var(--font-sans, var(--font-ui))',
+                                fontSize: '0.875rem',
+                                fontWeight: 500,
+                                color: 'var(--text-secondary)',
+                                marginBottom: '0.5rem',
+                            }}>
+                                Email
+                            </label>
+                            <input
+                                type="email"
+                                value={email}
+                                onChange={(e) => { setEmail(e.target.value); setError(''); }}
+                                placeholder="you@company.com"
+                                autoFocus
+                                autoComplete="email"
+                                style={{
+                                    width: '100%',
+                                    padding: '0.875rem 1rem',
+                                    fontFamily: 'var(--font-sans, var(--font-ui))',
+                                    fontSize: '1rem',
+                                    background: 'var(--bg-tertiary)',
+                                    color: 'var(--text-primary)',
+                                    border: '1px solid var(--border-default)',
+                                    borderRadius: '8px',
+                                    outline: 'none',
+                                    transition: 'all 0.2s ease',
+                                    boxSizing: 'border-box' as const,
+                                }}
+                                onFocus={(e) => {
+                                    e.target.style.borderColor = 'var(--accent-primary)';
+                                    e.target.style.boxShadow = '0 0 0 4px rgba(59,130,246,0.1)';
+                                }}
+                                onBlur={(e) => {
+                                    e.target.style.borderColor = 'var(--border-default)';
+                                    e.target.style.boxShadow = 'none';
+                                }}
+                            />
+                        </div>
+
+                        {/* Access Code field */}
                         <div style={{ marginBottom: '1.5rem', textAlign: 'left' }}>
                             <label style={{
                                 display: 'block',
@@ -137,7 +212,6 @@ function Login() {
                                 value={password}
                                 onChange={(e) => { setPassword(e.target.value); setError(''); }}
                                 placeholder="Enter your access code"
-                                autoFocus
                                 style={{
                                     width: '100%',
                                     padding: '0.875rem 1rem',
@@ -237,18 +311,18 @@ function Login() {
 
                         <button
                             type="submit"
-                            disabled={!password || !agreedToTerms || loading}
+                            disabled={!email || !password || !agreedToTerms || loading}
                             style={{
                                 width: '100%',
                                 padding: '0.75rem 1.5rem',
                                 fontFamily: 'var(--font-sans, var(--font-ui))',
                                 fontSize: '0.9375rem',
                                 fontWeight: 600,
-                                background: password && agreedToTerms && !loading ? 'var(--text-primary)' : 'var(--border-strong)',
-                                color: password && agreedToTerms && !loading ? 'var(--bg-primary)' : 'var(--text-muted)',
+                                background: email && password && agreedToTerms && !loading ? 'var(--text-primary)' : 'var(--border-strong)',
+                                color: email && password && agreedToTerms && !loading ? 'var(--bg-primary)' : 'var(--text-muted)',
                                 border: 'none',
                                 borderRadius: '6px',
-                                cursor: password && agreedToTerms && !loading ? 'pointer' : 'not-allowed',
+                                cursor: email && password && agreedToTerms && !loading ? 'pointer' : 'not-allowed',
                                 transition: 'all 0.2s ease',
                             }}
                         >
