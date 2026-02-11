@@ -19,10 +19,12 @@ AI-powered documentation quality auditor with real-time analysis, transparency, 
 
 ## Architecture
 
-- **Frontend**: React with Material-UI running locally (never deployed to AWS)
+- **Frontend**: React 18 + TypeScript + Material-UI, deployed to S3/CloudFront at `console.perseveranceai.com`
+- **Console Shell**: Password-protected portal wrapping Lensy (and future services) with Perseverance AI branding
 - **Backend**: AWS Lambda functions orchestrated by Step Functions (deployed to AWS)
 - **AI Models**: AWS Bedrock integration with Claude, Titan, and Llama
 - **Real-time**: WebSocket API for progress streaming
+- **Auth**: CloudFront Function validates access codes server-side; cookie-based sessions with 48-hour expiry
 - **Infrastructure**: AWS CDK for reproducible deployments
 
 ## Quick Start
@@ -67,9 +69,52 @@ AI-powered documentation quality auditor with real-time analysis, transparency, 
 - **Backend**: Deployed to AWS Lambda via CDK
   - API Gateway: https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com/
   - WebSocket: wss://g2l57hb9ak.execute-api.us-east-1.amazonaws.com/prod
-- **Frontend**: Runs locally via `npm start` in the frontend/ directory
-  - Never deployed to AWS
-  - Connects to deployed AWS backend APIs
+- **Frontend (Console)**: Deployed to S3 + CloudFront via CDK
+  - URL: https://console.perseveranceai.com
+  - S3 bucket for static assets, CloudFront for CDN + auth
+  - CloudFront Function handles password validation server-side
+- **Local Development**: `cd frontend && npm start` for local dev server
+
+## Console Access & Password Management
+
+The console at `console.perseveranceai.com` is protected by access codes. Password validation happens entirely in a **CloudFront Function** — the frontend does not validate passwords. This means passwords are managed in **one place only**.
+
+### How It Works
+
+1. User enters an access code on the login page
+2. Login page sets a cookie (`perseverance_console_token`) with the code and timestamp, then redirects to `/console`
+3. CloudFront Function intercepts every request and validates the cookie server-side
+4. If the code is invalid or expired (48 hours), CloudFront redirects back to `/login?error=auth`
+
+### Adding, Changing, or Extending Access Codes
+
+All access codes live in the `validPasswords` object inside the CloudFront Function defined in `backend/lib/lensy-stack.ts`. To manage access codes:
+
+1. Open `backend/lib/lensy-stack.ts`
+2. Find the `validPasswords` object in the CloudFront Function code
+3. Add, remove, or change entries as needed (format: `'password': true`)
+4. Deploy: `cd backend && cdk deploy`
+
+**No frontend redeployment is needed.** The CloudFront Function updates independently. An IDE agent (e.g., Cursor, Claude Code) can perform this entire flow.
+
+### Example: Adding a New Access Code
+
+```javascript
+// In backend/lib/lensy-stack.ts → CloudFront Function → validPasswords
+var validPasswords = {
+    'existing-code': true,
+    'new-code-for-shawn': true,   // ← just add a new line
+};
+```
+
+Then run:
+```bash
+cd backend && cdk deploy
+```
+
+### Extending Session Duration
+
+The session expiry (default: 48 hours) is also controlled in the CloudFront Function. Find the `EXPIRY_MS` constant in the function code and adjust as needed. The frontend's `EXPIRY_HOURS` in `Login.tsx` should be kept in sync for consistent UX (cookie expiry on the browser side).
 
 ## Testing URLs
 
@@ -104,10 +149,16 @@ Bedrock models are automatically enabled on first use. If you encounter access i
 lensy/
 ├── frontend/                 # React frontend application
 │   ├── src/
-│   │   ├── components/      # React components
+│   │   ├── App.tsx          # Router: login, console shell, protected routes
+│   │   ├── Login.tsx        # Login page (sets cookie, no password validation)
+│   │   ├── ConsoleLayout.tsx # Console shell (header, nav, breadcrumbs, sign out)
+│   │   ├── ConsoleDashboard.tsx # Service card grid (Lensy + future services)
+│   │   ├── LensyApp.tsx     # Lensy service UI (analysis, fixes, reports)
+│   │   ├── components/      # Shared React components
 │   │   └── types/           # TypeScript type definitions
 ├── backend/                 # AWS CDK backend infrastructure
-│   ├── lib/                 # CDK stack definitions
+│   ├── lib/
+│   │   └── lensy-stack.ts   # CDK stack (Lambdas, API GW, CloudFront, auth)
 │   ├── lambda/              # Lambda function source code
 │   ├── lambda-layers/       # Shared Lambda layers
 │   └── bin/                 # CDK app entry point
@@ -134,7 +185,8 @@ This is a comprehensive MVP implementation with all phases complete:
 
 ### Current Deployment Status
 - **Backend**: ✅ Deployed to AWS Lambda
-- **Frontend**: ✅ Runs locally, connects to AWS backend
+- **Console Frontend**: ✅ S3 + CloudFront at `console.perseveranceai.com`
+- **Auth**: ✅ CloudFront Function (server-side password validation, 48-hour sessions)
 - **API Endpoints**: ✅ Active at https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com/
 - **WebSocket**: ✅ Active at wss://g2l57hb9ak.execute-api.us-east-1.amazonaws.com/prod
 - **Lambda Functions**: ✅ All deployed (IssueDiscoverer, IssueValidator, FixGenerator, FixApplicator, AIReadinessChecker, SitemapParser, SitemapHealthChecker)
