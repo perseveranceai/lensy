@@ -177,9 +177,38 @@ function ConsoleLayout() {
                     fontFamily: 'var(--font-sans, var(--font-ui))',
                     fontSize: '0.8125rem',
                     color: 'var(--text-muted)',
-                    margin: 0,
+                    margin: '0 0 0.5rem 0',
                 }}>
-                    &copy; {new Date().getFullYear()} Perseverance AI. All rights reserved.
+                    &copy; {new Date().getFullYear()} Perseverance AI. All rights reserved. Confidential &amp; Proprietary.
+                </p>
+                <p style={{
+                    fontFamily: 'var(--font-sans, var(--font-ui))',
+                    fontSize: '0.75rem',
+                    color: 'var(--text-muted)',
+                    margin: 0,
+                    display: 'flex',
+                    justifyContent: 'center',
+                    gap: '1rem',
+                }}>
+                    <a
+                        href="/terms"
+                        onClick={(e) => { e.preventDefault(); navigate('/terms'); }}
+                        style={{ color: 'var(--text-muted)', textDecoration: 'none', transition: 'color 0.2s' }}
+                        onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-secondary)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+                    >
+                        Terms of Use
+                    </a>
+                    <span style={{ color: 'var(--border-default)' }}>|</span>
+                    <a
+                        href="/privacy"
+                        onClick={(e) => { e.preventDefault(); navigate('/privacy'); }}
+                        style={{ color: 'var(--text-muted)', textDecoration: 'none', transition: 'color 0.2s' }}
+                        onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-secondary)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+                    >
+                        Privacy Policy
+                    </a>
                 </p>
             </footer>
         </div>

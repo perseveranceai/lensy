@@ -4,6 +4,8 @@ import Login from './Login';
 import ConsoleLayout from './ConsoleLayout';
 import ConsoleDashboard from './ConsoleDashboard';
 import LensyApp from './LensyApp';
+import TermsOfUse from './TermsOfUse';
+import PrivacyPolicy from './PrivacyPolicy';
 
 /**
  * Cookie-based auth check (client-side).
@@ -48,6 +50,10 @@ function App() {
             <Routes>
                 {/* Public: Login page */}
                 <Route path="/login" element={<Login />} />
+
+                {/* Public: Legal pages (accessible without auth) */}
+                <Route path="/terms" element={<TermsOfUse />} />
+                <Route path="/privacy" element={<PrivacyPolicy />} />
 
                 {/* Protected: Console shell with nested routes */}
                 <Route

@@ -26,6 +26,7 @@ function setCookie(name: string, value: string, hours: number) {
 function Login() {
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
+    const [agreedToTerms, setAgreedToTerms] = useState(false);
     const [searchParams] = useSearchParams();
     const authError = searchParams.get('error') === 'auth';
     const [error, setError] = useState(authError ? 'Invalid or expired access code. Please try again.' : '');
@@ -178,20 +179,76 @@ function Login() {
                             )}
                         </div>
 
+                        {/* Confidentiality & Terms Agreement */}
+                        <div style={{
+                            marginBottom: '1.5rem',
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '0.625rem',
+                            textAlign: 'left',
+                        }}>
+                            <input
+                                type="checkbox"
+                                id="agree-terms"
+                                checked={agreedToTerms}
+                                onChange={(e) => setAgreedToTerms(e.target.checked)}
+                                style={{
+                                    marginTop: '3px',
+                                    width: '16px',
+                                    height: '16px',
+                                    accentColor: 'var(--accent-primary, #3b82f6)',
+                                    cursor: 'pointer',
+                                    flexShrink: 0,
+                                }}
+                            />
+                            <label
+                                htmlFor="agree-terms"
+                                style={{
+                                    fontFamily: 'var(--font-sans, var(--font-ui))',
+                                    fontSize: '0.8125rem',
+                                    color: 'var(--text-muted)',
+                                    lineHeight: 1.5,
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                I acknowledge this is {' '}
+                                <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>
+                                    confidential beta software
+                                </span>
+                                {' '} and I agree to the{' '}
+                                <a
+                                    href="/terms"
+                                    onClick={(e) => { e.preventDefault(); navigate('/terms'); }}
+                                    style={{ color: 'var(--accent-primary, #3b82f6)', textDecoration: 'underline' }}
+                                >
+                                    Terms of Use
+                                </a>
+                                {' '}and{' '}
+                                <a
+                                    href="/privacy"
+                                    onClick={(e) => { e.preventDefault(); navigate('/privacy'); }}
+                                    style={{ color: 'var(--accent-primary, #3b82f6)', textDecoration: 'underline' }}
+                                >
+                                    Privacy Policy
+                                </a>
+                                .
+                            </label>
+                        </div>
+
                         <button
                             type="submit"
-                            disabled={!password || loading}
+                            disabled={!password || !agreedToTerms || loading}
                             style={{
                                 width: '100%',
                                 padding: '0.75rem 1.5rem',
                                 fontFamily: 'var(--font-sans, var(--font-ui))',
                                 fontSize: '0.9375rem',
                                 fontWeight: 600,
-                                background: password && !loading ? 'var(--text-primary)' : 'var(--border-strong)',
-                                color: password && !loading ? 'var(--bg-primary)' : 'var(--text-muted)',
+                                background: password && agreedToTerms && !loading ? 'var(--text-primary)' : 'var(--border-strong)',
+                                color: password && agreedToTerms && !loading ? 'var(--bg-primary)' : 'var(--text-muted)',
                                 border: 'none',
                                 borderRadius: '6px',
-                                cursor: password && !loading ? 'pointer' : 'not-allowed',
+                                cursor: password && agreedToTerms && !loading ? 'pointer' : 'not-allowed',
                                 transition: 'all 0.2s ease',
                             }}
                         >
