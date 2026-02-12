@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 
 const COOKIE_NAME = 'perseverance_console_token';
 const EMAIL_COOKIE_NAME = 'perseverance_console_email';
+const LOGIN_TS_COOKIE_NAME = 'perseverance_console_login_ts';
+const API_BASE_URL = 'https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com';
 
 function clearCookie(name: string) {
     document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Strict; Secure`;
@@ -18,8 +20,35 @@ function getCookie(name: string): string | null {
 function ConsoleLayout() {
     const navigate = useNavigate();
     const location = useLocation();
+    const verifiedRef = useRef(false);
 
     const userEmail = getCookie(EMAIL_COOKIE_NAME);
+
+    // When user successfully lands on console, mark the login attempt as "verified"
+    // This only fires if CloudFront let them through (valid passcode)
+    useEffect(() => {
+        if (verifiedRef.current) return; // Only verify once per session
+        const loginTs = getCookie(LOGIN_TS_COOKIE_NAME);
+        const email = getCookie(EMAIL_COOKIE_NAME);
+        if (loginTs && email) {
+            verifiedRef.current = true;
+            fetch(`${API_BASE_URL}/console/log-login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email,
+                    action: 'verified',
+                    loginTimestamp: loginTs,
+                    userAgent: navigator.userAgent,
+                }),
+            })
+            .then(() => {
+                // Clear the login timestamp cookie after verifying
+                clearCookie(LOGIN_TS_COOKIE_NAME);
+            })
+            .catch(() => { /* silently fail */ });
+        }
+    }, []);
 
     const handleSignOut = () => {
         clearCookie(COOKIE_NAME);
@@ -48,7 +77,8 @@ function ConsoleLayout() {
                 width: '100%',
                 top: 0,
                 zIndex: 100,
-                padding: '0 1.5rem',
+                padding: '0 1rem',
+                boxSizing: 'border-box',
             }}>
                 <nav style={{
                     maxWidth: '1400px',
@@ -58,125 +88,100 @@ function ConsoleLayout() {
                     alignItems: 'center',
                     height: '56px',
                 }}>
-                    {/* Left: Logo + Console label */}
+                    {/* Left: Logo + Context (AWS Console style) */}
+                    <a
+                        href="/console"
+                        onClick={(e) => { e.preventDefault(); navigate('/console'); }}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.125rem',
+                            textDecoration: 'none',
+                            transition: 'opacity 0.2s ease',
+                            flexShrink: 0,
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.8')}
+                        onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+                    >
+                        <span style={{
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: '1.25rem',
+                            fontWeight: 300,
+                            color: 'var(--text-code)',
+                        }}>{'{'}</span>
+                        <span style={{
+                            fontFamily: 'var(--font-sans, var(--font-ui))',
+                            fontSize: '1.5rem',
+                            fontWeight: 700,
+                            color: 'var(--text-primary)',
+                        }}>P</span>
+                        <span style={{
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: '1.25rem',
+                            fontWeight: 300,
+                            color: 'var(--text-code)',
+                        }}>{'}'}</span>
+                        <span style={{
+                            fontFamily: 'var(--font-sans, var(--font-ui))',
+                            fontSize: '1rem',
+                            fontWeight: 600,
+                            color: 'var(--text-primary)',
+                            marginLeft: '0.5rem',
+                            whiteSpace: 'nowrap',
+                        }}>
+                            {isLensy ? 'Lensy' : 'Console'}
+                        </span>
+                    </a>
+
+                    {/* Right: Email + Sign Out */}
                     <div style={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: '0.75rem',
+                        minWidth: 0,
                     }}>
-                        {/* {P} Logo */}
-                        <a
-                            href="/console"
-                            onClick={(e) => { e.preventDefault(); navigate('/console'); }}
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.125rem',
-                                textDecoration: 'none',
-                                transition: 'opacity 0.2s ease',
-                            }}
-                            onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.8')}
-                            onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
-                        >
-                            <span style={{
-                                fontFamily: 'var(--font-mono)',
-                                fontSize: '1.25rem',
-                                fontWeight: 300,
-                                color: 'var(--text-code)',
-                            }}>{'{'}</span>
-                            <span style={{
-                                fontFamily: 'var(--font-sans, var(--font-ui))',
-                                fontSize: '1.5rem',
-                                fontWeight: 700,
-                                color: 'var(--text-primary)',
-                            }}>P</span>
-                            <span style={{
-                                fontFamily: 'var(--font-mono)',
-                                fontSize: '1.25rem',
-                                fontWeight: 300,
-                                color: 'var(--text-code)',
-                            }}>{'}'}</span>
-                            <span style={{
-                                fontFamily: 'var(--font-sans, var(--font-ui))',
-                                fontSize: '1rem',
-                                fontWeight: 600,
-                                color: 'var(--text-primary)',
-                                marginLeft: '0.5rem',
-                            }}>Perseverance AI</span>
-                        </a>
-
-                        {/* Separator */}
-                        <span style={{
-                            color: 'var(--border-strong)',
-                            fontSize: '1.25rem',
-                            fontWeight: 200,
-                            userSelect: 'none',
-                        }}>|</span>
-
-                        {/* Console label */}
-                        <span style={{
-                            fontFamily: 'var(--font-sans, var(--font-ui))',
-                            fontSize: '0.875rem',
-                            fontWeight: 500,
-                            color: 'var(--text-muted)',
-                        }}>Console</span>
-
-                        {/* Breadcrumb for active service */}
-                        {isLensy && (
-                            <>
-                                <span style={{
-                                    color: 'var(--text-muted)',
-                                    fontSize: '0.875rem',
-                                    userSelect: 'none',
-                                }}>/</span>
-                                <span style={{
-                                    fontFamily: 'var(--font-sans, var(--font-ui))',
-                                    fontSize: '0.875rem',
-                                    fontWeight: 500,
-                                    color: 'var(--text-secondary)',
-                                }}>Lensy</span>
-                            </>
-                        )}
-                    </div>
-
-                    {/* Right: User email + Sign Out */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                         {userEmail && (
                             <span style={{
                                 fontFamily: 'var(--font-sans, var(--font-ui))',
                                 fontSize: '0.8125rem',
                                 color: 'var(--text-muted)',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                minWidth: 0,
                             }}>
                                 {userEmail}
                             </span>
                         )}
-                    <button
-                        onClick={handleSignOut}
-                        style={{
-                            fontFamily: 'var(--font-sans, var(--font-ui))',
-                            fontSize: '0.8125rem',
-                            fontWeight: 600,
-                            color: 'var(--text-secondary)',
-                            background: 'transparent',
-                            border: '1px solid var(--border-default)',
-                            borderRadius: '6px',
-                            padding: '0.4rem 0.875rem',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease',
-                        }}
-                        onMouseEnter={(e) => {
-                            (e.target as HTMLElement).style.color = 'var(--text-primary)';
-                            (e.target as HTMLElement).style.borderColor = 'var(--border-strong)';
-                            (e.target as HTMLElement).style.background = 'var(--bg-tertiary)';
-                        }}
-                        onMouseLeave={(e) => {
-                            (e.target as HTMLElement).style.color = 'var(--text-secondary)';
-                            (e.target as HTMLElement).style.borderColor = 'var(--border-default)';
-                            (e.target as HTMLElement).style.background = 'transparent';
-                        }}
-                    >
-                        Sign Out
-                    </button>
+                        <button
+                            onClick={handleSignOut}
+                            style={{
+                                fontFamily: 'var(--font-sans, var(--font-ui))',
+                                fontSize: '0.8125rem',
+                                fontWeight: 600,
+                                color: 'var(--text-secondary)',
+                                background: 'transparent',
+                                border: '1px solid var(--border-default)',
+                                borderRadius: '6px',
+                                padding: '0.4rem 0.875rem',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                flexShrink: 0,
+                                whiteSpace: 'nowrap',
+                            }}
+                            onMouseEnter={(e) => {
+                                (e.target as HTMLElement).style.color = 'var(--text-primary)';
+                                (e.target as HTMLElement).style.borderColor = 'var(--border-strong)';
+                                (e.target as HTMLElement).style.background = 'var(--bg-tertiary)';
+                            }}
+                            onMouseLeave={(e) => {
+                                (e.target as HTMLElement).style.color = 'var(--text-secondary)';
+                                (e.target as HTMLElement).style.borderColor = 'var(--border-default)';
+                                (e.target as HTMLElement).style.background = 'transparent';
+                            }}
+                        >
+                            Sign Out
+                        </button>
                     </div>
                 </nav>
             </header>
@@ -184,7 +189,7 @@ function ConsoleLayout() {
             {/* Main Content — below fixed header */}
             <main style={{
                 flex: 1,
-                paddingTop: '56px',  /* Header height */
+                paddingTop: '72px',  /* Header height + buffer for mobile wrapping */
             }}>
                 <Outlet />
             </main>

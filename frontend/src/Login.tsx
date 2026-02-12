@@ -17,6 +17,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 
 const COOKIE_NAME = 'perseverance_console_token';
 const EMAIL_COOKIE_NAME = 'perseverance_console_email';
+const LOGIN_TS_COOKIE_NAME = 'perseverance_console_login_ts';
 const EXPIRY_HOURS = 48;
 const API_BASE_URL = 'https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com';
 
@@ -59,7 +60,7 @@ function Login() {
         // Set email cookie (for display in console header)
         setCookie(EMAIL_COOKIE_NAME, encodeURIComponent(email.trim().toLowerCase()), EXPIRY_HOURS);
 
-        // Fire-and-forget: log the login event for audit trail
+        // Log the login attempt and store the loginTimestamp for verification later
         sha256(password).then(accessCodeHash => {
             fetch(`${API_BASE_URL}/console/log-login`, {
                 method: 'POST',
@@ -68,14 +69,25 @@ function Login() {
                     email: email.trim().toLowerCase(),
                     accessCodeHash,
                     userAgent: navigator.userAgent,
+                    action: 'attempt',
                 }),
-            }).catch(() => { /* silently fail — don't block login */ });
+            })
+            .then(res => res.json())
+            .then(data => {
+                // Save loginTimestamp in cookie so ConsoleLayout can send "verified" call
+                if (data.loginTimestamp) {
+                    setCookie(LOGIN_TS_COOKIE_NAME, data.loginTimestamp, EXPIRY_HOURS);
+                }
+            })
+            .catch(() => { /* silently fail — don't block login */ });
         });
 
-        // Brief delay for UX, then redirect to console
+        // Full page redirect so CloudFront Function validates the cookie server-side.
+        // Using window.location (not navigate()) to ensure the request goes through CloudFront.
+        // If password is invalid, CloudFront returns 302 → /login?error=auth
         setTimeout(() => {
-            navigate('/console');
-        }, 300);
+            window.location.href = '/console';
+        }, 500);
     };
 
     return (

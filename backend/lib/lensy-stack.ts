@@ -51,12 +51,13 @@ export class LensyStack extends cdk.Stack {
         });
 
         // 2b. Console Access Log — audit trail for login events (IP protection)
+        // RETAIN: This table stores legal consent records (terms/privacy opt-in) and must survive stack deletion
+        // No TTL — records are kept permanently for legal compliance
         const consoleAccessLogTable = new dynamodb.Table(this, 'ConsoleAccessLogTable', {
             partitionKey: { name: 'email', type: dynamodb.AttributeType.STRING },
             sortKey: { name: 'loginTimestamp', type: dynamodb.AttributeType.STRING },
             billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-            timeToLiveAttribute: 'ttl',
-            removalPolicy: cdk.RemovalPolicy.DESTROY,
+            removalPolicy: cdk.RemovalPolicy.RETAIN,
         });
 
         // 3. WebSocket API
@@ -259,17 +260,10 @@ export class LensyStack extends cdk.Stack {
             validation: acm.CertificateValidation.fromDns(hostedZone),
         });
 
-        // 7c. S3 Bucket for Console Frontend
-        const consoleBucket = new s3.Bucket(this, 'ConsoleFrontendBucket', {
-            bucketName: `lensy-console-${this.account}-${this.region}`,
-            encryption: s3.BucketEncryption.S3_MANAGED,
-            blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-            versioned: true,
-            removalPolicy: cdk.RemovalPolicy.RETAIN,
-            lifecycleRules: [{
-                noncurrentVersionExpiration: cdk.Duration.days(30),
-            }],
-        });
+        // 7c. S3 Bucket for Console Frontend (already exists from prior deploy, importing by name)
+        const consoleBucket = s3.Bucket.fromBucketName(this, 'ConsoleFrontendBucket',
+            `lensy-console-${this.account}-${this.region}`
+        );
 
         // 7d. CloudFront Origin Access Identity
         const consoleOAI = new cloudfront.OriginAccessIdentity(this, 'ConsoleOAI', {
@@ -327,9 +321,10 @@ function handler(event) {
 function isValidToken(token) {
     // UPDATE THESE PASSWORDS AS NEEDED (cdk deploy to apply changes)
     // Format: { 'password': createdTimestampMs }
+    // Passcodes expire 48 hours after CREATION DATE (not login time)
     var validPasswords = {
-        'LensyBeta2026!': 1738281600000,
-        'ShawnBeta2026!': 1739145600000
+        'LensyBeta2026!': 1770854400000,
+        'ShawnBeta2026!': 1770768000000
     };
 
     var parts = token.split(':');
@@ -340,11 +335,15 @@ function isValidToken(token) {
 
     if (!validPasswords[password]) return false;
 
-    // 48 hours = 172800000 ms
-    var expirationMs = 48 * 60 * 60 * 1000;
     var now = Date.now();
+    var passcodeExpiryMs = 48 * 60 * 60 * 1000;
+    var passwordCreatedTime = validPasswords[password];
 
-    if (now - loginTime > expirationMs) return false;
+    // Check if the passcode itself has expired (48hrs from creation)
+    if (now - passwordCreatedTime > passcodeExpiryMs) return false;
+
+    // Check if login session has expired (48hrs from login)
+    if (now - loginTime > passcodeExpiryMs) return false;
 
     return true;
 }

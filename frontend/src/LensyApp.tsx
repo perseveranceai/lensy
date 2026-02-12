@@ -46,6 +46,8 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import FixReviewPanel, { Fix } from './components/FixReviewPanel';
+import jsPDF from 'jspdf';
+import { JAKARTA_REGULAR, JAKARTA_BOLD } from './jakartaFonts';
 
 // [NEW] Collapsible Component Helper
 const CollapsibleCard = ({ title, children, defaultExpanded = true, count = 0, color = "default" }: any) => {
@@ -1313,11 +1315,13 @@ function LensyApp() {
 
         } else if ((manualModeOverride || selectedMode) === 'doc') {
             // DOC MODE
-            markdown += `**Overall Score:** ${report.overallScore}/10\n\n`;
+            markdown += `**Overall Score:** ${report.overallScore}/100\n\n`;
 
             markdown += `## DIMENSION SCORES\n\n`;
             Object.entries(report.dimensions).forEach(([dimension, result]) => {
-                markdown += `**${dimension.charAt(0).toUpperCase() + dimension.slice(1)}:** ${result.score || 'N/A'}/10\n`;
+                const rawScore = result.score || 0;
+                const displayScore = rawScore > 10 ? (rawScore / 10).toFixed(1) : rawScore;
+                markdown += `**${dimension.charAt(0).toUpperCase() + dimension.slice(1)}:** ${displayScore}/10\n`;
             });
 
             // DOC MODE SITEMAP HEALTH (if available)
@@ -1516,6 +1520,913 @@ function LensyApp() {
         setTimeout(() => {
             document.body.removeChild(a);
         }, 100);
+    };
+
+    /** Quick-start user guide PDF */
+    const exportUserGuidePdf = () => {
+        const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        const fn = 'PlusJakartaSans';
+        doc.addFileToVFS('PlusJakartaSans-Regular.ttf', JAKARTA_REGULAR);
+        doc.addFont('PlusJakartaSans-Regular.ttf', fn, 'normal');
+        doc.addFileToVFS('PlusJakartaSans-Bold.ttf', JAKARTA_BOLD);
+        doc.addFont('PlusJakartaSans-Bold.ttf', fn, 'bold');
+        doc.setFont(fn, 'normal');
+
+        const pw = doc.internal.pageSize.getWidth();
+        const ph = doc.internal.pageSize.getHeight();
+        const m = 20;
+        const cw = pw - m * 2;
+        let gy = 0;
+
+        const gColor = {
+            dark: [30, 30, 30] as [number, number, number],
+            body: [30, 30, 30] as [number, number, number],
+            muted: [107, 114, 128] as [number, number, number],
+            light: [156, 163, 175] as [number, number, number],
+            blue: [59, 130, 246] as [number, number, number],
+            border: [229, 231, 235] as [number, number, number],
+        };
+
+        // Footer
+        const guideFooter = () => {
+            doc.setDrawColor(...gColor.border);
+            doc.line(m, ph - 12, pw - m, ph - 12);
+            doc.setFontSize(7);
+            doc.setTextColor(...gColor.light);
+            doc.setFont(fn, 'normal');
+            doc.text(`(c) ${new Date().getFullYear()} Perseverance AI`, m, ph - 7);
+            doc.text('Lensy User Guide', pw - m, ph - 7, { align: 'right' });
+        };
+
+        // --- Cover / Title area ---
+        doc.setFillColor(...gColor.blue);
+        doc.rect(0, 0, pw, 2, 'F');
+
+        // Logo
+        gy = 45;
+        doc.setFont(fn, 'normal');
+        doc.setFontSize(18);
+        const gLogoText = '{  P  }';
+        doc.setFont(fn, 'bold');
+        const gLogoW = doc.getTextWidth(gLogoText);
+        const gLogoX = pw / 2 - gLogoW / 2;
+        doc.setFont(fn, 'normal');
+        doc.setTextColor(...gColor.light);
+        doc.text('{', gLogoX, gy);
+        doc.setFont(fn, 'bold');
+        doc.setFontSize(20);
+        doc.setTextColor(...gColor.dark);
+        doc.text('P', pw / 2 - doc.getTextWidth('P') / 2, gy);
+        doc.setFont(fn, 'normal');
+        doc.setFontSize(18);
+        doc.setTextColor(...gColor.light);
+        doc.text('}', gLogoX + gLogoW - doc.getTextWidth('}'), gy);
+
+        gy += 10;
+        doc.setFontSize(9);
+        doc.setTextColor(...gColor.muted);
+        doc.setFont(fn, 'normal');
+        doc.text('Perseverance AI', pw / 2, gy, { align: 'center' });
+
+        gy += 18;
+        doc.setFontSize(20);
+        doc.setFont(fn, 'bold');
+        doc.setTextColor(...gColor.dark);
+        doc.text('Lensy Quick Start Guide', pw / 2, gy, { align: 'center' });
+
+        gy += 6;
+        doc.setDrawColor(...gColor.border);
+        doc.line(m + 30, gy, pw - m - 30, gy);
+
+        gy += 8;
+        doc.setFontSize(10);
+        doc.setFont(fn, 'normal');
+        doc.setTextColor(...gColor.muted);
+        doc.text('Documentation Quality Auditor', pw / 2, gy, { align: 'center' });
+
+        gy += 5;
+        doc.setFontSize(9);
+        doc.text(new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), pw / 2, gy, { align: 'center' });
+
+        guideFooter();
+
+        // --- Steps ---
+        gy += 20;
+
+        const stepTitle = (num: number, title: string) => {
+            gy += 6;
+            doc.setFontSize(11);
+            doc.setFont(fn, 'bold');
+            doc.setTextColor(...gColor.dark);
+            doc.text(`${num}. ${title}`, m, gy);
+            gy += 6;
+        };
+
+        const stepBody = (text: string) => {
+            doc.setFontSize(10);
+            doc.setFont(fn, 'normal');
+            doc.setTextColor(...gColor.body);
+            const lines = doc.splitTextToSize(text, cw);
+            lines.forEach((line: string) => {
+                doc.text(line, m, gy);
+                gy += 5;
+            });
+        };
+
+        const stepLink = (label: string, url: string) => {
+            doc.setFontSize(9);
+            doc.setFont(fn, 'normal');
+            doc.setTextColor(...gColor.blue);
+            doc.textWithLink(label, m + 4, gy, { url });
+            gy += 5;
+        };
+
+        // Step 1
+        stepTitle(1, 'Open the Console');
+        stepBody('Navigate to the Perseverance AI Console in your browser. You will be presented with the login screen.');
+        stepLink('console.perseveranceai.com', 'https://console.perseveranceai.com');
+        gy += 2;
+
+        // Step 2
+        stepTitle(2, 'Sign In');
+        stepBody('Enter your email address and the access code that was shared with you offline. Check the "I agree to the terms" box, then click "Sign in". Your session remains active for 48 hours.');
+        gy += 2;
+
+        // Step 3
+        stepTitle(3, 'Enter a URL to Analyze');
+        stepBody('Once signed in, you will see the Lensy auditor dashboard. Paste the full URL of the documentation page you want to audit into the input field (e.g. https://docs.example.com/getting-started).');
+        gy += 2;
+
+        // Step 4
+        stepTitle(4, 'Run the Analysis');
+        stepBody('Click "Analyze" to start the audit. Lensy will evaluate the page across multiple quality dimensions including relevance, freshness, clarity, accuracy, and completeness. It also checks sitemap health, link validity, code quality, and AI-readiness. The analysis typically takes 15 to 45 seconds.');
+        gy += 2;
+
+        // Step 5
+        stepTitle(5, 'Review Your Results');
+        stepBody('After the analysis completes, you will see:');
+        gy += 1;
+        const resultItems = [
+            'Overall score (out of 100) with a breakdown by dimension',
+            'Executive summary with strengths, weaknesses, and top actions',
+            'Critical findings (link issues, deprecated code, syntax errors)',
+            'AI-readiness assessment (llms.txt, structured data)',
+            'Sitemap health check for the domain',
+            'Actionable recommendations sorted by priority',
+        ];
+        resultItems.forEach((item, i) => {
+            doc.setFontSize(10);
+            doc.setFont(fn, 'normal');
+            doc.setTextColor(...gColor.body);
+            const lines = doc.splitTextToSize(`${i + 1}. ${item}`, cw - 4);
+            lines.forEach((line: string) => {
+                doc.text(line, m + 4, gy);
+                gy += 5;
+            });
+        });
+        gy += 2;
+
+        // Step 6
+        stepTitle(6, 'Export Your Report');
+        stepBody('Click "Export Report (PDF)" at the bottom of the results to download a branded PDF report. This report follows a structured narrative format and can be shared with your team for review or compliance purposes.');
+        gy += 4;
+
+        // Helpful links section
+        gy += 4;
+        doc.setDrawColor(...gColor.border);
+        doc.line(m, gy, pw - m, gy);
+        gy += 8;
+        doc.setFontSize(11);
+        doc.setFont(fn, 'bold');
+        doc.setTextColor(...gColor.dark);
+        doc.text('Helpful Links', m, gy);
+        gy += 7;
+
+        const links = [
+            { label: 'Perseverance AI Console', url: 'https://console.perseveranceai.com' },
+            { label: 'Perseverance AI Website', url: 'https://perseveranceai.com' },
+        ];
+        links.forEach(link => {
+            doc.setFontSize(10);
+            doc.setFont(fn, 'normal');
+            doc.setTextColor(...gColor.blue);
+            doc.textWithLink(link.label, m + 4, gy, { url: link.url });
+            gy += 6;
+        });
+
+        // Need help note
+        gy += 4;
+        doc.setFontSize(9);
+        doc.setFont(fn, 'normal');
+        doc.setTextColor(...gColor.muted);
+        const helpLines = doc.splitTextToSize('For questions, support, or to request additional access codes, contact your Perseverance AI representative.', cw);
+        helpLines.forEach((line: string) => {
+            doc.text(line, m, gy);
+            gy += 4.5;
+        });
+
+        doc.save(`lensy-quick-start-guide-${new Date().toISOString().split('T')[0]}.pdf`);
+    };
+
+    /** Export report as branded Perseverance AI PDF — Amazon narrative style */
+    const exportPdfReport = (report: FinalReport) => {
+        const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+        // Register Plus Jakarta Sans font
+        const fn = 'PlusJakartaSans';
+        doc.addFileToVFS('PlusJakartaSans-Regular.ttf', JAKARTA_REGULAR);
+        doc.addFont('PlusJakartaSans-Regular.ttf', fn, 'normal');
+        doc.addFileToVFS('PlusJakartaSans-Bold.ttf', JAKARTA_BOLD);
+        doc.addFont('PlusJakartaSans-Bold.ttf', fn, 'bold');
+        doc.setFont(fn, 'normal');
+
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        const margin = 20;
+        const contentWidth = pageWidth - margin * 2;
+        let y = 0;
+
+        // --- Minimal palette: uniform dark text, matching user guide ---
+        const c = {
+            textDark: [30, 30, 30] as [number, number, number],
+            textBody: [30, 30, 30] as [number, number, number],       // same as dark — uniform black
+            textMuted: [100, 100, 100] as [number, number, number],   // only for footer
+            textLight: [156, 163, 175] as [number, number, number],   // only for footer/cover accents
+            blue: [59, 130, 246] as [number, number, number],
+            borderLight: [229, 231, 235] as [number, number, number],
+        };
+
+        // Helper: normalize dimension score to 0-100
+        const normScore100 = (raw: number): number => raw <= 10 ? Math.round(raw * 10) : Math.round(raw);
+        const sz = 10; // standard body font size
+        const lh = 5;  // line height
+
+        const checkPage = (neededHeight: number) => {
+            if (y + neededHeight > pageHeight - 18) {
+                doc.addPage();
+                drawFooter();
+                y = 18;
+            }
+        };
+
+        const drawFooter = () => {
+            doc.setDrawColor(...c.borderLight);
+            doc.line(margin, pageHeight - 12, pageWidth - margin, pageHeight - 12);
+            doc.setFontSize(7);
+            doc.setTextColor(...c.textLight);
+            doc.setFont(fn, 'normal');
+            doc.text(`(c) ${new Date().getFullYear()} Perseverance AI  |  Confidential`, margin, pageHeight - 7);
+            doc.text('Generated by Lensy AI. Mistakes can happen, please double-check.', pageWidth - margin, pageHeight - 7, { align: 'right' });
+        };
+
+        // Section heading: bold, no underline, just spacing
+        const heading = (text: string) => {
+            checkPage(12);
+            y += 6;
+            doc.setFontSize(12);
+            doc.setFont(fn, 'bold');
+            doc.setTextColor(...c.textDark);
+            doc.text(text, margin, y);
+            y += 6;
+        };
+
+        // Sub-heading: bold, same size as body
+        const subheading = (text: string) => {
+            checkPage(10);
+            y += 3;
+            doc.setFontSize(sz);
+            doc.setFont(fn, 'bold');
+            doc.setTextColor(...c.textDark);
+            doc.text(text, margin, y);
+            y += lh + 1;
+        };
+
+        // Paragraph: normal weight, wraps at content width
+        const para = (text: string) => {
+            doc.setFontSize(sz);
+            doc.setFont(fn, 'normal');
+            doc.setTextColor(...c.textBody);
+            const lines = doc.splitTextToSize(text, contentWidth);
+            for (const line of lines) {
+                checkPage(lh);
+                doc.text(line, margin, y);
+                y += lh;
+            }
+        };
+
+        // Inline bold label + normal value on same line
+        const labelValue = (label: string, value: string) => {
+            checkPage(lh + 1);
+            doc.setFontSize(sz);
+            doc.setFont(fn, 'bold');
+            doc.setTextColor(...c.textDark);
+            doc.text(label, margin, y);
+            doc.setFont(fn, 'normal');
+            doc.setTextColor(...c.textBody);
+            doc.text(value, margin + doc.getTextWidth(label + '  '), y);
+            y += lh + 0.5;
+        };
+
+        const isSitemapMode = (manualModeOverride || selectedMode) === 'sitemap';
+
+        // ====== PAGE 1: COVER ======
+
+        // Thin top accent line
+        doc.setFillColor(...c.blue);
+        doc.rect(0, 0, pageWidth, 2, 'F');
+
+        // Logo: { P }
+        y = 55;
+        doc.setFont(fn, 'normal');
+        doc.setFontSize(18);
+        const logoText = '{  P  }';
+        doc.setFont(fn, 'bold');
+        const logoW = doc.getTextWidth(logoText);
+        const logoX = pageWidth / 2 - logoW / 2;
+        doc.setFont(fn, 'normal');
+        doc.setTextColor(...c.textLight);
+        doc.text('{', logoX, y);
+        doc.setFont(fn, 'bold');
+        doc.setFontSize(20);
+        doc.setTextColor(...c.textDark);
+        const pX = pageWidth / 2 - doc.getTextWidth('P') / 2;
+        doc.text('P', pX, y);
+        doc.setFont(fn, 'normal');
+        doc.setFontSize(18);
+        doc.setTextColor(...c.textLight);
+        doc.text('}', logoX + logoW - doc.getTextWidth('}'), y);
+
+        y += 12;
+        doc.setFontSize(10);
+        doc.setTextColor(...c.textMuted);
+        doc.setFont(fn, 'normal');
+        doc.text('Perseverance AI', pageWidth / 2, y, { align: 'center' });
+
+        y += 22;
+        doc.setFontSize(22);
+        doc.setFont(fn, 'bold');
+        doc.setTextColor(...c.textDark);
+        const reportTitle = isSitemapMode && report.sitemapHealth
+            ? 'Sitemap Health Report'
+            : 'Documentation Quality Report';
+        doc.text(reportTitle, pageWidth / 2, y, { align: 'center' });
+
+        y += 8;
+        doc.setDrawColor(...c.borderLight);
+        doc.line(margin + 40, y, pageWidth - margin - 40, y);
+
+        y += 10;
+        doc.setFontSize(10);
+        doc.setFont(fn, 'normal');
+        doc.setTextColor(...c.blue);
+        const displayUrl = url.length > 65 ? url.substring(0, 62) + '...' : url;
+        doc.text(displayUrl, pageWidth / 2, y, { align: 'center' });
+
+        y += 8;
+        doc.setFontSize(9);
+        doc.setTextColor(...c.textMuted);
+        doc.text(new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), pageWidth / 2, y, { align: 'center' });
+
+        // Score box
+        y += 18;
+        const boxW = 56;
+        const boxH = 28;
+        const boxX = pageWidth / 2 - boxW / 2;
+        if (isSitemapMode && report.sitemapHealth) {
+            const pct = report.sitemapHealth.healthPercentage || 0;
+            doc.setDrawColor(...c.textDark);
+            doc.setLineWidth(1);
+            doc.roundedRect(boxX, y, boxW, boxH, 4, 4, 'S');
+            doc.setLineWidth(0.2);
+            doc.setFontSize(22);
+            doc.setFont(fn, 'bold');
+            doc.setTextColor(...c.textDark);
+            doc.text(`${pct}/100`, pageWidth / 2, y + 16, { align: 'center' });
+            doc.setFontSize(7);
+            doc.setTextColor(...c.textMuted);
+            doc.setFont(fn, 'normal');
+            doc.text('HEALTH SCORE', pageWidth / 2, y + 23, { align: 'center' });
+        } else {
+            const score = report.overallScore || 0;
+            doc.setDrawColor(...c.textDark);
+            doc.setLineWidth(1);
+            doc.roundedRect(boxX, y, boxW, boxH, 4, 4, 'S');
+            doc.setLineWidth(0.2);
+            doc.setFontSize(22);
+            doc.setFont(fn, 'bold');
+            doc.setTextColor(...c.textDark);
+            doc.text(`${score}/100`, pageWidth / 2, y + 16, { align: 'center' });
+            doc.setFontSize(7);
+            doc.setTextColor(...c.textMuted);
+            doc.setFont(fn, 'normal');
+            doc.text('OVERALL SCORE', pageWidth / 2, y + 23, { align: 'center' });
+        }
+
+        y += 38;
+        doc.setFontSize(8);
+        doc.setTextColor(...c.textLight);
+        doc.text(`Analysis time: ${(report.analysisTime / 1000).toFixed(1)}s`, pageWidth / 2, y, { align: 'center' });
+
+        drawFooter();
+
+        // ====== PAGE 2+: NARRATIVE BODY ======
+        doc.addPage();
+        drawFooter();
+        y = 18;
+
+        if (isSitemapMode && report.sitemapHealth) {
+            // --- SITEMAP MODE (narrative) ---
+            heading('Sitemap Health Summary');
+            const sh = report.sitemapHealth;
+            para(
+                `The sitemap contains ${sh.totalUrls} URLs in total, of which ${sh.healthyUrls} are healthy (${sh.healthPercentage}%). ` +
+                `Broken links (404): ${sh.brokenUrls || 0}. Access-denied responses (403): ${sh.accessDeniedUrls || 0}. ` +
+                `Timeouts: ${sh.timeoutUrls || 0}. Other errors: ${sh.otherErrorUrls || 0}.`
+            );
+
+            if (sh.linkIssues && sh.linkIssues.length > 0) {
+                heading('Link Issue Details');
+                const broken404 = sh.linkIssues.filter(i => i.issueType === '404');
+                if (broken404.length > 0) {
+                    subheading(`Broken Links (404) - ${broken404.length}`);
+                    broken404.forEach((issue, i) => {
+                        checkPage(lh);
+                        doc.setFontSize(sz);
+                        doc.setFont(fn, 'normal');
+                        doc.setTextColor(...c.textBody);
+                        const line = `${i + 1}. ${issue.url}`;
+                        doc.text(line.length > 100 ? line.substring(0, 97) + '...' : line, margin, y);
+                        y += lh;
+                    });
+                    y += 2;
+                }
+            }
+        } else {
+            // --- DOC MODE (Amazon narrative style) ---
+
+            // Build dimension data
+            const dimEntries = Object.entries(report.dimensions);
+            const strengths: string[] = [];
+            const weaknesses: string[] = [];
+            const improvements: { action: string; impact: string }[] = [];
+
+            dimEntries.forEach(([dim, result]) => {
+                const raw = result.score || 0;
+                const s100 = normScore100(raw);
+                const dimName = dim.charAt(0).toUpperCase() + dim.slice(1);
+                if (s100 >= 85) {
+                    const reason = (result.findings || []).find(f => !f.toLowerCase().startsWith('content type'));
+                    strengths.push(reason ? `${dimName} scored ${s100}/100. ${reason}` : `${dimName} scored ${s100}/100`);
+                } else if (s100 < 70) {
+                    const reason = (result.findings || []).find(f => !f.toLowerCase().startsWith('content type'));
+                    weaknesses.push(reason ? `${dimName} scored ${s100}/100. ${reason}` : `${dimName} scored ${s100}/100`);
+                }
+            });
+
+            // Build Top Actions from across ALL sections
+            // Clean up text: remove em dashes, en dashes, ellipsis, and other AI-looking symbols
+            const cleanText = (text: string): string => {
+                return text
+                    .replace(/\s*[—–]\s*/g, '. ')     // em dash, en dash to period+space
+                    .replace(/\.{2,}/g, '.')            // collapse multiple dots
+                    .replace(/\.\s*\./g, '.')           // collapse ". ." to "."
+                    .replace(/\s{2,}/g, ' ')            // collapse double spaces
+                    .trim();
+            };
+
+            // Top Actions are structured: { action, impact }
+            // 1. AI-Readiness
+            if (report.aiReadiness) {
+                const aiScore = Number(report.aiReadiness.overallScore) || 0;
+                const missingAI: string[] = [];
+                if (!report.aiReadiness.llmsTxt.found) missingAI.push('llms.txt');
+                if (!report.aiReadiness.llmsFullTxt.found) missingAI.push('llms-full.txt');
+                if (!report.aiReadiness.structuredData.hasJsonLd) missingAI.push('structured data (JSON-LD)');
+                if (missingAI.length > 0) {
+                    improvements.push({
+                        action: `AI-readiness scored ${aiScore}/100. Add ${missingAI.join(', ')}`,
+                        impact: 'Without these files, AI assistants cannot discover or accurately reference your documentation, making your content invisible to the fastest-growing discovery channel.'
+                    });
+                }
+            }
+
+            // 2. Sitemap health issues
+            if (report.sitemapHealth) {
+                if (report.sitemapHealth.error) {
+                    const cleanedError = cleanText(report.sitemapHealth.error);
+                    improvements.push({
+                        action: `Sitemap check failed. ${cleanedError}`,
+                        impact: 'A broken sitemap prevents search engines from efficiently crawling and indexing your pages, directly reducing organic search visibility.'
+                    });
+                } else if ((report.sitemapHealth.brokenUrls || 0) > 0) {
+                    improvements.push({
+                        action: `${report.sitemapHealth.brokenUrls} broken URLs found in sitemap need to be fixed`,
+                        impact: 'Broken URLs in the sitemap waste crawl budget and erode search engine trust in your site over time.'
+                    });
+                }
+            }
+
+            // 3. Critical findings
+            const linkIssueCountSummary = report.linkAnalysis.linkValidation?.linkIssueFindings?.length || 0;
+            const deprecatedCountSummary = report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length || 0;
+            const spellingCountSummary = (report.dimensions.clarity?.spellingIssues || []).length;
+            if (linkIssueCountSummary > 0) {
+                improvements.push({
+                    action: `${linkIssueCountSummary} broken or problematic link${linkIssueCountSummary !== 1 ? 's' : ''} need attention`,
+                    impact: 'Broken links frustrate users and signal poor maintenance to search engines, hurting rankings.'
+                });
+            }
+            if (deprecatedCountSummary > 0) {
+                improvements.push({
+                    action: `${deprecatedCountSummary} deprecated code reference${deprecatedCountSummary !== 1 ? 's' : ''} should be updated`,
+                    impact: 'Developers following deprecated examples will hit errors, generating support tickets and eroding trust in your docs.'
+                });
+            }
+            if (spellingCountSummary > 3) {
+                improvements.push({
+                    action: `${spellingCountSummary} spelling errors should be corrected`,
+                    impact: 'Spelling errors reduce credibility and can confuse developers trying to match exact API names or parameters.'
+                });
+            }
+
+            // 4. High-priority dimension recommendations (cleaned, deduplicated)
+            const seenActions: string[] = [];
+            improvements.forEach(imp => seenActions.push(imp.action.toLowerCase().substring(0, 40)));
+
+            const isDuplicate = (action: string): boolean => {
+                const lower = action.toLowerCase();
+                return seenActions.some(seen =>
+                    lower.includes(seen.substring(0, 25)) || seen.includes(lower.substring(0, 25))
+                );
+            };
+
+            dimEntries.forEach(([, result]) => {
+                if (result.recommendations && result.recommendations.length > 0) {
+                    const topRec = result.recommendations[0];
+                    if (topRec.priority === 'high' || (topRec.priority as string) === 'HIGH') {
+                        const cleaned = cleanText(topRec.action);
+                        if (!isDuplicate(cleaned)) {
+                            seenActions.push(cleaned.toLowerCase().substring(0, 40));
+                            improvements.push({ action: cleaned, impact: topRec.impact || '' });
+                        }
+                    }
+                }
+            });
+
+            // 5. Fill from any dimension recommendations if under 3
+            if (improvements.length < 3) {
+                dimEntries.forEach(([, result]) => {
+                    if (result.recommendations && result.recommendations.length > 0 && improvements.length < 5) {
+                        const action = cleanText(result.recommendations[0].action);
+                        if (!isDuplicate(action)) {
+                            seenActions.push(action.toLowerCase().substring(0, 40));
+                            improvements.push({ action, impact: result.recommendations[0].impact || '' });
+                        }
+                    }
+                });
+            }
+
+            // ================================================================
+            // PAGE 2: THE ONE-PAGER (CTO scans this in 2 minutes)
+            // ================================================================
+
+            // --- Executive Summary (2-3 lines) ---
+            heading('Executive Summary');
+            const overallScore = report.overallScore || 0;
+            const scoreVerdict = overallScore >= 80
+                ? 'The page demonstrates strong documentation quality across most dimensions.'
+                : overallScore >= 60
+                ? 'The page meets baseline quality standards but has room for improvement in several areas.'
+                : 'The page has significant quality gaps that should be addressed.';
+            para(`This documentation scored ${overallScore}/100 overall. ${scoreVerdict}`);
+            y += 1;
+
+            // --- Dimension Scores (score + one-line definition) ---
+            const dimDefs: Record<string, string> = {
+                relevance: 'Does the content match what the target audience needs?',
+                freshness: 'Is the content up to date with current versions and practices?',
+                clarity: 'Is the content well-structured, readable, and free of errors?',
+                accuracy: 'Are code samples, configurations, and instructions correct?',
+                completeness: 'Does the page cover the full workflow, edge cases, and next steps?',
+            };
+            subheading('Dimension Scores');
+            dimEntries.forEach(([dimension, result]) => {
+                const s100 = normScore100(result.score || 0);
+                checkPage(lh * 2);
+                doc.setFontSize(sz);
+                const dimLabel = dimension.charAt(0).toUpperCase() + dimension.slice(1);
+                // Dimension name + score on same line
+                doc.setFont(fn, 'bold');
+                doc.setTextColor(...c.textDark);
+                doc.text(dimLabel, margin + 4, y);
+                doc.text(`${s100}/100`, margin + 50, y);
+                // Definition on same line after score
+                const def = dimDefs[dimension.toLowerCase()] || '';
+                if (def) {
+                    doc.setFont(fn, 'normal');
+                    doc.text(def, margin + 68, y);
+                }
+                y += lh + 1;
+            });
+            if (report.aiReadiness) {
+                const aiS = Number(report.aiReadiness.overallScore) || 0;
+                checkPage(lh * 2);
+                doc.setFontSize(sz);
+                doc.setFont(fn, 'bold');
+                doc.setTextColor(...c.textDark);
+                doc.text('AI-Readiness', margin + 4, y);
+                doc.text(`${aiS}/100`, margin + 50, y);
+                doc.setFont(fn, 'normal');
+                doc.text('Can AI assistants discover and use your documentation?', margin + 68, y);
+                y += lh + 1;
+            }
+            y += 2;
+
+            // --- Top 5 Issues: What, Why, Action ---
+            heading('Top 5 Issues');
+            para('The highest-impact findings across all dimensions. Each issue includes what was found, why it matters, and the recommended action.');
+            y += 1;
+
+            improvements.slice(0, 5).forEach((imp, i) => {
+                checkPage(lh * 6);
+                // Issue number + action (bold)
+                doc.setFontSize(sz);
+                doc.setFont(fn, 'bold');
+                doc.setTextColor(...c.textDark);
+                const numPrefix = `${i + 1}. `;
+                const actionX = margin + doc.getTextWidth(numPrefix);
+                doc.text(numPrefix, margin, y);
+                doc.setFont(fn, 'normal');
+                doc.setTextColor(...c.textBody);
+                const actionLines = doc.splitTextToSize(imp.action, contentWidth - doc.getTextWidth(numPrefix));
+                actionLines.forEach((line: string, li: number) => {
+                    checkPage(lh);
+                    doc.text(line, li === 0 ? actionX : actionX, y);
+                    y += lh;
+                });
+                // Why it matters (same dark color, slightly smaller, indented)
+                if (imp.impact) {
+                    doc.setFontSize(sz - 1);
+                    doc.setTextColor(...c.textDark);
+                    const impactLines = doc.splitTextToSize(`Why it matters: ${imp.impact}`, contentWidth - 8);
+                    impactLines.forEach((line: string) => { checkPage(lh); doc.text(line, margin + 8, y); y += lh; });
+                }
+                y += 2;
+            });
+
+            // ================================================================
+            // APPENDIX: EVERYTHING BELOW THE LINE
+            // ================================================================
+            doc.addPage();
+            drawFooter();
+            y = 18;
+
+            // Appendix title
+            y += 4;
+            doc.setFontSize(14);
+            doc.setFont(fn, 'bold');
+            doc.setTextColor(...c.textDark);
+            doc.text('Appendix', margin, y);
+            y += 3;
+            doc.setDrawColor(...c.borderLight);
+            doc.line(margin, y, pageWidth - margin, y);
+            y += 6;
+
+            // --- A1: Sitemap Health ---
+            if (report.sitemapHealth) {
+                heading('Sitemap Health');
+                if (report.sitemapHealth.error) {
+                    para(`The sitemap check was unable to complete. ${cleanText(report.sitemapHealth.error)}`);
+                } else {
+                    const sh = report.sitemapHealth;
+                    para(
+                        `The domain-level sitemap contains ${sh.totalUrls} URLs. Of these, ${sh.healthyUrls} (${sh.healthPercentage}%) are healthy. ` +
+                        `Broken links (404): ${sh.brokenUrls || 0}. Access-denied (403): ${sh.accessDeniedUrls || 0}. Timeouts: ${sh.timeoutUrls || 0}.`
+                    );
+                    if (sh.linkIssues && sh.linkIssues.length > 0) {
+                        subheading(`Link Issues (${sh.linkIssues.length})`);
+                        sh.linkIssues.forEach((issue, i) => {
+                            checkPage(lh);
+                            doc.setFontSize(sz);
+                            doc.setFont(fn, 'normal');
+                            doc.setTextColor(...c.textBody);
+                            const txt = `${i + 1}. [${issue.issueType}] ${issue.url}`;
+                            doc.text(txt.length > 100 ? txt.substring(0, 97) + '...' : txt, margin, y);
+                            y += lh;
+                        });
+                        y += 2;
+                    }
+                }
+            }
+
+            // --- A2: Critical Findings ---
+            heading('Critical Findings');
+            const linkIssueCount = report.linkAnalysis.linkValidation?.linkIssueFindings?.length || 0;
+            const deprecatedCount = report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length || 0;
+            const syntaxErrorCount = report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.length || 0;
+            const urlSlugIssues = (report as any).urlSlugAnalysis?.issues || [];
+
+            const criticalItems = [
+                { label: 'Link Issues', count: linkIssueCount },
+                { label: 'Deprecated Code', count: deprecatedCount },
+                { label: 'Syntax Errors', count: syntaxErrorCount },
+                { label: 'URL Slug Issues', count: urlSlugIssues.length },
+            ];
+            criticalItems.forEach((item, idx) => {
+                checkPage(lh);
+                doc.setFontSize(sz);
+                doc.setFont(fn, 'normal');
+                doc.setTextColor(...c.textBody);
+                const status = item.count > 0 ? `${item.count} found` : 'None found';
+                doc.text(`${idx + 1}. ${item.label}: ${status}`, margin, y);
+                y += lh + 0.5;
+            });
+
+            if (urlSlugIssues.length > 0) {
+                subheading('URL Slug Issues');
+                urlSlugIssues.forEach((issue: any, i: number) => {
+                    checkPage(lh);
+                    doc.setFontSize(sz);
+                    doc.setFont(fn, 'normal');
+                    doc.setTextColor(...c.textBody);
+                    doc.text(`${i + 1}. "${issue.segment}" should be "${issue.suggestion}" (${issue.confidence})`, margin, y);
+                    y += lh;
+                });
+                y += 2;
+            }
+
+            // --- A3: Spelling & Typos ---
+            const spellingIssues = report.dimensions.clarity?.spellingIssues || [];
+            if (spellingIssues.length > 0) {
+                heading('Spelling and Typos');
+                para(`${spellingIssues.length} spelling issue${spellingIssues.length !== 1 ? 's were' : ' was'} detected in the documentation.`);
+                spellingIssues.forEach((m, idx) => {
+                    checkPage(lh);
+                    doc.setFontSize(sz);
+                    doc.setFont(fn, 'normal');
+                    doc.setTextColor(...c.textBody);
+                    doc.text(`${idx + 1}. "${m.incorrect}" should be "${m.correct}"`, margin, y);
+                    y += lh;
+                });
+                y += 2;
+            }
+
+            // --- A4: Configuration & Code Issues ---
+            const configIssues = report.dimensions.accuracy?.codeIssues || [];
+            if (configIssues.length > 0) {
+                heading('Configuration and Code Issues');
+                para(`${configIssues.length} code or configuration issue${configIssues.length !== 1 ? 's were' : ' was'} identified.`);
+                configIssues.forEach((issue, i) => {
+                    subheading(`${i + 1}. ${issue.type.toUpperCase()}`);
+                    para(issue.description);
+                    labelValue('Location:', issue.location);
+                });
+            }
+
+            // --- A5: Link Issues ---
+            const linkIssues = report.linkAnalysis.linkValidation?.linkIssueFindings || [];
+            if (linkIssues.length > 0) {
+                heading('Link Issues');
+                para(`${linkIssues.length} link issue${linkIssues.length !== 1 ? 's were' : ' was'} found during validation.`);
+                linkIssues.forEach((link: any, i: number) => {
+                    checkPage(lh);
+                    doc.setFontSize(sz);
+                    doc.setFont(fn, 'normal');
+                    doc.setTextColor(...c.textBody);
+                    const linkLine = `${i + 1}. [${link.issueType}] "${link.anchorText || 'Link'}" links to ${link.url}`;
+                    doc.text(linkLine.length > 100 ? linkLine.substring(0, 97) + '...' : linkLine, margin, y);
+                    y += lh;
+                });
+                y += 2;
+            }
+
+            // --- A6: Deprecated Code ---
+            const deprecatedCode = report.codeAnalysis.enhancedAnalysis?.deprecatedFindings || [];
+            if (deprecatedCode.length > 0) {
+                heading('Deprecated Code');
+                para(`${deprecatedCode.length} deprecated API${deprecatedCode.length !== 1 ? 's were' : ' was'} found.`);
+                deprecatedCode.forEach((finding, i) => {
+                    subheading(`${i + 1}. ${finding.method}`);
+                    labelValue('Location:', finding.location);
+                    labelValue('Deprecated in:', finding.deprecatedIn);
+                    labelValue('Replacement:', finding.replacement);
+                });
+            }
+
+            // --- A7: AI-Readiness (detailed) ---
+            if (report.aiReadiness) {
+                heading('AI-Readiness Assessment');
+                const ai = report.aiReadiness;
+                labelValue('Overall AI Score:', `${ai.overallScore}/100`);
+                y += 1;
+                const aiItems = [
+                    { label: 'llms.txt', found: ai.llmsTxt.found, impact: 'AI assistants (ChatGPT, Copilot, Perplexity) cannot discover or reference your documentation. This is the fastest-growing traffic channel and your content is invisible to it.' },
+                    { label: 'llms-full.txt', found: ai.llmsFullTxt.found, impact: 'AI tools that do find your site can only work with partial content, leading to incomplete or inaccurate answers about your product.' },
+                    { label: 'Structured Data (JSON-LD)', found: ai.structuredData.hasJsonLd, impact: 'Search engines cannot build rich results (FAQs, how-tos, breadcrumbs) for your pages, reducing click-through rates from search.' },
+                ];
+                aiItems.forEach((item, idx) => {
+                    checkPage(lh * 3);
+                    doc.setFontSize(sz);
+                    doc.setFont(fn, 'normal');
+                    doc.setTextColor(...c.textBody);
+                    const status = item.found ? 'Found' : 'Missing';
+                    doc.text(`${idx + 1}. ${item.label}: ${status}`, margin, y);
+                    y += lh + 0.5;
+                    if (!item.found) {
+                        doc.setFontSize(sz - 1);
+                        doc.setTextColor(...c.textDark);
+                        const impactLines = doc.splitTextToSize(`Impact: ${item.impact}`, contentWidth - 6);
+                        impactLines.forEach((line: string) => { checkPage(lh); doc.text(line, margin + 6, y); y += lh; });
+                    }
+                });
+                y += 2;
+            }
+
+            // --- A8: All Recommendations (sorted, deduplicated) ---
+            const priorityOrder: Record<string, number> = { high: 0, HIGH: 0, medium: 1, MEDIUM: 1, low: 2, LOW: 2 };
+            const allRecsRaw = Object.entries(report.dimensions)
+                .flatMap(([dim, result]) => (result.recommendations || []).map(rec => ({ ...rec, dimension: dim })))
+                .sort((a, b) => (priorityOrder[a.priority] ?? 3) - (priorityOrder[b.priority] ?? 3));
+
+            const allRecs: typeof allRecsRaw = [];
+            const recFingerprints: string[] = [];
+            allRecsRaw.forEach(rec => {
+                const fp = rec.action.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 50);
+                const isSimilar = recFingerprints.some(existing => {
+                    const shorter = Math.min(fp.length, existing.length, 30);
+                    let matches = 0;
+                    for (let ci = 0; ci < shorter; ci++) { if (fp[ci] === existing[ci]) matches++; }
+                    return matches / shorter > 0.6;
+                });
+                if (!isSimilar) {
+                    allRecs.push(rec);
+                    recFingerprints.push(fp);
+                }
+            });
+
+            if (allRecs.length > 0) {
+                heading('All Recommendations');
+                allRecs.forEach((rec: any, i: number) => {
+                    checkPage(lh * 3);
+                    doc.setFontSize(sz);
+                    doc.setFont(fn, 'bold');
+                    doc.setTextColor(...c.textDark);
+                    const numPrefix = `${i + 1}. `;
+                    doc.text(numPrefix, margin, y);
+                    const actionX = margin + doc.getTextWidth(numPrefix);
+                    doc.setFont(fn, 'normal');
+                    doc.setTextColor(...c.textBody);
+                    const actionLines = doc.splitTextToSize(rec.action, contentWidth - doc.getTextWidth(numPrefix));
+                    actionLines.forEach((line: string, li: number) => {
+                        checkPage(lh);
+                        doc.text(line, li === 0 ? actionX : margin + doc.getTextWidth(numPrefix), y);
+                        y += lh;
+                    });
+                    doc.setFontSize(sz);
+                    doc.setFont(fn, 'normal');
+                    doc.setTextColor(...c.textMuted);
+                    checkPage(lh);
+                    doc.text(`${rec.priority?.toUpperCase()} priority, ${rec.impact} impact, ${rec.dimension}`, margin + doc.getTextWidth(numPrefix), y);
+                    y += lh + 1;
+                });
+            }
+
+            // --- A9: Dimension Analysis (detailed findings) ---
+            heading('Dimension Analysis');
+            para('Detailed findings for each quality dimension are listed below.');
+
+            dimEntries.forEach(([dimension, result]) => {
+                const s100 = normScore100(result.score || 0);
+                subheading(`${dimension.charAt(0).toUpperCase() + dimension.slice(1)} - ${s100}/100`);
+
+                const findings = (result.findings || []).filter(
+                    (f: string) => !f.toLowerCase().startsWith('content type')
+                );
+                if (findings.length > 0) {
+                    findings.forEach((finding: string, idx: number) => {
+                        checkPage(lh);
+                        doc.setFontSize(sz);
+                        doc.setFont(fn, 'normal');
+                        doc.setTextColor(...c.textBody);
+                        const lines = doc.splitTextToSize(`${idx + 1}. ${finding}`, contentWidth);
+                        lines.forEach((line: string) => {
+                            checkPage(lh);
+                            doc.text(line, margin, y);
+                            y += lh;
+                        });
+                    });
+                } else {
+                    para('No major findings.');
+                }
+                y += 2;
+            });
+        }
+
+        // Save
+        const pdfFilename = isSitemapMode && report.sitemapHealth
+            ? `sitemap-health-report-${new Date().toISOString().split('T')[0]}.pdf`
+            : `documentation-quality-report-${new Date().toISOString().split('T')[0]}.pdf`;
+        doc.save(pdfFilename);
     };
 
     return (
@@ -2531,11 +3442,8 @@ function LensyApp() {
                             </Alert>
                         </CollapsibleCard>
 
-                        {/* Simplified Recommendations - Top 5 */}
-                        <CollapsibleCard title="Select Fixes (Recommendations)" defaultExpanded={false} color="info">
-                            <Alert severity="info" sx={{ mb: 2 }}>
-                                Select the issues you would like Lensy to automatically fix for you.
-                            </Alert>
+                        {/* Top Recommendations */}
+                        <CollapsibleCard title="Top Recommendations" defaultExpanded={false} color="info">
                             <Grid container spacing={2}>
                                 {(() => {
                                     // Flatten all recommendations from all dimensions
@@ -2547,7 +3455,6 @@ function LensyApp() {
 
                                     return top5.map((rec: any, i: number) => {
                                         const recId = `${rec.dimension}-${i}`;
-                                        const isSelected = selectedRecommendations.includes(recId);
 
                                         return (
                                             <Grid item xs={12} key={recId}>
@@ -2555,27 +3462,28 @@ function LensyApp() {
                                                     variant="outlined"
                                                     sx={{
                                                         p: 2,
-                                                        bgcolor: isSelected ? 'rgba(33, 150, 243, 0.08)' : 'background.paper',
-                                                        borderColor: isSelected ? 'primary.main' : 'divider',
                                                         borderRadius: 2,
                                                         display: 'flex',
                                                         alignItems: 'flex-start',
-                                                        cursor: 'pointer',
-                                                        '&:hover': { bgcolor: isSelected ? 'rgba(33, 150, 243, 0.12)' : 'rgba(255, 255, 255, 0.02)' }
-                                                    }}
-                                                    onClick={() => {
-                                                        if (isSelected) {
-                                                            setSelectedRecommendations(selectedRecommendations.filter(id => id !== recId));
-                                                        } else {
-                                                            setSelectedRecommendations([...selectedRecommendations, recId]);
-                                                        }
                                                     }}
                                                 >
-                                                    <Checkbox
-                                                        checked={isSelected}
-                                                        sx={{ mt: -0.5, ml: -1 }}
-                                                    />
-                                                    <Box sx={{ ml: 1, flexGrow: 1 }}>
+                                                    <Box sx={{
+                                                        width: 28,
+                                                        height: 28,
+                                                        borderRadius: '50%',
+                                                        bgcolor: 'rgba(59, 130, 246, 0.12)',
+                                                        color: 'var(--accent-primary)',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        fontSize: '0.8rem',
+                                                        fontWeight: 700,
+                                                        flexShrink: 0,
+                                                        mt: 0.25,
+                                                    }}>
+                                                        {i + 1}
+                                                    </Box>
+                                                    <Box sx={{ ml: 1.5, flexGrow: 1 }}>
                                                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
                                                             <Typography variant="body2" sx={{ fontWeight: 600 }}>
                                                                 {rec.action}
@@ -2606,10 +3514,10 @@ function LensyApp() {
                             </Typography>
                             <Button
                                 variant="outlined"
-                                onClick={() => exportMarkdownReport(analysisState.report!)}
+                                onClick={() => exportPdfReport(analysisState.report!)}
                                 sx={{ ml: 2 }}
                             >
-                                Export Report
+                                Export Report (PDF)
                             </Button>
 
                             {!analysisState.report.sitemapHealth && (
