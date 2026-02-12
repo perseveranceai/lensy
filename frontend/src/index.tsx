@@ -22,7 +22,7 @@ const theme = createTheme({
         divider: '#1f1f1f', // --border-subtle
     },
     typography: {
-        fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        fontFamily: '"Plus Jakarta Sans", "DM Sans", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         h1: {
             fontWeight: 700,
             letterSpacing: '-0.02em',

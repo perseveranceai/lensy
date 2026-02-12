@@ -6,6 +6,11 @@ import * as apigwv2 from '@aws-cdk/aws-apigatewayv2-alpha';
 import * as apigwv2_integrations from '@aws-cdk/aws-apigatewayv2-integrations-alpha';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
+import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
+import * as route53 from 'aws-cdk-lib/aws-route53';
+import * as targets from 'aws-cdk-lib/aws-route53-targets';
 import { Construct } from 'constructs';
 import * as path from 'path';
 
@@ -43,6 +48,16 @@ export class LensyStack extends cdk.Stack {
         webSocketConnectionsTable.addGlobalSecondaryIndex({
             indexName: 'SessionIdIndex',
             partitionKey: { name: 'sessionId', type: dynamodb.AttributeType.STRING },
+        });
+
+        // 2b. Console Access Log — audit trail for login events (IP protection)
+        // RETAIN: This table stores legal consent records (terms/privacy opt-in) and must survive stack deletion
+        // No TTL — records are kept permanently for legal compliance
+        const consoleAccessLogTable = new dynamodb.Table(this, 'ConsoleAccessLogTable', {
+            partitionKey: { name: 'email', type: dynamodb.AttributeType.STRING },
+            sortKey: { name: 'loginTimestamp', type: dynamodb.AttributeType.STRING },
+            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+            removalPolicy: cdk.RemovalPolicy.RETAIN,
         });
 
         // 3. WebSocket API
@@ -211,7 +226,188 @@ export class LensyStack extends cdk.Stack {
         httpApi.addRoutes({ path: '/sessions/{sessionId}/fixes', methods: [apigwv2.HttpMethod.GET], integration: apiIntegration });
         httpApi.addRoutes({ path: '/get-fixes/{sessionId}', methods: [apigwv2.HttpMethod.GET], integration: apiIntegration });
 
-        // 7. Outputs
+        // 6b. Console Login Logger — records login events for audit trail
+        const consoleLoginLogger = new lambda.Function(this, 'ConsoleLoginLoggerFunction', {
+            runtime: lambda.Runtime.NODEJS_20_X,
+            handler: 'index.handler',
+            code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/console-login-logger')),
+            timeout: cdk.Duration.seconds(10),
+            memorySize: 128,
+            environment: {
+                ACCESS_LOG_TABLE: consoleAccessLogTable.tableName,
+            },
+        });
+        consoleAccessLogTable.grantReadWriteData(consoleLoginLogger);
+
+        const loginLoggerIntegration = new apigwv2_integrations.HttpLambdaIntegration('LoginLoggerIntegration', consoleLoginLogger);
+        httpApi.addRoutes({ path: '/console/log-login', methods: [apigwv2.HttpMethod.POST], integration: loginLoggerIntegration });
+
+        // ============================================
+        // 7. Console Frontend Infrastructure
+        //    console.perseveranceai.com
+        // ============================================
+
+        const consoleDomainName = 'console.perseveranceai.com';
+
+        // 7a. Route53 Hosted Zone lookup
+        const hostedZone = route53.HostedZone.fromLookup(this, 'PerseveranceAIZone', {
+            domainName: 'perseveranceai.com',
+        });
+
+        // 7b. ACM Certificate for console.perseveranceai.com (must be us-east-1)
+        const consoleCertificate = new acm.Certificate(this, 'ConsoleCertificate', {
+            domainName: consoleDomainName,
+            validation: acm.CertificateValidation.fromDns(hostedZone),
+        });
+
+        // 7c. S3 Bucket for Console Frontend (already exists from prior deploy, importing by name)
+        const consoleBucket = s3.Bucket.fromBucketName(this, 'ConsoleFrontendBucket',
+            `lensy-console-${this.account}-${this.region}`
+        );
+
+        // 7d. CloudFront Origin Access Identity
+        const consoleOAI = new cloudfront.OriginAccessIdentity(this, 'ConsoleOAI', {
+            comment: 'OAI for console.perseveranceai.com',
+        });
+        consoleBucket.grantRead(consoleOAI);
+
+        // 7e. CloudFront Function for Password Protection
+        const passwordAuthFunction = new cloudfront.Function(this, 'ConsolePasswordAuthFunction', {
+            code: cloudfront.FunctionCode.fromInline(`
+function handler(event) {
+    var request = event.request;
+    var cookies = request.cookies;
+    var uri = request.uri;
+
+    // Bypass auth for login page, legal pages, and static assets
+    if (uri === '/login' || uri === '/login/' ||
+        uri === '/terms' || uri === '/terms/' ||
+        uri === '/privacy' || uri === '/privacy/' ||
+        uri.startsWith('/static/') ||
+        uri.endsWith('.ico') || uri.endsWith('.png') || uri.endsWith('.svg') ||
+        uri.endsWith('.woff') || uri.endsWith('.woff2') ||
+        uri === '/manifest.json' || uri === '/favicon.png') {
+        // Rewrite SPA routes to index.html (except actual static files)
+        if (!uri.startsWith('/static/') && !uri.includes('.')) {
+            request.uri = '/index.html';
+        }
+        return request;
+    }
+
+    // Check for valid access token cookie
+    var token = cookies['perseverance_console_token']
+        ? cookies['perseverance_console_token'].value : null;
+
+    if (token && isValidToken(token)) {
+        // Rewrite SPA routes to index.html (except actual static files)
+        if (!uri.startsWith('/static/') && !uri.includes('.')) {
+            request.uri = '/index.html';
+        }
+        return request;
+    }
+
+    // Not authenticated - redirect to login (with error flag if they had a bad/expired token)
+    var loginPath = token ? '/login?error=auth' : '/login';
+    return {
+        statusCode: 302,
+        statusDescription: 'Found',
+        headers: {
+            'location': { value: loginPath },
+            'cache-control': { value: 'no-store' }
+        }
+    };
+}
+
+function isValidToken(token) {
+    // UPDATE THESE PASSWORDS AS NEEDED (cdk deploy to apply changes)
+    // Format: { 'password': createdTimestampMs }
+    // Passcodes expire 48 hours after CREATION DATE (not login time)
+    var validPasswords = {
+        'LensyBeta2026!': 1770854400000,
+        'ShawnBeta2026!': 1770768000000
+    };
+
+    var parts = token.split(':');
+    if (parts.length < 2) return false;
+
+    var password = parts.slice(0, -1).join(':');
+    var loginTime = parseInt(parts[parts.length - 1], 10);
+
+    if (!validPasswords[password]) return false;
+
+    var now = Date.now();
+    var passcodeExpiryMs = 48 * 60 * 60 * 1000;
+    var passwordCreatedTime = validPasswords[password];
+
+    // Check if the passcode itself has expired (48hrs from creation)
+    if (now - passwordCreatedTime > passcodeExpiryMs) return false;
+
+    // Check if login session has expired (48hrs from login)
+    if (now - loginTime > passcodeExpiryMs) return false;
+
+    return true;
+}
+            `),
+            functionName: 'perseverance-console-auth',
+        });
+
+        // 7f. CloudFront Distribution
+        const consoleDistribution = new cloudfront.Distribution(this, 'ConsoleDistribution', {
+            defaultBehavior: {
+                origin: new origins.S3Origin(consoleBucket, {
+                    originAccessIdentity: consoleOAI,
+                }),
+                viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+                functionAssociations: [{
+                    function: passwordAuthFunction,
+                    eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+                }],
+            },
+            additionalBehaviors: {
+                '/static/*': {
+                    origin: new origins.S3Origin(consoleBucket, {
+                        originAccessIdentity: consoleOAI,
+                    }),
+                    viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                    cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+                },
+            },
+            domainNames: [consoleDomainName],
+            certificate: consoleCertificate,
+            defaultRootObject: 'index.html',
+            errorResponses: [
+                {
+                    httpStatus: 403,
+                    responseHttpStatus: 200,
+                    responsePagePath: '/index.html',
+                    ttl: cdk.Duration.seconds(0),
+                },
+                {
+                    httpStatus: 404,
+                    responseHttpStatus: 200,
+                    responsePagePath: '/index.html',
+                    ttl: cdk.Duration.seconds(0),
+                },
+            ],
+            enableLogging: false,
+            httpVersion: cloudfront.HttpVersion.HTTP2,
+            priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
+        });
+
+        // 7g. Route53 A Record
+        new route53.ARecord(this, 'ConsoleAliasRecord', {
+            zone: hostedZone,
+            recordName: consoleDomainName,
+            target: route53.RecordTarget.fromAlias(
+                new targets.CloudFrontTarget(consoleDistribution)
+            ),
+        });
+
+        // ============================================
+        // 8. Outputs
+        // ============================================
+
         new cdk.CfnOutput(this, 'HttpApiUrl', {
             value: httpApi.apiEndpoint,
             description: 'HTTP API Gateway URL',
@@ -225,6 +421,21 @@ export class LensyStack extends cdk.Stack {
         new cdk.CfnOutput(this, 'StateMachineArn', {
             value: stateMachine.stateMachineArn,
             description: 'Step Functions State Machine ARN',
+        });
+
+        new cdk.CfnOutput(this, 'ConsoleUrl', {
+            value: `https://${consoleDomainName}`,
+            description: 'Console URL',
+        });
+
+        new cdk.CfnOutput(this, 'ConsoleBucketName', {
+            value: consoleBucket.bucketName,
+            description: 'Console S3 Bucket Name',
+        });
+
+        new cdk.CfnOutput(this, 'ConsoleDistributionId', {
+            value: consoleDistribution.distributionId,
+            description: 'Console CloudFront Distribution ID',
         });
     }
 }
