@@ -1,0 +1,8 @@
+{
+    "name": "github-issues-analyzer",
+    "version": "1.0.0",
+    "main": "index.js",
+    "dependencies": {
+        "@aws-sdk/client-bedrock-runtime": "^3.450.0"
+    }
+}

@@ -34,6 +34,12 @@ const handler = async (event) => {
         if (httpMethod === 'POST' && (path === '/analyze' || path === '/scan-doc')) {
             return await handleAnalyzeRequest(body, corsHeaders);
         }
+        if (httpMethod === 'POST' && path === '/github-issues') {
+            return await handleGithubIssuesRequest(body, corsHeaders, 'fetch');
+        }
+        if (httpMethod === 'POST' && path === '/github-issues/analyze') {
+            return await handleGithubIssuesRequest(body, corsHeaders, 'analyze');
+        }
         if (httpMethod === 'POST' && path === '/discover-issues') {
             return await handleDiscoverIssuesRequest(body, corsHeaders);
         }
@@ -287,30 +293,6 @@ async function handleStatusRequest(path, corsHeaders) {
                 console.log('No metadata found, using default model and current time');
             }
             const actualAnalysisTime = Date.now() - analysisStartTime;
-            // [NEW] Try to fetch cached sitemap health data for Doc Mode (session-specific)
-            let cachedSitemapHealth = null;
-            try {
-                const sitemapHealthKey = `sessions/${sessionId}/doc-mode-sitemap-health.json`;
-                console.log(`Attempting to fetch Doc Mode sitemap health from key: ${sitemapHealthKey}`);
-                const healthResponse = await s3.send(new GetObjectCommand({
-                    Bucket: bucketName,
-                    Key: sitemapHealthKey
-                }));
-                const healthContent = await healthResponse.Body.transformToString();
-                const rawHealth = JSON.parse(healthContent);
-                cachedSitemapHealth = {
-                    ...rawHealth,
-                    brokenUrls: rawHealth.brokenUrls || 0,
-                    accessDeniedUrls: rawHealth.accessDeniedUrls || 0,
-                    timeoutUrls: rawHealth.timeoutUrls || 0,
-                    otherErrorUrls: rawHealth.otherErrorUrls || 0
-                };
-                console.log('Successfully retrieved Doc Mode sitemap health data');
-            }
-            catch (err) {
-                console.log('No Doc Mode sitemap health data found:', err);
-                // Non-blocking
-            }
             const validScores = Object.values(dimensionResults)
                 .filter((d) => d.score !== null && d.status === 'complete')
                 .map((d) => d.score);
@@ -358,8 +340,8 @@ async function handleStatusRequest(path, corsHeaders) {
                 urlSlugAnalysis: processedContent.urlSlugAnalysis || undefined,
                 analysisTime: actualAnalysisTime,
                 retryCount: 0,
-                sitemapHealth: cachedSitemapHealth || undefined,
-                aiReadiness: undefined // Will be populated below
+                aiReadiness: undefined,
+                sitemapHealth: undefined // Will be populated below
             };
             console.log('DEBUG: About to fetch AI Readiness for session:', sessionId);
             // [NEW] Try to fetch AI Readiness results
@@ -376,6 +358,29 @@ async function handleStatusRequest(path, corsHeaders) {
             }
             catch (aiError) {
                 console.log('No AI Readiness results found:', aiError);
+            }
+            // [NEW] Try to fetch sitemap health for Doc Mode
+            try {
+                const sitemapHealthKey = `sessions/${sessionId}/doc-mode-sitemap-health.json`;
+                console.log(`Attempting to fetch sitemap health from key: ${sitemapHealthKey}`);
+                const sitemapHealthResponse = await s3.send(new GetObjectCommand({
+                    Bucket: bucketName,
+                    Key: sitemapHealthKey
+                }));
+                const sitemapHealthContent = await sitemapHealthResponse.Body.transformToString();
+                const rawSitemapHealth = JSON.parse(sitemapHealthContent);
+                // Add to report with default values for missing fields
+                report.sitemapHealth = {
+                    ...rawSitemapHealth,
+                    brokenUrls: rawSitemapHealth.brokenUrls || 0,
+                    accessDeniedUrls: rawSitemapHealth.accessDeniedUrls || 0,
+                    timeoutUrls: rawSitemapHealth.timeoutUrls || 0,
+                    otherErrorUrls: rawSitemapHealth.otherErrorUrls || 0
+                };
+                console.log('Successfully retrieved sitemap health results');
+            }
+            catch (sitemapError) {
+                console.log('No sitemap health results found:', sitemapError);
             }
             return {
                 statusCode: 200,
@@ -408,6 +413,42 @@ async function handleStatusRequest(path, corsHeaders) {
                 error: 'Failed to check status',
                 message: error instanceof Error ? error.message : 'Unknown error'
             })
+        };
+    }
+}
+async function handleGithubIssuesRequest(body, corsHeaders, mode) {
+    if (!body)
+        return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Request body is required' }) };
+    try {
+        const requestBody = JSON.parse(body);
+        // Invoke the github-issues-analyzer lambda
+        const invokeCommand = new client_lambda_1.InvokeCommand({
+            FunctionName: process.env.GITHUB_ISSUES_ANALYZER_FUNCTION_NAME || 'LensyGitHubIssuesAnalyzerFunction',
+            InvocationType: 'RequestResponse',
+            Payload: JSON.stringify({ ...requestBody, mode })
+        });
+        const lambdaResponse = await lambdaClient.send(invokeCommand);
+        const responsePayload = JSON.parse(new TextDecoder().decode(lambdaResponse.Payload));
+        // If the lambda returned a proper API response, extract the body
+        if (responsePayload.statusCode) {
+            return {
+                statusCode: responsePayload.statusCode,
+                headers: corsHeaders,
+                body: responsePayload.body
+            };
+        }
+        return {
+            statusCode: 200,
+            headers: corsHeaders,
+            body: JSON.stringify(responsePayload)
+        };
+    }
+    catch (error) {
+        console.error('GitHub issues request error:', error);
+        return {
+            statusCode: 500,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: `GitHub issues analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}` })
         };
     }
 }

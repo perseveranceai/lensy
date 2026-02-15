@@ -124,6 +124,22 @@ function ConsoleDashboard() {
                             }}>
                                 {service.name}
                             </h3>
+                            {service.status === 'active' && (
+                                <span style={{
+                                    fontFamily: 'var(--font-sans, var(--font-ui))',
+                                    fontSize: '0.65rem',
+                                    fontWeight: 700,
+                                    color: '#818cf8',
+                                    background: 'rgba(129, 140, 248, 0.1)',
+                                    border: '1px solid rgba(129, 140, 248, 0.25)',
+                                    borderRadius: '4px',
+                                    padding: '0.1rem 0.4rem',
+                                    textTransform: 'uppercase' as const,
+                                    letterSpacing: '0.05em',
+                                }}>
+                                    Beta
+                                </span>
+                            )}
                             {service.status === 'coming-soon' && (
                                 <span style={{
                                     fontFamily: 'var(--font-mono)',
