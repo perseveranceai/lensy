@@ -2993,17 +2993,16 @@ function LensyApp() {
                                                                                             border: '1px solid rgba(255,255,255,0.06)',
                                                                                             borderRadius: 1,
                                                                                             p: 1.5,
+                                                                                            '& h1, & h2, & h3, & h4, & h5, & h6': { color: '#cbd5e1', fontSize: '0.85rem', fontWeight: 700, mt: 1, mb: 0.5, '&:first-of-type': { mt: 0 } },
+                                                                                            '& p': { color: '#cbd5e1', fontSize: '0.8rem', lineHeight: 1.6, mb: 0.75, '&:last-child': { mb: 0 } },
+                                                                                            '& code': { bgcolor: 'rgba(255,255,255,0.08)', color: '#93c5fd', px: 0.5, py: 0.25, borderRadius: '3px', fontSize: '0.75rem', fontFamily: 'monospace' },
+                                                                                            '& pre': { bgcolor: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 1, p: 1.5, overflow: 'auto', mb: 0.75, '& code': { bgcolor: 'transparent', p: 0, color: '#e2e8f0' } },
+                                                                                            '& ul, & ol': { color: '#cbd5e1', fontSize: '0.8rem', pl: 2.5, mb: 0.75 },
+                                                                                            '& li': { mb: 0.25 },
+                                                                                            '& a': { color: '#60a5fa', textDecoration: 'underline' },
+                                                                                            '& blockquote': { borderLeft: '3px solid rgba(255,255,255,0.15)', pl: 1.5, ml: 0, color: '#94a3b8' },
                                                                                         }}>
-                                                                                            <Typography variant="body2" sx={{
-                                                                                                fontSize: '0.8rem',
-                                                                                                lineHeight: 1.6,
-                                                                                                color: '#cbd5e1',
-                                                                                                whiteSpace: 'pre-wrap',
-                                                                                                wordBreak: 'break-word',
-                                                                                                fontFamily: 'inherit',
-                                                                                            }}>
-                                                                                                {result.docsGap.originalText}
-                                                                                            </Typography>
+                                                                                            <ReactMarkdown>{result.docsGap.originalText}</ReactMarkdown>
                                                                                         </Box>
                                                                                     </Box>
                                                                                     {/* After */}
@@ -3016,17 +3015,16 @@ function LensyApp() {
                                                                                             border: '1px solid rgba(255,255,255,0.06)',
                                                                                             borderRadius: 1,
                                                                                             p: 1.5,
+                                                                                            '& h1, & h2, & h3, & h4, & h5, & h6': { color: '#e2e8f0', fontSize: '0.85rem', fontWeight: 700, mt: 1, mb: 0.5, '&:first-of-type': { mt: 0 } },
+                                                                                            '& p': { color: '#e2e8f0', fontSize: '0.8rem', lineHeight: 1.6, mb: 0.75, '&:last-child': { mb: 0 } },
+                                                                                            '& code': { bgcolor: 'rgba(255,255,255,0.08)', color: '#93c5fd', px: 0.5, py: 0.25, borderRadius: '3px', fontSize: '0.75rem', fontFamily: 'monospace' },
+                                                                                            '& pre': { bgcolor: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 1, p: 1.5, overflow: 'auto', mb: 0.75, '& code': { bgcolor: 'transparent', p: 0, color: '#e2e8f0' } },
+                                                                                            '& ul, & ol': { color: '#e2e8f0', fontSize: '0.8rem', pl: 2.5, mb: 0.75 },
+                                                                                            '& li': { mb: 0.25 },
+                                                                                            '& a': { color: '#60a5fa', textDecoration: 'underline' },
+                                                                                            '& blockquote': { borderLeft: '3px solid rgba(255,255,255,0.15)', pl: 1.5, ml: 0, color: '#94a3b8' },
                                                                                         }}>
-                                                                                            <Typography variant="body2" sx={{
-                                                                                                fontSize: '0.8rem',
-                                                                                                lineHeight: 1.6,
-                                                                                                color: '#e2e8f0',
-                                                                                                whiteSpace: 'pre-wrap',
-                                                                                                wordBreak: 'break-word',
-                                                                                                fontFamily: 'inherit',
-                                                                                            }}>
-                                                                                                {result.docsGap.correctedText}
-                                                                                            </Typography>
+                                                                                            <ReactMarkdown>{result.docsGap.correctedText}</ReactMarkdown>
                                                                                         </Box>
                                                                                     </Box>
                                                                                 </Box>
