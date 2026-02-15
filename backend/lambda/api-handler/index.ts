@@ -53,6 +53,14 @@ export const handler: Handler<any, any> = async (event: any) => {
             return await handleAnalyzeRequest(body, corsHeaders);
         }
 
+        if (httpMethod === 'POST' && path === '/github-issues') {
+            return await handleGithubIssuesRequest(body, corsHeaders, 'fetch');
+        }
+
+        if (httpMethod === 'POST' && path === '/github-issues/analyze') {
+            return await handleGithubIssuesRequest(body, corsHeaders, 'analyze');
+        }
+
         if (httpMethod === 'POST' && path === '/discover-issues') {
             return await handleDiscoverIssuesRequest(body, corsHeaders);
         }
@@ -464,6 +472,46 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
                 error: 'Failed to check status',
                 message: error instanceof Error ? error.message : 'Unknown error'
             })
+        };
+    }
+}
+
+async function handleGithubIssuesRequest(body: string | null, corsHeaders: Record<string, string>, mode: 'fetch' | 'analyze') {
+    if (!body) return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Request body is required' }) };
+
+    try {
+        const requestBody = JSON.parse(body);
+
+        // Invoke the github-issues-analyzer lambda
+        const invokeCommand = new InvokeCommand({
+            FunctionName: process.env.GITHUB_ISSUES_ANALYZER_FUNCTION_NAME || 'LensyGitHubIssuesAnalyzerFunction',
+            InvocationType: 'RequestResponse',
+            Payload: JSON.stringify({ ...requestBody, mode })
+        });
+
+        const lambdaResponse = await lambdaClient.send(invokeCommand);
+        const responsePayload = JSON.parse(new TextDecoder().decode(lambdaResponse.Payload));
+
+        // If the lambda returned a proper API response, extract the body
+        if (responsePayload.statusCode) {
+            return {
+                statusCode: responsePayload.statusCode,
+                headers: corsHeaders,
+                body: responsePayload.body
+            };
+        }
+
+        return {
+            statusCode: 200,
+            headers: corsHeaders,
+            body: JSON.stringify(responsePayload)
+        };
+    } catch (error) {
+        console.error('GitHub issues request error:', error);
+        return {
+            statusCode: 500,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: `GitHub issues analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}` })
         };
     }
 }

@@ -183,18 +183,28 @@ const handler = async (event) => {
                         const content = await sitemapHealthResponse.Body.transformToString();
                         const healthData = JSON.parse(content);
                         // Transform to internal format if needed, but it matches the interface
-                        cachedSitemapHealth = {
-                            totalUrls: healthData.totalUrls,
-                            healthyUrls: healthData.healthyUrls,
-                            brokenUrls: healthData.brokenUrls,
-                            accessDeniedUrls: healthData.accessDeniedUrls,
-                            timeoutUrls: healthData.timeoutUrls,
-                            otherErrorUrls: healthData.otherErrorUrls,
-                            healthPercentage: healthData.healthPercentage,
-                            linkIssues: healthData.linkIssues || [],
-                            processingTime: healthData.processingTime || 0
-                        };
-                        console.log('Successfully retrieved cached sitemap health data');
+                        if (healthData.sitemapStatus === 'success') {
+                            cachedSitemapHealth = {
+                                totalUrls: healthData.totalUrls,
+                                healthyUrls: healthData.healthyUrls,
+                                brokenUrls: healthData.brokenUrls,
+                                accessDeniedUrls: healthData.accessDeniedUrls,
+                                timeoutUrls: healthData.timeoutUrls,
+                                otherErrorUrls: healthData.otherErrorUrls,
+                                healthPercentage: healthData.healthPercentage,
+                                linkIssues: healthData.linkIssues || [],
+                                processingTime: healthData.processingTime || 0
+                            };
+                            console.log('Successfully retrieved cached sitemap health data');
+                        }
+                        else if (healthData.sitemapStatus === 'error') {
+                            // Capture error for reporting
+                            cachedSitemapHealth = {
+                                error: healthData.error || healthData.message || 'Sitemap check failed',
+                                processingTime: healthData.processingTime || 0
+                            };
+                            console.log(`Retrieved sitemap error: ${healthData.error}`);
+                        }
                     }
                 }
                 catch (error) {

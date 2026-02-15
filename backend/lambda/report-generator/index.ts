@@ -345,9 +345,7 @@ export const handler: Handler<any, ReportGeneratorResponse> = async (event: any)
                         const healthData = JSON.parse(content);
 
                         // Transform to internal format if needed, but it matches the interface
-                        cachedSitemapHealth = {
-                            totalUrls: healthData.totalUrls,
-                            if(healthData.sitemapStatus === 'success') {
+                        if (healthData.sitemapStatus === 'success') {
                             cachedSitemapHealth = {
                                 totalUrls: healthData.totalUrls,
                                 healthyUrls: healthData.healthyUrls,
@@ -368,9 +366,9 @@ export const handler: Handler<any, ReportGeneratorResponse> = async (event: any)
                             };
                             console.log(`Retrieved sitemap error: ${healthData.error}`);
                         }
-                    } catch (error) {
-                        console.log('No cached sitemap health data found (optional):', error);
                     }
+                } catch (error) {
+                    console.log('No cached sitemap health data found (optional):', error);
                 }
             }
 

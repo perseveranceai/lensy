@@ -136,6 +136,13 @@ export class LensyStack extends cdk.Stack {
         const reportGenerator = createLambda('ReportGeneratorFunction', 'report-generator', 60, 256);
         const issueDiscoverer = createLambda('IssueDiscovererFunction', 'issue-discoverer', 120, 512, { S3_BUCKET_NAME: analysisBucket.bucketName });
         const issueValidator = createLambda('IssueValidatorFunction', 'issue-validator', 300, 1024, { S3_BUCKET_NAME: analysisBucket.bucketName });
+        const githubIssuesAnalyzer = createLambda('GitHubIssuesAnalyzerFunction', 'github-issues-analyzer', 300, 1024);
+
+        githubIssuesAnalyzer.addToRolePolicy(new iam.PolicyStatement({
+            actions: ['bedrock:InvokeModel'],
+            resources: ['*'],
+        }));
+
         const fixGenerator = createLambda('FixGeneratorFunction', 'fix-generator', 300, 1024);
         const fixApplicator = createLambda('FixApplicatorFunction', 'fix-applicator', 300, 512);
 
@@ -196,6 +203,7 @@ export class LensyStack extends cdk.Stack {
             ISSUE_VALIDATOR_FUNCTION_NAME: issueValidator.functionName,
             FIX_GENERATOR_FUNCTION_NAME: fixGenerator.functionName,
             FIX_APPLICATOR_FUNCTION_NAME: fixApplicator.functionName,
+            GITHUB_ISSUES_ANALYZER_FUNCTION_NAME: githubIssuesAnalyzer.functionName,
         });
 
         stateMachine.grantStartExecution(apiHandler);
@@ -203,6 +211,7 @@ export class LensyStack extends cdk.Stack {
         issueValidator.grantInvoke(apiHandler);
         fixGenerator.grantInvoke(apiHandler);
         fixApplicator.grantInvoke(apiHandler);
+        githubIssuesAnalyzer.grantInvoke(apiHandler);
 
         const httpApi = new apigwv2.HttpApi(this, 'LensyHttpApi', {
             description: 'Lensy HTTP API',
@@ -225,6 +234,8 @@ export class LensyStack extends cdk.Stack {
         httpApi.addRoutes({ path: '/apply-fixes', methods: [apigwv2.HttpMethod.POST], integration: apiIntegration });
         httpApi.addRoutes({ path: '/sessions/{sessionId}/fixes', methods: [apigwv2.HttpMethod.GET], integration: apiIntegration });
         httpApi.addRoutes({ path: '/get-fixes/{sessionId}', methods: [apigwv2.HttpMethod.GET], integration: apiIntegration });
+        httpApi.addRoutes({ path: '/github-issues', methods: [apigwv2.HttpMethod.POST], integration: apiIntegration });
+        httpApi.addRoutes({ path: '/github-issues/analyze', methods: [apigwv2.HttpMethod.POST], integration: apiIntegration });
 
         // 6b. Console Login Logger — records login events for audit trail
         const consoleLoginLogger = new lambda.Function(this, 'ConsoleLoginLoggerFunction', {
@@ -323,8 +334,8 @@ function isValidToken(token) {
     // Format: { 'password': createdTimestampMs }
     // Passcodes expire 48 hours after CREATION DATE (not login time)
     var validPasswords = {
-        'LensyBeta2026!': 1770854400000,
-        'ShawnBeta2026!': 1770768000000
+        'LensyBeta2026!': 1771186800000,
+        'ShawnBeta2026!': 1771186800000
     };
 
     var parts = token.split(':');

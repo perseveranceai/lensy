@@ -45,6 +45,8 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import CheckIcon from '@mui/icons-material/Check';
 import FixReviewPanel, { Fix } from './components/FixReviewPanel';
 import jsPDF from 'jspdf';
 import { JAKARTA_REGULAR, JAKARTA_BOLD } from './jakartaFonts';
@@ -124,7 +126,7 @@ interface AnalysisRequest {
     url: string;
     selectedModel: 'claude' | 'titan' | 'llama' | 'auto';
     sessionId: string;
-    inputType?: 'doc' | 'sitemap' | 'issue-discovery'; // Add issue-discovery mode
+    inputType?: 'doc' | 'sitemap' | 'issue-discovery' | 'github-issues';
     contextAnalysis?: {
         enabled: boolean;
         maxContextPages?: number;
@@ -316,8 +318,8 @@ function LensyApp() {
     const [selectedModel, setSelectedModel] = useState<'claude' | 'titan' | 'llama' | 'auto'>('claude');
     const [contextAnalysisEnabled, setContextAnalysisEnabled] = useState(false);
     const [cacheEnabled, setCacheEnabled] = useState(false);
-    const [selectedMode, setSelectedMode] = useState<'doc' | 'sitemap' | 'issue-discovery'>('doc');
-    const [manualModeOverride, setManualModeOverride] = useState<'doc' | 'sitemap' | 'issue-discovery' | null>(null);
+    const [selectedMode, setSelectedMode] = useState<'doc' | 'sitemap' | 'issue-discovery' | 'github-issues'>('doc');
+    const [manualModeOverride, setManualModeOverride] = useState<'doc' | 'sitemap' | 'issue-discovery' | 'github-issues' | null>(null);
     const [companyDomain, setCompanyDomain] = useState('');
     const [discoveredIssues, setDiscoveredIssues] = useState<Array<{
         id: string;
@@ -329,6 +331,30 @@ function LensyApp() {
     const [selectedIssues, setSelectedIssues] = useState<string[]>([]);
     const [isSearchingIssues, setIsSearchingIssues] = useState(false);
     const [validationResults, setValidationResults] = useState<any>(null);
+    // GitHub Issues mode state
+    const [githubRepoUrl, setGithubRepoUrl] = useState('');
+    const [githubIssues, setGithubIssues] = useState<Array<{
+        number: number;
+        title: string;
+        body: string;
+        html_url: string;
+        labels: Array<{ name: string }>;
+        created_at: string;
+        comments: number;
+        isDocsRelated: boolean;
+        docsGap?: {
+            gapType: string;
+            affectedDocs: string[];
+            summary: string;
+            suggestedFix: string;
+            confidence: number;
+        };
+    }>>([]);
+    const [selectedGithubIssues, setSelectedGithubIssues] = useState<number[]>([]);
+    const [isFetchingGithubIssues, setIsFetchingGithubIssues] = useState(false);
+    const [githubFetchCompleted, setGithubFetchCompleted] = useState(false);
+    const [githubAnalysisResults, setGithubAnalysisResults] = useState<any>(null);
+    const [copiedFixIndex, setCopiedFixIndex] = useState<number | null>(null);
     const [analysisState, setAnalysisState] = useState<AnalysisState>({
         status: 'idle',
         progressMessages: []
@@ -338,6 +364,8 @@ function LensyApp() {
     const wsRef = useRef<WebSocket | null>(null);
     const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const progressEndRef = useRef<HTMLDivElement>(null);
+    const issuesListRef = useRef<HTMLDivElement>(null);
+    const [showScrollIndicator, setShowScrollIndicator] = useState(false);
 
     // Fix Generation State
     const [fixes, setFixes] = useState<Fix[]>([]);
@@ -366,6 +394,23 @@ function LensyApp() {
             progressEndRef.current.scrollIntoView({ behavior: 'smooth' });
         }
     }, [analysisState.progressMessages, analysisState.status]);
+
+    // Track whether issues list is scrollable and not scrolled to bottom
+    useEffect(() => {
+        const el = issuesListRef.current;
+        if (!el) { setShowScrollIndicator(false); return; }
+        const checkScroll = () => {
+            const hasOverflow = el.scrollHeight > el.clientHeight;
+            const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 20;
+            setShowScrollIndicator(hasOverflow && !atBottom);
+        };
+        checkScroll();
+        el.addEventListener('scroll', checkScroll);
+        // Re-check on resize
+        const observer = new ResizeObserver(checkScroll);
+        observer.observe(el);
+        return () => { el.removeEventListener('scroll', checkScroll); observer.disconnect(); };
+    }, [githubIssues, analysisState.status, githubAnalysisResults]);
 
     // Auto-collapse progress when analysis completes
     useEffect(() => {
@@ -581,6 +626,162 @@ function LensyApp() {
         };
 
         setTimeout(poll, 5000);
+    };
+
+    // ─── GitHub Issues Mode: Fetch and Analyze ───────────────────────────
+    const handleFetchGithubIssues = async () => {
+        const urlStr = githubRepoUrl.trim();
+        if (!urlStr) {
+            setAnalysisState({ status: 'error', error: 'Please enter a GitHub repository URL', progressMessages: [] });
+            return;
+        }
+
+        // Validate it looks like a GitHub URL or owner/repo format
+        const isGitHubUrl = /^https?:\/\/(www\.)?github\.com\/[^/]+\/[^/]+/i.test(urlStr);
+        const isOwnerRepo = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(urlStr);
+
+        if (!isGitHubUrl && !isOwnerRepo) {
+            setAnalysisState({
+                status: 'error',
+                error: 'Please enter a valid GitHub repository URL (e.g. https://github.com/owner/repo) or owner/repo format.',
+                progressMessages: []
+            });
+            return;
+        }
+
+        // Parse owner/repo from URL
+        let owner = '', repo = '';
+        try {
+            if (urlStr.includes('github.com')) {
+                const parts = urlStr.replace(/https?:\/\/(www\.)?github\.com\//, '').replace(/\/$/, '').split('/');
+                owner = parts[0];
+                repo = parts[1]?.replace(/\.git$/, '') || '';
+            } else if (urlStr.includes('/')) {
+                [owner, repo] = urlStr.split('/');
+            }
+        } catch {
+            setAnalysisState({ status: 'error', error: 'Invalid GitHub URL. Use format: https://github.com/owner/repo', progressMessages: [] });
+            return;
+        }
+
+        if (!owner || !repo) {
+            setAnalysisState({ status: 'error', error: 'Could not parse owner/repo from URL. Use format: https://github.com/owner/repo', progressMessages: [] });
+            return;
+        }
+
+        setIsFetchingGithubIssues(true);
+        setGithubFetchCompleted(false);
+        setGithubIssues([]);
+        setSelectedGithubIssues([]);
+        setGithubAnalysisResults(null);
+
+        try {
+            console.log(`Fetching GitHub issues for ${owner}/${repo}...`);
+
+            // Call our backend endpoint for github issues
+            const response = await fetch(`${API_BASE_URL}/github-issues`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ owner, repo, maxIssues: 30 })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                if (response.status === 429) {
+                    throw new Error(errorData.message || 'GitHub API rate limit exceeded. Unauthenticated requests are limited to 60 per hour. Please wait and try again.');
+                }
+                if (response.status === 404) {
+                    throw new Error(errorData.message || `Repository not found. Please check the URL and make sure it exists and is public.`);
+                }
+                if (response.status === 403) {
+                    throw new Error(errorData.message || `Cannot access this repository. It may be private. Only public repositories are supported.`);
+                }
+                throw new Error(errorData.message || errorData.error || `Something went wrong (HTTP ${response.status}). Please try again.`);
+            }
+
+            const result = await response.json();
+            console.log(`Fetched ${result.issues?.length || 0} issues, ${result.docsRelatedCount || 0} docs-related`);
+
+            setGithubIssues(result.issues || []);
+            setGithubFetchCompleted(true);
+
+            // Default to none selected — user picks which to analyze
+            setSelectedGithubIssues([]);
+
+        } catch (error) {
+            console.error('Error fetching GitHub issues:', error);
+            setAnalysisState({
+                status: 'error',
+                error: `Failed to fetch GitHub issues: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                progressMessages: []
+            });
+        } finally {
+            setIsFetchingGithubIssues(false);
+        }
+    };
+
+    const handleAnalyzeGithubIssues = async () => {
+        if (selectedGithubIssues.length === 0) {
+            setAnalysisState({ status: 'error', error: 'Please select at least one issue to analyze', progressMessages: [] });
+            return;
+        }
+
+        // Parse owner/repo
+        const urlStr = githubRepoUrl.trim();
+        const parts = urlStr.replace(/https?:\/\/github\.com\//, '').replace(/\/$/, '').split('/');
+        const owner = parts[0], repo = parts[1];
+
+        setAnalysisState({
+            status: 'analyzing',
+            progressMessages: [{ type: 'info', message: 'Analyzing selected issues against documentation...', timestamp: Date.now() }]
+        });
+
+        try {
+            const issuesToAnalyze = githubIssues.filter(i => selectedGithubIssues.includes(i.number));
+
+            const response = await fetch(`${API_BASE_URL}/github-issues/analyze`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    owner,
+                    repo,
+                    issues: issuesToAnalyze.map(i => ({
+                        number: i.number,
+                        title: i.title,
+                        body: i.body,
+                        html_url: i.html_url,
+                        labels: i.labels
+                    })),
+                    sessionId: `github-${Date.now()}`
+                })
+            });
+
+            if (!response.ok) {
+                if (response.status === 429) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.message || 'GitHub API rate limit exceeded. Please wait and try again.');
+                }
+                throw new Error(`HTTP ${response.status}`);
+            }
+            const results = await response.json();
+
+            setGithubAnalysisResults(results.analyses || []);
+            setCopiedFixIndex(null);
+            setAnalysisState({
+                status: 'completed',
+                progressMessages: [
+                    ...analysisState.progressMessages,
+                    { type: 'success', message: `Analysis complete: ${results.analyses?.length || 0} issues analyzed`, timestamp: Date.now() }
+                ]
+            });
+        } catch (error) {
+            console.error('Error analyzing GitHub issues:', error);
+            setAnalysisState({
+                status: 'error',
+                error: `Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                progressMessages: []
+            });
+        }
     };
 
     const searchForDeveloperIssues = async (domain: string) => {
@@ -826,6 +1027,20 @@ function LensyApp() {
         setFixSuccessMessage(null);
         setLastModifiedFile(null);
         const currentMode = manualModeOverride || selectedMode;
+
+        // Handle GitHub Issues mode
+        if (currentMode === 'github-issues') {
+            if (githubIssues.length === 0) {
+                // First click: fetch issues
+                handleFetchGithubIssues();
+            } else if (selectedGithubIssues.length > 0) {
+                // Second click: analyze selected issues
+                handleAnalyzeGithubIssues();
+            } else {
+                setAnalysisState({ status: 'error', error: 'Please select at least one issue to analyze', progressMessages: [] });
+            }
+            return;
+        }
 
         // Validate inputs based on mode
         if (currentMode === 'issue-discovery') {
@@ -2436,36 +2651,476 @@ function LensyApp() {
                 borderBottom: '1px solid var(--border-subtle)',
                 bgcolor: 'var(--bg-secondary)',
                 px: 3,
-                py: 1.5,
+                py: 1,
                 display: 'flex',
                 alignItems: 'center',
-                gap: 1.5,
+                gap: 1,
             }}>
-                <span style={{ fontSize: '1.125rem' }} role="img" aria-label="Lensy">🔍</span>
-                <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
+                <span style={{ fontSize: '1rem' }} role="img" aria-label="Lensy">🔍</span>
+                <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
                     Lensy
                 </Typography>
-                <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>
+                <Typography variant="body2" sx={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
                     Documentation Quality Auditor
                 </Typography>
             </Box>
 
-            <Container maxWidth="lg" sx={{ py: 4 }}>
+            <Container maxWidth={selectedMode === 'github-issues' && (analysisState.status === 'analyzing' || githubAnalysisResults) ? 'xl' : 'lg'} sx={{ py: 4, transition: 'max-width 0.3s ease' }}>
 
                 <Paper sx={{ p: 4, mb: 4 }}>
-                    <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
+                    <Box sx={{ display: 'flex', gap: 1, mb: 3, alignItems: 'center' }}>
                         <Chip
-                            label="Doc mode"
+                            label="Doc Audit"
                             onClick={() => { setSelectedMode('doc'); setManualModeOverride('doc'); }}
                             color={selectedMode === 'doc' ? 'primary' : 'default'}
                             variant={selectedMode === 'doc' ? 'filled' : 'outlined'}
                             sx={{ fontWeight: 600 }}
                         />
+                        <Chip
+                            label="GitHub Issues"
+                            onClick={() => { setSelectedMode('github-issues'); setManualModeOverride('github-issues'); }}
+                            color={selectedMode === 'github-issues' ? 'primary' : 'default'}
+                            variant={selectedMode === 'github-issues' ? 'filled' : 'outlined'}
+                            sx={{ fontWeight: 600 }}
+                        />
+                        <Box sx={{ flex: 1 }} />
+                        <Typography
+                            variant="caption"
+                            sx={{
+                                fontWeight: 700,
+                                fontSize: '0.6rem',
+                                color: '#818cf8',
+                                bgcolor: 'rgba(129, 140, 248, 0.1)',
+                                border: '1px solid rgba(129, 140, 248, 0.25)',
+                                borderRadius: '4px',
+                                px: 0.75,
+                                py: 0.25,
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                lineHeight: 1,
+                            }}
+                        >
+                            Beta
+                        </Typography>
                     </Box>
 
                     <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
                         <Box sx={{ flexGrow: 1 }}>
-                            {selectedMode === 'issue-discovery' ? (
+                            {selectedMode === 'github-issues' ? (
+                                <>
+                                    <TextField
+                                        fullWidth
+                                        label="GitHub Repository URL"
+                                        variant="outlined"
+                                        value={githubRepoUrl}
+                                        onChange={(e) => {
+                                            setGithubRepoUrl(e.target.value);
+                                            if (githubIssues.length > 0 || githubFetchCompleted) {
+                                                setGithubIssues([]);
+                                                setSelectedGithubIssues([]);
+                                                setGithubAnalysisResults(null);
+                                                setGithubFetchCompleted(false);
+                                            }
+                                        }}
+                                        placeholder="https://github.com/resend/react-email"
+                                        disabled={analysisState.status === 'analyzing'}
+                                        helperText="Enter a GitHub repository URL to scan open issues for documentation gaps"
+                                    />
+
+                                    {isFetchingGithubIssues && (
+                                        <Box sx={{ display: 'flex', alignItems: 'center', mt: 2, mb: 1 }}>
+                                            <CircularProgress size={16} sx={{ mr: 1.5 }} />
+                                            <Typography variant="caption" color="text.secondary">
+                                                Fetching open issues and analyzing docs context...
+                                            </Typography>
+                                        </Box>
+                                    )}
+
+                                    {/* Zero issues found after fetch */}
+                                    {githubFetchCompleted && githubIssues.length === 0 && !isFetchingGithubIssues && (
+                                        <Box sx={{ mt: 3, p: 3, textAlign: 'center', bgcolor: 'rgba(255, 255, 255, 0.03)', borderRadius: 2, border: '1px solid var(--border-subtle)' }}>
+                                            <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5, color: 'var(--text-primary)' }}>
+                                                No open issues found
+                                            </Typography>
+                                            <Typography variant="caption" color="text.secondary">
+                                                This repository has no open issues, or the issues could not be retrieved. Try a different repository.
+                                            </Typography>
+                                        </Box>
+                                    )}
+
+                                    {/* Zero docs-related issues found */}
+                                    {githubFetchCompleted && githubIssues.length > 0 && githubIssues.filter(i => i.isDocsRelated).length === 0 && (
+                                        <Box sx={{ mt: 3, p: 3, textAlign: 'center', bgcolor: 'rgba(34, 197, 94, 0.05)', borderRadius: 2, border: '1px solid rgba(34, 197, 94, 0.15)' }}>
+                                            <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5, color: 'var(--text-primary)' }}>
+                                                No documentation-related issues found
+                                            </Typography>
+                                            <Typography variant="caption" color="text.secondary">
+                                                Found {githubIssues.length} open issue{githubIssues.length !== 1 ? 's' : ''}, but none appear to be related to documentation gaps. Great docs!
+                                            </Typography>
+                                        </Box>
+                                    )}
+
+                                    {githubIssues.length > 0 && githubIssues.filter(i => i.isDocsRelated).length > 0 && (
+                                        <Box sx={{ mt: 3 }}>
+                                            {/* Two-column layout: issues left, results/progress right */}
+                                            <Box sx={{ display: 'flex', gap: 3, alignItems: 'flex-start' }}>
+
+                                                {/* LEFT COLUMN: Issues list */}
+                                                <Box sx={{ flex: (analysisState.status === 'analyzing' || githubAnalysisResults) ? '0 0 38%' : '1 1 100%', minWidth: 0, transition: 'flex 0.3s ease' }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                                                        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                                                            {githubIssues.filter(i => i.isDocsRelated).length} docs-related issues found
+                                                        </Typography>
+                                                        {/* Select All / Unselect All */}
+                                                        <Button
+                                                            size="small"
+                                                            variant="text"
+                                                            onClick={() => {
+                                                                const docsIssueNumbers = githubIssues.filter(i => i.isDocsRelated).map(i => i.number);
+                                                                if (selectedGithubIssues.length === docsIssueNumbers.length) {
+                                                                    setSelectedGithubIssues([]);
+                                                                } else {
+                                                                    setSelectedGithubIssues(docsIssueNumbers);
+                                                                }
+                                                            }}
+                                                            disabled={analysisState.status === 'analyzing'}
+                                                            sx={{ fontSize: '0.7rem', fontWeight: 600, textTransform: 'none', color: '#3b82f6', minWidth: 'auto', px: 1 }}
+                                                        >
+                                                            {selectedGithubIssues.length === githubIssues.filter(i => i.isDocsRelated).length ? 'Unselect all' : 'Select all'}
+                                                        </Button>
+                                                    </Box>
+                                                    <Box ref={issuesListRef} sx={{
+                                                        border: '1px solid',
+                                                        borderColor: 'var(--border-subtle)',
+                                                        borderRadius: 2,
+                                                        overflow: 'hidden',
+                                                        maxHeight: (analysisState.status === 'analyzing' || githubAnalysisResults) ? 600 : 'none',
+                                                        overflowY: 'auto',
+                                                        position: 'relative',
+                                                        /* Hidden scrollbar by default, visible on hover */
+                                                        '&::-webkit-scrollbar': { width: 6 },
+                                                        '&::-webkit-scrollbar-track': { background: 'transparent' },
+                                                        '&::-webkit-scrollbar-thumb': { background: 'transparent', borderRadius: 3, transition: 'background 0.2s' },
+                                                        '&:hover::-webkit-scrollbar-thumb': { background: 'rgba(255,255,255,0.15)' },
+                                                        '&:hover::-webkit-scrollbar-thumb:hover': { background: 'rgba(255,255,255,0.3)' },
+                                                        scrollbarWidth: 'thin',
+                                                        scrollbarColor: 'transparent transparent',
+                                                        '&:hover': { scrollbarColor: 'rgba(255,255,255,0.15) transparent' },
+                                                    }}>
+                                                        {githubIssues.filter(i => i.isDocsRelated).map((issue, index, arr) => (
+                                                            <Box
+                                                                key={issue.number}
+                                                                sx={{
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    px: 1.5,
+                                                                    py: 0.75,
+                                                                    borderBottom: index < arr.length - 1 ? '1px solid' : 'none',
+                                                                    borderBottomColor: 'var(--border-subtle)',
+                                                                    bgcolor: selectedGithubIssues.includes(issue.number) ? 'rgba(59, 130, 246, 0.05)' : 'transparent',
+                                                                    '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.02)' },
+                                                                    cursor: 'pointer',
+                                                                    transition: 'all 0.2s'
+                                                                }}
+                                                                onClick={() => {
+                                                                    if (selectedGithubIssues.includes(issue.number)) {
+                                                                        setSelectedGithubIssues(selectedGithubIssues.filter(n => n !== issue.number));
+                                                                    } else {
+                                                                        setSelectedGithubIssues([...selectedGithubIssues, issue.number]);
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <Checkbox
+                                                                    checked={selectedGithubIssues.includes(issue.number)}
+                                                                    disabled={analysisState.status === 'analyzing'}
+                                                                    size="small"
+                                                                    sx={{ mr: 1 }}
+                                                                />
+                                                                <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                                    <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', mb: 0.25 }}>
+                                                                        #{issue.number}: {issue.title}
+                                                                    </Typography>
+                                                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 0.25 }}>
+                                                                        {issue.labels.slice(0, 3).map(l => (
+                                                                            <Chip key={l.name} label={l.name} size="small"
+                                                                                sx={{ height: 18, fontSize: '0.55rem', fontWeight: 700, maxWidth: 150, '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' } }} />
+                                                                        ))}
+                                                                        {issue.labels.length > 3 && (
+                                                                            <Typography variant="caption" sx={{ fontSize: '0.55rem', color: 'var(--text-secondary)', lineHeight: '18px' }}>
+                                                                                +{issue.labels.length - 3}
+                                                                            </Typography>
+                                                                        )}
+                                                                    </Box>
+                                                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem', lineHeight: 1.3, mt: 0.25 }}>
+                                                                        {issue.body ? issue.body.substring(0, 80).replace(/\n/g, ' ') + '...' : 'No description'}
+                                                                    </Typography>
+                                                                    <Box sx={{ display: 'flex', gap: 1.5, mt: 0.25 }}>
+                                                                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                                                                            💬 {issue.comments} comments
+                                                                        </Typography>
+                                                                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                                                                            <a href={issue.html_url} target="_blank" rel="noopener noreferrer"
+                                                                                style={{ color: 'inherit', textDecoration: 'underline' }}
+                                                                                onClick={(e) => e.stopPropagation()}>
+                                                                                View on GitHub ↗
+                                                                            </a>
+                                                                        </Typography>
+                                                                    </Box>
+                                                                </Box>
+                                                            </Box>
+                                                        ))}
+                                                    </Box>
+                                                    {/* Down arrow scroll indicator — only when list has overflow and not scrolled to bottom */}
+                                                    {showScrollIndicator && (
+                                                        <Box sx={{
+                                                            display: 'flex',
+                                                            justifyContent: 'center',
+                                                            py: 0.75,
+                                                            animation: 'bounceArrow 1.5s ease-in-out infinite',
+                                                            '@keyframes bounceArrow': {
+                                                                '0%, 100%': { transform: 'translateY(0)' },
+                                                                '50%': { transform: 'translateY(3px)' },
+                                                            }
+                                                        }}>
+                                                            <Typography variant="caption" sx={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 500 }}>
+                                                                ▼ scroll for more
+                                                            </Typography>
+                                                        </Box>
+                                                    )}
+                                                </Box>
+
+                                                {/* RIGHT COLUMN: Progress (while analyzing) or Results (when done) */}
+                                                {(analysisState.status === 'analyzing' || githubAnalysisResults) && (
+                                                    <Box sx={{ flex: '0 0 60%', minWidth: 0 }}>
+
+                                                        {/* Progress indicator — only while analyzing */}
+                                                        {analysisState.status === 'analyzing' && (
+                                                            <Box sx={{ p: 3, bgcolor: 'rgba(59, 130, 246, 0.05)', borderRadius: 2, border: '1px solid rgba(59, 130, 246, 0.15)' }}>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                                                                    <CircularProgress size={18} sx={{ mr: 1.5 }} />
+                                                                    <Typography variant="subtitle2" sx={{ fontWeight: 700, fontSize: '0.85rem' }}>
+                                                                        Analyzing {selectedGithubIssues.length} issue{selectedGithubIssues.length !== 1 ? 's' : ''}...
+                                                                    </Typography>
+                                                                </Box>
+                                                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5, fontSize: '0.75rem' }}>
+                                                                    Fetching repo docs and running AI analysis. This takes 5-15 seconds per issue.
+                                                                </Typography>
+                                                                {/* Inline progress messages */}
+                                                                {analysisState.progressMessages.length > 0 && (
+                                                                    <Box sx={{ borderTop: '1px solid rgba(59, 130, 246, 0.1)', pt: 1 }}>
+                                                                        {analysisState.progressMessages.map((msg, index) => (
+                                                                            <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.25 }}>
+                                                                                <Box sx={{
+                                                                                    width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                                                                                    bgcolor: msg.type === 'error' ? '#ef4444' : msg.type === 'success' ? '#22c55e' : msg.type === 'warning' ? '#f59e0b' : '#3b82f6'
+                                                                                }} />
+                                                                                <Typography variant="caption" sx={{ fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                                                                                    {msg.message}
+                                                                                </Typography>
+                                                                            </Box>
+                                                                        ))}
+                                                                    </Box>
+                                                                )}
+                                                            </Box>
+                                                        )}
+
+                                                        {/* Results — shown after analysis completes */}
+                                                        {githubAnalysisResults && githubAnalysisResults.length > 0 && analysisState.status !== 'analyzing' && (
+                                                            <Box>
+                                                                <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 700, color: 'var(--text-primary)' }}>
+                                                                    Documentation Gaps Found ({githubAnalysisResults.length})
+                                                                </Typography>
+                                                                {githubAnalysisResults.map((result: any, idx: number) => (
+                                                                    <Card key={idx} sx={{
+                                                                        mb: 2.5,
+                                                                        border: '1px solid',
+                                                                        borderColor: 'rgba(255,255,255,0.1)',
+                                                                        borderLeft: '3px solid',
+                                                                        borderLeftColor: '#6366f1',
+                                                                        overflow: 'visible'
+                                                                    }}>
+                                                                        <CardContent sx={{ pb: '12px !important', p: 2 }}>
+                                                                            {/* Header: issue title + link */}
+                                                                            <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 0.75 }}>
+                                                                                <Typography variant="subtitle2" sx={{ fontWeight: 700, flex: 1, fontSize: '0.9rem' }}>
+                                                                                    #{result.number}: {result.title}
+                                                                                </Typography>
+                                                                                <a href={result.html_url} target="_blank" rel="noopener noreferrer"
+                                                                                    style={{ marginLeft: 8, color: '#94a3b8', display: 'inline-flex' }}
+                                                                                    title="View issue on GitHub">
+                                                                                    <OpenInNewIcon sx={{ fontSize: 18, '&:hover': { color: '#3b82f6' } }} />
+                                                                                </a>
+                                                                            </Box>
+
+                                                                            {/* Gap type + confidence badge */}
+                                                                            <Box sx={{ display: 'flex', gap: 1, mb: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+                                                                                <Chip
+                                                                                    label={result.docsGap?.gapType?.replace('-', ' ') || 'analysis pending'}
+                                                                                    size="small"
+                                                                                    variant="outlined"
+                                                                                    sx={{ fontWeight: 600, textTransform: 'capitalize', fontSize: '0.7rem', borderColor: 'rgba(255,255,255,0.15)', color: '#94a3b8' }}
+                                                                                />
+                                                                                <Chip
+                                                                                    label={`${result.docsGap?.confidence || 0}% confidence`}
+                                                                                    size="small"
+                                                                                    variant="outlined"
+                                                                                    sx={{ fontWeight: 600, fontSize: '0.7rem', borderColor: 'rgba(255,255,255,0.15)', color: '#94a3b8' }}
+                                                                                />
+                                                                                {result.docsGap?.affectedDocs?.length > 0 && (
+                                                                                    <Typography variant="caption" sx={{ color: 'var(--text-secondary)', fontSize: '0.7rem' }}>
+                                                                                        {result.docsGap.affectedDocs.join(', ')}
+                                                                                    </Typography>
+                                                                                )}
+                                                                            </Box>
+
+                                                                            {/* Section context */}
+                                                                            {result.docsGap?.section && (
+                                                                                <Typography variant="caption" sx={{ display: 'block', mb: 1, color: '#64748b', fontSize: '0.7rem' }}>
+                                                                                    {result.docsGap.section}{result.docsGap.lineContext ? ` · ${result.docsGap.lineContext}` : ''}
+                                                                                </Typography>
+                                                                            )}
+
+                                                                            {/* Before / After text blocks */}
+                                                                            {result.docsGap?.originalText && result.docsGap?.correctedText && (
+                                                                                <Box sx={{ mb: 1 }}>
+                                                                                    {/* Before */}
+                                                                                    <Box sx={{ mb: 1 }}>
+                                                                                        <Typography variant="caption" sx={{ fontWeight: 700, color: '#94a3b8', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.5, display: 'block' }}>
+                                                                                            Before
+                                                                                        </Typography>
+                                                                                        <Box sx={{
+                                                                                            bgcolor: 'rgba(255,255,255,0.03)',
+                                                                                            border: '1px solid rgba(255,255,255,0.06)',
+                                                                                            borderRadius: 1,
+                                                                                            p: 1.5,
+                                                                                        }}>
+                                                                                            <Typography variant="body2" sx={{
+                                                                                                fontSize: '0.8rem',
+                                                                                                lineHeight: 1.6,
+                                                                                                color: '#cbd5e1',
+                                                                                                whiteSpace: 'pre-wrap',
+                                                                                                wordBreak: 'break-word',
+                                                                                                fontFamily: 'inherit',
+                                                                                            }}>
+                                                                                                {result.docsGap.originalText}
+                                                                                            </Typography>
+                                                                                        </Box>
+                                                                                    </Box>
+                                                                                    {/* After */}
+                                                                                    <Box>
+                                                                                        <Typography variant="caption" sx={{ fontWeight: 700, color: '#94a3b8', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.5, display: 'block' }}>
+                                                                                            After
+                                                                                        </Typography>
+                                                                                        <Box sx={{
+                                                                                            bgcolor: 'rgba(255,255,255,0.03)',
+                                                                                            border: '1px solid rgba(255,255,255,0.06)',
+                                                                                            borderRadius: 1,
+                                                                                            p: 1.5,
+                                                                                        }}>
+                                                                                            <Typography variant="body2" sx={{
+                                                                                                fontSize: '0.8rem',
+                                                                                                lineHeight: 1.6,
+                                                                                                color: '#e2e8f0',
+                                                                                                whiteSpace: 'pre-wrap',
+                                                                                                wordBreak: 'break-word',
+                                                                                                fontFamily: 'inherit',
+                                                                                            }}>
+                                                                                                {result.docsGap.correctedText}
+                                                                                            </Typography>
+                                                                                        </Box>
+                                                                                    </Box>
+                                                                                </Box>
+                                                                            )}
+
+                                                                            {/* Action buttons row */}
+                                                                            {result.docsGap?.correctedText && (
+                                                                                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+                                                                                    <Button
+                                                                                        size="small"
+                                                                                        variant="outlined"
+                                                                                        startIcon={copiedFixIndex === idx ? <CheckIcon /> : <ContentCopyIcon />}
+                                                                                        onClick={() => {
+                                                                                            navigator.clipboard.writeText(result.docsGap.correctedText);
+                                                                                            setCopiedFixIndex(idx);
+                                                                                            setTimeout(() => setCopiedFixIndex(null), 2000);
+                                                                                        }}
+                                                                                        sx={{
+                                                                                            fontWeight: 600,
+                                                                                            fontSize: '0.7rem',
+                                                                                            whiteSpace: 'nowrap',
+                                                                                            color: copiedFixIndex === idx ? '#22c55e' : '#3b82f6',
+                                                                                            borderColor: copiedFixIndex === idx ? '#22c55e' : '#3b82f6',
+                                                                                            '&:hover': { borderColor: copiedFixIndex === idx ? '#22c55e' : '#2563eb', bgcolor: 'rgba(59,130,246,0.05)' }
+                                                                                        }}
+                                                                                    >
+                                                                                        {copiedFixIndex === idx ? 'Copied!' : 'Copy corrected text'}
+                                                                                    </Button>
+                                                                                    {result.docsGap?.affectedDocs?.length > 0 && (() => {
+                                                                                        // Build GitHub edit URL from repo URL + first affected doc
+                                                                                        let editUrl = '';
+                                                                                        try {
+                                                                                            const urlStr = githubRepoUrl.trim();
+                                                                                            let owner = '', repo = '';
+                                                                                            if (urlStr.includes('github.com')) {
+                                                                                                const parts = urlStr.replace(/https?:\/\/(www\.)?github\.com\//, '').replace(/\/$/, '').split('/');
+                                                                                                owner = parts[0];
+                                                                                                repo = parts[1]?.replace(/\.git$/, '') || '';
+                                                                                            } else if (urlStr.includes('/')) {
+                                                                                                [owner, repo] = urlStr.split('/');
+                                                                                            }
+                                                                                            const filePath = result.docsGap.affectedDocs[0].replace(/^\//, '');
+                                                                                            if (owner && repo && filePath) {
+                                                                                                editUrl = `https://github.com/${owner}/${repo}/edit/main/${filePath}`;
+                                                                                            }
+                                                                                        } catch { /* ignore */ }
+                                                                                        return editUrl ? (
+                                                                                            <Button
+                                                                                                size="small"
+                                                                                                variant="outlined"
+                                                                                                startIcon={<OpenInNewIcon />}
+                                                                                                href={editUrl}
+                                                                                                target="_blank"
+                                                                                                rel="noopener noreferrer"
+                                                                                                sx={{
+                                                                                                    fontWeight: 600,
+                                                                                                    fontSize: '0.7rem',
+                                                                                                    whiteSpace: 'nowrap',
+                                                                                                    color: '#a78bfa',
+                                                                                                    borderColor: '#a78bfa',
+                                                                                                    '&:hover': { borderColor: '#8b5cf6', bgcolor: 'rgba(139,92,246,0.05)' }
+                                                                                                }}
+                                                                                            >
+                                                                                                Open PR
+                                                                                            </Button>
+                                                                                        ) : null;
+                                                                                    })()}
+                                                                                </Box>
+                                                                            )}
+                                                                        </CardContent>
+                                                                    </Card>
+                                                                ))}
+                                                            </Box>
+                                                        )}
+
+                                                        {/* Empty state */}
+                                                        {githubAnalysisResults && githubAnalysisResults.length === 0 && analysisState.status !== 'analyzing' && (
+                                                            <Box sx={{ p: 3, textAlign: 'center', bgcolor: 'rgba(34, 197, 94, 0.05)', borderRadius: 2, border: '1px solid rgba(34, 197, 94, 0.15)' }}>
+                                                                <CheckCircleIcon sx={{ fontSize: 40, color: '#22c55e', mb: 1 }} />
+                                                                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
+                                                                    No documentation gaps found
+                                                                </Typography>
+                                                                <Typography variant="caption" color="text.secondary">
+                                                                    Great docs! The selected issues don't reveal documentation problems.
+                                                                </Typography>
+                                                            </Box>
+                                                        )}
+                                                    </Box>
+                                                )}
+                                            </Box>
+                                        </Box>
+                                    )}
+                                </>
+                            ) : selectedMode === 'issue-discovery' ? (
                                 <>
                                     <TextField
                                         fullWidth
@@ -2578,11 +3233,16 @@ function LensyApp() {
                         <Button
                             variant="contained"
                             onClick={handleAnalyze}
-                            disabled={analysisState.status === 'analyzing'}
+                            disabled={
+                                analysisState.status === 'analyzing' ||
+                                isFetchingGithubIssues ||
+                                (selectedMode === 'github-issues' && githubIssues.length > 0 && selectedGithubIssues.length === 0)
+                            }
                             sx={{
                                 height: 56,
                                 minWidth: 120,
                                 px: 4,
+                                whiteSpace: 'nowrap',
                                 boxShadow: '0 0 20px rgba(59, 130, 246, 0.15)',
                                 '&:hover': {
                                     boxShadow: '0 0 30px rgba(59, 130, 246, 0.25)',
@@ -2591,10 +3251,15 @@ function LensyApp() {
                         >
                             {analysisState.status === 'analyzing' ? (
                                 <CircularProgress size={20} color="inherit" />
+                            ) : isFetchingGithubIssues ? (
+                                <CircularProgress size={20} color="inherit" />
                             ) : analysisState.status === 'generating' ? (
                                 'Generating...'
                             ) : analysisState.status === 'applying' ? (
                                 'Applying...'
+                            ) : selectedMode === 'github-issues' ? (
+                                githubIssues.length === 0 ? 'Fetch Issues' :
+                                selectedGithubIssues.length > 0 ? `Analyze (${selectedGithubIssues.length})` : 'Select Issues'
                             ) : (fixSuccessMessage || (!analysisState.report && currentSessionId)) ? (
                                 'Re-scan'
                             ) : (
@@ -2613,8 +3278,8 @@ function LensyApp() {
                     )}
                 </Paper>
 
-                {/* Progress Messages */}
-                {analysisState.progressMessages.length > 0 && (
+                {/* Progress Messages — hidden for github-issues mode (shown inline in right column) */}
+                {analysisState.progressMessages.length > 0 && selectedMode !== 'github-issues' && (
                     <Paper elevation={3} sx={{ p: 3, mb: 4 }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
                             <Typography variant="h6">
