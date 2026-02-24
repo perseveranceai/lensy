@@ -1022,18 +1022,18 @@ async function validateInternalLinks(
                     linkIssues.push(linkIssue);
 
                     await progress.info(`⚠ Broken link (404): ${linkInfo.url}`);
-                } else if (response.status === 403) {
+                } else if (response.status === 401 || response.status === 403) {
                     const linkIssue: LinkIssue = {
                         url: linkInfo.url,
-                        status: 403,
+                        status: response.status,
                         anchorText: linkInfo.anchorText,
                         sourceLocation: 'main page',
-                        errorMessage: 'Access denied (403 Forbidden)',
+                        errorMessage: `Access denied (${response.status} ${response.status === 401 ? 'Unauthorized' : 'Forbidden'})`,
                         issueType: 'access-denied'
                     };
                     linkIssues.push(linkIssue);
 
-                    await progress.info(`⚠ Link issue (403): ${linkInfo.url}`);
+                    await progress.info(`⚠ Link issue (${response.status}): ${linkInfo.url}`);
                 } else if (response.status >= 400) {
                     const linkIssue: LinkIssue = {
                         url: linkInfo.url,

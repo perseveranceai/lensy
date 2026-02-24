@@ -333,6 +333,35 @@ function LensyApp() {
     const [validationResults, setValidationResults] = useState<any>(null);
     // GitHub Issues mode state
     const [githubRepoUrl, setGithubRepoUrl] = useState('');
+    const [githubDocsUrl, setGithubDocsUrl] = useState('');
+    const [suggestedDocsRepos, setSuggestedDocsRepos] = useState<Array<{ name: string; fullName: string; description: string; hasDocsContent: boolean; contentFileCount: number; codeFileCount: number; hasLlmsTxt: boolean }>>([]);
+    const [showManualDocsEntry, setShowManualDocsEntry] = useState(false);
+    const [docsSource, setDocsSource] = useState<'github' | 'website' | 'repo-only' | null>(null);
+    const [noDocsAsCode, setNoDocsAsCode] = useState(false);
+    const [docsAsCodeConfirmation, setDocsAsCodeConfirmation] = useState<'pending' | 'yes' | 'no' | null>(null); // human-in-the-loop step
+    const [docsContextReady, setDocsContextReady] = useState(false); // gates issue selection — true only when a valid docs source is confirmed
+    const [crawlUrl, setCrawlUrl] = useState('');
+    const [creatingPrIndex, setCreatingPrIndex] = useState<number | null>(null);
+    const [prUrls, setPrUrls] = useState<Record<number, string>>({});
+    const [prError, setPrError] = useState<string | null>(null);
+    const [docsContextHint, setDocsContextHint] = useState<string | null>(null);
+    // Preview-docs state (pre-crawl confirmation step)
+    const [previewDocs, setPreviewDocs] = useState<{
+        found: boolean;
+        source: 'llms.txt' | 'sitemap.xml' | null;
+        sourceUrl?: string;
+        pageCount?: number;
+        categories?: string[];
+        domain?: string;
+        message?: string;
+    } | null>(null);
+    const [isPreviewingDocs, setIsPreviewingDocs] = useState(false);
+    const [manualLlmsUrl, setManualLlmsUrl] = useState(''); // Direct llms.txt/sitemap.xml URL if auto-detect fails
+    // Knowledge Base build state (separate from analysis)
+    const [kbBuildState, setKbBuildState] = useState<'idle' | 'building' | 'ready' | 'error'>('idle');
+    const kbBuildStateRef = useRef<'idle' | 'building' | 'ready' | 'error'>('idle');
+    const [kbBuildProgress, setKbBuildProgress] = useState<Array<{ type: string; message: string; timestamp: number; metadata?: any }>>([]);
+    const [kbInfo, setKbInfo] = useState<{ domain: string; pageCount: number } | null>(null);
     const [githubIssues, setGithubIssues] = useState<Array<{
         number: number;
         title: string;
@@ -342,6 +371,8 @@ function LensyApp() {
         created_at: string;
         comments: number;
         isDocsRelated: boolean;
+        docsConfidence?: number;
+        docsCategories?: string[];
         docsGap?: {
             gapType: string;
             affectedDocs: string[];
@@ -353,6 +384,7 @@ function LensyApp() {
     const [selectedGithubIssues, setSelectedGithubIssues] = useState<number[]>([]);
     const [isFetchingGithubIssues, setIsFetchingGithubIssues] = useState(false);
     const [githubFetchCompleted, setGithubFetchCompleted] = useState(false);
+    const [githubFetchMeta, setGithubFetchMeta] = useState<{ totalFetched: number; dateRange: string; classificationMethod: 'llm' | 'keyword' } | null>(null);
     const [githubAnalysisResults, setGithubAnalysisResults] = useState<any>(null);
     const [copiedFixIndex, setCopiedFixIndex] = useState<number | null>(null);
     const [analysisState, setAnalysisState] = useState<AnalysisState>({
@@ -376,6 +408,11 @@ function LensyApp() {
     const [forceFreshScan, setForceFreshScan] = useState(false);
     const [fixSuccessMessage, setFixSuccessMessage] = useState<string | null>(null);
     const [lastModifiedFile, setLastModifiedFile] = useState<string | null>(null);
+
+    // Keep kbBuildState ref in sync (for use in WebSocket callbacks where state is stale)
+    useEffect(() => {
+        kbBuildStateRef.current = kbBuildState;
+    }, [kbBuildState]);
 
     // Auto-detect input type when URL changes (for Doc/Sitemap modes)
     useEffect(() => {
@@ -674,15 +711,23 @@ function LensyApp() {
         setGithubIssues([]);
         setSelectedGithubIssues([]);
         setGithubAnalysisResults(null);
+        setDocsAsCodeConfirmation(null);
+        setNoDocsAsCode(false);
+        setDocsContextReady(false);
+        setKbBuildState('idle');
+        setKbBuildProgress([]);
+        setKbInfo(null);
+        setCrawlUrl('');
+        setPreviewDocs(null);
 
         try {
             console.log(`Fetching GitHub issues for ${owner}/${repo}...`);
 
-            // Call our backend endpoint for github issues
+            // Call our backend endpoint for github issues (last 2 weeks, LLM-classified)
             const response = await fetch(`${API_BASE_URL}/github-issues`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ owner, repo, maxIssues: 30 })
+                body: JSON.stringify({ owner, repo, docsUrl: githubDocsUrl || undefined })
             });
 
             if (!response.ok) {
@@ -700,10 +745,46 @@ function LensyApp() {
             }
 
             const result = await response.json();
-            console.log(`Fetched ${result.issues?.length || 0} issues, ${result.docsRelatedCount || 0} docs-related`);
+            console.log(`Fetched ${result.totalFetched || result.issues?.length || 0} issues (${result.dateRange}), ${result.docsRelatedCount || 0} docs-related via ${result.classificationMethod}`);
 
             setGithubIssues(result.issues || []);
+            setGithubFetchMeta({
+                totalFetched: result.totalFetched || result.issues?.length || 0,
+                dateRange: result.dateRange || 'last 2 weeks',
+                classificationMethod: result.classificationMethod || 'llm'
+            });
             setGithubFetchCompleted(true);
+
+            // Handle docs repo discovery results with human-in-the-loop
+            if (result.docsContext?.suggestedDocsRepos?.length > 0 && !githubDocsUrl) {
+                const repos = result.docsContext.suggestedDocsRepos;
+                setSuggestedDocsRepos(repos);
+
+                // Check if ANY discovered repo has actual docs content
+                const reposWithDocs = repos.filter((r: any) => r.hasDocsContent);
+                const reposWithoutDocs = repos.filter((r: any) => !r.hasDocsContent);
+
+                if (reposWithDocs.length > 0) {
+                    // At least one repo has real docs — auto-select the first one with docs
+                    setGithubDocsUrl(reposWithDocs[0].fullName);
+                    setDocsAsCodeConfirmation(null);
+                    setDocsContextReady(true); // docs source confirmed automatically
+                } else if (reposWithoutDocs.length > 0) {
+                    // Found repos matching docs patterns but NO actual docs content
+                    // → trigger human-in-the-loop: "Do you store docs as code?"
+                    setDocsAsCodeConfirmation('pending');
+                    setGithubDocsUrl(''); // don't auto-select
+                }
+                setDocsContextHint(null);
+            } else if (result.docsContext?.hint && !githubDocsUrl) {
+                setDocsContextHint(result.docsContext.hint);
+                setSuggestedDocsRepos([]);
+                setDocsAsCodeConfirmation(null);
+            } else {
+                setDocsContextHint(null);
+                setSuggestedDocsRepos([]);
+                setDocsAsCodeConfirmation(null);
+            }
 
             // Default to none selected — user picks which to analyze
             setSelectedGithubIssues([]);
@@ -720,6 +801,33 @@ function LensyApp() {
         }
     };
 
+    // Shared handler for processing GitHub analysis results (used by both sync and async paths)
+    const handleGithubAnalysisResults = (results: any) => {
+        // Check if backend detected no docs-as-code
+        if (results.noDocsAsCode) {
+            setNoDocsAsCode(true);
+            setAnalysisState({
+                status: 'completed',
+                progressMessages: [
+                    { type: 'info', message: results.message, timestamp: Date.now() }
+                ]
+            });
+            return;
+        }
+
+        setNoDocsAsCode(false);
+        setDocsSource(results.docsSource || 'repo-only');
+        setGithubAnalysisResults(results.analyses || []);
+        setCopiedFixIndex(null);
+        setAnalysisState(prev => ({
+            status: 'completed',
+            progressMessages: [
+                ...prev.progressMessages,
+                { type: 'success', message: `Analysis complete: ${results.analyses?.length || 0} issues analyzed`, timestamp: Date.now() }
+            ]
+        }));
+    };
+
     const handleAnalyzeGithubIssues = async () => {
         if (selectedGithubIssues.length === 0) {
             setAnalysisState({ status: 'error', error: 'Please select at least one issue to analyze', progressMessages: [] });
@@ -731,13 +839,26 @@ function LensyApp() {
         const parts = urlStr.replace(/https?:\/\/github\.com\//, '').replace(/\/$/, '').split('/');
         const owner = parts[0], repo = parts[1];
 
+        const currentSessionId = `github-${Date.now()}`;
+        const isAsyncCrawl = !!crawlUrl;
+
         setAnalysisState({
             status: 'analyzing',
-            progressMessages: [{ type: 'info', message: 'Analyzing selected issues against documentation...', timestamp: Date.now() }]
+            progressMessages: [{ type: 'info', message: isAsyncCrawl ? 'Starting docs crawl and analysis (this may take 1-2 minutes)...' : 'Analyzing selected issues against documentation...', timestamp: Date.now() }]
         });
 
         try {
             const issuesToAnalyze = githubIssues.filter(i => selectedGithubIssues.includes(i.number));
+
+            // Connect WebSocket before async crawl for real-time progress
+            if (isAsyncCrawl) {
+                try {
+                    await connectWebSocket(currentSessionId);
+                    console.log('WebSocket connected for GitHub issues analysis session:', currentSessionId);
+                } catch (wsErr) {
+                    console.warn('WebSocket connection failed, will use polling:', wsErr);
+                }
+            }
 
             const response = await fetch(`${API_BASE_URL}/github-issues/analyze`, {
                 method: 'POST',
@@ -752,7 +873,9 @@ function LensyApp() {
                         html_url: i.html_url,
                         labels: i.labels
                     })),
-                    sessionId: `github-${Date.now()}`
+                    docsUrl: githubDocsUrl || undefined,
+                    crawlUrl: crawlUrl || undefined,
+                    sessionId: currentSessionId
                 })
             });
 
@@ -763,17 +886,56 @@ function LensyApp() {
                 }
                 throw new Error(`HTTP ${response.status}`);
             }
-            const results = await response.json();
 
-            setGithubAnalysisResults(results.analyses || []);
-            setCopiedFixIndex(null);
-            setAnalysisState({
-                status: 'completed',
-                progressMessages: [
-                    ...analysisState.progressMessages,
-                    { type: 'success', message: `Analysis complete: ${results.analyses?.length || 0} issues analyzed`, timestamp: Date.now() }
-                ]
-            });
+            // Handle async response (202 Accepted) — poll for results
+            if (response.status === 202) {
+                console.log('Async analysis started, polling for results...');
+                setAnalysisState(prev => ({
+                    ...prev,
+                    progressMessages: [
+                        ...prev.progressMessages,
+                        { type: 'info', message: 'Analysis running in background. Live progress updates will appear below...', timestamp: Date.now() }
+                    ]
+                }));
+
+                // Poll for results every 5 seconds
+                const pollForResults = async () => {
+                    const maxAttempts = 60; // 5 minutes max
+                    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                        await new Promise(resolve => setTimeout(resolve, 5000));
+
+                        try {
+                            const pollResponse = await fetch(`${API_BASE_URL}/github-issues/results/${currentSessionId}`);
+                            if (pollResponse.status === 200) {
+                                const results = await pollResponse.json();
+                                if (results.analyses) {
+                                    console.log('Got results via polling:', results);
+                                    handleGithubAnalysisResults(results);
+                                    return;
+                                }
+                            }
+                            // 202 means still processing, continue polling
+                        } catch (pollErr) {
+                            console.warn('Poll attempt failed:', pollErr);
+                        }
+                    }
+
+                    // Timeout
+                    setAnalysisState(prev => ({
+                        status: 'error',
+                        error: 'Analysis timed out after 5 minutes. The results may still be processing — try refreshing.',
+                        progressMessages: prev.progressMessages
+                    }));
+                };
+
+                pollForResults();
+                return; // Don't block — polling runs in background
+            }
+
+            // Synchronous response — handle directly
+            const results = await response.json();
+            handleGithubAnalysisResults(results);
+
         } catch (error) {
             console.error('Error analyzing GitHub issues:', error);
             setAnalysisState({
@@ -781,6 +943,165 @@ function LensyApp() {
                 error: `Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
                 progressMessages: []
             });
+        }
+    };
+
+    // ─── Preview Docs: lightweight check before crawling ──────────────────────
+    const handlePreviewDocs = async () => {
+        const rawInput = crawlUrl.trim();
+        if (!rawInput) {
+            setAnalysisState({ status: 'error', error: 'Please enter your docs website URL first.', progressMessages: [] });
+            return;
+        }
+
+        // Normalize: strip https://, www., trailing slash, detect if full URL given
+        const normalized = rawInput
+            .replace(/^https?:\/\//i, '')
+            .replace(/^www\./, '')
+            .replace(/\/$/, '');
+        const domain = normalized.split('/')[0]; // just the host
+
+        setIsPreviewingDocs(true);
+        setPreviewDocs(null);
+        setManualLlmsUrl('');
+
+        try {
+            const res = await fetch(`${API_BASE_URL}/github-issues/preview-docs?domain=${encodeURIComponent(domain)}`);
+            const data = await res.json();
+            setPreviewDocs(data);
+            if (data.found) {
+                if (data.cached && data.cachedPageCount > 0) {
+                    // KB already exists in S3 cache — skip "Build Knowledge Base" button entirely
+                    setKbBuildState('ready');
+                    setKbInfo({ domain, pageCount: data.cachedPageCount });
+                    setDocsContextReady(true);
+                } else {
+                    // No cache — show "Build Knowledge Base" button
+                    setKbBuildState('idle');
+                    setKbBuildProgress([]);
+                    setKbInfo(null);
+                }
+            } else {
+                // Auto-populate manual URL field with the domain for user to correct
+                setManualLlmsUrl(`https://${domain}/llms.txt`);
+            }
+        } catch (err) {
+            setPreviewDocs({ found: false, source: null, domain, message: 'Failed to check the domain. Please verify the URL and try again.' });
+            setManualLlmsUrl(`https://${domain}/llms.txt`);
+        } finally {
+            setIsPreviewingDocs(false);
+        }
+    };
+
+    // When user provides a manual llms.txt / sitemap URL, use that as the crawlUrl directly
+    const handleConfirmManualUrl = () => {
+        const url = manualLlmsUrl.trim();
+        if (!url.startsWith('http')) {
+            setAnalysisState({ status: 'error', error: 'Please enter a full URL starting with https://', progressMessages: [] });
+            return;
+        }
+        // Set crawlUrl to the manual URL and treat as confirmed
+        setCrawlUrl(url);
+        const domain = url.replace(/^https?:\/\//i, '').split('/')[0];
+        setPreviewDocs({ found: true, source: url.includes('sitemap') ? 'sitemap.xml' : 'llms.txt', sourceUrl: url, domain, pageCount: undefined, categories: [] });
+        // docsContextReady is set ONLY after KB is built, not on manual URL confirmation
+        setKbBuildState('idle');
+        setKbBuildProgress([]);
+        setKbInfo(null);
+    };
+
+    // Build Knowledge Base — crawl + summarize + S3 cache (separate from issue analysis)
+    const handleBuildKb = async () => {
+        const domain = crawlUrl.trim()
+            .replace(/^https?:\/\//i, '')
+            .replace(/^www\./, '')
+            .replace(/\/$/, '')
+            .split('/')[0];
+
+        const kbSessionId = `kb-${Date.now()}`;
+
+        setKbBuildState('building');
+        setKbBuildProgress([
+            { type: 'info', message: `Building knowledge base for ${domain}...`, timestamp: Date.now() }
+        ]);
+
+        try {
+            // Connect WebSocket for real-time progress
+            try {
+                const ws = await connectWebSocket(kbSessionId);
+                // Override onmessage to route KB progress to kbBuildProgress (not analysisState)
+                ws.onmessage = (event: MessageEvent) => {
+                    try {
+                        const message = JSON.parse(event.data);
+                        if (message.message === 'pong') return;
+                        console.log('KB build progress:', message);
+                        setKbBuildProgress(prev => [...prev, message]);
+
+                        // Detect completion via success message with contextPages (only on first success, guard against overwrites)
+                        if (message.type === 'success' && message.metadata?.contextPages && kbBuildStateRef.current !== 'ready') {
+                            setKbInfo({ domain, pageCount: message.metadata.contextPages });
+                            setKbBuildState('ready');
+                            setDocsContextReady(true);
+                        }
+                    } catch (error) {
+                        console.error('Error parsing KB progress WebSocket message:', error);
+                    }
+                };
+            } catch (wsErr) {
+                console.warn('WebSocket connection failed for KB build, will use polling:', wsErr);
+            }
+
+            // Send the build-kb request
+            const response = await fetch(`${API_BASE_URL}/github-issues/build-kb`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    crawlUrl: crawlUrl.trim(),
+                    sessionId: kbSessionId
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            // 202 means async — poll for results
+            if (response.status === 202) {
+                const maxAttempts = 60; // 5 minutes
+                for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                    // Check if already completed via WebSocket
+                    if (kbBuildState === 'ready') return;
+
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    try {
+                        const pollResponse = await fetch(`${API_BASE_URL}/github-issues/results/${kbSessionId}`);
+                        if (pollResponse.status === 200) {
+                            const result = await pollResponse.json();
+                            if (result.status === 'kb-ready') {
+                                setKbInfo({ domain: result.domain, pageCount: result.pageCount });
+                                setKbBuildState('ready');
+                                setDocsContextReady(true);
+                                return;
+                            }
+                        }
+                    } catch (pollErr) {
+                        console.warn('KB poll attempt failed:', pollErr);
+                    }
+                }
+                // Timeout
+                setKbBuildState('error');
+                setKbBuildProgress(prev => [
+                    ...prev,
+                    { type: 'error', message: 'Knowledge base build timed out after 5 minutes.', timestamp: Date.now() }
+                ]);
+            }
+        } catch (error) {
+            console.error('KB build failed:', error);
+            setKbBuildState('error');
+            setKbBuildProgress(prev => [
+                ...prev,
+                { type: 'error', message: `Failed to build knowledge base: ${error instanceof Error ? error.message : 'Unknown error'}`, timestamp: Date.now() }
+            ]);
         }
     };
 
@@ -2153,8 +2474,9 @@ function LensyApp() {
             // --- SITEMAP MODE (narrative) ---
             heading('Sitemap Health Summary');
             const sh = report.sitemapHealth;
+            const shPct = sh.healthPercentage ?? ((sh.totalUrls || 0) > 0 ? Math.round(((sh.healthyUrls || 0) / (sh.totalUrls || 1)) * 100) : 0);
             para(
-                `The sitemap contains ${sh.totalUrls} URLs in total, of which ${sh.healthyUrls} are healthy (${sh.healthPercentage}%). ` +
+                `The sitemap contains ${sh.totalUrls} URLs in total, of which ${sh.healthyUrls} are healthy (${shPct}%). ` +
                 `Broken links (404): ${sh.brokenUrls || 0}. Access-denied responses (403): ${sh.accessDeniedUrls || 0}. ` +
                 `Timeouts: ${sh.timeoutUrls || 0}. Other errors: ${sh.otherErrorUrls || 0}.`
             );
@@ -2311,8 +2633,8 @@ function LensyApp() {
             const scoreVerdict = overallScore >= 80
                 ? 'The page demonstrates strong documentation quality across most dimensions.'
                 : overallScore >= 60
-                ? 'The page meets baseline quality standards but has room for improvement in several areas.'
-                : 'The page has significant quality gaps that should be addressed.';
+                    ? 'The page meets baseline quality standards but has room for improvement in several areas.'
+                    : 'The page has significant quality gaps that should be addressed.';
             para(`This documentation scored ${overallScore}/100 overall. ${scoreVerdict}`);
             y += 1;
 
@@ -2414,8 +2736,9 @@ function LensyApp() {
                     para(`The sitemap check was unable to complete. ${cleanText(report.sitemapHealth.error)}`);
                 } else {
                     const sh = report.sitemapHealth;
+                    const pctHealthy = sh.healthPercentage ?? ((sh.totalUrls || 0) > 0 ? Math.round(((sh.healthyUrls || 0) / (sh.totalUrls || 1)) * 100) : 0);
                     para(
-                        `The domain-level sitemap contains ${sh.totalUrls} URLs. Of these, ${sh.healthyUrls} (${sh.healthPercentage}%) are healthy. ` +
+                        `The domain-level sitemap contains ${sh.totalUrls} URLs. Of these, ${sh.healthyUrls} (${pctHealthy}%) are healthy. ` +
                         `Broken links (404): ${sh.brokenUrls || 0}. Access-denied (403): ${sh.accessDeniedUrls || 0}. Timeouts: ${sh.timeoutUrls || 0}.`
                     );
                     if (sh.linkIssues && sh.linkIssues.length > 0) {
@@ -2498,20 +2821,44 @@ function LensyApp() {
                 });
             }
 
-            // --- A5: Link Issues ---
+            // --- A5: Link Issues (grouped by type) ---
             const linkIssues = report.linkAnalysis.linkValidation?.linkIssueFindings || [];
             if (linkIssues.length > 0) {
+                const brokenLinks = linkIssues.filter((l: any) => l.issueType === '404');
+                const authLinks = linkIssues.filter((l: any) => l.issueType === 'access-denied');
+                const timeoutLinks = linkIssues.filter((l: any) => l.issueType === 'timeout');
+                const otherLinks = linkIssues.filter((l: any) => l.issueType === 'error');
+
                 heading('Link Issues');
                 para(`${linkIssues.length} link issue${linkIssues.length !== 1 ? 's were' : ' was'} found during validation.`);
-                linkIssues.forEach((link: any, i: number) => {
-                    checkPage(lh);
-                    doc.setFontSize(sz);
-                    doc.setFont(fn, 'normal');
-                    doc.setTextColor(...c.textBody);
-                    const linkLine = `${i + 1}. [${link.issueType}] "${link.anchorText || 'Link'}" links to ${link.url}`;
-                    doc.text(linkLine.length > 100 ? linkLine.substring(0, 97) + '...' : linkLine, margin, y);
-                    y += lh;
-                });
+
+                const renderLinkGroup = (title: string, items: any[], muted: boolean, note?: string) => {
+                    if (items.length === 0) return;
+                    subheading(`${title} (${items.length})`);
+                    if (note) {
+                        checkPage(lh);
+                        doc.setFontSize(sz - 1);
+                        doc.setFont(fn, 'italic');
+                        doc.setTextColor(...(muted ? c.textLight : c.textBody));
+                        doc.text(note, margin, y);
+                        y += lh;
+                    }
+                    items.forEach((link: any, i: number) => {
+                        checkPage(lh);
+                        doc.setFontSize(sz);
+                        doc.setFont(fn, 'normal');
+                        doc.setTextColor(...(muted ? c.textLight : c.textBody));
+                        const linkLine = `${i + 1}. "${link.anchorText || 'Link'}" \u2192 ${link.url}`;
+                        doc.text(linkLine.length > 100 ? linkLine.substring(0, 97) + '...' : linkLine, margin, y);
+                        y += lh;
+                    });
+                    y += 1;
+                };
+
+                renderLinkGroup('Broken Links (404)', brokenLinks, false);
+                renderLinkGroup('Auth-Protected (401/403)', authLinks, true, 'These endpoints may require authentication and are likely not broken.');
+                renderLinkGroup('Timeouts', timeoutLinks, true);
+                renderLinkGroup('Other Errors', otherLinks, true);
                 y += 2;
             }
 
@@ -2668,25 +3015,47 @@ function LensyApp() {
             <Container maxWidth={selectedMode === 'github-issues' && (analysisState.status === 'analyzing' || githubAnalysisResults) ? 'xl' : 'lg'} sx={{ py: 4, transition: 'max-width 0.3s ease' }}>
 
                 <Paper sx={{ p: 4, mb: 4 }}>
-                    <Box sx={{ display: 'flex', gap: 1, mb: 3, alignItems: 'center' }}>
-                        <Chip
-                            label="Doc Audit"
-                            onClick={() => { setSelectedMode('doc'); setManualModeOverride('doc'); }}
-                            color={selectedMode === 'doc' ? 'primary' : 'default'}
-                            variant={selectedMode === 'doc' ? 'filled' : 'outlined'}
-                            sx={{ fontWeight: 600 }}
-                        />
-                        <Chip
-                            label="GitHub Issues"
-                            onClick={() => { setSelectedMode('github-issues'); setManualModeOverride('github-issues'); }}
-                            color={selectedMode === 'github-issues' ? 'primary' : 'default'}
-                            variant={selectedMode === 'github-issues' ? 'filled' : 'outlined'}
-                            sx={{ fontWeight: 600 }}
-                        />
-                        <Box sx={{ flex: 1 }} />
+                    <Box sx={{ position: 'relative', display: 'flex', justifyContent: 'center', mb: 3, alignItems: 'center' }}>
+                        {/* Segmented toggle bar */}
+                        <Box sx={{
+                            display: 'inline-flex',
+                            bgcolor: 'rgba(255,255,255,0.06)',
+                            borderRadius: '10px',
+                            p: '3px',
+                            gap: '2px',
+                        }}>
+                            {[
+                                { key: 'doc', label: 'Doc Audit' },
+                                { key: 'github-issues', label: 'GitHub Issues' },
+                            ].map((tab) => (
+                                <Box
+                                    key={tab.key}
+                                    onClick={() => { setSelectedMode(tab.key as any); setManualModeOverride(tab.key as any); }}
+                                    sx={{
+                                        px: 2, py: 0.75,
+                                        borderRadius: '8px',
+                                        cursor: 'pointer',
+                                        fontWeight: 600,
+                                        fontSize: '0.82rem',
+                                        color: selectedMode === tab.key ? '#fff' : '#94a3b8',
+                                        bgcolor: selectedMode === tab.key ? 'rgba(255,255,255,0.12)' : 'transparent',
+                                        transition: 'all 0.15s ease',
+                                        userSelect: 'none',
+                                        '&:hover': {
+                                            color: selectedMode === tab.key ? '#fff' : '#cbd5e1',
+                                            bgcolor: selectedMode === tab.key ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)',
+                                        },
+                                    }}
+                                >
+                                    {tab.label}
+                                </Box>
+                            ))}
+                        </Box>
                         <Typography
                             variant="caption"
                             sx={{
+                                position: 'absolute',
+                                right: 0,
                                 fontWeight: 700,
                                 fontSize: '0.6rem',
                                 color: '#818cf8',
@@ -2705,34 +3074,682 @@ function LensyApp() {
                     </Box>
 
                     <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
-                        <Box sx={{ flexGrow: 1 }}>
+                        <Box sx={{ flexGrow: 1, minWidth: 0 }}>
                             {selectedMode === 'github-issues' ? (
                                 <>
-                                    <TextField
-                                        fullWidth
-                                        label="GitHub Repository URL"
-                                        variant="outlined"
-                                        value={githubRepoUrl}
-                                        onChange={(e) => {
-                                            setGithubRepoUrl(e.target.value);
-                                            if (githubIssues.length > 0 || githubFetchCompleted) {
-                                                setGithubIssues([]);
-                                                setSelectedGithubIssues([]);
-                                                setGithubAnalysisResults(null);
-                                                setGithubFetchCompleted(false);
+                                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+                                        <TextField
+                                            sx={{ flexGrow: 1 }}
+                                            label="GitHub Repository URL"
+                                            variant="outlined"
+                                            value={githubRepoUrl}
+                                            onChange={(e) => {
+                                                setGithubRepoUrl(e.target.value);
+                                                if (githubIssues.length > 0 || githubFetchCompleted) {
+                                                    setGithubIssues([]);
+                                                    setSelectedGithubIssues([]);
+                                                    setGithubAnalysisResults(null);
+                                                    setGithubFetchCompleted(false);
+                                                    setGithubFetchMeta(null);
+                                                    setSuggestedDocsRepos([]);
+                                                    setGithubDocsUrl('');
+                                                    setShowManualDocsEntry(false);
+                                                    setDocsContextHint(null);
+                                                    setDocsContextReady(false);
+                                                    setKbBuildState('idle');
+                                                    setKbBuildProgress([]);
+                                                    setKbInfo(null);
+                                                }
+                                            }}
+                                            placeholder="https://github.com/owner/repo"
+                                            disabled={analysisState.status === 'analyzing'}
+                                            helperText="Enter a GitHub repository URL to scan open issues for documentation gaps"
+                                        />
+                                        <Button
+                                            variant="contained"
+                                            onClick={handleAnalyze}
+                                            disabled={
+                                                analysisState.status === 'analyzing' ||
+                                                isFetchingGithubIssues ||
+                                                (githubIssues.length > 0 && !docsContextReady) ||
+                                                (githubIssues.length > 0 && docsContextReady && selectedGithubIssues.length === 0)
                                             }
-                                        }}
-                                        placeholder="https://github.com/resend/react-email"
-                                        disabled={analysisState.status === 'analyzing'}
-                                        helperText="Enter a GitHub repository URL to scan open issues for documentation gaps"
-                                    />
-
+                                            sx={{
+                                                height: 56,
+                                                minWidth: 120,
+                                                px: 3,
+                                                whiteSpace: 'nowrap',
+                                                flexShrink: 0,
+                                                // Inactive state when showing "Build KB First" or "Select Issues"
+                                                // Lighter grey — looks like a button but not the primary CTA (white = active)
+                                                ...((githubIssues.length > 0 && !docsContextReady && kbBuildState !== 'building') ||
+                                                    (githubIssues.length > 0 && docsContextReady && selectedGithubIssues.length === 0)
+                                                    ? {
+                                                        bgcolor: 'rgba(255,255,255,0.12)',
+                                                        color: 'rgba(255,255,255,0.45)',
+                                                        boxShadow: 'none',
+                                                        border: '1px solid rgba(255,255,255,0.15)',
+                                                        '&:hover': { bgcolor: 'rgba(255,255,255,0.12)', boxShadow: 'none' },
+                                                        '&.Mui-disabled': {
+                                                            backgroundColor: 'rgba(255,255,255,0.12) !important',
+                                                            color: 'rgba(255,255,255,0.45) !important',
+                                                            border: '1px solid rgba(255,255,255,0.15)',
+                                                        }
+                                                    }
+                                                    : {
+                                                        boxShadow: '0 0 20px rgba(59, 130, 246, 0.15)',
+                                                        '&:hover': { boxShadow: '0 0 30px rgba(59, 130, 246, 0.25)' }
+                                                    })
+                                            }}
+                                        >
+                                            {analysisState.status === 'analyzing' ? (
+                                                <CircularProgress size={20} color="inherit" />
+                                            ) : isFetchingGithubIssues ? (
+                                                <CircularProgress size={20} color="inherit" />
+                                            ) : githubIssues.length === 0 ? 'Fetch Issues' :
+                                                !docsContextReady ? (kbBuildState === 'building' ? 'Building KB...' : 'Build KB First') :
+                                                selectedGithubIssues.length > 0 ? `Analyze (${selectedGithubIssues.length})` : 'Select Issues'}
+                                        </Button>
+                                    </Box>
                                     {isFetchingGithubIssues && (
                                         <Box sx={{ display: 'flex', alignItems: 'center', mt: 2, mb: 1 }}>
                                             <CircularProgress size={16} sx={{ mr: 1.5 }} />
                                             <Typography variant="caption" color="text.secondary">
-                                                Fetching open issues and analyzing docs context...
+                                                Fetching open issues and discovering docs repos...
                                             </Typography>
+                                        </Box>
+                                    )}
+
+                                    {/* ─── CASE A: Repos with REAL docs content found — show selectable radio list ─── */}
+                                    {suggestedDocsRepos.some(r => r.hasDocsContent) && githubFetchCompleted && githubIssues.length > 0 && (
+                                        <Alert
+                                            severity="success"
+                                            sx={{
+                                                mt: 2,
+                                                bgcolor: 'rgba(34, 197, 94, 0.08)',
+                                                border: '1px solid rgba(34, 197, 94, 0.2)',
+                                                '& .MuiAlert-icon': { color: '#22c55e' },
+                                                '& .MuiAlert-message': { color: '#e2e8f0', width: '100%' }
+                                            }}
+                                        >
+                                            <Box>
+                                                <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 1 }}>
+                                                    Docs repo detected
+                                                </Typography>
+                                                {suggestedDocsRepos.filter(r => r.hasDocsContent).map((repoSuggestion) => (
+                                                    <Box
+                                                        key={repoSuggestion.fullName}
+                                                        sx={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: 1,
+                                                            mb: 0.5,
+                                                            p: 0.75,
+                                                            borderRadius: 1,
+                                                            bgcolor: githubDocsUrl === repoSuggestion.fullName ? 'rgba(34, 197, 94, 0.12)' : 'transparent',
+                                                            border: githubDocsUrl === repoSuggestion.fullName ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid transparent',
+                                                            cursor: 'pointer',
+                                                            '&:hover': { bgcolor: 'rgba(34, 197, 94, 0.08)' }
+                                                        }}
+                                                        onClick={() => {
+                                                            setGithubDocsUrl(repoSuggestion.fullName);
+                                                            setShowManualDocsEntry(false);
+                                                            setDocsAsCodeConfirmation(null);
+                                                            setNoDocsAsCode(false);
+                                                            setCrawlUrl('');
+                                                            setDocsContextReady(true);
+                                                        }}
+                                                    >
+                                                        <Box sx={{
+                                                            width: 16, height: 16, borderRadius: '50%',
+                                                            border: githubDocsUrl === repoSuggestion.fullName ? '2px solid #22c55e' : '2px solid #64748b',
+                                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                            flexShrink: 0
+                                                        }}>
+                                                            {githubDocsUrl === repoSuggestion.fullName && (
+                                                                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#22c55e' }} />
+                                                            )}
+                                                        </Box>
+                                                        <Box>
+                                                            <Typography variant="caption" sx={{ fontWeight: 600, color: '#e2e8f0' }}>
+                                                                {repoSuggestion.fullName}
+                                                            </Typography>
+                                                            <Typography variant="caption" sx={{ display: 'block', color: '#94a3b8', fontSize: '0.65rem' }}>
+                                                                {repoSuggestion.description || `${repoSuggestion.contentFileCount} docs files found`}
+                                                            </Typography>
+                                                        </Box>
+                                                    </Box>
+                                                ))}
+                                                <Typography
+                                                    variant="caption"
+                                                    onClick={() => setShowManualDocsEntry(!showManualDocsEntry)}
+                                                    sx={{
+                                                        mt: 0.5,
+                                                        display: 'inline-block',
+                                                        fontSize: '0.65rem',
+                                                        color: '#94a3b8',
+                                                        cursor: 'pointer',
+                                                        '&:hover': { color: '#e2e8f0' }
+                                                    }}
+                                                >
+                                                    {showManualDocsEntry ? 'Hide' : 'Or enter a different docs repo URL'}
+                                                </Typography>
+                                                {showManualDocsEntry && (
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        variant="outlined"
+                                                        value={!suggestedDocsRepos.some(r => r.fullName === githubDocsUrl) ? githubDocsUrl : ''}
+                                                        onChange={(e) => setGithubDocsUrl(e.target.value)}
+                                                        placeholder="owner/docs-repo"
+                                                        disabled={analysisState.status === 'analyzing'}
+                                                        sx={{
+                                                            mt: 0.75,
+                                                            '& .MuiOutlinedInput-root': {
+                                                                fontSize: '0.8rem',
+                                                                bgcolor: 'rgba(0,0,0,0.2)',
+                                                                '& fieldset': { borderColor: 'rgba(34, 197, 94, 0.3)' }
+                                                            },
+                                                            '& .MuiInputBase-input': { color: '#e2e8f0', py: 0.75 }
+                                                        }}
+                                                        helperText="e.g., dotCMS/documentation or https://github.com/owner/docs-repo"
+                                                        FormHelperTextProps={{ sx: { color: '#94a3b8', fontSize: '0.65rem' } }}
+                                                    />
+                                                )}
+                                            </Box>
+                                        </Alert>
+                                    )}
+
+                                    {/* ─── CASE B: Repos found but NO docs content — Human-in-the-loop confirmation ─── */}
+                                    {docsAsCodeConfirmation === 'pending' && githubFetchCompleted && githubIssues.length > 0 && (
+                                        <Alert
+                                            severity="warning"
+                                            sx={{
+                                                mt: 2,
+                                                bgcolor: 'rgba(245, 158, 11, 0.08)',
+                                                border: '1px solid rgba(245, 158, 11, 0.25)',
+                                                '& .MuiAlert-icon': { color: '#f59e0b' },
+                                                '& .MuiAlert-message': { color: '#e2e8f0', width: '100%' }
+                                            }}
+                                        >
+                                            <Box>
+                                                <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
+                                                    We found {suggestedDocsRepos.filter(r => !r.hasDocsContent).map(r => r.fullName).join(', ')} but no documentation content
+                                                </Typography>
+                                                <Typography variant="caption" sx={{ display: 'block', mb: 1.5, color: '#94a3b8', lineHeight: 1.5 }}>
+                                                    {suggestedDocsRepos.filter(r => !r.hasDocsContent).map(r =>
+                                                        `${r.name}: ${r.codeFileCount} code files, ${r.contentFileCount < 0 ? 'has llms.txt' : `${r.contentFileCount} docs files`}`
+                                                    ).join(' · ')}
+                                                    <br />
+                                                    This looks like website/app code, not documentation stored as markdown. <strong>Do you store your docs as code in GitHub?</strong>
+                                                </Typography>
+                                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                                    <Button
+                                                        size="small"
+                                                        variant="outlined"
+                                                        onClick={() => {
+                                                            // User says YES docs are in code → pushback, but let them try
+                                                            setDocsAsCodeConfirmation('yes');
+                                                        }}
+                                                        sx={{
+                                                            borderColor: 'rgba(245, 158, 11, 0.4)',
+                                                            color: '#f59e0b',
+                                                            textTransform: 'none',
+                                                            fontSize: '0.75rem',
+                                                            '&:hover': { borderColor: '#f59e0b', bgcolor: 'rgba(245, 158, 11, 0.08)' }
+                                                        }}
+                                                    >
+                                                        Yes, docs are in GitHub
+                                                    </Button>
+                                                    <Button
+                                                        size="small"
+                                                        variant="contained"
+                                                        onClick={() => {
+                                                            // User says NO → go to website crawl path
+                                                            setDocsAsCodeConfirmation('no');
+                                                            setNoDocsAsCode(true);
+                                                            setGithubDocsUrl('');
+                                                        }}
+                                                        sx={{
+                                                            bgcolor: '#f59e0b',
+                                                            color: '#0f172a',
+                                                            fontWeight: 700,
+                                                            textTransform: 'none',
+                                                            fontSize: '0.75rem',
+                                                            '&:hover': { bgcolor: '#d97706' }
+                                                        }}
+                                                    >
+                                                        No, docs are on a website
+                                                    </Button>
+                                                </Box>
+                                            </Box>
+                                        </Alert>
+                                    )}
+
+                                    {/* ─── CASE B1: User said "Yes, docs are in GitHub" — pushback with repo selector + Search Docs ─── */}
+                                    {docsAsCodeConfirmation === 'yes' && githubFetchCompleted && githubIssues.length > 0 && (
+                                        <Alert
+                                            severity="info"
+                                            sx={{
+                                                mt: 2,
+                                                bgcolor: 'rgba(59, 130, 246, 0.08)',
+                                                border: '1px solid rgba(59, 130, 246, 0.2)',
+                                                '& .MuiAlert-icon': { color: '#3b82f6' },
+                                                '& .MuiAlert-message': { color: '#e2e8f0', width: '100%' }
+                                            }}
+                                        >
+                                            <Box>
+                                                <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
+                                                    The repos we found don't appear to contain documentation files
+                                                </Typography>
+                                                <Typography variant="caption" sx={{ display: 'block', mb: 1, color: '#94a3b8', lineHeight: 1.5 }}>
+                                                    Select a repo and search for docs, or enter a different docs repo URL.
+                                                </Typography>
+                                                {suggestedDocsRepos.filter(r => !r.hasDocsContent).map((repoSuggestion) => (
+                                                    <Box
+                                                        key={repoSuggestion.fullName}
+                                                        sx={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: 1,
+                                                            mb: 0.5,
+                                                            p: 0.75,
+                                                            borderRadius: 1,
+                                                            bgcolor: githubDocsUrl === repoSuggestion.fullName ? 'rgba(59, 130, 246, 0.12)' : 'transparent',
+                                                            border: githubDocsUrl === repoSuggestion.fullName ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid transparent',
+                                                            cursor: 'pointer',
+                                                            '&:hover': { bgcolor: 'rgba(59, 130, 246, 0.08)' }
+                                                        }}
+                                                        onClick={() => setGithubDocsUrl(repoSuggestion.fullName)}
+                                                    >
+                                                        <Box sx={{
+                                                            width: 16, height: 16, borderRadius: '50%',
+                                                            border: githubDocsUrl === repoSuggestion.fullName ? '2px solid #3b82f6' : '2px solid #64748b',
+                                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                            flexShrink: 0
+                                                        }}>
+                                                            {githubDocsUrl === repoSuggestion.fullName && (
+                                                                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#3b82f6' }} />
+                                                            )}
+                                                        </Box>
+                                                        <Box>
+                                                            <Typography variant="caption" sx={{ fontWeight: 600, color: '#e2e8f0' }}>
+                                                                {repoSuggestion.fullName}
+                                                            </Typography>
+                                                            <Typography variant="caption" sx={{ display: 'block', color: '#94a3b8', fontSize: '0.65rem' }}>
+                                                                {repoSuggestion.codeFileCount} code files, {repoSuggestion.contentFileCount} docs files
+                                                            </Typography>
+                                                        </Box>
+                                                    </Box>
+                                                ))}
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    variant="outlined"
+                                                    value={!suggestedDocsRepos.some(r => r.fullName === githubDocsUrl) ? githubDocsUrl : ''}
+                                                    onChange={(e) => setGithubDocsUrl(e.target.value)}
+                                                    placeholder="owner/docs-repo"
+                                                    disabled={analysisState.status === 'analyzing'}
+                                                    sx={{
+                                                        mt: 0.75,
+                                                        '& .MuiOutlinedInput-root': {
+                                                            fontSize: '0.8rem',
+                                                            bgcolor: 'rgba(0,0,0,0.2)',
+                                                            '& fieldset': { borderColor: 'rgba(59, 130, 246, 0.3)' }
+                                                        },
+                                                        '& .MuiInputBase-input': { color: '#e2e8f0', py: 0.75 }
+                                                    }}
+                                                    helperText="Or enter a different docs repo (e.g., dotCMS/documentation)"
+                                                    FormHelperTextProps={{ sx: { color: '#94a3b8', fontSize: '0.65rem' } }}
+                                                />
+                                                <Box sx={{ display: 'flex', gap: 1, mt: 1, alignItems: 'center' }}>
+                                                    <Button
+                                                        size="small"
+                                                        variant="contained"
+                                                        disabled={!githubDocsUrl.trim()}
+                                                        onClick={() => {
+                                                            const selectedRepo = githubDocsUrl.trim();
+                                                            // Check if it's a discovered repo (we already know it has no docs)
+                                                            const isDiscoveredRepo = suggestedDocsRepos.some(r => r.fullName === selectedRepo);
+                                                            if (isDiscoveredRepo) {
+                                                                const repo = suggestedDocsRepos.find(r => r.fullName === selectedRepo);
+                                                                // Show inline error, then reset back to CASE B after delay
+                                                                setAnalysisState({
+                                                                    status: 'error',
+                                                                    error: `Only ${repo?.contentFileCount || 0} documentation file${(repo?.contentFileCount || 0) !== 1 ? 's' : ''} found in ${selectedRepo}. Minimum 5 needed for analysis.`,
+                                                                    progressMessages: []
+                                                                });
+                                                                // Reset back to CASE B after a short delay
+                                                                setTimeout(() => {
+                                                                    setDocsAsCodeConfirmation('pending');
+                                                                    setGithubDocsUrl('');
+                                                                    setAnalysisState({ status: 'idle', progressMessages: [] });
+                                                                }, 3000);
+                                                            } else {
+                                                                // Manually typed repo — accept optimistically
+                                                                setGithubDocsUrl(selectedRepo);
+                                                                setDocsContextReady(true);
+                                                            }
+                                                        }}
+                                                        sx={{
+                                                            bgcolor: '#3b82f6',
+                                                            color: '#fff',
+                                                            fontWeight: 700,
+                                                            textTransform: 'none',
+                                                            fontSize: '0.75rem',
+                                                            '&:hover': { bgcolor: '#2563eb' },
+                                                            '&:disabled': { bgcolor: 'rgba(59,130,246,0.3)', color: '#64748b' }
+                                                        }}
+                                                    >
+                                                        Search Docs
+                                                    </Button>
+                                                    <Button
+                                                        size="small"
+                                                        variant="text"
+                                                        onClick={() => {
+                                                            setDocsAsCodeConfirmation('pending');
+                                                            setGithubDocsUrl('');
+                                                        }}
+                                                        sx={{ color: '#94a3b8', textTransform: 'none', fontSize: '0.7rem' }}
+                                                    >
+                                                        Back
+                                                    </Button>
+                                                </Box>
+                                            </Box>
+                                        </Alert>
+                                    )}
+
+                                    {/* ─── CASE C: No docs repos found at all — show hint with manual entry ─── */}
+                                    {docsContextHint && suggestedDocsRepos.length === 0 && githubFetchCompleted && githubIssues.length > 0 && (
+                                        <Alert
+                                            severity="info"
+                                            sx={{
+                                                mt: 2,
+                                                bgcolor: 'rgba(59, 130, 246, 0.08)',
+                                                border: '1px solid rgba(59, 130, 246, 0.2)',
+                                                '& .MuiAlert-icon': { color: '#3b82f6' },
+                                                '& .MuiAlert-message': { color: '#e2e8f0', width: '100%' }
+                                            }}
+                                        >
+                                            <Box>
+                                                <Typography variant="caption" sx={{ fontWeight: 600, display: 'block', mb: 0.5 }}>
+                                                    {docsContextHint} Provide a docs repo or website URL for more accurate analysis.
+                                                </Typography>
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    variant="outlined"
+                                                    value={githubDocsUrl}
+                                                    onChange={(e) => setGithubDocsUrl(e.target.value)}
+                                                    placeholder="owner/docs-repo"
+                                                    disabled={analysisState.status === 'analyzing'}
+                                                    sx={{
+                                                        mt: 0.5,
+                                                        '& .MuiOutlinedInput-root': {
+                                                            fontSize: '0.8rem',
+                                                            bgcolor: 'rgba(0,0,0,0.2)',
+                                                            '& fieldset': { borderColor: 'rgba(59, 130, 246, 0.3)' }
+                                                        },
+                                                        '& .MuiInputBase-input': { color: '#e2e8f0', py: 0.75 }
+                                                    }}
+                                                    helperText="GitHub docs repo URL (e.g., dotCMS/documentation)"
+                                                    FormHelperTextProps={{ sx: { color: '#94a3b8', fontSize: '0.65rem' } }}
+                                                />
+                                                <Typography
+                                                    variant="caption"
+                                                    onClick={() => {
+                                                        setNoDocsAsCode(true);
+                                                        setDocsAsCodeConfirmation('no');
+                                                    }}
+                                                    sx={{
+                                                        mt: 0.75,
+                                                        display: 'inline-block',
+                                                        fontSize: '0.65rem',
+                                                        color: '#f59e0b',
+                                                        cursor: 'pointer',
+                                                        '&:hover': { color: '#fbbf24' }
+                                                    }}
+                                                >
+                                                    Or provide a docs website URL instead (for non-code docs)
+                                                </Typography>
+                                            </Box>
+                                        </Alert>
+                                    )}
+
+                                    {/* ─── KB Ready badge — shown when knowledge base is built ─── */}
+                                    {kbBuildState === 'ready' && kbInfo && (
+                                        <Box sx={{
+                                            mt: 2, py: 1, px: 1.5, borderRadius: 1.5,
+                                            bgcolor: 'rgba(34, 197, 94, 0.08)',
+                                            border: '1px solid rgba(34, 197, 94, 0.2)',
+                                            display: 'flex', alignItems: 'center', gap: 1
+                                        }}>
+                                            <CheckCircleIcon sx={{ fontSize: 16, color: '#22c55e' }} />
+                                            <Typography variant="caption" sx={{ fontWeight: 700, color: '#22c55e', fontSize: '0.72rem' }}>
+                                                Knowledge base ready
+                                            </Typography>
+                                            <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.65rem' }}>
+                                                {kbInfo.pageCount} pages from {kbInfo.domain}
+                                            </Typography>
+                                            {analysisState.status !== 'analyzing' && !githubAnalysisResults && (
+                                                <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.62rem', ml: 'auto' }}>
+                                                    Select issues below to analyze
+                                                </Typography>
+                                            )}
+                                        </Box>
+                                    )}
+
+                                    {/* ─── CASE D: Non-docs-as-code confirmed — domain input + preview confirmation ─── */}
+                                    {noDocsAsCode && githubFetchCompleted && kbBuildState !== 'ready' && (
+                                        <Box sx={{ mt: 2 }}>
+                                            {/* Step 1: Enter docs website URL */}
+                                            <Alert
+                                                severity="warning"
+                                                sx={{
+                                                    bgcolor: 'rgba(245, 158, 11, 0.08)',
+                                                    border: '1px solid rgba(245, 158, 11, 0.25)',
+                                                    '& .MuiAlert-icon': { color: '#f59e0b' },
+                                                    '& .MuiAlert-message': { color: '#e2e8f0', width: '100%' }
+                                                }}
+                                            >
+                                                <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 1 }}>
+                                                    Enter your public docs website URL
+                                                </Typography>
+                                                <Typography variant="caption" sx={{ display: 'block', mb: 1.5, color: '#94a3b8' }}>
+                                                    We'll check for <code style={{ color: '#a78bfa' }}>llms.txt</code> or <code style={{ color: '#a78bfa' }}>sitemap.xml</code> to build a knowledge base for analysis.
+                                                </Typography>
+                                                <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+                                                    <TextField
+                                                        size="small"
+                                                        variant="outlined"
+                                                        value={crawlUrl}
+                                                        onChange={(e) => {
+                                                            setCrawlUrl(e.target.value);
+                                                            setPreviewDocs(null); // reset preview when URL changes
+                                                            setManualLlmsUrl('');
+                                                        }}
+                                                        placeholder="dev.dotcms.com"
+                                                        disabled={analysisState.status === 'analyzing' || isPreviewingDocs}
+                                                        sx={{
+                                                            flexGrow: 1,
+                                                            '& .MuiOutlinedInput-root': {
+                                                                fontSize: '0.8rem',
+                                                                bgcolor: 'rgba(0,0,0,0.25)',
+                                                                '& fieldset': { borderColor: 'rgba(245, 158, 11, 0.3)' },
+                                                                '&:hover fieldset': { borderColor: 'rgba(245, 158, 11, 0.5)' }
+                                                            },
+                                                            '& .MuiInputBase-input': { color: '#e2e8f0', py: 0.75 }
+                                                        }}
+                                                    />
+                                                    <Button
+                                                        size="small"
+                                                        variant="contained"
+                                                        onClick={handlePreviewDocs}
+                                                        disabled={!crawlUrl.trim() || isPreviewingDocs}
+                                                        sx={{
+                                                            whiteSpace: 'nowrap',
+                                                            height: 36,
+                                                            bgcolor: '#fff',
+                                                            color: '#111',
+                                                            fontWeight: 600,
+                                                            '&:hover': { bgcolor: '#e2e8f0', color: '#111' },
+                                                            '&.Mui-disabled': {
+                                                                backgroundColor: 'rgba(255,255,255,0.08) !important',
+                                                                color: 'rgba(255,255,255,0.25) !important',
+                                                            }
+                                                        }}
+                                                    >
+                                                        {isPreviewingDocs ? <CircularProgress size={14} color="inherit" /> : 'Preview'}
+                                                    </Button>
+                                                </Box>
+                                            </Alert>
+
+                                            {/* Step 2a: Preview found docs — Phase 1: Show "Build Knowledge Base" button */}
+                                            {previewDocs?.found && kbBuildState === 'idle' && (
+                                                <Alert
+                                                    severity="info"
+                                                    sx={{
+                                                        mt: 1.5,
+                                                        bgcolor: 'rgba(59, 130, 246, 0.07)',
+                                                        border: '1px solid rgba(59, 130, 246, 0.25)',
+                                                        '& .MuiAlert-icon': { color: '#3b82f6' },
+                                                        '& .MuiAlert-message': { color: '#e2e8f0', width: '100%' }
+                                                    }}
+                                                >
+                                                    <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
+                                                        Found <code style={{ color: '#a78bfa' }}>{previewDocs.source}</code> at {previewDocs.domain}
+                                                        {previewDocs.pageCount ? ` — ${previewDocs.pageCount} pages` : ''}
+                                                    </Typography>
+                                                    {previewDocs.categories && previewDocs.categories.length > 0 && (
+                                                        <Typography variant="caption" sx={{ display: 'block', color: '#94a3b8', mb: 1 }}>
+                                                            Categories: {previewDocs.categories.slice(0, 5).join(', ')}
+                                                            {previewDocs.categories.length > 5 ? ` +${previewDocs.categories.length - 5} more` : ''}
+                                                        </Typography>
+                                                    )}
+                                                    <Typography variant="caption" sx={{ display: 'block', color: '#64748b', mb: 1 }}>
+                                                        Build a Knowledge Base from these docs to enable issue analysis. Crawls all pages, generates AI summaries, and caches for 7 days. Takes 1–2 min for new domains, instant if cached.
+                                                    </Typography>
+                                                    <Button
+                                                        size="small"
+                                                        variant="contained"
+                                                        onClick={handleBuildKb}
+                                                        sx={{
+                                                            bgcolor: '#3b82f6', color: '#fff', fontWeight: 700,
+                                                            '&:hover': { bgcolor: '#2563eb' }
+                                                        }}
+                                                    >
+                                                        Build Knowledge Base
+                                                    </Button>
+                                                </Alert>
+                                            )}
+
+                                            {/* Step 2a: Phase 2 — KB building in progress */}
+                                            {previewDocs?.found && kbBuildState === 'building' && (
+                                                <Alert
+                                                    severity="info"
+                                                    icon={<CircularProgress size={18} />}
+                                                    sx={{
+                                                        mt: 1.5,
+                                                        bgcolor: 'rgba(59, 130, 246, 0.07)',
+                                                        border: '1px solid rgba(59, 130, 246, 0.25)',
+                                                        '& .MuiAlert-icon': { color: '#3b82f6', pt: 0.5 },
+                                                        '& .MuiAlert-message': { color: '#e2e8f0', width: '100%' }
+                                                    }}
+                                                >
+                                                    <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 1 }}>
+                                                        Building Knowledge Base from {previewDocs.domain}...
+                                                    </Typography>
+                                                    <Box sx={{ maxHeight: 120, overflowY: 'auto', fontSize: '0.7rem' }}>
+                                                        {kbBuildProgress.map((msg, idx) => (
+                                                            <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.25 }}>
+                                                                {msg.type === 'success' ? <CheckCircleIcon sx={{ fontSize: 12, color: '#22c55e' }} /> :
+                                                                 msg.type === 'error' ? <ErrorIcon sx={{ fontSize: 12, color: '#ef4444' }} /> :
+                                                                 msg.type === 'cache-hit' ? <FlashOnIcon sx={{ fontSize: 12, color: '#f59e0b' }} /> :
+                                                                 msg.type === 'cache-miss' ? <CachedIcon sx={{ fontSize: 12, color: '#94a3b8' }} /> :
+                                                                 <InfoIcon sx={{ fontSize: 12, color: '#64748b' }} />}
+                                                                <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.65rem' }}>
+                                                                    {msg.message}
+                                                                </Typography>
+                                                            </Box>
+                                                        ))}
+                                                    </Box>
+                                                </Alert>
+                                            )}
+
+                                            {/* Step 2a: Phase 4 — KB build error */}
+                                            {kbBuildState === 'error' && (
+                                                <Alert
+                                                    severity="error"
+                                                    sx={{
+                                                        mt: 1.5,
+                                                        bgcolor: 'rgba(239, 68, 68, 0.07)',
+                                                        border: '1px solid rgba(239, 68, 68, 0.25)',
+                                                        '& .MuiAlert-icon': { color: '#ef4444' },
+                                                        '& .MuiAlert-message': { color: '#e2e8f0', width: '100%' }
+                                                    }}
+                                                >
+                                                    <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
+                                                        Knowledge Base build failed
+                                                    </Typography>
+                                                    {kbBuildProgress.filter(m => m.type === 'error').map((msg, idx) => (
+                                                        <Typography key={idx} variant="caption" sx={{ display: 'block', color: '#ef4444', fontSize: '0.7rem' }}>
+                                                            {msg.message}
+                                                        </Typography>
+                                                    ))}
+                                                    <Button size="small" onClick={handleBuildKb} sx={{ mt: 1, color: '#ef4444', textTransform: 'none', fontSize: '0.7rem' }}>
+                                                        Retry
+                                                    </Button>
+                                                </Alert>
+                                            )}
+
+                                            {/* Step 2b: BLOCKER — docs source not found, ask for manual URL */}
+                                            {previewDocs && !previewDocs.found && (
+                                                <Alert
+                                                    severity="error"
+                                                    sx={{
+                                                        mt: 1.5,
+                                                        bgcolor: 'rgba(239, 68, 68, 0.07)',
+                                                        border: '1px solid rgba(239, 68, 68, 0.25)',
+                                                        '& .MuiAlert-icon': { color: '#ef4444' },
+                                                        '& .MuiAlert-message': { color: '#e2e8f0', width: '100%' }
+                                                    }}
+                                                >
+                                                    <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
+                                                        Could not find llms.txt or sitemap.xml at <strong>{previewDocs.domain}</strong>
+                                                    </Typography>
+                                                    <Typography variant="caption" sx={{ display: 'block', color: '#94a3b8', mb: 1 }}>
+                                                        Please provide the direct URL to your llms.txt or sitemap.xml to continue.
+                                                    </Typography>
+                                                    <Box sx={{ display: 'flex', gap: 1 }}>
+                                                        <TextField
+                                                            size="small"
+                                                            variant="outlined"
+                                                            value={manualLlmsUrl}
+                                                            onChange={(e) => setManualLlmsUrl(e.target.value)}
+                                                            placeholder="https://dev.dotcms.com/llms.txt"
+                                                            disabled={analysisState.status === 'analyzing'}
+                                                            sx={{
+                                                                flexGrow: 1,
+                                                                '& .MuiOutlinedInput-root': {
+                                                                    fontSize: '0.78rem',
+                                                                    bgcolor: 'rgba(0,0,0,0.25)',
+                                                                    '& fieldset': { borderColor: 'rgba(239, 68, 68, 0.3)' }
+                                                                },
+                                                                '& .MuiInputBase-input': { color: '#e2e8f0', py: 0.75 }
+                                                            }}
+                                                        />
+                                                        <Button
+                                                            size="small"
+                                                            variant="outlined"
+                                                            onClick={handleConfirmManualUrl}
+                                                            disabled={!manualLlmsUrl.trim()}
+                                                            sx={{ borderColor: 'rgba(239,68,68,0.4)', color: '#ef4444', whiteSpace: 'nowrap', height: 36 }}
+                                                        >
+                                                            Use This
+                                                        </Button>
+                                                    </Box>
+                                                </Alert>
+                                            )}
                                         </Box>
                                     )}
 
@@ -2760,7 +3777,43 @@ function LensyApp() {
                                         </Box>
                                     )}
 
-                                    {githubIssues.length > 0 && githubIssues.filter(i => i.isDocsRelated).length > 0 && (
+                                    {/* ─── Issues count badge (shown when docs context is NOT ready) ─── */}
+                                    {githubIssues.length > 0 && githubIssues.filter(i => i.isDocsRelated).length > 0 && !docsContextReady && (
+                                        <Box sx={{
+                                            mt: 2, p: 1.5, borderRadius: 1.5,
+                                            bgcolor: 'rgba(59, 130, 246, 0.06)',
+                                            border: '1px solid rgba(59, 130, 246, 0.15)',
+                                            display: 'flex', alignItems: 'center', gap: 1.5
+                                        }}>
+                                            <Box sx={{
+                                                width: 28, height: 28, borderRadius: '50%',
+                                                bgcolor: 'rgba(59, 130, 246, 0.15)',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                flexShrink: 0
+                                            }}>
+                                                <Typography variant="caption" sx={{ fontWeight: 800, color: '#3b82f6', fontSize: '0.7rem' }}>
+                                                    {githubIssues.filter(i => i.isDocsRelated).length}
+                                                </Typography>
+                                            </Box>
+                                            <Box>
+                                                <Typography variant="caption" sx={{ fontWeight: 600, color: '#e2e8f0', display: 'block', lineHeight: 1.3 }}>
+                                                    {githubIssues.filter(i => i.isDocsRelated).length} docs-related issue{githubIssues.filter(i => i.isDocsRelated).length !== 1 ? 's' : ''} found
+                                                    {githubFetchMeta && <> · {githubFetchMeta.totalFetched} scanned ({githubFetchMeta.dateRange})</>}
+                                                </Typography>
+                                                <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.65rem' }}>
+                                                    {previewDocs?.found && kbBuildState === 'idle'
+                                                        ? 'Build the Knowledge Base above to unlock issue selection'
+                                                        : kbBuildState === 'building'
+                                                            ? 'Knowledge Base is being built...'
+                                                            : 'Resolve documentation source above to select and analyze issues'
+                                                    }
+                                                </Typography>
+                                            </Box>
+                                        </Box>
+                                    )}
+
+                                    {/* ─── Full issues list (shown when docs context IS ready) ─── */}
+                                    {githubIssues.length > 0 && githubIssues.filter(i => i.isDocsRelated).length > 0 && docsContextReady && (
                                         <Box sx={{ mt: 3 }}>
                                             {/* Two-column layout: issues left, results/progress right */}
                                             <Box sx={{ display: 'flex', gap: 3, alignItems: 'flex-start' }}>
@@ -2768,9 +3821,16 @@ function LensyApp() {
                                                 {/* LEFT COLUMN: Issues list */}
                                                 <Box sx={{ flex: (analysisState.status === 'analyzing' || githubAnalysisResults) ? '0 0 38%' : '1 1 100%', minWidth: 0, transition: 'flex 0.3s ease' }}>
                                                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-                                                        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                                                            {githubIssues.filter(i => i.isDocsRelated).length} docs-related issues found
-                                                        </Typography>
+                                                        <Box>
+                                                            <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                                                                {githubIssues.filter(i => i.isDocsRelated).length} docs-related issues found
+                                                            </Typography>
+                                                            {githubFetchMeta && (
+                                                                <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.68rem' }}>
+                                                                    Scanned {githubFetchMeta.totalFetched} open issues · {githubFetchMeta.dateRange} · AI-classified
+                                                                </Typography>
+                                                            )}
+                                                        </Box>
                                                         {/* Select All / Unselect All */}
                                                         <Button
                                                             size="small"
@@ -2807,7 +3867,10 @@ function LensyApp() {
                                                         scrollbarColor: 'transparent transparent',
                                                         '&:hover': { scrollbarColor: 'rgba(255,255,255,0.15) transparent' },
                                                     }}>
-                                                        {githubIssues.filter(i => i.isDocsRelated).map((issue, index, arr) => (
+                                                        {githubIssues
+                                                            .filter(i => i.isDocsRelated)
+                                                            .sort((a, b) => (b.docsConfidence || 0) - (a.docsConfidence || 0))
+                                                            .map((issue, index, arr) => (
                                                             <Box
                                                                 key={issue.number}
                                                                 sx={{
@@ -2837,17 +3900,39 @@ function LensyApp() {
                                                                     sx={{ mr: 1 }}
                                                                 />
                                                                 <Box sx={{ flex: 1, minWidth: 0 }}>
-                                                                    <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', mb: 0.25 }}>
-                                                                        #{issue.number}: {issue.title}
-                                                                    </Typography>
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.25 }}>
+                                                                        <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', flex: 1, minWidth: 0 }}>
+                                                                            #{issue.number}: {issue.title}
+                                                                        </Typography>
+                                                                        {(issue.docsConfidence ?? 0) > 0 && (
+                                                                            <Chip
+                                                                                label={`${issue.docsConfidence}%`}
+                                                                                size="small"
+                                                                                sx={{
+                                                                                    height: 20,
+                                                                                    fontSize: '0.6rem',
+                                                                                    fontWeight: 800,
+                                                                                    flexShrink: 0,
+                                                                                    bgcolor: (issue.docsConfidence || 0) >= 80 ? 'rgba(34, 197, 94, 0.12)' : (issue.docsConfidence || 0) >= 60 ? 'rgba(245, 158, 11, 0.12)' : 'rgba(107, 114, 128, 0.10)',
+                                                                                    color: (issue.docsConfidence || 0) >= 80 ? '#22c55e' : (issue.docsConfidence || 0) >= 60 ? '#f59e0b' : '#737373',
+                                                                                    border: '1px solid',
+                                                                                    borderColor: (issue.docsConfidence || 0) >= 80 ? 'rgba(34, 197, 94, 0.25)' : (issue.docsConfidence || 0) >= 60 ? 'rgba(245, 158, 11, 0.25)' : 'rgba(107, 114, 128, 0.20)',
+                                                                                }}
+                                                                            />
+                                                                        )}
+                                                                    </Box>
                                                                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 0.25 }}>
-                                                                        {issue.labels.slice(0, 3).map(l => (
+                                                                        {(issue.docsCategories || []).map(cat => (
+                                                                            <Chip key={cat} label={cat} size="small"
+                                                                                sx={{ height: 18, fontSize: '0.55rem', fontWeight: 700, bgcolor: 'rgba(59, 130, 246, 0.10)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.20)', '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' } }} />
+                                                                        ))}
+                                                                        {issue.labels.slice(0, 2).map(l => (
                                                                             <Chip key={l.name} label={l.name} size="small"
                                                                                 sx={{ height: 18, fontSize: '0.55rem', fontWeight: 700, maxWidth: 150, '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' } }} />
                                                                         ))}
-                                                                        {issue.labels.length > 3 && (
+                                                                        {issue.labels.length > 2 && (
                                                                             <Typography variant="caption" sx={{ fontSize: '0.55rem', color: 'var(--text-secondary)', lineHeight: '18px' }}>
-                                                                                +{issue.labels.length - 3}
+                                                                                +{issue.labels.length - 2}
                                                                             </Typography>
                                                                         )}
                                                                     </Box>
@@ -2891,7 +3976,7 @@ function LensyApp() {
 
                                                 {/* RIGHT COLUMN: Progress (while analyzing) or Results (when done) */}
                                                 {(analysisState.status === 'analyzing' || githubAnalysisResults) && (
-                                                    <Box sx={{ flex: '0 0 60%', minWidth: 0 }}>
+                                                    <Box sx={{ flex: '0 0 60%', minWidth: 0, overflow: 'hidden' }}>
 
                                                         {/* Progress indicator — only while analyzing */}
                                                         {analysisState.status === 'analyzing' && (
@@ -2924,11 +4009,34 @@ function LensyApp() {
                                                             </Box>
                                                         )}
 
+                                                        {/* Fallback: Analysis returned noDocsAsCode — scroll up to use website crawl */}
+                                                        {noDocsAsCode && analysisState.status !== 'analyzing' && !crawlUrl && (
+                                                            <Alert
+                                                                severity="warning"
+                                                                sx={{
+                                                                    mb: 2,
+                                                                    bgcolor: 'rgba(245, 158, 11, 0.08)',
+                                                                    border: '1px solid rgba(245, 158, 11, 0.2)',
+                                                                    '& .MuiAlert-icon': { color: '#f59e0b' },
+                                                                    '& .MuiAlert-message': { color: '#e2e8f0', width: '100%' }
+                                                                }}
+                                                            >
+                                                                <Box>
+                                                                    <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
+                                                                        No documentation files found in {githubDocsUrl}
+                                                                    </Typography>
+                                                                    <Typography variant="caption" sx={{ display: 'block', color: '#94a3b8', lineHeight: 1.5 }}>
+                                                                        It looks like this repo contains website code, not documentation files. Scroll up and enter your docs website URL to use the website crawl path instead.
+                                                                    </Typography>
+                                                                </Box>
+                                                            </Alert>
+                                                        )}
+
                                                         {/* Results — shown after analysis completes */}
                                                         {githubAnalysisResults && githubAnalysisResults.length > 0 && analysisState.status !== 'analyzing' && (
                                                             <Box>
                                                                 <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 700, color: 'var(--text-primary)' }}>
-                                                                    Documentation Gaps Found ({githubAnalysisResults.length})
+                                                                    Recommended Changes ({githubAnalysisResults.length})
                                                                 </Typography>
                                                                 {githubAnalysisResults.map((result: any, idx: number) => (
                                                                     <Card key={idx} sx={{
@@ -2936,8 +4044,8 @@ function LensyApp() {
                                                                         border: '1px solid',
                                                                         borderColor: 'rgba(255,255,255,0.1)',
                                                                         borderLeft: '3px solid',
-                                                                        borderLeftColor: '#6366f1',
-                                                                        overflow: 'visible'
+                                                                        borderLeftColor: '#3b82f6',
+                                                                        overflow: 'hidden'
                                                                     }}>
                                                                         <CardContent sx={{ pb: '12px !important', p: 2 }}>
                                                                             {/* Header: issue title + link */}
@@ -2958,26 +4066,78 @@ function LensyApp() {
                                                                                     label={result.docsGap?.gapType?.replace('-', ' ') || 'analysis pending'}
                                                                                     size="small"
                                                                                     variant="outlined"
-                                                                                    sx={{ fontWeight: 600, textTransform: 'capitalize', fontSize: '0.7rem', borderColor: 'rgba(255,255,255,0.15)', color: '#94a3b8' }}
+                                                                                    sx={{ fontWeight: 600, textTransform: 'capitalize', fontSize: '0.7rem', borderColor: 'rgba(59, 130, 246, 0.20)', color: '#60a5fa' }}
                                                                                 />
                                                                                 <Chip
-                                                                                    label={`${result.docsGap?.confidence || 0}% confidence`}
+                                                                                    label={`${result.docsGap?.confidence || 0}%`}
                                                                                     size="small"
-                                                                                    variant="outlined"
-                                                                                    sx={{ fontWeight: 600, fontSize: '0.7rem', borderColor: 'rgba(255,255,255,0.15)', color: '#94a3b8' }}
+                                                                                    sx={{
+                                                                                        fontWeight: 700,
+                                                                                        fontSize: '0.65rem',
+                                                                                        bgcolor: (result.docsGap?.confidence || 0) >= 80 ? 'rgba(34, 197, 94, 0.12)' : (result.docsGap?.confidence || 0) >= 60 ? 'rgba(245, 158, 11, 0.12)' : 'rgba(107, 114, 128, 0.10)',
+                                                                                        color: (result.docsGap?.confidence || 0) >= 80 ? '#22c55e' : (result.docsGap?.confidence || 0) >= 60 ? '#f59e0b' : '#737373',
+                                                                                        border: '1px solid',
+                                                                                        borderColor: (result.docsGap?.confidence || 0) >= 80 ? 'rgba(34, 197, 94, 0.25)' : (result.docsGap?.confidence || 0) >= 60 ? 'rgba(245, 158, 11, 0.25)' : 'rgba(107, 114, 128, 0.20)',
+                                                                                    }}
                                                                                 />
-                                                                                {result.docsGap?.affectedDocs?.length > 0 && (
-                                                                                    <Typography variant="caption" sx={{ color: 'var(--text-secondary)', fontSize: '0.7rem' }}>
-                                                                                        {result.docsGap.affectedDocs.join(', ')}
-                                                                                    </Typography>
-                                                                                )}
                                                                             </Box>
 
                                                                             {/* Section context */}
                                                                             {result.docsGap?.section && (
-                                                                                <Typography variant="caption" sx={{ display: 'block', mb: 1, color: '#64748b', fontSize: '0.7rem' }}>
+                                                                                <Typography variant="caption" sx={{ display: 'block', mb: 1, color: '#cbd5e1', fontSize: '0.75rem' }}>
                                                                                     {result.docsGap.section}{result.docsGap.lineContext ? ` · ${result.docsGap.lineContext}` : ''}
                                                                                 </Typography>
+                                                                            )}
+
+                                                                            {/* Affected pages & reasoning */}
+                                                                            {result.docsGap?.affectedDocs?.length > 0 && (
+                                                                                <Box sx={{
+                                                                                    mb: 1, py: 1, px: 1.5,
+                                                                                    bgcolor: 'rgba(96, 165, 250, 0.06)',
+                                                                                    border: '1px solid rgba(96, 165, 250, 0.15)',
+                                                                                    borderRadius: 1,
+                                                                                    display: 'flex', flexDirection: 'column', gap: 0.75,
+                                                                                }}>
+                                                                                    {/* Page URLs */}
+                                                                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, alignItems: 'baseline' }}>
+                                                                                        <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                                                                                            Page URLs:
+                                                                                        </Typography>
+                                                                                        {result.docsGap.affectedDocs.map((doc: string, docIdx: number) => (
+                                                                                            doc.startsWith('http') ? (
+                                                                                                <a
+                                                                                                    key={docIdx}
+                                                                                                    href={doc}
+                                                                                                    target="_blank"
+                                                                                                    rel="noopener noreferrer"
+                                                                                                    style={{
+                                                                                                        color: '#60a5fa',
+                                                                                                        fontSize: '0.8rem',
+                                                                                                        textDecoration: 'underline',
+                                                                                                        wordBreak: 'break-all'
+                                                                                                    }}
+                                                                                                >
+                                                                                                    {new URL(doc).pathname}
+                                                                                                </a>
+                                                                                            ) : (
+                                                                                                <Typography key={docIdx} variant="caption" sx={{ color: '#cbd5e1', fontSize: '0.8rem' }}>
+                                                                                                    {doc}
+                                                                                                </Typography>
+                                                                                            )
+                                                                                        ))}
+                                                                                    </Box>
+                                                                                    {/* Reasoning */}
+                                                                                    {result.docsGap?.affectedDocsReason && (
+                                                                                        <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'baseline' }}>
+                                                                                            <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em', flexShrink: 0 }}>
+                                                                                                Reasoning:
+                                                                                            </Typography>
+                                                                                            <Typography variant="caption" sx={{ color: '#cbd5e1', fontSize: '0.8rem', lineHeight: 1.5 }}>
+                                                                                                {result.docsGap.affectedDocsReason}
+                                                                                            </Typography>
+                                                                                        </Box>
+                                                                                    )}
+                                                                                </Box>
                                                                             )}
 
                                                                             {/* Before / After text blocks */}
@@ -2993,10 +4153,12 @@ function LensyApp() {
                                                                                             border: '1px solid rgba(255,255,255,0.06)',
                                                                                             borderRadius: 1,
                                                                                             p: 1.5,
+                                                                                            overflow: 'auto',
+                                                                                            wordBreak: 'break-word',
                                                                                             '& h1, & h2, & h3, & h4, & h5, & h6': { color: '#cbd5e1', fontSize: '0.85rem', fontWeight: 700, mt: 1, mb: 0.5, '&:first-of-type': { mt: 0 } },
                                                                                             '& p': { color: '#cbd5e1', fontSize: '0.8rem', lineHeight: 1.6, mb: 0.75, '&:last-child': { mb: 0 } },
-                                                                                            '& code': { bgcolor: 'rgba(255,255,255,0.08)', color: '#93c5fd', px: 0.5, py: 0.25, borderRadius: '3px', fontSize: '0.75rem', fontFamily: 'monospace' },
-                                                                                            '& pre': { bgcolor: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 1, p: 1.5, overflow: 'auto', mb: 0.75, '& code': { bgcolor: 'transparent', p: 0, color: '#e2e8f0' } },
+                                                                                            '& code': { bgcolor: 'rgba(255,255,255,0.08)', color: '#93c5fd', px: 0.5, py: 0.25, borderRadius: '3px', fontSize: '0.75rem', fontFamily: 'monospace', wordBreak: 'break-all' },
+                                                                                            '& pre': { bgcolor: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 1, p: 1.5, overflow: 'auto', mb: 0.75, maxWidth: '100%', '& code': { bgcolor: 'transparent', p: 0, color: '#e2e8f0', wordBreak: 'normal' } },
                                                                                             '& ul, & ol': { color: '#cbd5e1', fontSize: '0.8rem', pl: 2.5, mb: 0.75 },
                                                                                             '& li': { mb: 0.25 },
                                                                                             '& a': { color: '#60a5fa', textDecoration: 'underline' },
@@ -3015,10 +4177,12 @@ function LensyApp() {
                                                                                             border: '1px solid rgba(255,255,255,0.06)',
                                                                                             borderRadius: 1,
                                                                                             p: 1.5,
+                                                                                            overflow: 'auto',
+                                                                                            wordBreak: 'break-word',
                                                                                             '& h1, & h2, & h3, & h4, & h5, & h6': { color: '#e2e8f0', fontSize: '0.85rem', fontWeight: 700, mt: 1, mb: 0.5, '&:first-of-type': { mt: 0 } },
                                                                                             '& p': { color: '#e2e8f0', fontSize: '0.8rem', lineHeight: 1.6, mb: 0.75, '&:last-child': { mb: 0 } },
-                                                                                            '& code': { bgcolor: 'rgba(255,255,255,0.08)', color: '#93c5fd', px: 0.5, py: 0.25, borderRadius: '3px', fontSize: '0.75rem', fontFamily: 'monospace' },
-                                                                                            '& pre': { bgcolor: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 1, p: 1.5, overflow: 'auto', mb: 0.75, '& code': { bgcolor: 'transparent', p: 0, color: '#e2e8f0' } },
+                                                                                            '& code': { bgcolor: 'rgba(255,255,255,0.08)', color: '#93c5fd', px: 0.5, py: 0.25, borderRadius: '3px', fontSize: '0.75rem', fontFamily: 'monospace', wordBreak: 'break-all' },
+                                                                                            '& pre': { bgcolor: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 1, p: 1.5, overflow: 'auto', mb: 0.75, maxWidth: '100%', '& code': { bgcolor: 'transparent', p: 0, color: '#e2e8f0', wordBreak: 'normal' } },
                                                                                             '& ul, & ol': { color: '#e2e8f0', fontSize: '0.8rem', pl: 2.5, mb: 0.75 },
                                                                                             '& li': { mb: 0.25 },
                                                                                             '& a': { color: '#60a5fa', textDecoration: 'underline' },
@@ -3026,6 +4190,55 @@ function LensyApp() {
                                                                                         }}>
                                                                                             <ReactMarkdown>{result.docsGap.correctedText}</ReactMarkdown>
                                                                                         </Box>
+                                                                                    </Box>
+                                                                                </Box>
+                                                                            )}
+
+                                                                            {/* Source References — prove recommendation is grounded */}
+                                                                            {result.docsGap?.sourceReferences?.length > 0 && (
+                                                                                <Box sx={{ mb: 1 }}>
+                                                                                    <Typography variant="caption" sx={{ fontWeight: 700, color: '#94a3b8', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.5, display: 'block' }}>
+                                                                                        Sources
+                                                                                    </Typography>
+                                                                                    <Box sx={{
+                                                                                        bgcolor: 'rgba(139, 92, 246, 0.04)',
+                                                                                        border: '1px solid rgba(139, 92, 246, 0.12)',
+                                                                                        borderRadius: 1,
+                                                                                        p: 1,
+                                                                                    }}>
+                                                                                        {result.docsGap.sourceReferences.map((ref: any, refIdx: number) => (
+                                                                                            <Box key={refIdx} sx={{ display: 'flex', gap: 0.75, mb: refIdx < result.docsGap.sourceReferences.length - 1 ? 0.75 : 0, alignItems: 'flex-start' }}>
+                                                                                                <Chip
+                                                                                                    label={ref.type === 'docs-page' ? 'DOCS' : 'ISSUE'}
+                                                                                                    size="small"
+                                                                                                    sx={{
+                                                                                                        height: 18,
+                                                                                                        fontSize: '0.5rem',
+                                                                                                        fontWeight: 800,
+                                                                                                        flexShrink: 0,
+                                                                                                        mt: 0.25,
+                                                                                                        bgcolor: ref.type === 'docs-page' ? 'rgba(59, 130, 246, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                                                                                                        color: ref.type === 'docs-page' ? '#60a5fa' : '#fbbf24',
+                                                                                                        border: '1px solid',
+                                                                                                        borderColor: ref.type === 'docs-page' ? 'rgba(59, 130, 246, 0.25)' : 'rgba(245, 158, 11, 0.25)',
+                                                                                                    }}
+                                                                                                />
+                                                                                                <Box sx={{ minWidth: 0 }}>
+                                                                                                    <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.7rem', lineHeight: 1.4, display: 'block', fontStyle: 'italic' }}>
+                                                                                                        "{ref.excerpt}"
+                                                                                                    </Typography>
+                                                                                                    {ref.url && (
+                                                                                                        <Typography variant="caption" sx={{ fontSize: '0.6rem', color: '#64748b' }}>
+                                                                                                            <a href={ref.url} target="_blank" rel="noopener noreferrer"
+                                                                                                                style={{ color: 'inherit', textDecoration: 'underline' }}
+                                                                                                                onClick={(e: any) => e.stopPropagation()}>
+                                                                                                                {ref.url.length > 60 ? ref.url.substring(0, 60) + '...' : ref.url}
+                                                                                                            </a>
+                                                                                                        </Typography>
+                                                                                                    )}
+                                                                                                </Box>
+                                                                                            </Box>
+                                                                                        ))}
                                                                                     </Box>
                                                                                 </Box>
                                                                             )}
@@ -3053,32 +4266,86 @@ function LensyApp() {
                                                                                     >
                                                                                         {copiedFixIndex === idx ? 'Copied!' : 'Copy corrected text'}
                                                                                     </Button>
-                                                                                    {result.docsGap?.affectedDocs?.length > 0 && (() => {
-                                                                                        // Build GitHub edit URL from repo URL + first affected doc
-                                                                                        let editUrl = '';
-                                                                                        try {
-                                                                                            const urlStr = githubRepoUrl.trim();
-                                                                                            let owner = '', repo = '';
-                                                                                            if (urlStr.includes('github.com')) {
-                                                                                                const parts = urlStr.replace(/https?:\/\/(www\.)?github\.com\//, '').replace(/\/$/, '').split('/');
-                                                                                                owner = parts[0];
-                                                                                                repo = parts[1]?.replace(/\.git$/, '') || '';
-                                                                                            } else if (urlStr.includes('/')) {
-                                                                                                [owner, repo] = urlStr.split('/');
-                                                                                            }
-                                                                                            const filePath = result.docsGap.affectedDocs[0].replace(/^\//, '');
-                                                                                            if (owner && repo && filePath) {
-                                                                                                editUrl = `https://github.com/${owner}/${repo}/edit/main/${filePath}`;
-                                                                                            }
-                                                                                        } catch { /* ignore */ }
-                                                                                        return editUrl ? (
+                                                                                    {result.docsGap?.affectedDocs?.length > 0 && docsSource !== 'website' && (() => {
+                                                                                        const isPrCreated = prUrls[result.number];
+                                                                                        const isCreating = creatingPrIndex === idx;
+
+                                                                                        if (isPrCreated) {
+                                                                                            return (
+                                                                                                <Button
+                                                                                                    size="small"
+                                                                                                    variant="outlined"
+                                                                                                    startIcon={<CheckIcon />}
+                                                                                                    href={prUrls[result.number]}
+                                                                                                    target="_blank"
+                                                                                                    rel="noopener noreferrer"
+                                                                                                    sx={{
+                                                                                                        fontWeight: 600,
+                                                                                                        fontSize: '0.7rem',
+                                                                                                        whiteSpace: 'nowrap',
+                                                                                                        color: '#22c55e',
+                                                                                                        borderColor: '#22c55e',
+                                                                                                        '&:hover': { borderColor: '#16a34a', bgcolor: 'rgba(34,197,94,0.05)' }
+                                                                                                    }}
+                                                                                                >
+                                                                                                    View PR
+                                                                                                </Button>
+                                                                                            );
+                                                                                        }
+
+                                                                                        return (
                                                                                             <Button
                                                                                                 size="small"
                                                                                                 variant="outlined"
-                                                                                                startIcon={<OpenInNewIcon />}
-                                                                                                href={editUrl}
-                                                                                                target="_blank"
-                                                                                                rel="noopener noreferrer"
+                                                                                                disabled={isCreating}
+                                                                                                startIcon={isCreating ? <CircularProgress size={14} /> : <OpenInNewIcon />}
+                                                                                                onClick={async () => {
+                                                                                                    setCreatingPrIndex(idx);
+                                                                                                    setPrError(null);
+                                                                                                    try {
+                                                                                                        const urlStr = githubRepoUrl.trim();
+                                                                                                        let owner = '', repo = '';
+                                                                                                        if (urlStr.includes('github.com')) {
+                                                                                                            const parts = urlStr.replace(/https?:\/\/(www\.)?github\.com\//, '').replace(/\/$/, '').split('/');
+                                                                                                            owner = parts[0];
+                                                                                                            repo = parts[1]?.replace(/\.git$/, '') || '';
+                                                                                                        } else if (urlStr.includes('/')) {
+                                                                                                            [owner, repo] = urlStr.split('/');
+                                                                                                        }
+                                                                                                        const filePath = result.docsGap.affectedDocs[0].replace(/^\//, '');
+
+                                                                                                        const response = await fetch(`${API_BASE_URL}/github-issues/create-pr`, {
+                                                                                                            method: 'POST',
+                                                                                                            headers: { 'Content-Type': 'application/json' },
+                                                                                                            body: JSON.stringify({
+                                                                                                                owner,
+                                                                                                                repo,
+                                                                                                                filePath,
+                                                                                                                originalText: result.docsGap.originalText || '',
+                                                                                                                correctedText: result.docsGap.correctedText,
+                                                                                                                issueNumber: result.number,
+                                                                                                                issueTitle: result.title,
+                                                                                                                gapType: result.docsGap.gapType,
+                                                                                                                confidence: result.docsGap.confidence
+                                                                                                            })
+                                                                                                        });
+
+                                                                                                        if (!response.ok) {
+                                                                                                            const errorData = await response.json().catch(() => ({}));
+                                                                                                            throw new Error(errorData.message || `Failed to create PR (HTTP ${response.status})`);
+                                                                                                        }
+
+                                                                                                        const prData = await response.json();
+                                                                                                        if (prData.prUrl) {
+                                                                                                            setPrUrls(prev => ({ ...prev, [result.number]: prData.prUrl }));
+                                                                                                        }
+                                                                                                    } catch (err: any) {
+                                                                                                        console.error('PR creation failed:', err);
+                                                                                                        setPrError(err.message || 'Failed to create PR');
+                                                                                                    } finally {
+                                                                                                        setCreatingPrIndex(null);
+                                                                                                    }
+                                                                                                }}
                                                                                                 sx={{
                                                                                                     fontWeight: 600,
                                                                                                     fontSize: '0.7rem',
@@ -3088,11 +4355,16 @@ function LensyApp() {
                                                                                                     '&:hover': { borderColor: '#8b5cf6', bgcolor: 'rgba(139,92,246,0.05)' }
                                                                                                 }}
                                                                                             >
-                                                                                                Open PR
+                                                                                                {isCreating ? 'Creating PR...' : 'Open PR'}
                                                                                             </Button>
-                                                                                        ) : null;
+                                                                                        );
                                                                                     })()}
                                                                                 </Box>
+                                                                            )}
+                                                                            {prError && creatingPrIndex === null && (
+                                                                                <Typography variant="caption" sx={{ color: '#ef4444', mt: 0.5, display: 'block' }}>
+                                                                                    {prError}
+                                                                                </Typography>
                                                                             )}
                                                                         </CardContent>
                                                                     </Card>
@@ -3144,7 +4416,7 @@ function LensyApp() {
                                                 searchForDeveloperIssues(companyDomain.trim());
                                             }
                                         }}
-                                        placeholder="resend.com, liveblocks.io, or docs.knock.app"
+                                        placeholder="example.com or docs.example.com"
                                         disabled={analysisState.status === 'analyzing'}
                                         helperText="Domain to investigate"
                                     />
@@ -3228,13 +4500,12 @@ function LensyApp() {
                             )}
                         </Box>
 
-                        <Button
+                        {selectedMode !== 'github-issues' && <Button
                             variant="contained"
                             onClick={handleAnalyze}
                             disabled={
                                 analysisState.status === 'analyzing' ||
-                                isFetchingGithubIssues ||
-                                (selectedMode === 'github-issues' && githubIssues.length > 0 && selectedGithubIssues.length === 0)
+                                isFetchingGithubIssues
                             }
                             sx={{
                                 height: 56,
@@ -3249,21 +4520,16 @@ function LensyApp() {
                         >
                             {analysisState.status === 'analyzing' ? (
                                 <CircularProgress size={20} color="inherit" />
-                            ) : isFetchingGithubIssues ? (
-                                <CircularProgress size={20} color="inherit" />
                             ) : analysisState.status === 'generating' ? (
                                 'Generating...'
                             ) : analysisState.status === 'applying' ? (
                                 'Applying...'
-                            ) : selectedMode === 'github-issues' ? (
-                                githubIssues.length === 0 ? 'Fetch Issues' :
-                                selectedGithubIssues.length > 0 ? `Analyze (${selectedGithubIssues.length})` : 'Select Issues'
                             ) : (fixSuccessMessage || (!analysisState.report && currentSessionId)) ? (
                                 'Re-scan'
                             ) : (
                                 'Start'
                             )}
-                        </Button>
+                        </Button>}
                     </Box>
 
                     {/* AI Model Selection hidden per branding guidelines */}
@@ -3520,7 +4786,18 @@ function LensyApp() {
                                         <Typography variant="h6" sx={{ flex: 1 }}>
                                             {result.issueTitle}
                                         </Typography>
-                                        <Chip label={`${result.confidence}% confidence`} variant="outlined" />
+                                        <Chip
+                                            label={`${result.confidence}%`}
+                                            size="small"
+                                            sx={{
+                                                fontWeight: 700,
+                                                fontSize: '0.7rem',
+                                                bgcolor: (result.confidence || 0) >= 80 ? 'rgba(34, 197, 94, 0.12)' : (result.confidence || 0) >= 60 ? 'rgba(245, 158, 11, 0.12)' : 'rgba(107, 114, 128, 0.10)',
+                                                color: (result.confidence || 0) >= 80 ? '#22c55e' : (result.confidence || 0) >= 60 ? '#f59e0b' : '#737373',
+                                                border: '1px solid',
+                                                borderColor: (result.confidence || 0) >= 80 ? 'rgba(34, 197, 94, 0.25)' : (result.confidence || 0) >= 60 ? 'rgba(245, 158, 11, 0.25)' : 'rgba(107, 114, 128, 0.20)',
+                                            }}
+                                        />
                                     </Box>
 
                                     {/* Evidence */}
@@ -3673,8 +4950,8 @@ function LensyApp() {
                     </Paper>
                 )}
 
-                {/* Results */}
-                {analysisState.status === 'completed' && analysisState.report && (
+                {/* Results — only show for doc/sitemap modes, not GitHub Issues */}
+                {analysisState.status === 'completed' && analysisState.report && selectedMode !== 'github-issues' && selectedMode !== 'issue-discovery' && (
                     <Paper elevation={3} sx={{ p: 4 }}>
                         <Typography variant="h5" gutterBottom>
                             Analysis Results
@@ -3978,16 +5255,52 @@ function LensyApp() {
                                                     </>
                                                 )}
                                             </Box>
-                                            {analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.slice(0, 2).map((link: any, i: number) => (
-                                                <Typography key={i} variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                                                    • {link.anchorText} → {link.issueType === '404' ? '404' : link.issueType === 'access-denied' ? '403' : link.status}
-                                                </Typography>
-                                            ))}
-                                            {(analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.length || 0) > 2 && (
-                                                <Typography variant="body2" color="text.secondary">
-                                                    ... and {(analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.length || 0) - 2} more
-                                                </Typography>
-                                            )}
+                                            {(() => {
+                                                const allIssues = analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings || [];
+                                                const broken = allIssues.filter((l: any) => l.issueType === '404');
+                                                const authProtected = allIssues.filter((l: any) => l.issueType === 'access-denied');
+                                                const timeouts = allIssues.filter((l: any) => l.issueType === 'timeout');
+                                                const otherErrors = allIssues.filter((l: any) => l.issueType === 'error');
+
+                                                const renderGroup = (label: string, items: any[], accentColor: string, note?: string) => items.length > 0 ? (
+                                                    <Box key={label} sx={{
+                                                        mb: 1.5,
+                                                        borderLeft: `2px solid ${accentColor}`,
+                                                        bgcolor: `${accentColor}0A`,
+                                                        borderRadius: '4px',
+                                                        px: 1.5,
+                                                        py: 1
+                                                    }}>
+                                                        <Typography variant="caption" sx={{ color: accentColor, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', mb: 0.5 }}>
+                                                            {label} ({items.length})
+                                                        </Typography>
+                                                        {note && (
+                                                            <Typography variant="caption" sx={{ color: '#737373', display: 'block', mb: 0.5, fontStyle: 'italic', fontSize: '0.7rem' }}>
+                                                                {note}
+                                                            </Typography>
+                                                        )}
+                                                        {items.map((link: any, i: number) => (
+                                                            <Typography key={i} variant="body2" sx={{ color: '#94a3b8', mb: 0.3, wordBreak: 'break-all', fontSize: '0.8rem' }}>
+                                                                • {link.url ? (
+                                                                    <a href={link.url} target="_blank" rel="noopener noreferrer" style={{ color: '#60a5fa', textDecoration: 'none' }}>
+                                                                        {link.anchorText || link.url}
+                                                                    </a>
+                                                                ) : link.anchorText}
+                                                                <span style={{ color: '#737373' }}>{' → '}{link.status}</span>
+                                                            </Typography>
+                                                        ))}
+                                                    </Box>
+                                                ) : null;
+
+                                                return (
+                                                    <>
+                                                        {renderGroup('Broken Links', broken, '#ef4444')}
+                                                        {renderGroup('Auth-Protected', authProtected, '#f59e0b', 'May require authentication — likely not broken')}
+                                                        {renderGroup('Timeouts', timeouts, '#525252')}
+                                                        {renderGroup('Other Errors', otherErrors, '#525252')}
+                                                    </>
+                                                );
+                                            })()}
                                         </CardContent>
                                     </Card>
                                 </Grid>
