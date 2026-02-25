@@ -96,7 +96,59 @@ export const handler: Handler<SitemapHealthForDocModeEvent, SitemapHealthForDocM
 
         const urlObj = new URL(url);
         const domain = `${urlObj.protocol}//${urlObj.hostname}`;
+        const normalizedDomain = urlObj.hostname.replace(/\./g, '-');
         console.log(`Extracted domain: ${domain}`);
+
+        // Step 1b: Check for cached sitemap health results (7-day TTL)
+        const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+        const cacheKey = `sitemap-health-cache/${normalizedDomain}.json`;
+        try {
+            const cachedResponse = await s3Client.send(new GetObjectCommand({
+                Bucket: process.env.ANALYSIS_BUCKET,
+                Key: cacheKey
+            }));
+            if (cachedResponse.Body) {
+                const cachedContent = await cachedResponse.Body.transformToString();
+                const cachedData = JSON.parse(cachedContent);
+                const cachedTimestamp = new Date(cachedData.timestamp).getTime();
+                const ageMs = Date.now() - cachedTimestamp;
+
+                if (ageMs < CACHE_TTL_MS) {
+                    const ageDays = Math.floor(ageMs / (24 * 60 * 60 * 1000));
+                    const ageHours = Math.floor((ageMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+                    const ageLabel = ageDays > 0 ? `${ageDays}d ${ageHours}h` : `${ageHours}h`;
+                    console.log(`Using cached sitemap health results (age: ${ageLabel})`);
+
+                    await progress.success(
+                        `Sitemap health (cached ${ageLabel} ago): ${cachedData.healthyUrls}/${cachedData.totalUrls} URLs healthy (${cachedData.healthPercentage}%)`,
+                        { cached: true, cacheAge: ageLabel, ...cachedData }
+                    );
+
+                    // Also store in session-specific location for report generator
+                    await s3Client.send(new PutObjectCommand({
+                        Bucket: process.env.ANALYSIS_BUCKET,
+                        Key: `sessions/${sessionId}/doc-mode-sitemap-health.json`,
+                        Body: JSON.stringify({ ...cachedData, cached: true, cacheAge: ageLabel }),
+                        ContentType: 'application/json'
+                    }));
+
+                    return {
+                        success: true,
+                        sitemapUrl: cachedData.sitemapUrl || null,
+                        discoveryMethod: cachedData.discoveryMethod || 'cached',
+                        healthResults: cachedData,
+                        processingTime: Date.now() - startTime
+                    };
+                } else {
+                    console.log(`Cached sitemap health expired (age: ${Math.floor(ageMs / (24 * 60 * 60 * 1000))}d), re-checking...`);
+                }
+            }
+        } catch (cacheError: any) {
+            if (cacheError?.name !== 'NoSuchKey') {
+                console.warn('Cache check failed:', cacheError);
+            }
+            // No cache — proceed with fresh check
+        }
 
         // Step 2: Attempt sitemap discovery
         let sitemapUrl: string | null = null;
@@ -243,7 +295,7 @@ export const handler: Handler<SitemapHealthForDocModeEvent, SitemapHealthForDocM
         const parserResponse = await lambdaClient.send(new InvokeCommand({
             FunctionName: process.env.SITEMAP_PARSER_FUNCTION_NAME || 'LensyStack-SitemapParserFunction',
             Payload: JSON.stringify({
-                sitemapUrl,
+                url: sitemapUrl, // sitemap-parser expects "url" key
                 sessionId,
                 maxUrls: 500 // Limit to 500 URLs
             })
@@ -305,17 +357,40 @@ export const handler: Handler<SitemapHealthForDocModeEvent, SitemapHealthForDocM
         }
 
         // Step 5: Check health using existing SitemapHealthChecker Lambda
-        await progress.progress(`Checking health of ${urls.length} URLs...`, 'sitemap-health-check');
+        // Estimate wait time: ~1s per 10 URLs (batches of 10 with concurrent requests)
+        const estimatedSeconds = Math.max(5, Math.ceil(urls.length / 10) * 1.5);
+        const estimateLabel = estimatedSeconds >= 60
+            ? `~${Math.ceil(estimatedSeconds / 60)} min`
+            : `~${estimatedSeconds}s`;
+        await progress.progress(
+            `Checking health of ${urls.length} sitemap URLs (est. ${estimateLabel})...`,
+            'sitemap-health-check'
+        );
 
         const healthCheckerResponse = await lambdaClient.send(new InvokeCommand({
             FunctionName: process.env.SITEMAP_HEALTH_CHECKER_FUNCTION_NAME || 'LensyStack-SitemapHealthCheckerFunction',
             Payload: JSON.stringify({
-                urls,
-                sessionId
+                sessionId,
+                sitemapParserResult: {
+                    Payload: {
+                        success: true,
+                        totalUrls: urls.length,
+                        sitemapUrls: urls,
+                        s3Location: ''
+                    }
+                }
             })
         }));
 
         const healthResult = JSON.parse(new TextDecoder().decode(healthCheckerResponse.Payload));
+        // Compute healthPercentage if not at top level (checker nests it inside healthSummary)
+        if (healthResult.healthPercentage === undefined && healthResult.totalUrls > 0) {
+            healthResult.healthPercentage = Math.round((healthResult.healthyUrls / healthResult.totalUrls) * 100);
+        }
+        // Also pull linkIssues from healthSummary if not at top level
+        if (!healthResult.linkIssues && healthResult.healthSummary?.linkIssues) {
+            healthResult.linkIssues = healthResult.healthSummary.linkIssues;
+        }
         console.log('SitemapHealthChecker result:', healthResult);
 
         if (!healthResult.success) {
@@ -373,6 +448,19 @@ export const handler: Handler<SitemapHealthForDocModeEvent, SitemapHealthForDocM
                 healthPercentage: healthResult.healthPercentage
             }
         );
+
+        // Step 7: Cache results by domain (7-day TTL checked on read)
+        try {
+            await s3Client.send(new PutObjectCommand({
+                Bucket: process.env.ANALYSIS_BUCKET,
+                Key: cacheKey,
+                Body: JSON.stringify(healthSummary),
+                ContentType: 'application/json'
+            }));
+            console.log(`Cached sitemap health results to: ${cacheKey}`);
+        } catch (cacheWriteError) {
+            console.warn('Failed to cache sitemap health results:', cacheWriteError);
+        }
 
         return {
             success: true,

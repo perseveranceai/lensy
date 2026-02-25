@@ -2,6 +2,8 @@ import { Handler, APIGatewayProxyResult } from 'aws-lambda';
 import { SFNClient, StartExecutionCommand, DescribeExecutionCommand } from '@aws-sdk/client-sfn';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
+import * as https from 'https';
+import { URL } from 'url';
 
 const sfnClient = new SFNClient({ region: process.env.AWS_REGION || 'us-east-1' });
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
@@ -59,6 +61,23 @@ export const handler: Handler<any, any> = async (event: any) => {
 
         if (httpMethod === 'POST' && path === '/github-issues/analyze') {
             return await handleGithubIssuesRequest(body, corsHeaders, 'analyze');
+        }
+
+        if (httpMethod === 'POST' && path === '/github-issues/build-kb') {
+            return await handleGithubIssuesRequest(body, corsHeaders, 'build-kb');
+        }
+
+        if (httpMethod === 'POST' && path === '/github-issues/create-pr') {
+            return await handleGithubIssuesRequest(body, corsHeaders, 'create-pr');
+        }
+
+        if (httpMethod === 'GET' && path?.startsWith('/github-issues/results/')) {
+            return await handleGithubIssuesResultsRequest(path, corsHeaders);
+        }
+
+        if (httpMethod === 'GET' && path === '/github-issues/preview-docs') {
+            const queryParams = event.queryStringParameters || {};
+            return await handlePreviewDocsRequest(queryParams.domain, corsHeaders);
         }
 
         if (httpMethod === 'POST' && path === '/discover-issues') {
@@ -476,13 +495,35 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
     }
 }
 
-async function handleGithubIssuesRequest(body: string | null, corsHeaders: Record<string, string>, mode: 'fetch' | 'analyze') {
+async function handleGithubIssuesRequest(body: string | null, corsHeaders: Record<string, string>, mode: 'fetch' | 'analyze' | 'create-pr' | 'build-kb') {
     if (!body) return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Request body is required' }) };
 
     try {
         const requestBody = JSON.parse(body);
 
-        // Invoke the github-issues-analyzer lambda
+        // When analyzing with crawlUrl, use async invoke (crawl+summarize can take >29s)
+        if ((mode === 'analyze' || mode === 'build-kb') && requestBody.crawlUrl) {
+            console.log(`Async invoke for crawl analysis: ${requestBody.crawlUrl}, sessionId: ${requestBody.sessionId}`);
+            const invokeCommand = new InvokeCommand({
+                FunctionName: process.env.GITHUB_ISSUES_ANALYZER_FUNCTION_NAME || 'LensyGitHubIssuesAnalyzerFunction',
+                InvocationType: 'Event', // Async — returns immediately
+                Payload: JSON.stringify({ ...requestBody, mode })
+            });
+
+            await lambdaClient.send(invokeCommand);
+
+            return {
+                statusCode: 202,
+                headers: corsHeaders,
+                body: JSON.stringify({
+                    status: 'processing',
+                    message: 'Analysis started asynchronously. Results will be available via WebSocket and polling.',
+                    sessionId: requestBody.sessionId
+                })
+            };
+        }
+
+        // Synchronous invoke for fetch, create-pr, and analyze without crawlUrl
         const invokeCommand = new InvokeCommand({
             FunctionName: process.env.GITHUB_ISSUES_ANALYZER_FUNCTION_NAME || 'LensyGitHubIssuesAnalyzerFunction',
             InvocationType: 'RequestResponse',
@@ -514,6 +555,201 @@ async function handleGithubIssuesRequest(body: string | null, corsHeaders: Recor
             body: JSON.stringify({ error: `GitHub issues analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}` })
         };
     }
+}
+
+async function handleGithubIssuesResultsRequest(path: string, corsHeaders: Record<string, string>) {
+    const parts = path.split('/');
+    const sessionId = parts[3]; // /github-issues/results/{sessionId}
+
+    if (!sessionId) {
+        return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Session ID is required' }) };
+    }
+
+    try {
+        const bucketName = process.env.ANALYSIS_BUCKET || 'lensy-analysis-951411676525-us-east-1';
+        const key = `github-issues-results/${sessionId}.json`;
+
+        console.log(`Fetching GitHub issues results for session ${sessionId} from ${bucketName}/${key}`);
+
+        const response = await s3Client.send(new GetObjectCommand({
+            Bucket: bucketName,
+            Key: key
+        }));
+
+        const content = await response.Body?.transformToString();
+        if (!content) throw new Error('Empty response from S3');
+
+        return {
+            statusCode: 200,
+            headers: corsHeaders,
+            body: content
+        };
+    } catch (error: any) {
+        if (error.name === 'NoSuchKey' || error.$metadata?.httpStatusCode === 404) {
+            return {
+                statusCode: 202,
+                headers: corsHeaders,
+                body: JSON.stringify({ status: 'processing', message: 'Analysis still in progress', sessionId })
+            };
+        }
+        console.error('Failed to get GitHub issues results:', error);
+        return {
+            statusCode: 500,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: 'Failed to retrieve results', message: error instanceof Error ? error.message : 'Unknown error' })
+        };
+    }
+}
+
+// ─── Preview Docs (lightweight — no crawl, no Bedrock) ──────────────────────
+// Fetches llms.txt or sitemap.xml at a domain to show user what will be crawled.
+
+function quickFetch(url: string, timeoutMs = 8000): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const parsedUrl = new URL(url);
+        const options = {
+            hostname: parsedUrl.hostname,
+            path: parsedUrl.pathname + parsedUrl.search,
+            method: 'GET',
+            headers: { 'User-Agent': 'Lensy-Preview/1.0', 'Accept': 'text/plain,text/xml,application/xml,*/*' }
+        };
+        const req = https.request(options, (res) => {
+            // Follow single redirect
+            if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                quickFetch(res.headers.location, timeoutMs).then(resolve).catch(reject);
+                return;
+            }
+            if (res.statusCode && res.statusCode >= 400) {
+                reject(new Error(`HTTP ${res.statusCode}`));
+                return;
+            }
+            let data = '';
+            res.on('data', (chunk) => data += chunk);
+            res.on('end', () => resolve(data));
+        });
+        req.on('error', reject);
+        req.setTimeout(timeoutMs, () => { req.destroy(); reject(new Error('timeout')); });
+        req.end();
+    });
+}
+
+async function handlePreviewDocsRequest(rawDomain: string | undefined, corsHeaders: Record<string, string>) {
+    if (!rawDomain) {
+        return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'domain query parameter is required' }) };
+    }
+
+    // Normalize domain: strip protocol, www, trailing slash
+    let domain = rawDomain.trim()
+        .replace(/^https?:\/\//i, '')
+        .replace(/^www\./, '')
+        .replace(/\/.*$/, '');
+
+    if (!domain) {
+        return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Invalid domain provided' }) };
+    }
+
+    const baseUrl = `https://${domain}`;
+
+    // Check S3 cache — if KB already exists, tell the frontend so it can skip "Build Knowledge Base" button
+    let cached = false;
+    let cachedPageCount = 0;
+    let cachedAt: string | null = null;
+    try {
+        const bucketName = process.env.ANALYSIS_BUCKET;
+        if (bucketName) {
+            const safeDomain = domain.replace(/[^a-zA-Z0-9._-]/g, '_');
+            const cacheKey = `${safeDomain}/llms-cache.json`;
+            const cacheResponse = await s3Client.send(new GetObjectCommand({
+                Bucket: bucketName,
+                Key: cacheKey
+            }));
+            const cacheBody = await cacheResponse.Body?.transformToString();
+            if (cacheBody) {
+                const cacheData = JSON.parse(cacheBody);
+                // Validate TTL (168 hours = 7 days)
+                const cacheAge = Date.now() - new Date(cacheData.createdAt).getTime();
+                const ttlMs = 168 * 60 * 60 * 1000;
+                if (cacheAge <= ttlMs) {
+                    cached = true;
+                    cachedPageCount = cacheData.pageCount || 0;
+                    cachedAt = cacheData.createdAt;
+                }
+            }
+        }
+    } catch {
+        // No cache or error — proceed normally
+    }
+
+    // Try llms.txt first
+    try {
+        const llmsTxt = await quickFetch(`${baseUrl}/llms.txt`);
+        if (llmsTxt && llmsTxt.length > 50) {
+            // Count pages and extract top-level categories from heading hierarchy
+            const lines = llmsTxt.split('\n');
+            const pageLinks = lines.filter(l => /\[.+\]\(.+\)/.test(l.trim()));
+            const categories = lines
+                .filter(l => l.match(/^-\s+[A-Z]/) && !l.includes('[')).map(l => l.replace(/^-\s+/, '').trim())
+                .concat(lines.filter(l => l.startsWith('## ') || l.startsWith('# '))
+                    .map(l => l.replace(/^#+\s+/, '').trim()))
+                .filter(Boolean).slice(0, 10);
+
+            return {
+                statusCode: 200,
+                headers: corsHeaders,
+                body: JSON.stringify({
+                    found: true,
+                    source: 'llms.txt',
+                    sourceUrl: `${baseUrl}/llms.txt`,
+                    pageCount: pageLinks.length || Math.floor(llmsTxt.length / 80),
+                    categories,
+                    domain,
+                    cached,
+                    cachedPageCount,
+                    cachedAt
+                })
+            };
+        }
+    } catch { /* llms.txt not found, try sitemap */ }
+
+    // Try sitemap.xml
+    try {
+        const sitemap = await quickFetch(`${baseUrl}/sitemap.xml`);
+        if (sitemap && sitemap.length > 50) {
+            const urlMatches = sitemap.match(/<loc>(.*?)<\/loc>/gi) || [];
+            const urls = urlMatches.map(m => m.replace(/<\/?loc>/gi, '').trim());
+            const docsPatterns = [/\/docs\//i, /\/documentation\//i, /\/guide/i, /\/tutorial/i, /\/api\//i, /\/reference/i];
+            const docsUrls = urls.filter(u => docsPatterns.some(p => p.test(u)));
+            const displayUrls = docsUrls.length > 0 ? docsUrls : urls;
+
+            return {
+                statusCode: 200,
+                headers: corsHeaders,
+                body: JSON.stringify({
+                    found: true,
+                    source: 'sitemap.xml',
+                    sourceUrl: `${baseUrl}/sitemap.xml`,
+                    pageCount: displayUrls.length,
+                    categories: [],
+                    domain,
+                    cached,
+                    cachedPageCount,
+                    cachedAt
+                })
+            };
+        }
+    } catch { /* sitemap not found either */ }
+
+    // Neither found
+    return {
+        statusCode: 200,
+        headers: corsHeaders,
+        body: JSON.stringify({
+            found: false,
+            source: null,
+            domain,
+            message: `Could not find llms.txt or sitemap.xml at ${domain}. Please check the URL or provide the direct link to your llms.txt / sitemap.xml.`
+        })
+    };
 }
 
 async function handleDiscoverIssuesRequest(body: string | null, corsHeaders: Record<string, string>) {

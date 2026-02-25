@@ -272,11 +272,11 @@ async function performBulkLinkValidation(
                         issueType: '404'
                     };
                     linkIssues.push(linkIssue);
-                } else if (response.status === 403) {
+                } else if (response.status === 401 || response.status === 403) {
                     const linkIssue: LinkIssue = {
                         url,
-                        status: 403,
-                        errorMessage: 'Access denied (403 Forbidden)',
+                        status: response.status,
+                        errorMessage: `Access denied (${response.status} ${response.status === 401 ? 'Unauthorized' : 'Forbidden'})`,
                         issueType: 'access-denied'
                     };
                     linkIssues.push(linkIssue);
