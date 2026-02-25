@@ -14,15 +14,24 @@ import * as targets from 'aws-cdk-lib/aws-route53-targets';
 import { Construct } from 'constructs';
 import * as path from 'path';
 
+interface LensyStackProps extends cdk.StackProps {
+    lensyEnv: string;
+}
+
 export class LensyStack extends cdk.Stack {
-    constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+    constructor(scope: Construct, id: string, props: LensyStackProps) {
         super(scope, id, props);
+
+        const lensyEnv = props.lensyEnv;
+        const isProd = lensyEnv === 'prod';
+        const envSuffix = isProd ? '' : `-${lensyEnv}`;
 
         // 1. S3 Bucket for Analysis
         const analysisBucket = new s3.Bucket(this, 'LensyAnalysisBucket', {
-            bucketName: `lensy-analysis-951411676525-${this.region}`,
+            bucketName: `lensy-analysis-${this.account}-${this.region}${envSuffix}`,
             encryption: s3.BucketEncryption.S3_MANAGED,
-            removalPolicy: cdk.RemovalPolicy.RETAIN,
+            removalPolicy: isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+            autoDeleteObjects: !isProd,
         });
 
         // 2. DynamoDB Tables
@@ -79,9 +88,10 @@ export class LensyStack extends cdk.Stack {
             defaultRouteOptions: { integration: new apigwv2_integrations.WebSocketLambdaIntegration('DefaultIntegration', webSocketHandler) },
         });
 
+        const wsStageName = isProd ? 'prod' : lensyEnv;
         const webSocketStage = new apigwv2.WebSocketStage(this, 'WebSocketStage', {
             webSocketApi,
-            stageName: 'prod',
+            stageName: wsStageName,
             autoDeploy: true,
         });
 
@@ -89,7 +99,7 @@ export class LensyStack extends cdk.Stack {
             integration: new apigwv2_integrations.WebSocketLambdaIntegration('SubscribeIntegration', webSocketHandler),
         });
 
-        const wsEndpoint = `https://${webSocketApi.apiId}.execute-api.${this.region}.amazonaws.com/prod`;
+        const wsEndpoint = `https://${webSocketApi.apiId}.execute-api.${this.region}.amazonaws.com/${wsStageName}`;
         webSocketHandler.addEnvironment('WEBSOCKET_API_ENDPOINT', wsEndpoint);
 
         // 4. Functional Lambdas
@@ -112,7 +122,7 @@ export class LensyStack extends cdk.Stack {
             webSocketConnectionsTable.grantReadWriteData(fn);
             fn.addToRolePolicy(new iam.PolicyStatement({
                 actions: ['execute-api:ManageConnections'],
-                resources: [`arn:aws:execute-api:${this.region}:${this.account}:${webSocketApi.apiId}/prod/*`],
+                resources: [`arn:aws:execute-api:${this.region}:${this.account}:${webSocketApi.apiId}/${wsStageName}/*`],
             }));
             return fn;
         };
@@ -159,10 +169,12 @@ export class LensyStack extends cdk.Stack {
             resources: ['*'],
         }));
 
+        const demoBucketName = `lensy-demo-docs-${this.account}${envSuffix}`;
         fixApplicator.addToRolePolicy(new iam.PolicyStatement({
             actions: ['s3:GetObject', 's3:PutObject'],
-            resources: [`arn:aws:s3:::lensy-demo-docs-${this.account}/*`],
+            resources: [`arn:aws:s3:::${demoBucketName}/*`],
         }));
+        fixApplicator.addEnvironment('DEMO_BUCKET', demoBucketName);
 
         fixApplicator.addToRolePolicy(new iam.PolicyStatement({
             actions: ['cloudfront:CreateInvalidation'],
@@ -265,7 +277,9 @@ export class LensyStack extends cdk.Stack {
         //    console.perseveranceai.com
         // ============================================
 
-        const consoleDomainName = 'console.perseveranceai.com';
+        const consoleDomainName = isProd
+            ? 'console.perseveranceai.com'
+            : `${lensyEnv}.console.perseveranceai.com`;
 
         // 7a. Route53 Hosted Zone lookup
         const hostedZone = route53.HostedZone.fromLookup(this, 'PerseveranceAIZone', {
@@ -278,10 +292,15 @@ export class LensyStack extends cdk.Stack {
             validation: acm.CertificateValidation.fromDns(hostedZone),
         });
 
-        // 7c. S3 Bucket for Console Frontend (already exists from prior deploy, importing by name)
-        const consoleBucket = s3.Bucket.fromBucketName(this, 'ConsoleFrontendBucket',
-            `lensy-console-${this.account}-${this.region}`
-        );
+        // 7c. S3 Bucket for Console Frontend
+        const consoleBucketName = `lensy-console-${this.account}-${this.region}${envSuffix}`;
+        const consoleBucket = isProd
+            ? s3.Bucket.fromBucketName(this, 'ConsoleFrontendBucket', consoleBucketName)
+            : new s3.Bucket(this, 'ConsoleFrontendBucket', {
+                bucketName: consoleBucketName,
+                removalPolicy: cdk.RemovalPolicy.DESTROY,
+                autoDeleteObjects: true,
+            });
 
         // 7d. CloudFront Origin Access Identity
         const consoleOAI = new cloudfront.OriginAccessIdentity(this, 'ConsoleOAI', {
@@ -366,7 +385,7 @@ function isValidToken(token) {
     return true;
 }
             `),
-            functionName: 'perseverance-console-auth',
+            functionName: `perseverance-console-auth${envSuffix}`,
         });
 
         // 7f. CloudFront Distribution
@@ -412,6 +431,9 @@ function isValidToken(token) {
             httpVersion: cloudfront.HttpVersion.HTTP2,
             priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
         });
+
+        // Pass CloudFront distribution ID to fix-applicator
+        fixApplicator.addEnvironment('DISTRIBUTION_ID', consoleDistribution.distributionId);
 
         // 7g. Route53 A Record
         new route53.ARecord(this, 'ConsoleAliasRecord', {

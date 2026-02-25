@@ -18,9 +18,12 @@ const handler = async (event) => {
         }
     }
     const { sessionId, selectedFixIds, bucketName: eventBucket, distributionId: eventDist } = input;
-    const analysisBucket = eventBucket || process.env.ANALYSIS_BUCKET || 'lensy-analysis-951411676525-us-east-1';
-    const demoBucket = process.env.DEMO_BUCKET || 'lensy-demo-docs-951411676525';
-    const distributionId = eventDist || process.env.DISTRIBUTION_ID || 'E2ZTB22KJUIH93';
+    const analysisBucket = eventBucket || process.env.ANALYSIS_BUCKET;
+    const demoBucket = process.env.DEMO_BUCKET;
+    const distributionId = eventDist || process.env.DISTRIBUTION_ID;
+    if (!analysisBucket || !demoBucket) {
+        throw new Error('Missing required environment variables: ANALYSIS_BUCKET and DEMO_BUCKET must be set');
+    }
     console.log(`Starting Fix Application for session: ${sessionId} (Bucket: ${analysisBucket})`);
     if (!sessionId) {
         return {
