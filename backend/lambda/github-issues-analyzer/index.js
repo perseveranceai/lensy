@@ -45,7 +45,7 @@ const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 // ─── S3 Key Helpers ─────────────────────────────────────────────────────────
 function domainS3Key(domain, filename) {
     // All domain artifacts live under: {domain}/{filename}
-    // e.g. dev.dotcms.com/llms-semi.json, dev.dotcms.com/llms-cache.json
+    // e.g. docs.example.com/llms-semi.json, docs.example.com/llms-cache.json
     const safeDomain = domain.replace(/[^a-zA-Z0-9._-]/g, '_');
     return `${safeDomain}/${filename}`;
 }
@@ -549,7 +549,7 @@ CRITICAL RULES:
 - If the issue reveals MISSING content (not inaccurate), set originalText to the nearest relevant existing text and correctedText to an expanded version that includes the missing information
 - Be precise: include enough surrounding text in originalText to make it uniquely findable in the document
 - Include the FULL bullet point, paragraph, or section that needs changing — do not excerpt just a fragment
-- affectedDocs MUST use the exact URL or file path from the "--- ... ---" header of each doc section. For website docs, this will be a full URL like "https://dev.dotcms.com/docs/angular".
+- affectedDocs MUST use the exact URL or file path from the "--- ... ---" header of each doc section. For website docs, this will be a full URL like "https://docs.example.com/docs/some-topic".
 - affectedDocsReason MUST be exactly ONE short sentence under 20 words. State ONLY what is wrong and what it should be. Do NOT explain background or consequences. BAD: "The docs reference version 17 but the platform is upgrading to 20 with breaking changes including component renames so documentation needs updating." GOOD: "Both pages reference Angular 17 and PrimeNG 17, now upgrading to version 20."
 
 GROUNDING & NO-HALLUCINATION RULES:
@@ -1004,7 +1004,7 @@ async function summarizeAllPages(crawledPages, publisher) {
 async function crawlDocsWebsite(siteUrl, issues, publisher) {
     const docs = [];
     console.log(`  Crawling docs website: ${siteUrl}`);
-    // Normalize URL — user provides domain (e.g., "dev.dotcms.com")
+    // Normalize URL — user provides domain (e.g., "docs.example.com")
     let baseUrl = siteUrl.replace(/\/$/, '');
     if (!baseUrl.startsWith('http'))
         baseUrl = `https://${baseUrl}`;

@@ -3252,7 +3252,7 @@ function LensyApp() {
                                                             },
                                                             '& .MuiInputBase-input': { color: '#e2e8f0', py: 0.75 }
                                                         }}
-                                                        helperText="e.g., dotCMS/documentation or https://github.com/owner/docs-repo"
+                                                        helperText="e.g., owner/docs-repo or https://github.com/owner/docs-repo"
                                                         FormHelperTextProps={{ sx: { color: '#94a3b8', fontSize: '0.65rem' } }}
                                                     />
                                                 )}
@@ -3399,7 +3399,7 @@ function LensyApp() {
                                                         },
                                                         '& .MuiInputBase-input': { color: '#e2e8f0', py: 0.75 }
                                                     }}
-                                                    helperText="Or enter a different docs repo (e.g., dotCMS/documentation)"
+                                                    helperText="Or enter a different docs repo (e.g., owner/docs-repo)"
                                                     FormHelperTextProps={{ sx: { color: '#94a3b8', fontSize: '0.65rem' } }}
                                                 />
                                                 <Box sx={{ display: 'flex', gap: 1, mt: 1, alignItems: 'center' }}>
@@ -3492,7 +3492,7 @@ function LensyApp() {
                                                         },
                                                         '& .MuiInputBase-input': { color: '#e2e8f0', py: 0.75 }
                                                     }}
-                                                    helperText="GitHub docs repo URL (e.g., dotCMS/documentation)"
+                                                    helperText="GitHub docs repo URL (e.g., owner/docs-repo)"
                                                     FormHelperTextProps={{ sx: { color: '#94a3b8', fontSize: '0.65rem' } }}
                                                 />
                                                 <Typography
@@ -3568,7 +3568,7 @@ function LensyApp() {
                                                             setPreviewDocs(null); // reset preview when URL changes
                                                             setManualLlmsUrl('');
                                                         }}
-                                                        placeholder="dev.dotcms.com"
+                                                        placeholder="docs.example.com"
                                                         disabled={analysisState.status === 'analyzing' || isPreviewingDocs}
                                                         sx={{
                                                             flexGrow: 1,
@@ -3726,7 +3726,7 @@ function LensyApp() {
                                                             variant="outlined"
                                                             value={manualLlmsUrl}
                                                             onChange={(e) => setManualLlmsUrl(e.target.value)}
-                                                            placeholder="https://dev.dotcms.com/llms.txt"
+                                                            placeholder="https://docs.example.com/llms.txt"
                                                             disabled={analysisState.status === 'analyzing'}
                                                             sx={{
                                                                 flexGrow: 1,
@@ -3826,7 +3826,7 @@ function LensyApp() {
                                                                 {githubIssues.filter(i => i.isDocsRelated).length} docs-related issues found
                                                             </Typography>
                                                             {githubFetchMeta && (
-                                                                <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.68rem' }}>
+                                                                <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.68rem' }}>
                                                                     Scanned {githubFetchMeta.totalFetched} open issues · {githubFetchMeta.dateRange} · AI-classified
                                                                 </Typography>
                                                             )}

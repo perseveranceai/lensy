@@ -138,7 +138,7 @@ export class LensyStack extends cdk.Stack {
         const issueValidator = createLambda('IssueValidatorFunction', 'issue-validator', 300, 1024, { S3_BUCKET_NAME: analysisBucket.bucketName });
         const githubIssuesAnalyzer = createLambda('GitHubIssuesAnalyzerFunction', 'github-issues-analyzer', 300, 1024, {
             GITHUB_TOKEN: process.env.GITHUB_TOKEN || '',
-            MAX_ISSUES_PER_SESSION: '5'
+            MAX_ISSUES_PER_SESSION: '20'
         });
 
         githubIssuesAnalyzer.addToRolePolicy(new iam.PolicyStatement({
