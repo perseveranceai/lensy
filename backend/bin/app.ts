@@ -8,11 +8,16 @@ const app = new cdk.App();
 // Get environment configuration
 const account = process.env.CDK_DEFAULT_ACCOUNT;
 const region = process.env.CDK_DEFAULT_REGION || 'us-east-1';
+const lensyEnv = process.env.LENSY_ENV || 'prod';
 
-new LensyStack(app, 'LensyStack', {
+// Stack name: 'LensyStack' for prod, 'LensyStack-gamma' for gamma, etc.
+const stackName = lensyEnv === 'prod' ? 'LensyStack' : `LensyStack-${lensyEnv}`;
+
+new LensyStack(app, stackName, {
     env: {
         account,
         region
     },
-    description: 'Lensy Documentation Quality Auditor - AI-powered documentation analysis with real-time transparency'
+    lensyEnv,
+    description: `Lensy Documentation Quality Auditor (${lensyEnv})`,
 });
