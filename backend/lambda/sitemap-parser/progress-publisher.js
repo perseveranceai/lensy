@@ -60,6 +60,8 @@ class ProgressPublisher {
                 console.log('No WebSocket connections found for session:', this.sessionId);
                 return;
             }
+            // Include sessionId in every message so frontend can filter
+            const messageWithSession = { ...message, sessionId: this.sessionId };
             // Send message to all connections for this session
             const sendPromises = connections.Items.map(async (item) => {
                 const connectionId = item.connectionId?.S;
@@ -68,7 +70,7 @@ class ProgressPublisher {
                 try {
                     await this.apiGatewayClient.send(new client_apigatewaymanagementapi_1.PostToConnectionCommand({
                         ConnectionId: connectionId,
-                        Data: JSON.stringify(message)
+                        Data: JSON.stringify(messageWithSession)
                     }));
                 }
                 catch (error) {

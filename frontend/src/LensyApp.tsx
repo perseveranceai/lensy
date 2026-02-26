@@ -290,6 +290,7 @@ interface ProgressMessage {
     type: 'info' | 'success' | 'error' | 'warning' | 'progress' | 'cache-hit' | 'cache-miss';
     message: string;
     timestamp: number;
+    sessionId?: string;
     phase?: 'url-processing' | 'structure-detection' | 'dimension-analysis' | 'report-generation' | 'fix-generation';
     metadata?: {
         dimension?: string;
@@ -308,10 +309,11 @@ interface AnalysisState {
     error?: string;
     executionArn?: string;
     progressMessages: ProgressMessage[];
+    sourceMode?: 'doc' | 'sitemap' | 'issue-discovery' | 'github-issues';
 }
 
-const API_BASE_URL = 'https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com';
-const WEBSOCKET_URL = 'wss://g2l57hb9ak.execute-api.us-east-1.amazonaws.com/prod';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com';
+const WEBSOCKET_URL = process.env.REACT_APP_WS_URL || 'wss://g2l57hb9ak.execute-api.us-east-1.amazonaws.com/prod';
 
 function LensyApp() {
     const [url, setUrl] = useState('');
@@ -548,6 +550,12 @@ function LensyApp() {
                     const message: ProgressMessage = JSON.parse(event.data);
                     // Use console.debug for heartbeat to avoid clutter
                     if (message.message === 'pong') return;
+
+                    // Filter: only accept messages for the session this handler was created for
+                    if (message.sessionId && message.sessionId !== sessionId) {
+                        console.debug('Ignoring message for different session:', message.sessionId, '(expected:', sessionId, ')');
+                        return;
+                    }
 
                     console.log('Progress update:', message);
 
@@ -808,6 +816,7 @@ function LensyApp() {
             setNoDocsAsCode(true);
             setAnalysisState({
                 status: 'completed',
+                sourceMode: 'github-issues',
                 progressMessages: [
                     { type: 'info', message: results.message, timestamp: Date.now() }
                 ]
@@ -821,6 +830,7 @@ function LensyApp() {
         setCopiedFixIndex(null);
         setAnalysisState(prev => ({
             status: 'completed',
+            sourceMode: 'github-issues',
             progressMessages: [
                 ...prev.progressMessages,
                 { type: 'success', message: `Analysis complete: ${results.analyses?.length || 0} issues analyzed`, timestamp: Date.now() }
@@ -844,6 +854,7 @@ function LensyApp() {
 
         setAnalysisState({
             status: 'analyzing',
+            sourceMode: 'github-issues',
             progressMessages: [{ type: 'info', message: isAsyncCrawl ? 'Starting docs crawl and analysis (this may take 1-2 minutes)...' : 'Analyzing selected issues against documentation...', timestamp: Date.now() }]
         });
 
@@ -940,6 +951,7 @@ function LensyApp() {
             console.error('Error analyzing GitHub issues:', error);
             setAnalysisState({
                 status: 'error',
+                sourceMode: 'github-issues',
                 error: `Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
                 progressMessages: []
             });
@@ -1034,6 +1046,11 @@ function LensyApp() {
                     try {
                         const message = JSON.parse(event.data);
                         if (message.message === 'pong') return;
+                        // Filter: only accept messages for this KB session
+                        if (message.sessionId && message.sessionId !== kbSessionId) {
+                            console.debug('KB ignoring message for different session:', message.sessionId);
+                            return;
+                        }
                         console.log('KB build progress:', message);
                         setKbBuildProgress(prev => [...prev, message]);
 
@@ -1389,6 +1406,7 @@ function LensyApp() {
 
         setAnalysisState({
             status: 'analyzing',
+            sourceMode: currentMode,
             progressMessages: [
                 { type: 'info', message: 'Starting analysis...', timestamp: Date.now() }
             ]
@@ -1396,7 +1414,7 @@ function LensyApp() {
 
         const sessionId = `session-${Date.now()}`;
         setCurrentSessionId(sessionId); // Store session ID for later use
-        const finalInputType = manualModeOverride || selectedMode;
+        const finalInputType = currentMode;
 
         try {
             // Handle issue-discovery mode differently
@@ -4504,7 +4522,7 @@ function LensyApp() {
                             variant="contained"
                             onClick={handleAnalyze}
                             disabled={
-                                analysisState.status === 'analyzing' ||
+                                (analysisState.status === 'analyzing' && analysisState.sourceMode !== 'github-issues') ||
                                 isFetchingGithubIssues
                             }
                             sx={{
@@ -4518,7 +4536,7 @@ function LensyApp() {
                                 }
                             }}
                         >
-                            {analysisState.status === 'analyzing' ? (
+                            {(analysisState.status === 'analyzing' && analysisState.sourceMode !== 'github-issues') ? (
                                 <CircularProgress size={20} color="inherit" />
                             ) : analysisState.status === 'generating' ? (
                                 'Generating...'
@@ -4535,7 +4553,7 @@ function LensyApp() {
                     {/* AI Model Selection hidden per branding guidelines */}
                     <input type="hidden" name="selectedModel" value={selectedModel} />
 
-                    {analysisState.status === 'error' && (
+                    {analysisState.status === 'error' && analysisState.sourceMode !== 'github-issues' && (
                         <Alert severity="error" sx={{ mt: 3 }}>
                             {analysisState.error}
                         </Alert>
@@ -4543,7 +4561,7 @@ function LensyApp() {
                 </Paper>
 
                 {/* Progress Messages — hidden for github-issues mode (shown inline in right column) */}
-                {analysisState.progressMessages.length > 0 && selectedMode !== 'github-issues' && (
+                {analysisState.progressMessages.length > 0 && selectedMode !== 'github-issues' && analysisState.sourceMode !== 'github-issues' && (
                     <Paper elevation={3} sx={{ p: 3, mb: 4 }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
                             <Typography variant="h6">

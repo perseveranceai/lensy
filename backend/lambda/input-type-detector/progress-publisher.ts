@@ -54,12 +54,15 @@ export class ProgressPublisher {
                 return;
             }
 
+            // Include sessionId in every message so frontend can filter
+            const messageWithSession = { ...message, sessionId: this.sessionId };
+
             // Send message to all connections
             const sendPromises = connections.map(async (connectionId) => {
                 try {
                     await this.apiGatewayClient!.send(new PostToConnectionCommand({
                         ConnectionId: connectionId,
-                        Data: Buffer.from(JSON.stringify(message))
+                        Data: Buffer.from(JSON.stringify(messageWithSession))
                     }));
                     console.log(`Sent progress to connection ${connectionId}:`, message.message);
                 } catch (error: any) {

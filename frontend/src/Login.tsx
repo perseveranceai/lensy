@@ -19,7 +19,7 @@ const COOKIE_NAME = 'perseverance_console_token';
 const EMAIL_COOKIE_NAME = 'perseverance_console_email';
 const LOGIN_TS_COOKIE_NAME = 'perseverance_console_login_ts';
 const EXPIRY_HOURS = 48;
-const API_BASE_URL = 'https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com';
 
 function setCookie(name: string, value: string, hours: number) {
     const expires = new Date(Date.now() + hours * 60 * 60 * 1000).toUTCString();
