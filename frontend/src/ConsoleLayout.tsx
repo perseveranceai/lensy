@@ -4,7 +4,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 const COOKIE_NAME = 'perseverance_console_token';
 const EMAIL_COOKIE_NAME = 'perseverance_console_email';
 const LOGIN_TS_COOKIE_NAME = 'perseverance_console_login_ts';
-const API_BASE_URL = 'https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com';
 
 function clearCookie(name: string) {
     document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Strict; Secure`;

@@ -290,6 +290,7 @@ interface ProgressMessage {
     type: 'info' | 'success' | 'error' | 'warning' | 'progress' | 'cache-hit' | 'cache-miss';
     message: string;
     timestamp: number;
+    sessionId?: string;
     phase?: 'url-processing' | 'structure-detection' | 'dimension-analysis' | 'report-generation' | 'fix-generation';
     metadata?: {
         dimension?: string;
@@ -310,8 +311,8 @@ interface AnalysisState {
     progressMessages: ProgressMessage[];
 }
 
-const API_BASE_URL = 'https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com';
-const WEBSOCKET_URL = 'wss://g2l57hb9ak.execute-api.us-east-1.amazonaws.com/prod';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com';
+const WEBSOCKET_URL = process.env.REACT_APP_WS_URL || 'wss://g2l57hb9ak.execute-api.us-east-1.amazonaws.com/prod';
 
 function LensyApp() {
     const [url, setUrl] = useState('');
@@ -548,6 +549,12 @@ function LensyApp() {
                     const message: ProgressMessage = JSON.parse(event.data);
                     // Use console.debug for heartbeat to avoid clutter
                     if (message.message === 'pong') return;
+
+                    // Filter: only accept messages for the session this handler was created for
+                    if (message.sessionId && message.sessionId !== sessionId) {
+                        console.debug('Ignoring message for different session:', message.sessionId, '(expected:', sessionId, ')');
+                        return;
+                    }
 
                     console.log('Progress update:', message);
 
@@ -1034,6 +1041,11 @@ function LensyApp() {
                     try {
                         const message = JSON.parse(event.data);
                         if (message.message === 'pong') return;
+                        // Filter: only accept messages for this KB session
+                        if (message.sessionId && message.sessionId !== kbSessionId) {
+                            console.debug('KB ignoring message for different session:', message.sessionId);
+                            return;
+                        }
                         console.log('KB build progress:', message);
                         setKbBuildProgress(prev => [...prev, message]);
 
