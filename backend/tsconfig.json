@@ -33,6 +33,7 @@
     "exclude": [
         "node_modules",
         "cdk.out",
-        "lib"
+        "lib",
+        "lambda/agent-handler"
     ]
 }

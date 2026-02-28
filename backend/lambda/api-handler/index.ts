@@ -182,39 +182,73 @@ async function handleAnalyzeRequest(body: string | null, corsHeaders: Record<str
         };
     }
 
-    // Start Step Functions execution
-    const executionName = `analysis-${analysisRequest.sessionId}-${Date.now()}`;
-    const stateMachineArn = process.env.STATE_MACHINE_ARN;
-
-    if (!stateMachineArn) {
-        throw new Error('STATE_MACHINE_ARN environment variable not set');
-    }
-
-    console.log('Starting Step Functions execution:', executionName);
-
-    const startExecutionCommand = new StartExecutionCommand({
-        stateMachineArn,
-        name: executionName,
-        input: JSON.stringify({
-            ...analysisRequest,
-            analysisStartTime: Date.now()
-        })
-    });
-
-    const execution = await sfnClient.send(startExecutionCommand);
-
-    console.log(`Started analysis execution: ${execution.executionArn}`);
-
-    return {
-        statusCode: 202,
-        headers: corsHeaders,
-        body: JSON.stringify({
-            message: 'Analysis started',
-            executionArn: execution.executionArn,
-            sessionId: analysisRequest.sessionId,
-            status: 'started'
-        })
+    const useAgent = process.env.USE_AGENT === 'true';
+    const analysisPayload = {
+        ...analysisRequest,
+        analysisStartTime: Date.now()
     };
+
+    if (useAgent) {
+        // Route to LangGraph Agent Lambda
+        const agentFunctionName = process.env.AGENT_FUNCTION_NAME;
+        if (!agentFunctionName) {
+            throw new Error('AGENT_FUNCTION_NAME environment variable not set');
+        }
+
+        console.log('Starting Agent Lambda (async):', agentFunctionName);
+
+        const invokeCommand = new InvokeCommand({
+            FunctionName: agentFunctionName,
+            InvocationType: 'Event', // Async invocation — returns immediately
+            Payload: Buffer.from(JSON.stringify(analysisPayload))
+        });
+
+        await lambdaClient.send(invokeCommand);
+
+        console.log(`Agent Lambda invoked for session: ${analysisRequest.sessionId}`);
+
+        return {
+            statusCode: 202,
+            headers: corsHeaders,
+            body: JSON.stringify({
+                message: 'Analysis started (agent)',
+                engine: 'agent',
+                sessionId: analysisRequest.sessionId,
+                status: 'started'
+            })
+        };
+    } else {
+        // Route to Step Functions (existing flow)
+        const executionName = `analysis-${analysisRequest.sessionId}-${Date.now()}`;
+        const stateMachineArn = process.env.STATE_MACHINE_ARN;
+
+        if (!stateMachineArn) {
+            throw new Error('STATE_MACHINE_ARN environment variable not set');
+        }
+
+        console.log('Starting Step Functions execution:', executionName);
+
+        const startExecutionCommand = new StartExecutionCommand({
+            stateMachineArn,
+            name: executionName,
+            input: JSON.stringify(analysisPayload)
+        });
+
+        const execution = await sfnClient.send(startExecutionCommand);
+
+        console.log(`Started analysis execution: ${execution.executionArn}`);
+
+        return {
+            statusCode: 202,
+            headers: corsHeaders,
+            body: JSON.stringify({
+                message: 'Analysis started',
+                executionArn: execution.executionArn,
+                sessionId: analysisRequest.sessionId,
+                status: 'started'
+            })
+        };
+    }
 }
 
 async function handleStatusRequest(path: string, corsHeaders: Record<string, string>) {

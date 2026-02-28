@@ -183,6 +183,33 @@ export class LensyStack extends cdk.Stack {
 
         const aiReadinessChecker = createLambda('AIReadinessCheckerFunction', 'ai-readiness-checker', 60);
 
+        // NEW: Agent Handler (LangGraph + Bedrock)
+        const agentHandler = new lambda.Function(this, 'AgentHandlerFunction', {
+            runtime: lambda.Runtime.NODEJS_20_X,
+            handler: 'index.handler',
+            code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/agent-handler'), {
+                exclude: ['*.ts', 'tsconfig.json', '*.d.ts'],
+            }),
+            timeout: cdk.Duration.minutes(15),
+            memorySize: 1024,
+            environment: {
+                ...commonEnv,
+                PROCESSED_CONTENT_TABLE: processedContentTable.tableName,
+                CACHE_TTL_DAYS: '7',
+            }
+        });
+        analysisBucket.grantReadWrite(agentHandler);
+        webSocketConnectionsTable.grantReadWriteData(agentHandler);
+        processedContentTable.grantReadWriteData(agentHandler);
+        agentHandler.addToRolePolicy(new iam.PolicyStatement({
+            actions: ['execute-api:ManageConnections'],
+            resources: [`arn:aws:execute-api:${this.region}:${this.account}:${webSocketApi.apiId}/${wsStageName}/*`],
+        }));
+        agentHandler.addToRolePolicy(new iam.PolicyStatement({
+            actions: ['bedrock:InvokeModel'],
+            resources: ['*'],
+        }));
+
         // NEW: Sitemap health for doc mode
         const sitemapHealthForDocMode = createLambda('SitemapHealthForDocModeFunction', 'sitemap-health-for-doc-mode', 300, 512, {
             SITEMAP_PARSER_FUNCTION_NAME: sitemapParser.functionName,
@@ -212,6 +239,7 @@ export class LensyStack extends cdk.Stack {
         sitemapHealthForDocMode.grantInvoke(stateMachine);
 
         // 6. API Handler and HTTP API
+        const useAgent = process.env.USE_AGENT || 'false';
         const apiHandler = createLambda('ApiHandlerFunction', 'api-handler', 90, 256, {
             STATE_MACHINE_ARN: stateMachine.stateMachineArn,
             ISSUE_DISCOVERER_FUNCTION_NAME: issueDiscoverer.functionName,
@@ -219,9 +247,12 @@ export class LensyStack extends cdk.Stack {
             FIX_GENERATOR_FUNCTION_NAME: fixGenerator.functionName,
             FIX_APPLICATOR_FUNCTION_NAME: fixApplicator.functionName,
             GITHUB_ISSUES_ANALYZER_FUNCTION_NAME: githubIssuesAnalyzer.functionName,
+            USE_AGENT: useAgent,
+            AGENT_FUNCTION_NAME: agentHandler.functionName,
         });
 
         stateMachine.grantStartExecution(apiHandler);
+        agentHandler.grantInvoke(apiHandler);
         issueDiscoverer.grantInvoke(apiHandler);
         issueValidator.grantInvoke(apiHandler);
         fixGenerator.grantInvoke(apiHandler);
