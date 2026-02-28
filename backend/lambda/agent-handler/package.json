@@ -1,0 +1,33 @@
+{
+  "name": "lensy-agent-handler",
+  "version": "1.0.0",
+  "description": "LangGraph-powered doc analysis agent for Lensy",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf *.js *.d.ts tools/*.js tools/*.d.ts shared/*.js shared/*.d.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-apigatewaymanagementapi": "^3.450.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.450.0",
+    "@aws-sdk/client-dynamodb": "^3.958.0",
+    "@aws-sdk/client-s3": "^3.958.0",
+    "@aws-sdk/lib-dynamodb": "^3.998.0",
+    "@aws-sdk/util-dynamodb": "^3.958.0",
+    "@langchain/aws": "^1.2.3",
+    "@langchain/core": "^1.1.16",
+    "@langchain/langgraph": "^1.1.5",
+    "jsdom": "^23.0.0",
+    "turndown": "^7.2.2",
+    "turndown-plugin-gfm": "^1.0.2",
+    "xml2js": "^0.6.2",
+    "zod": "^3.25.32"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.160",
+    "@types/jsdom": "^21.1.7",
+    "@types/node": "^20.19.34",
+    "@types/turndown": "^5.0.6",
+    "typescript": "^5.5.0"
+  }
+}
