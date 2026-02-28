@@ -25,6 +25,7 @@ test-*.ts
 *.test.ts
 debug-*.js
 check-*.js
+!backend/lambda/agent-handler/tools/check-*.js
 check-*.sh
 
 # Environment variables
@@ -132,6 +133,9 @@ Thumbs.db
 *.local
 requirements/
 .kiro/
+
+# Lambda Layers (binaries downloaded by build scripts)
+backend/layers/github-mcp-layer/bin/github-mcp-server
 
 # Generated workflow definitions
 workflow-definition.json

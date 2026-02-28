@@ -146,6 +146,39 @@ export class LensyStack extends cdk.Stack {
             resources: ['*'],
         }));
 
+        // Agent Handler Lambda (LangGraph + Bedrock + MCP)
+        // Handles both doc-analysis (Phase 1) and github-issues (Phase 2) modes
+        const githubMcpLayer = new lambda.LayerVersion(this, 'GitHubMcpServerLayer', {
+            code: lambda.Code.fromAsset(path.join(__dirname, '../layers/github-mcp-layer')),
+            compatibleRuntimes: [lambda.Runtime.NODEJS_20_X],
+            compatibleArchitectures: [lambda.Architecture.X86_64],
+            description: 'GitHub MCP Server Go binary for agent tools',
+        });
+
+        const agentHandler = new lambda.Function(this, 'AgentHandlerFunction', {
+            runtime: lambda.Runtime.NODEJS_20_X,
+            handler: 'index.handler',
+            code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/agent-handler')),
+            timeout: cdk.Duration.seconds(900), // 15 min max for long analyses
+            memorySize: 1024,
+            layers: [githubMcpLayer],
+            environment: {
+                ...commonEnv,
+                GITHUB_TOKEN: process.env.GITHUB_TOKEN || '',
+                MAX_ISSUES_PER_SESSION: '20',
+            },
+        });
+        analysisBucket.grantReadWrite(agentHandler);
+        webSocketConnectionsTable.grantReadWriteData(agentHandler);
+        agentHandler.addToRolePolicy(new iam.PolicyStatement({
+            actions: ['execute-api:ManageConnections'],
+            resources: [`arn:aws:execute-api:${this.region}:${this.account}:${webSocketApi.apiId}/prod/*`],
+        }));
+        agentHandler.addToRolePolicy(new iam.PolicyStatement({
+            actions: ['bedrock:InvokeModel'],
+            resources: ['*'],
+        }));
+
         const fixGenerator = createLambda('FixGeneratorFunction', 'fix-generator', 300, 1024);
         const fixApplicator = createLambda('FixApplicatorFunction', 'fix-applicator', 300, 512);
 
@@ -207,6 +240,8 @@ export class LensyStack extends cdk.Stack {
             FIX_GENERATOR_FUNCTION_NAME: fixGenerator.functionName,
             FIX_APPLICATOR_FUNCTION_NAME: fixApplicator.functionName,
             GITHUB_ISSUES_ANALYZER_FUNCTION_NAME: githubIssuesAnalyzer.functionName,
+            AGENT_HANDLER_FUNCTION_NAME: agentHandler.functionName,
+            USE_AGENT_FOR_GITHUB_ISSUES: 'false', // Feature flag — set to 'true' to route to agent
         });
 
         stateMachine.grantStartExecution(apiHandler);
@@ -215,6 +250,7 @@ export class LensyStack extends cdk.Stack {
         fixGenerator.grantInvoke(apiHandler);
         fixApplicator.grantInvoke(apiHandler);
         githubIssuesAnalyzer.grantInvoke(apiHandler);
+        agentHandler.grantInvoke(apiHandler);
 
         const httpApi = new apigwv2.HttpApi(this, 'LensyHttpApi', {
             description: 'Lensy HTTP API',

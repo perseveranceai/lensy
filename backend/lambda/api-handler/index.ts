@@ -501,6 +501,13 @@ async function handleGithubIssuesRequest(body: string | null, corsHeaders: Recor
     try {
         const requestBody = JSON.parse(body);
 
+        // Feature flag: route to agent Lambda if enabled
+        const useAgent = process.env.USE_AGENT_FOR_GITHUB_ISSUES === 'true';
+        if (useAgent) {
+            return await routeToAgentLambda(requestBody, corsHeaders, mode);
+        }
+
+        // Legacy path: invoke github-issues-analyzer Lambda directly
         // When analyzing with crawlUrl, use async invoke (crawl+summarize can take >29s)
         if ((mode === 'analyze' || mode === 'build-kb') && requestBody.crawlUrl) {
             console.log(`Async invoke for crawl analysis: ${requestBody.crawlUrl}, sessionId: ${requestBody.sessionId}`);
@@ -555,6 +562,95 @@ async function handleGithubIssuesRequest(body: string | null, corsHeaders: Recor
             body: JSON.stringify({ error: `GitHub issues analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}` })
         };
     }
+}
+
+/**
+ * Route GitHub Issues requests to the Agent Handler Lambda (LangGraph + MCP).
+ * Maps API modes to agent operations and handles sync/async invocations.
+ */
+async function routeToAgentLambda(requestBody: any, corsHeaders: Record<string, string>, mode: string) {
+    const agentFunctionName = process.env.AGENT_HANDLER_FUNCTION_NAME;
+    if (!agentFunctionName) {
+        throw new Error('AGENT_HANDLER_FUNCTION_NAME environment variable not set');
+    }
+
+    // Map API mode to agent operation
+    const operationMap: Record<string, string> = {
+        'fetch': 'fetch',
+        'analyze': 'analyze',
+        'build-kb': 'build-kb',
+        'create-pr': 'create-pr'
+    };
+
+    const agentPayload = {
+        mode: 'github-issues',
+        operation: operationMap[mode] || mode,
+        owner: requestBody.owner,
+        repo: requestBody.repo,
+        issues: requestBody.issues,
+        docsUrl: requestBody.docsUrl,
+        crawlUrl: requestBody.crawlUrl,
+        filePath: requestBody.filePath,
+        originalText: requestBody.originalText,
+        correctedText: requestBody.correctedText,
+        issueNumber: requestBody.issueNumber,
+        issueTitle: requestBody.issueTitle,
+        gapType: requestBody.gapType,
+        confidence: requestBody.confidence,
+        sessionId: requestBody.sessionId,
+    };
+
+    // Async: build-kb, analyze with crawlUrl (long-running operations)
+    const isAsync = (mode === 'build-kb') ||
+                    (mode === 'analyze' && requestBody.crawlUrl);
+
+    if (isAsync) {
+        console.log(`[Agent] Async invoke for ${mode}, sessionId: ${requestBody.sessionId}`);
+        const invokeCommand = new InvokeCommand({
+            FunctionName: agentFunctionName,
+            InvocationType: 'Event',
+            Payload: JSON.stringify(agentPayload)
+        });
+
+        await lambdaClient.send(invokeCommand);
+
+        return {
+            statusCode: 202,
+            headers: corsHeaders,
+            body: JSON.stringify({
+                status: 'processing',
+                message: 'Analysis started asynchronously via agent. Results will be available via WebSocket and polling.',
+                sessionId: requestBody.sessionId,
+                engine: 'agent'
+            })
+        };
+    }
+
+    // Sync: fetch, create-pr, analyze without crawlUrl
+    console.log(`[Agent] Sync invoke for ${mode}`);
+    const invokeCommand = new InvokeCommand({
+        FunctionName: agentFunctionName,
+        InvocationType: 'RequestResponse',
+        Payload: JSON.stringify(agentPayload)
+    });
+
+    const lambdaResponse = await lambdaClient.send(invokeCommand);
+    const responsePayload = JSON.parse(new TextDecoder().decode(lambdaResponse.Payload));
+
+    // Agent handler returns { statusCode, headers, body } for sync operations
+    if (responsePayload.statusCode) {
+        return {
+            statusCode: responsePayload.statusCode,
+            headers: corsHeaders,
+            body: responsePayload.body
+        };
+    }
+
+    return {
+        statusCode: 200,
+        headers: corsHeaders,
+        body: JSON.stringify(responsePayload)
+    };
 }
 
 async function handleGithubIssuesResultsRequest(path: string, corsHeaders: Record<string, string>) {
