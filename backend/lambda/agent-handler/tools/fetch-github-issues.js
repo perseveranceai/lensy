@@ -20,17 +20,16 @@ exports.fetchGithubIssuesTool = (0, tools_1.tool)(async (input) => {
         const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
         const query = `repo:${input.owner}/${input.repo} is:issue is:open created:>=${twoWeeksAgo}`;
 
-        // MCP search_issues returns paginated results
+        // MCP search_issues takes query + optional perPage/page params
         // Fetch up to 3 pages of 100 (matching legacy behavior)
         const maxPages = 3;
         const perPage = 100;
         let allIssues = [];
 
         for (let page = 1; page <= maxPages; page++) {
-            const searchQuery = `${query} per_page:${perPage} page:${page}`;
-            console.log(`  Page ${page}: ${searchQuery}`);
+            console.log(`  Page ${page}: ${query} (perPage=${perPage})`);
 
-            const result = await searchTool.invoke({ query: searchQuery });
+            const result = await searchTool.invoke({ query, perPage, page });
             let parsed;
             try {
                 parsed = typeof result === 'string' ? JSON.parse(result) : result;

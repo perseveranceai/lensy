@@ -502,8 +502,10 @@ async function handleGithubIssuesRequest(body: string | null, corsHeaders: Recor
         const requestBody = JSON.parse(body);
 
         // Feature flag: route to agent Lambda if enabled
+        // Note: 'fetch' stays on legacy path — agent fetch exceeds API Gateway 29s timeout
+        // due to multiple LLM roundtrips in LangGraph loop
         const useAgent = process.env.USE_AGENT_FOR_GITHUB_ISSUES === 'true';
-        if (useAgent) {
+        if (useAgent && mode !== 'fetch') {
             return await routeToAgentLambda(requestBody, corsHeaders, mode);
         }
 
@@ -600,9 +602,9 @@ async function routeToAgentLambda(requestBody: any, corsHeaders: Record<string, 
         sessionId: requestBody.sessionId,
     };
 
-    // Async: build-kb, analyze with crawlUrl (long-running operations)
-    const isAsync = (mode === 'build-kb') ||
-                    (mode === 'analyze' && requestBody.crawlUrl);
+    // Async: build-kb and analyze are always async through agent (long-running operations)
+    // The agent orchestrates KB building + analysis which can take minutes
+    const isAsync = (mode === 'build-kb') || (mode === 'analyze');
 
     if (isAsync) {
         console.log(`[Agent] Async invoke for ${mode}, sessionId: ${requestBody.sessionId}`);

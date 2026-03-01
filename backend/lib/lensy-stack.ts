@@ -182,7 +182,7 @@ export class LensyStack extends cdk.Stack {
         webSocketConnectionsTable.grantReadWriteData(agentHandler);
         agentHandler.addToRolePolicy(new iam.PolicyStatement({
             actions: ['execute-api:ManageConnections'],
-            resources: [`arn:aws:execute-api:${this.region}:${this.account}:${webSocketApi.apiId}/prod/*`],
+            resources: [`arn:aws:execute-api:${this.region}:${this.account}:${webSocketApi.apiId}/${wsStageName}/*`],
         }));
         agentHandler.addToRolePolicy(new iam.PolicyStatement({
             actions: ['bedrock:InvokeModel'],
