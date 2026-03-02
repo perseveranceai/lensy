@@ -321,7 +321,7 @@ function LensyApp() {
     const [contextAnalysisEnabled, setContextAnalysisEnabled] = useState(false);
     const [cacheEnabled, setCacheEnabled] = useState(false);
     const [selectedMode, setSelectedMode] = useState<'doc' | 'sitemap' | 'issue-discovery' | 'github-issues'>('doc');
-    const [manualModeOverride, setManualModeOverride] = useState<'doc' | 'sitemap' | 'issue-discovery' | 'github-issues' | null>(null);
+    const [manualModeOverride, setManualModeOverride] = useState<'doc' | 'sitemap' | 'issue-discovery' | 'github-issues' | null>('doc');
     const [companyDomain, setCompanyDomain] = useState('');
     const [discoveredIssues, setDiscoveredIssues] = useState<Array<{
         id: string;
@@ -2101,52 +2101,25 @@ function LensyApp() {
             border: [229, 231, 235] as [number, number, number],
         };
 
-        // Footer
-        const guideFooter = () => {
-            doc.setDrawColor(...gColor.border);
-            doc.line(m, ph - 12, pw - m, ph - 12);
-            doc.setFontSize(7);
-            doc.setTextColor(...gColor.light);
-            doc.setFont(fn, 'normal');
-            doc.text(`(c) ${new Date().getFullYear()} Perseverance AI`, m, ph - 7);
-            doc.text('Lensy User Guide', pw - m, ph - 7, { align: 'right' });
-        };
+        // Footer (removed for demo)
+        const guideFooter = () => {};
 
         // --- Cover / Title area ---
         doc.setFillColor(...gColor.blue);
         doc.rect(0, 0, pw, 2, 'F');
 
-        // Logo
-        gy = 45;
-        doc.setFont(fn, 'normal');
-        doc.setFontSize(18);
-        const gLogoText = '{  P  }';
-        doc.setFont(fn, 'bold');
-        const gLogoW = doc.getTextWidth(gLogoText);
-        const gLogoX = pw / 2 - gLogoW / 2;
-        doc.setFont(fn, 'normal');
-        doc.setTextColor(...gColor.light);
-        doc.text('{', gLogoX, gy);
-        doc.setFont(fn, 'bold');
-        doc.setFontSize(20);
-        doc.setTextColor(...gColor.dark);
-        doc.text('P', pw / 2 - doc.getTextWidth('P') / 2, gy);
-        doc.setFont(fn, 'normal');
-        doc.setFontSize(18);
-        doc.setTextColor(...gColor.light);
-        doc.text('}', gLogoX + gLogoW - doc.getTextWidth('}'), gy);
-
-        gy += 10;
+        // Title (no logo)
+        gy = 55;
         doc.setFontSize(9);
         doc.setTextColor(...gColor.muted);
         doc.setFont(fn, 'normal');
-        doc.text('Perseverance AI', pw / 2, gy, { align: 'center' });
+        doc.text('Documentation Quality Auditor', pw / 2, gy, { align: 'center' });
 
         gy += 18;
         doc.setFontSize(20);
         doc.setFont(fn, 'bold');
         doc.setTextColor(...gColor.dark);
-        doc.text('Lensy Quick Start Guide', pw / 2, gy, { align: 'center' });
+        doc.text('Quick Start Guide', pw / 2, gy, { align: 'center' });
 
         gy += 6;
         doc.setDrawColor(...gColor.border);
@@ -2197,8 +2170,8 @@ function LensyApp() {
 
         // Step 1
         stepTitle(1, 'Open the Console');
-        stepBody('Navigate to the Perseverance AI Console in your browser. You will be presented with the login screen.');
-        stepLink('console.perseveranceai.com', 'https://console.perseveranceai.com');
+        stepBody('Navigate to the Documentation Quality Auditor in your browser.');
+        stepLink('', '');
         gy += 2;
 
         // Step 2
@@ -2208,12 +2181,12 @@ function LensyApp() {
 
         // Step 3
         stepTitle(3, 'Enter a URL to Analyze');
-        stepBody('Once signed in, you will see the Lensy auditor dashboard. Paste the full URL of the documentation page you want to audit into the input field (e.g. https://docs.example.com/getting-started).');
+        stepBody('Paste the full URL of the documentation page you want to audit into the input field (e.g. https://docs.example.com/getting-started).');
         gy += 2;
 
         // Step 4
         stepTitle(4, 'Run the Analysis');
-        stepBody('Click "Analyze" to start the audit. Lensy will evaluate the page across multiple quality dimensions including relevance, freshness, clarity, accuracy, and completeness. It also checks sitemap health, link validity, code quality, and AI-readiness. The analysis typically takes 15 to 45 seconds.');
+        stepBody('Click "Start" to begin the audit. The tool will evaluate the page across multiple quality dimensions including relevance, freshness, clarity, accuracy, and completeness. It also checks sitemap health, link validity, code quality, and AI-readiness. The analysis typically takes 15 to 45 seconds.');
         gy += 2;
 
         // Step 5
@@ -2257,8 +2230,7 @@ function LensyApp() {
         gy += 7;
 
         const links = [
-            { label: 'Perseverance AI Console', url: 'https://console.perseveranceai.com' },
-            { label: 'Perseverance AI Website', url: 'https://perseveranceai.com' },
+            { label: 'Documentation Quality Auditor', url: '' },
         ];
         links.forEach(link => {
             doc.setFontSize(10);
@@ -2273,16 +2245,16 @@ function LensyApp() {
         doc.setFontSize(9);
         doc.setFont(fn, 'normal');
         doc.setTextColor(...gColor.muted);
-        const helpLines = doc.splitTextToSize('For questions, support, or to request additional access codes, contact your Perseverance AI representative.', cw);
+        const helpLines = doc.splitTextToSize('For questions or support, contact your team administrator.', cw);
         helpLines.forEach((line: string) => {
             doc.text(line, m, gy);
             gy += 4.5;
         });
 
-        doc.save(`lensy-quick-start-guide-${new Date().toISOString().split('T')[0]}.pdf`);
+        doc.save(`doc-audit-guide-${new Date().toISOString().split('T')[0]}.pdf`);
     };
 
-    /** Export report as branded Perseverance AI PDF — Amazon narrative style */
+    /** Export report as PDF — Amazon narrative style */
     const exportPdfReport = (report: FinalReport) => {
         const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
@@ -2323,15 +2295,7 @@ function LensyApp() {
             }
         };
 
-        const drawFooter = () => {
-            doc.setDrawColor(...c.borderLight);
-            doc.line(margin, pageHeight - 12, pageWidth - margin, pageHeight - 12);
-            doc.setFontSize(7);
-            doc.setTextColor(...c.textLight);
-            doc.setFont(fn, 'normal');
-            doc.text(`(c) ${new Date().getFullYear()} Perseverance AI  |  Confidential`, margin, pageHeight - 7);
-            doc.text('Generated by Lensy AI. Mistakes can happen, please double-check.', pageWidth - margin, pageHeight - 7, { align: 'right' });
-        };
+        const drawFooter = () => {};
 
         // Section heading: bold, no underline, just spacing
         const heading = (text: string) => {
@@ -2389,32 +2353,12 @@ function LensyApp() {
         doc.setFillColor(...c.blue);
         doc.rect(0, 0, pageWidth, 2, 'F');
 
-        // Logo: { P }
-        y = 55;
-        doc.setFont(fn, 'normal');
-        doc.setFontSize(18);
-        const logoText = '{  P  }';
-        doc.setFont(fn, 'bold');
-        const logoW = doc.getTextWidth(logoText);
-        const logoX = pageWidth / 2 - logoW / 2;
-        doc.setFont(fn, 'normal');
-        doc.setTextColor(...c.textLight);
-        doc.text('{', logoX, y);
-        doc.setFont(fn, 'bold');
-        doc.setFontSize(20);
-        doc.setTextColor(...c.textDark);
-        const pX = pageWidth / 2 - doc.getTextWidth('P') / 2;
-        doc.text('P', pX, y);
-        doc.setFont(fn, 'normal');
-        doc.setFontSize(18);
-        doc.setTextColor(...c.textLight);
-        doc.text('}', logoX + logoW - doc.getTextWidth('}'), y);
-
-        y += 12;
+        // Title area (no logo)
+        y = 65;
         doc.setFontSize(10);
         doc.setTextColor(...c.textMuted);
         doc.setFont(fn, 'normal');
-        doc.text('Perseverance AI', pageWidth / 2, y, { align: 'center' });
+        doc.text('Documentation Quality Auditor', pageWidth / 2, y, { align: 'center' });
 
         y += 22;
         doc.setFontSize(22);
@@ -3021,76 +2965,15 @@ function LensyApp() {
                 alignItems: 'center',
                 gap: 1,
             }}>
-                <span style={{ fontSize: '1rem' }} role="img" aria-label="Lensy">🔍</span>
-                <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
-                    Lensy
-                </Typography>
+                <span style={{ fontSize: '1rem' }} role="img" aria-label="audit">🔍</span>
                 <Typography variant="body2" sx={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                    Documentation Quality Auditor
+                    AI-Powered Documentation Analysis
                 </Typography>
             </Box>
 
-            <Container maxWidth={selectedMode === 'github-issues' && (analysisState.status === 'analyzing' || githubAnalysisResults) ? 'xl' : 'lg'} sx={{ py: 4, transition: 'max-width 0.3s ease' }}>
+            <Container maxWidth="lg" sx={{ py: 4 }}>
 
                 <Paper sx={{ p: 4, mb: 4 }}>
-                    <Box sx={{ position: 'relative', display: 'flex', justifyContent: 'center', mb: 3, alignItems: 'center' }}>
-                        {/* Segmented toggle bar */}
-                        <Box sx={{
-                            display: 'inline-flex',
-                            bgcolor: 'rgba(255,255,255,0.06)',
-                            borderRadius: '10px',
-                            p: '3px',
-                            gap: '2px',
-                        }}>
-                            {[
-                                { key: 'doc', label: 'Doc Audit' },
-                                { key: 'github-issues', label: 'GitHub Issues' },
-                            ].map((tab) => (
-                                <Box
-                                    key={tab.key}
-                                    onClick={() => { setSelectedMode(tab.key as any); setManualModeOverride(tab.key as any); }}
-                                    sx={{
-                                        px: 2, py: 0.75,
-                                        borderRadius: '8px',
-                                        cursor: 'pointer',
-                                        fontWeight: 600,
-                                        fontSize: '0.82rem',
-                                        color: selectedMode === tab.key ? '#fff' : '#94a3b8',
-                                        bgcolor: selectedMode === tab.key ? 'rgba(255,255,255,0.12)' : 'transparent',
-                                        transition: 'all 0.15s ease',
-                                        userSelect: 'none',
-                                        '&:hover': {
-                                            color: selectedMode === tab.key ? '#fff' : '#cbd5e1',
-                                            bgcolor: selectedMode === tab.key ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)',
-                                        },
-                                    }}
-                                >
-                                    {tab.label}
-                                </Box>
-                            ))}
-                        </Box>
-                        <Typography
-                            variant="caption"
-                            sx={{
-                                position: 'absolute',
-                                right: 0,
-                                fontWeight: 700,
-                                fontSize: '0.6rem',
-                                color: '#818cf8',
-                                bgcolor: 'rgba(129, 140, 248, 0.1)',
-                                border: '1px solid rgba(129, 140, 248, 0.25)',
-                                borderRadius: '4px',
-                                px: 0.75,
-                                py: 0.25,
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.05em',
-                                lineHeight: 1,
-                            }}
-                        >
-                            Beta
-                        </Typography>
-                    </Box>
-
                     <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
                         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
                             {selectedMode === 'github-issues' ? (
@@ -4518,11 +4401,11 @@ function LensyApp() {
                             )}
                         </Box>
 
-                        {selectedMode !== 'github-issues' && <Button
+                        <Button
                             variant="contained"
                             onClick={handleAnalyze}
                             disabled={
-                                (analysisState.status === 'analyzing' && analysisState.sourceMode !== 'github-issues') ||
+                                analysisState.status === 'analyzing' ||
                                 isFetchingGithubIssues
                             }
                             sx={{
@@ -4536,7 +4419,7 @@ function LensyApp() {
                                 }
                             }}
                         >
-                            {(analysisState.status === 'analyzing' && analysisState.sourceMode !== 'github-issues') ? (
+                            {analysisState.status === 'analyzing' ? (
                                 <CircularProgress size={20} color="inherit" />
                             ) : analysisState.status === 'generating' ? (
                                 'Generating...'
@@ -4547,7 +4430,7 @@ function LensyApp() {
                             ) : (
                                 'Start'
                             )}
-                        </Button>}
+                        </Button>
                     </Box>
 
                     {/* AI Model Selection hidden per branding guidelines */}

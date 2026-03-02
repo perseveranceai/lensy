@@ -124,12 +124,8 @@ const FixReviewPanel: React.FC<FixReviewPanelProps> = ({ fixes }) => {
                                         splitView={true}
                                         compareMethod={DiffMethod.WORDS}
                                         styles={{
-                                            variables: {
-                                                light: {
-                                                    diffViewerCreateClass: {
-                                                        fontSize: '12px'
-                                                    }
-                                                }
+                                            contentText: {
+                                                fontSize: '12px'
                                             }
                                         }}
                                     />
