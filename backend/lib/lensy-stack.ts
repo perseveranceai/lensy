@@ -69,6 +69,16 @@ export class LensyStack extends cdk.Stack {
             removalPolicy: cdk.RemovalPolicy.RETAIN,
         });
 
+        // 2c. Page Knowledge Base — shared context store for Doc Audit + GitHub Issues modes
+        // Each page URL is its own item, enabling concurrent writes from both modes without conflicts
+        const pageKnowledgeBaseTable = new dynamodb.Table(this, 'PageKnowledgeBaseTable', {
+            partitionKey: { name: 'domain', type: dynamodb.AttributeType.STRING },
+            sortKey: { name: 'url', type: dynamodb.AttributeType.STRING },
+            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+            timeToLiveAttribute: 'expiresAt',
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+        });
+
         // 3. WebSocket API
         const webSocketHandler = new lambda.Function(this, 'WebSocketHandlerFunction', {
             runtime: lambda.Runtime.NODEJS_20_X,
@@ -155,6 +165,8 @@ export class LensyStack extends cdk.Stack {
             actions: ['bedrock:InvokeModel'],
             resources: ['*'],
         }));
+        pageKnowledgeBaseTable.grantReadWriteData(githubIssuesAnalyzer);
+        githubIssuesAnalyzer.addEnvironment('PAGE_KB_TABLE', pageKnowledgeBaseTable.tableName);
 
         const fixGenerator = createLambda('FixGeneratorFunction', 'fix-generator', 300, 1024);
         const fixApplicator = createLambda('FixApplicatorFunction', 'fix-applicator', 300, 512);
@@ -196,11 +208,15 @@ export class LensyStack extends cdk.Stack {
                 ...commonEnv,
                 PROCESSED_CONTENT_TABLE: processedContentTable.tableName,
                 CACHE_TTL_DAYS: '7',
+                LENSY_ENV: lensyEnv,
+                LANGSMITH_API_KEY: process.env.LANGSMITH_API_KEY || '',
             }
         });
         analysisBucket.grantReadWrite(agentHandler);
         webSocketConnectionsTable.grantReadWriteData(agentHandler);
         processedContentTable.grantReadWriteData(agentHandler);
+        pageKnowledgeBaseTable.grantReadWriteData(agentHandler);
+        agentHandler.addEnvironment('PAGE_KB_TABLE', pageKnowledgeBaseTable.tableName);
         agentHandler.addToRolePolicy(new iam.PolicyStatement({
             actions: ['execute-api:ManageConnections'],
             resources: [`arn:aws:execute-api:${this.region}:${this.account}:${webSocketApi.apiId}/${wsStageName}/*`],
@@ -239,7 +255,7 @@ export class LensyStack extends cdk.Stack {
         sitemapHealthForDocMode.grantInvoke(stateMachine);
 
         // 6. API Handler and HTTP API
-        const useAgent = process.env.USE_AGENT || 'false';
+        const useAgent = process.env.USE_AGENT || 'true';
         const apiHandler = createLambda('ApiHandlerFunction', 'api-handler', 90, 256, {
             STATE_MACHINE_ARN: stateMachine.stateMachineArn,
             ISSUE_DISCOVERER_FUNCTION_NAME: issueDiscoverer.functionName,
@@ -391,7 +407,7 @@ function isValidToken(token) {
     // Format: { 'password': createdTimestampMs }
     // Passcodes expire 48 hours after CREATION DATE (not login time)
     var validPasswords = {
-        'LensyBeta2026!': 1772323200000,
+        'LensyBeta2026!': 1772956800000,
         'ShawnBeta2026!': 1772323200000
     };
 

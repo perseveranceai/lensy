@@ -35,10 +35,15 @@ const https = __importStar(require("https"));
 const url_1 = require("url");
 const client_bedrock_runtime_1 = require("@aws-sdk/client-bedrock-runtime");
 const client_s3_1 = require("@aws-sdk/client-s3");
+const client_dynamodb_1 = require("@aws-sdk/client-dynamodb");
+const lib_dynamodb_1 = require("@aws-sdk/lib-dynamodb");
 const progress_publisher_1 = require("./progress-publisher");
 const bedrockClient = new client_bedrock_runtime_1.BedrockRuntimeClient({ region: process.env.AWS_REGION || 'us-east-1' });
 const s3Client = new client_s3_1.S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
+const dynamoClient = new client_dynamodb_1.DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' });
+const docClient = lib_dynamodb_1.DynamoDBDocumentClient.from(dynamoClient);
 const ANALYSIS_BUCKET = process.env.ANALYSIS_BUCKET || '';
+const PAGE_KB_TABLE = process.env.PAGE_KB_TABLE || '';
 const CACHE_TTL_HOURS = 168; // 7 days — docs sites don't change hourly
 const MAX_ISSUES_PER_SESSION = parseInt(process.env.MAX_ISSUES_PER_SESSION || '5');
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
@@ -125,6 +130,58 @@ async function putDomainCache(domain, cache) {
     catch (err) {
         console.error(`Error writing cache for ${domain}:`, err);
     }
+}
+// ─── DynamoDB Page Knowledge Base ──────────────────────────────────────────────────
+function deriveSafeDomainForKB(urlString) {
+    try {
+        const urlObj = new url_1.URL(urlString);
+        return urlObj.hostname
+            .replace(/^www\./, '')
+            .replace(/\./g, '-');
+    }
+    catch {
+        return urlString.replace(/[^a-zA-Z0-9-]/g, '-');
+    }
+}
+async function writePagesToKB(domain, pages) {
+    if (!PAGE_KB_TABLE || pages.length === 0)
+        return;
+    const safeDomain = pages[0]?.url
+        ? deriveSafeDomainForKB(pages[0].url)
+        : domain.replace(/[^a-zA-Z0-9-]/g, '-');
+    const expiresAt = Math.floor(Date.now() / 1000) + 7 * 86400;
+    const batchSize = 25;
+    for (let i = 0; i < pages.length; i += batchSize) {
+        const batch = pages.slice(i, i + batchSize);
+        try {
+            await docClient.send(new lib_dynamodb_1.BatchWriteCommand({
+                RequestItems: {
+                    [PAGE_KB_TABLE]: batch.map(p => ({
+                        PutRequest: {
+                            Item: {
+                                domain: safeDomain,
+                                url: p.url,
+                                title: p.title,
+                                category: p.category,
+                                topic: p.topic,
+                                keyTerms: p.keyTerms,
+                                covers: p.covers,
+                                codeExamples: p.codeExamples,
+                                limitations: p.limitations,
+                                crawledAt: p.crawledAt,
+                                source: 'github-issues',
+                                expiresAt,
+                            }
+                        }
+                    }))
+                }
+            }));
+        }
+        catch (err) {
+            console.error(`[GH-Issues] Failed to batch write pages to KB (batch ${Math.floor(i / batchSize) + 1}):`, err);
+        }
+    }
+    console.log(`[GH-Issues] Wrote ${pages.length} pages to DynamoDB KB for domain ${safeDomain}`);
 }
 // ─── Structured Summary Parser ──────────────────────────────────────────────────────
 function parseSummaryFields(text, title) {
@@ -1114,6 +1171,13 @@ async function crawlDocsWebsite(siteUrl, issues, publisher) {
             pages: summarizedPages
         };
         await putDomainCache(domain, newCache);
+        // Also write to DynamoDB Page Knowledge Base (shared with Doc Audit mode)
+        try {
+            await writePagesToKB(domain, summarizedPages);
+        }
+        catch (err) {
+            console.error(`[GH-Issues] DynamoDB KB write failed (non-fatal):`, err);
+        }
         await publisher?.success(`Cached ${summarizedPages.length} pages for ${domain}`, { cacheStatus: 'miss', contextPages: summarizedPages.length });
         cachedPages = summarizedPages;
     }

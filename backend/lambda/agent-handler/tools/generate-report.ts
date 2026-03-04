@@ -59,6 +59,7 @@ interface Recommendation {
     action: string;
     location?: string;
     impact: string;
+    evidence?: string;
     codeExample?: string;
     mediaReference?: string;
 }
@@ -104,6 +105,20 @@ interface FinalReport {
         processingTime: number;
         error?: string;
     };
+    scope?: {
+        url: string;
+        mode: 'single-page' | 'sitemap';
+        pagesAnalyzed: number;
+        internalLinksValidated: number;
+        sitemapChecked: boolean;
+        sitemapUrl?: string;
+        aiReadinessChecked: boolean;
+    };
+    _debug?: {
+        toolExecutionTimes?: Record<string, number>;
+        llmCallCount?: number;
+        pipelineSteps?: Array<{ tool: string; status: 'success' | 'failed' | 'skipped'; durationMs: number }>;
+    };
     analysisTime: number;
     retryCount: number;
     aiReadiness?: AIReadinessResult;
@@ -141,12 +156,22 @@ interface MediaAnalysisSummary {
     missingAltText: number;
 }
 
+interface LinkIssueFinding {
+    url: string;
+    status: number | string;
+    anchorText: string;
+    sourceLocation: string;
+    errorMessage: string;
+    issueType: '404' | 'error' | 'timeout' | 'access-denied';
+}
+
 interface LinkAnalysisSummary {
     totalLinks: number;
     internalLinks: number;
     externalLinks: number;
     brokenLinks: number;
     totalLinkIssues?: number;
+    linkIssueFindings?: LinkIssueFinding[];
     subPagesIdentified: string[];
     linkContext: 'single-page' | 'multi-page-referenced';
     analysisScope: 'current-page-only' | 'with-subpages';
@@ -576,8 +601,18 @@ export const generateReportTool = tool(
                 ? generateMediaAnalysisFromContent(processedContent)
                 : generateDefaultMediaAnalysis();
 
-            const linkAnalysis = processedContent
-                ? processedContent.linkAnalysis
+            const linkAnalysis: LinkAnalysisSummary = processedContent
+                ? {
+                    totalLinks: processedContent.linkAnalysis?.totalLinks ?? 0,
+                    internalLinks: processedContent.linkAnalysis?.internalLinks ?? 0,
+                    externalLinks: processedContent.linkAnalysis?.externalLinks ?? 0,
+                    brokenLinks: processedContent.linkAnalysis?.brokenLinks ?? 0,
+                    totalLinkIssues: processedContent.linkAnalysis?.totalLinkIssues ?? 0,
+                    linkIssueFindings: processedContent.linkAnalysis?.linkValidation?.linkIssueFindings ?? [],
+                    subPagesIdentified: processedContent.linkAnalysis?.subPagesIdentified ?? [],
+                    linkContext: processedContent.linkAnalysis?.linkContext ?? 'single-page',
+                    analysisScope: processedContent.linkAnalysis?.analysisScope ?? 'current-page-only',
+                }
                 : generateDefaultLinkAnalysis();
 
             const contextAnalysis = processedContent?.contextAnalysis
@@ -599,13 +634,42 @@ export const generateReportTool = tool(
                 linkAnalysis,
                 contextAnalysis,
                 urlSlugAnalysis: processedContent?.urlSlugAnalysis,
+                scope: {
+                    url: url,
+                    mode: 'single-page',
+                    pagesAnalyzed: 1,
+                    internalLinksValidated: linkAnalysis.totalLinks,
+                    sitemapChecked: !!(cachedSitemapHealth),
+                    sitemapUrl: cachedSitemapHealth ? undefined : undefined,
+                    aiReadinessChecked: !!aiReadinessResults,
+                },
+                _debug: {
+                    toolExecutionTimes: Object.fromEntries(
+                        Object.entries(finalDimensionResults).map(([dim, r]) => [dim, r.processingTime || 0])
+                    ),
+                    llmCallCount: validScores.length,
+                    pipelineSteps: [
+                        { tool: 'process_url', status: processedContent ? 'success' : 'failed', durationMs: 0 },
+                        { tool: 'detect_structure', status: 'success', durationMs: 0 },
+                        { tool: 'analyze_dimensions', status: validScores.length > 0 ? 'success' : 'failed', durationMs: Object.values(finalDimensionResults).reduce((sum, r) => sum + (r.processingTime || 0), 0) },
+                        { tool: 'check_ai_readiness', status: aiReadinessResults ? 'success' : 'skipped', durationMs: 0 },
+                        { tool: 'check_sitemap_health', status: cachedSitemapHealth ? 'success' : 'skipped', durationMs: 0 },
+                        { tool: 'generate_report', status: 'success', durationMs: totalTime },
+                    ],
+                },
                 analysisTime: totalTime,
                 retryCount: 0,
                 aiReadiness: aiReadinessResults || undefined,
                 sitemapHealth: cachedSitemapHealth || undefined
             };
 
-            console.log(`[generate_report] Report generated: ${overallScore}/100 overall score (${validScores.length}/5 dimensions)`);
+            console.log(JSON.stringify({
+                sessionId, tool: 'generate_report', event: 'report_generated',
+                overallScore, dimensionsAnalyzed: validScores.length,
+                totalProcessingTimeMs: totalTime,
+                sitemapChecked: !!cachedSitemapHealth,
+                aiReadinessChecked: !!aiReadinessResults,
+            }));
 
             // ---- 11. Persist report + status ----
             await writeSessionArtifact(sessionId, 'report.json', finalReport);

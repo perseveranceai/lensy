@@ -134,6 +134,9 @@ interface AnalysisRequest {
     cacheControl?: {
         enabled: boolean;
     };
+    sitemapUrl?: string;
+    llmsTxtUrl?: string;
+    useAgent?: boolean;
 }
 
 interface DimensionResult {
@@ -145,6 +148,8 @@ interface DimensionResult {
         priority: 'high' | 'medium' | 'low';
         action: string;
         impact: string;
+        evidence?: string;
+        location?: string;
     }>;
     retryCount: number;
     processingTime: number;
@@ -230,6 +235,14 @@ interface FinalReport {
         externalLinks: number;
         brokenLinks: number;
         totalLinkIssues?: number;
+        linkIssueFindings?: Array<{
+            url: string;
+            status: number | string;
+            anchorText: string;
+            sourceLocation: string;
+            errorMessage: string;
+            issueType: '404' | 'error' | 'timeout' | 'access-denied';
+        }>;
         subPagesIdentified: string[];
         linkContext: 'single-page' | 'multi-page-referenced';
         analysisScope: 'current-page-only' | 'with-subpages';
@@ -281,6 +294,15 @@ interface FinalReport {
         analysisScope: 'single-page' | 'with-context';
         totalPagesAnalyzed: number;
     };
+    scope?: {
+        url: string;
+        mode: 'single-page' | 'sitemap';
+        pagesAnalyzed: number;
+        internalLinksValidated: number;
+        sitemapChecked: boolean;
+        sitemapUrl?: string;
+        aiReadinessChecked: boolean;
+    };
     analysisTime: number;
     retryCount: number;
     aiReadiness?: AIReadinessResult;
@@ -315,10 +337,13 @@ interface AnalysisState {
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com';
 const WEBSOCKET_URL = process.env.REACT_APP_WS_URL || 'wss://g2l57hb9ak.execute-api.us-east-1.amazonaws.com/prod';
 
+// Feature flags
+const FEATURE_FLAG_AUTO_FIXES = false;
+
 function LensyApp() {
     const [url, setUrl] = useState('');
     const [selectedModel, setSelectedModel] = useState<'claude' | 'titan' | 'llama' | 'auto'>('claude');
-    const [contextAnalysisEnabled, setContextAnalysisEnabled] = useState(false);
+    const [contextAnalysisEnabled, setContextAnalysisEnabled] = useState(true);
     const [cacheEnabled, setCacheEnabled] = useState(false);
     const [selectedMode, setSelectedMode] = useState<'doc' | 'sitemap' | 'issue-discovery' | 'github-issues'>('doc');
     const [manualModeOverride, setManualModeOverride] = useState<'doc' | 'sitemap' | 'issue-discovery' | 'github-issues' | null>(null);
@@ -408,6 +433,10 @@ function LensyApp() {
     const [showFixPanel, setShowFixPanel] = useState(false);
     const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
     const [forceFreshScan, setForceFreshScan] = useState(false);
+    const [sitemapUrl, setSitemapUrl] = useState('');
+    const [llmsTxtUrl, setLlmsTxtUrl] = useState('');
+    const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
+    const [useAgentEngine, setUseAgentEngine] = useState(true);
     const [fixSuccessMessage, setFixSuccessMessage] = useState<string | null>(null);
     const [lastModifiedFile, setLastModifiedFile] = useState<string | null>(null);
 
@@ -559,6 +588,30 @@ function LensyApp() {
 
                     console.log('Progress update:', message);
 
+                    // Detect terminal error messages from agent (e.g., content gate rejection)
+                    if (message.type === 'error') {
+                        const terminalPatterns = [
+                            'Unable to analyze',
+                            'Content validation failed',
+                            'contentGateFailed',
+                            'Analysis failed',
+                            'timed out',
+                            'not a documentation page',
+                            'Insufficient content',
+                        ];
+                        const isTerminal = terminalPatterns.some(p => message.message?.includes(p));
+                        if (isTerminal) {
+                            console.log('Terminal error detected via WebSocket:', message.message);
+                            setAnalysisState(prev => ({
+                                ...prev,
+                                status: 'error',
+                                error: message.message,
+                                progressMessages: [...prev.progressMessages, message]
+                            }));
+                            return;
+                        }
+                    }
+
                     setAnalysisState(prev => ({
                         ...prev,
                         progressMessages: [...prev.progressMessages, message]
@@ -623,6 +676,17 @@ function LensyApp() {
                             ...prev,
                             progressMessages: [...prev.progressMessages, { type: 'progress', message, timestamp: Date.now() }]
                         }));
+                    }
+
+                    // Check for explicit failure status from backend
+                    if (statusData.status === 'failed') {
+                        console.log('Analysis failed (detected via polling):', statusData.error);
+                        setAnalysisState(prev => ({
+                            ...prev,
+                            status: 'error',
+                            error: statusData.error || 'Analysis failed. Check the progress messages for details.'
+                        }));
+                        return;
                     }
 
                     if (statusData.report) {
@@ -1488,7 +1552,10 @@ function LensyApp() {
                     } : undefined,
                     cacheControl: {
                         enabled: forceFreshScan ? false : cacheEnabled
-                    }
+                    },
+                    sitemapUrl: sitemapUrl.trim() || undefined,
+                    llmsTxtUrl: llmsTxtUrl.trim() || undefined,
+                    useAgent: useAgentEngine,
                 };
                 if (forceFreshScan) setForceFreshScan(false);
 
@@ -1949,7 +2016,7 @@ function LensyApp() {
             }
 
             // Link Issues (404s and other errors)
-            const linkIssues = report.linkAnalysis.linkValidation?.linkIssueFindings || [];
+            const linkIssues = (report.linkAnalysis.linkIssueFindings || report.linkAnalysis.linkValidation?.linkIssueFindings) || [];
             const brokenLinks = linkIssues.filter((link: any) => link.issueType === '404');
             const otherIssues = linkIssues.filter((link: any) => link.issueType !== '404');
 
@@ -2013,7 +2080,11 @@ function LensyApp() {
                     markdown += `### ${dimension.charAt(0).toUpperCase() + dimension.slice(1)}\n\n`;
                     result.recommendations.forEach((rec, i) => {
                         markdown += `${i + 1}. **${rec.priority.toUpperCase()}:** ${rec.action}\n`;
-                        markdown += `   Impact: ${rec.impact}\n\n`;
+                        markdown += `   Impact: ${rec.impact}\n`;
+                        if (rec.evidence) {
+                            markdown += `   Evidence: _${rec.evidence}_${rec.location ? ` (${rec.location})` : ''}\n`;
+                        }
+                        markdown += `\n`;
                     });
                 }
             });
@@ -2582,7 +2653,7 @@ function LensyApp() {
             }
 
             // 3. Critical findings
-            const linkIssueCountSummary = report.linkAnalysis.linkValidation?.linkIssueFindings?.length || 0;
+            const linkIssueCountSummary = (report.linkAnalysis.linkIssueFindings || report.linkAnalysis.linkValidation?.linkIssueFindings)?.length || 0;
             const deprecatedCountSummary = report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length || 0;
             const spellingCountSummary = (report.dimensions.clarity?.spellingIssues || []).length;
             if (linkIssueCountSummary > 0) {
@@ -2777,7 +2848,7 @@ function LensyApp() {
 
             // --- A2: Critical Findings ---
             heading('Critical Findings');
-            const linkIssueCount = report.linkAnalysis.linkValidation?.linkIssueFindings?.length || 0;
+            const linkIssueCount = (report.linkAnalysis.linkIssueFindings || report.linkAnalysis.linkValidation?.linkIssueFindings)?.length || 0;
             const deprecatedCount = report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length || 0;
             const syntaxErrorCount = report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.length || 0;
             const urlSlugIssues = (report as any).urlSlugAnalysis?.issues || [];
@@ -2840,7 +2911,7 @@ function LensyApp() {
             }
 
             // --- A5: Link Issues (grouped by type) ---
-            const linkIssues = report.linkAnalysis.linkValidation?.linkIssueFindings || [];
+            const linkIssues = (report.linkAnalysis.linkIssueFindings || report.linkAnalysis.linkValidation?.linkIssueFindings) || [];
             if (linkIssues.length > 0) {
                 const brokenLinks = linkIssues.filter((l: any) => l.issueType === '404');
                 const authLinks = linkIssues.filter((l: any) => l.issueType === 'access-denied');
@@ -2967,7 +3038,18 @@ function LensyApp() {
                     doc.setTextColor(...c.textMuted);
                     checkPage(lh);
                     doc.text(`${rec.priority?.toUpperCase()} priority, ${rec.impact} impact, ${rec.dimension}`, margin + doc.getTextWidth(numPrefix), y);
-                    y += lh + 1;
+                    y += lh;
+                    if (rec.evidence) {
+                        checkPage(lh);
+                        const evidenceText = `Evidence: ${rec.evidence}${rec.location ? ` (${rec.location})` : ''}`;
+                        const evidenceLines = doc.splitTextToSize(evidenceText, contentWidth - doc.getTextWidth(numPrefix));
+                        evidenceLines.forEach((line: string) => {
+                            checkPage(lh);
+                            doc.text(line, margin + doc.getTextWidth(numPrefix), y);
+                            y += lh;
+                        });
+                    }
+                    y += 1;
                 });
             }
 
@@ -4550,6 +4632,68 @@ function LensyApp() {
                         </Button>}
                     </Box>
 
+                    {/* Advanced Options (below URL row, doc mode only) */}
+                    {selectedMode === 'doc' && (
+                        <Box sx={{ mt: 0.5 }}>
+                            <Typography
+                                variant="body2"
+                                sx={{
+                                    color: '#cbd5e1',
+                                    cursor: 'pointer',
+                                    userSelect: 'none',
+                                    fontSize: '0.8rem',
+                                    '&:hover': { color: '#f1f5f9' },
+                                }}
+                                onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
+                            >
+                                {showAdvancedOptions ? '▾' : '▸'} Advanced Options
+                            </Typography>
+                            {showAdvancedOptions && (
+                                <Box sx={{ mt: 1.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                    <Box sx={{ display: 'flex', gap: 2, flexDirection: { xs: 'column', md: 'row' } }}>
+                                        <TextField
+                                            size="small"
+                                            label="Sitemap URL (optional)"
+                                            variant="outlined"
+                                            value={sitemapUrl}
+                                            onChange={(e) => setSitemapUrl(e.target.value)}
+                                            placeholder="https://example.com/sitemap.xml"
+                                            disabled={analysisState.status === 'analyzing'}
+                                            sx={{ flex: 1 }}
+                                            helperText="Check sitemap health alongside page analysis"
+                                        />
+                                        <TextField
+                                            size="small"
+                                            label="llms.txt URL (optional)"
+                                            variant="outlined"
+                                            value={llmsTxtUrl}
+                                            onChange={(e) => setLlmsTxtUrl(e.target.value)}
+                                            placeholder="https://example.com/llms.txt"
+                                            disabled={analysisState.status === 'analyzing'}
+                                            sx={{ flex: 1 }}
+                                            helperText="Check AI readiness of the documentation"
+                                        />
+                                    </Box>
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                size="small"
+                                                checked={useAgentEngine}
+                                                onChange={(e) => setUseAgentEngine(e.target.checked)}
+                                                disabled={analysisState.status === 'analyzing'}
+                                            />
+                                        }
+                                        label={
+                                            <Typography variant="caption" color="text.secondary">
+                                                AI Agent engine {useAgentEngine ? '(recommended)' : '(legacy pipeline)'}
+                                            </Typography>
+                                        }
+                                    />
+                                </Box>
+                            )}
+                        </Box>
+                    )}
+
                     {/* AI Model Selection hidden per branding guidelines */}
                     <input type="hidden" name="selectedModel" value={selectedModel} />
 
@@ -5009,6 +5153,36 @@ function LensyApp() {
                             </Grid>
                         </Grid>
 
+                        {/* Scope Indicator */}
+                        {analysisState.report.scope && (
+                            <Alert severity="info" sx={{ mb: 3 }} icon={false}>
+                                <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                                    Analysis Scope
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" component="div">
+                                    {analysisState.report.scope.mode === 'single-page' ? 'Single page' : 'Sitemap'} analysis
+                                    {' \u2022 '}{analysisState.report.scope.internalLinksValidated} links validated
+                                    {analysisState.report.scope.sitemapChecked ? ' \u2022 Sitemap checked' : ''}
+                                    {analysisState.report.scope.aiReadinessChecked ? ' \u2022 AI readiness checked' : ''}
+                                </Typography>
+                            </Alert>
+                        )}
+
+                        {/* ──── SECTION 1: MEASURED FACTS ──── */}
+                        <Typography variant="overline" sx={{
+                            display: 'block',
+                            mb: 1,
+                            mt: 2,
+                            fontWeight: 700,
+                            letterSpacing: '0.1em',
+                            color: 'text.secondary',
+                            borderBottom: '1px solid',
+                            borderColor: 'divider',
+                            pb: 0.5,
+                        }}>
+                            Measured Facts
+                        </Typography>
+
                         {/* Sitemap Health Summary (only for sitemap mode or if doc mode has health data) */}
                         {analysisState.report.sitemapHealth && (
                             <CollapsibleCard
@@ -5194,6 +5368,24 @@ function LensyApp() {
                             </CollapsibleCard>
                         )}
 
+                        {/* ──── SECTION 2: AI QUALITY ANALYSIS ──── */}
+                        <Typography variant="overline" sx={{
+                            display: 'block',
+                            mb: 1,
+                            mt: 3,
+                            fontWeight: 700,
+                            letterSpacing: '0.1em',
+                            color: 'text.secondary',
+                            borderBottom: '1px solid',
+                            borderColor: 'divider',
+                            pb: 0.5,
+                        }}>
+                            AI Quality Analysis
+                        </Typography>
+                        <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
+                            Scores and recommendations below are generated by AI analysis and may contain subjective assessments.
+                        </Alert>
+
                         {/* Dimension Analysis Section */}
                         <CollapsibleCard
                             title="Dimension Analysis"
@@ -5253,13 +5445,13 @@ function LensyApp() {
                                     <Card>
                                         <CardContent>
                                             <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                                                {analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.length ? (
+                                                {(analysisState.report.linkAnalysis.linkIssueFindings || analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings)?.length ? (
                                                     <>
                                                         <ErrorIcon sx={{ color: 'warning.main', mr: 1 }} />
                                                         <Typography variant="h6">
-                                                            Link Issues: {analysisState.report.linkAnalysis.linkValidation.linkIssueFindings.length}
+                                                            Link Issues: {(analysisState.report.linkAnalysis.linkIssueFindings || analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings || []).length}
                                                             {(() => {
-                                                                const broken = analysisState.report.linkAnalysis.linkValidation.linkIssueFindings.filter((l: any) => l.issueType === '404').length;
+                                                                const broken = (analysisState.report.linkAnalysis.linkIssueFindings || analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings || []).filter((l: any) => l.issueType === '404').length;
                                                                 return broken > 0 ? ` (${broken} broken)` : '';
                                                             })()}
                                                         </Typography>
@@ -5274,7 +5466,7 @@ function LensyApp() {
                                                 )}
                                             </Box>
                                             {(() => {
-                                                const allIssues = analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings || [];
+                                                const allIssues = (analysisState.report.linkAnalysis.linkIssueFindings || analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings) || [];
                                                 const broken = allIssues.filter((l: any) => l.issueType === '404');
                                                 const authProtected = allIssues.filter((l: any) => l.issueType === 'access-denied');
                                                 const timeouts = allIssues.filter((l: any) => l.issueType === 'timeout');
@@ -5492,6 +5684,20 @@ function LensyApp() {
                                                         <Typography variant="caption" color="text.secondary">
                                                             Priority: {rec.priority?.toUpperCase()} • Impact: {rec.impact}
                                                         </Typography>
+                                                        {rec.evidence && (
+                                                            <Typography variant="caption" sx={{
+                                                                display: 'block',
+                                                                mt: 0.5,
+                                                                color: 'text.secondary',
+                                                                fontStyle: 'italic',
+                                                                borderLeft: '2px solid',
+                                                                borderColor: 'divider',
+                                                                pl: 1,
+                                                            }}>
+                                                                Evidence: {rec.evidence}
+                                                                {rec.location && ` (${rec.location})`}
+                                                            </Typography>
+                                                        )}
                                                     </Box>
                                                 </Paper>
                                             </Grid>
@@ -5514,7 +5720,7 @@ function LensyApp() {
                                 Export Report (PDF)
                             </Button>
 
-                            {!analysisState.report.sitemapHealth && (
+                            {FEATURE_FLAG_AUTO_FIXES && !analysisState.report.sitemapHealth && (
                                 <Button
                                     variant="contained"
                                     color="secondary"
@@ -5528,7 +5734,7 @@ function LensyApp() {
                             )}
                         </Box>
 
-                        {showFixPanel && (
+                        {FEATURE_FLAG_AUTO_FIXES && showFixPanel && (
                             <FixReviewPanel
                                 fixes={fixes}
                                 onApplyFixes={handleApplyFixes}

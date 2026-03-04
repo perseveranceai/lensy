@@ -19,7 +19,7 @@ export const checkAIReadinessTool = tool(
 
         try {
             const domain = new URL(input.url).hostname;
-            const results = await checkAIReadiness(domain);
+            const results = await checkAIReadiness(domain, input.llmsTxtUrl);
 
             // Store results in S3
             await writeSessionArtifact(input.sessionId, 'ai-readiness-results.json', results);
@@ -48,7 +48,8 @@ export const checkAIReadinessTool = tool(
         description: 'Checks if the domain is AI-friendly by looking for llms.txt, robots.txt AI directives, JSON-LD structured data, and markdown exports. Returns an AI readiness score (0-100). Can run in parallel with other tools after process_url.',
         schema: z.object({
             url: z.string().describe('The URL to check AI readiness for'),
-            sessionId: z.string().describe('The analysis session ID')
+            sessionId: z.string().describe('The analysis session ID'),
+            llmsTxtUrl: z.string().optional().describe('User-provided llms.txt URL. If provided, check this URL directly instead of auto-discovering.')
         })
     }
 );
@@ -63,13 +64,13 @@ interface AIReadinessResult {
     recommendations: string[];
 }
 
-async function checkAIReadiness(domain: string): Promise<AIReadinessResult> {
+async function checkAIReadiness(domain: string, explicitLlmsTxtUrl?: string): Promise<AIReadinessResult> {
     const baseUrl = `https://${domain}`;
     const recommendations: string[] = [];
     let score = 0;
 
-    // 1. Check llms.txt
-    const llmsTxtUrl = `${baseUrl}/llms.txt`;
+    // 1. Check llms.txt (use explicit URL if provided)
+    const llmsTxtUrl = explicitLlmsTxtUrl || `${baseUrl}/llms.txt`;
     const llmsTxt = await checkUrl(llmsTxtUrl, true);
     if (llmsTxt.found) {
         score += 30;

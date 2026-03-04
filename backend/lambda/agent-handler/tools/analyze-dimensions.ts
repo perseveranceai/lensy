@@ -48,6 +48,7 @@ interface Recommendation {
     action: string;
     location?: string;
     impact: string;
+    evidence?: string;
     codeExample?: string;
     mediaReference?: string;
 }
@@ -427,22 +428,61 @@ Content (first 3000 chars):
 ${processedContent.markdownContent?.slice(0, 50000) || ''}
 `;
 
-    // Context analysis information
+    // Context analysis information — with rich KB data when available
     let contextInfo = '';
     if (processedContent.contextAnalysis && processedContent.contextAnalysis.contextPages?.length > 0) {
-        contextInfo = `
+        const hasKBData = processedContent.contextAnalysis.contextPages.some((page: any) => page.topic);
+
+        if (hasKBData) {
+            // Rich context from Knowledge Base
+            contextInfo = `
+KNOWLEDGE BASE — RELATED PAGES:
+The following pages are linked from or related to the target page. Each entry shows
+what that page covers, based on prior analysis.
+
+${processedContent.contextAnalysis.contextPages.map((page: any) => {
+    if (page.topic) {
+        return `- ${page.relationship.toUpperCase()}: "${page.title}" [${page.url}]
+  Type: ${page.documentationType || 'unknown'}
+  Topic: ${page.topic}
+  Covers: ${page.covers?.join(', ') || 'unknown'}
+  Code Examples: ${page.codeExamples || 'None'}`;
+    } else {
+        return `- ${page.relationship.toUpperCase()}: "${page.title}" [${page.url}]
+  (No detailed analysis available for this page)`;
+    }
+}).join('\n\n')}
+
+GROUNDING RULES FOR RECOMMENDATIONS:
+1. Before recommending "add X" to this page, CHECK the Knowledge Base above.
+   If a related page already covers X, do NOT recommend adding it here.
+2. Instead, evaluate whether the TARGET PAGE adequately LINKS TO or REFERENCES
+   that related page.
+3. Frame recommendations as structural, not additive:
+   WRONG: "Add version compatibility information and system requirements"
+   RIGHT: "Version and system requirement info is covered on the linked 'Current Releases' page.
+          Consider adding a cross-reference link or brief summary with a 'see Current Releases
+          for details' pointer."
+4. If the target page is a TOC/overview, evaluate navigation completeness —
+   not whether each topic is fully explained inline.
+5. Always cite which related page covers the topic when deferring to it.
+`;
+        } else {
+            // Shallow context (titles only, no KB data)
+            contextInfo = `
 CONTEXT ANALYSIS ENABLED:
 Analysis Scope: ${processedContent.contextAnalysis.analysisScope}
 Total Pages Analyzed: ${processedContent.contextAnalysis.totalPagesAnalyzed}
 Related Pages Discovered:
 ${processedContent.contextAnalysis.contextPages.map((page: any) =>
-            `- ${page.relationship.toUpperCase()}: ${page.title} (confidence: ${Math.round(page.confidence * 100)}%)`
-        ).join('\n')}
+                `- ${page.relationship.toUpperCase()}: "${page.title}" [${page.url}]`
+            ).join('\n')}
 
-IMPORTANT: Consider this broader documentation context when evaluating the target page.
+Consider this broader documentation context when evaluating the target page.
 The target page is part of a larger documentation structure, so evaluate how well it fits
 within this context and whether it properly references or builds upon related pages.
 `;
+        }
     } else {
         contextInfo = `
 CONTEXT ANALYSIS: Single page analysis (no related pages discovered)
@@ -468,6 +508,13 @@ Evaluate:
 4. Is the scope appropriate for the topic?
 5. If context pages are available, does this page fit well within the broader documentation structure?
 
+CONSTRAINTS:
+- Only reference issues observable in the provided content above.
+- Do NOT suggest checking console errors, network requests, runtime behavior, or browser developer tools.
+- Do NOT recommend actions that require running code, visiting the page, or testing interactively.
+- This system analyzes static HTML content only. All recommendations must be actionable from the content alone.
+- Every recommendation MUST include an "evidence" field with an exact quote or specific element from the content that triggered it.
+
 Respond in JSON format:
 {
   "score": 0-100,
@@ -476,7 +523,9 @@ Respond in JSON format:
     {
       "priority": "high|medium|low",
       "action": "specific action",
-      "impact": "expected impact"
+      "impact": "expected impact",
+      "evidence": "exact quote or element from content that triggered this recommendation",
+      "location": "heading or section where the issue appears"
     }
   ]
 }`,
@@ -499,6 +548,13 @@ Evaluate:
 4. Is the content up-to-date?
 5. If context pages are available, consider whether this page's version information is consistent with related pages.
 
+CONSTRAINTS:
+- Only reference issues observable in the provided content above.
+- Do NOT suggest checking console errors, network requests, runtime behavior, or browser developer tools.
+- Do NOT recommend actions that require running code, visiting the page, or testing interactively.
+- This system analyzes static HTML content only. All recommendations must be actionable from the content alone.
+- Every recommendation MUST include an "evidence" field with an exact quote or specific element from the content that triggered it.
+
 Respond in JSON format:
 {
   "score": 0-100,
@@ -507,7 +563,9 @@ Respond in JSON format:
     {
       "priority": "high|medium|low",
       "action": "specific action",
-      "impact": "expected impact"
+      "impact": "expected impact",
+      "evidence": "exact quote or element from content that triggered this recommendation",
+      "location": "heading or section where the issue appears"
     }
   ]
 }`,
@@ -530,6 +588,13 @@ Evaluate:
 4. Is technical jargon explained for the target audience?
 5. Are instructions easy to follow?
 
+CONSTRAINTS:
+- Only reference issues observable in the provided content above.
+- Do NOT suggest checking console errors, network requests, runtime behavior, or browser developer tools.
+- Do NOT recommend actions that require running code, visiting the page, or testing interactively.
+- This system analyzes static HTML content only. All recommendations must be actionable from the content alone.
+- Every recommendation MUST include an "evidence" field with an exact quote or specific element from the content that triggered it.
+
 Respond in JSON format:
 {
   "score": 0-100,
@@ -544,7 +609,9 @@ Respond in JSON format:
     {
       "priority": "high|medium|low",
       "action": "specific action",
-      "impact": "expected impact"
+      "impact": "expected impact",
+      "evidence": "exact quote or element from content that triggered this recommendation",
+      "location": "heading or section where the issue appears"
     }
   ]
 }`,
@@ -570,6 +637,13 @@ Evaluate:
 5. Are there any misleading statements?
 6. DATE ACCURACY: Only flag dates as "future-dated" if they are AFTER ${today}.
 
+CONSTRAINTS:
+- Only reference issues observable in the provided content above.
+- Do NOT suggest checking console errors, network requests, runtime behavior, or browser developer tools.
+- Do NOT recommend actions that require running code, visiting the page, or testing interactively.
+- This system analyzes static HTML content only. All recommendations must be actionable from the content alone.
+- Every recommendation MUST include an "evidence" field with an exact quote or specific element from the content that triggered it.
+
 Respond in JSON format:
 {
   "score": 0-100,
@@ -586,7 +660,9 @@ Respond in JSON format:
     {
       "priority": "high|medium|low",
       "action": "specific action",
-      "impact": "expected impact"
+      "impact": "expected impact",
+      "evidence": "exact quote or element from content that triggered this recommendation",
+      "location": "heading or section where the issue appears"
     }
   ]
 }`,
@@ -608,6 +684,13 @@ Evaluate:
 4. Is error handling documented?
 5. If context pages are available, does this page properly reference or link to related information in parent/child/sibling pages?
 
+CONSTRAINTS:
+- Only reference issues observable in the provided content above.
+- Do NOT suggest checking console errors, network requests, runtime behavior, or browser developer tools.
+- Do NOT recommend actions that require running code, visiting the page, or testing interactively.
+- This system analyzes static HTML content only. All recommendations must be actionable from the content alone.
+- Every recommendation MUST include an "evidence" field with an exact quote or specific element from the content that triggered it.
+
 Respond in JSON format:
 {
   "score": 0-100,
@@ -616,7 +699,9 @@ Respond in JSON format:
     {
       "priority": "high|medium|low",
       "action": "specific action",
-      "impact": "expected impact"
+      "impact": "expected impact",
+      "evidence": "exact quote or element from content that triggered this recommendation",
+      "location": "heading or section where the issue appears"
     }
   ]
 }`
@@ -789,7 +874,11 @@ export const analyzeDimensionsTool = tool(
                 try {
                     const result = await analyzeDimension(dimension, processedContent, input.selectedModel);
                     const processingTime = Date.now() - startTime;
-                    console.log(`${dimension} complete: score ${result.score}`);
+                    console.log(JSON.stringify({
+                        sessionId: input.sessionId, tool: 'analyze_dimensions', event: 'dimension_scored',
+                        dimension, score: result.score, findingCount: result.findings?.length || 0,
+                        recommendationCount: result.recommendations?.length || 0, durationMs: processingTime,
+                    }));
 
                     await progress.success(
                         `${dimension.charAt(0).toUpperCase() + dimension.slice(1)}: ${result.score}/100 (${(processingTime / 1000).toFixed(1)}s)`,

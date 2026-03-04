@@ -477,9 +477,21 @@ export const checkSitemapHealthTool = tool(
 
             await progress.cacheMiss('No cached sitemap health found, running fresh check', { cacheStatus: 'miss' });
 
-            // ── Step 3: Discover sitemap ─────────────────────────
-            await progress.progress('Searching for sitemap...', 'sitemap-health');
-            const discovery = await discoverSitemap(domain);
+            // ── Step 3: Discover sitemap (or use user-provided URL) ──
+            let discovery: DiscoveryResult;
+            if (input.sitemapUrl) {
+                console.log(`Using user-provided sitemap URL: ${input.sitemapUrl}`);
+                await progress.progress(`Using provided sitemap: ${input.sitemapUrl}`, 'sitemap-health');
+                discovery = {
+                    sitemapUrl: input.sitemapUrl,
+                    discoveryMethod: 'direct',
+                    error: null,
+                    skippedGzipUrl: null
+                };
+            } else {
+                await progress.progress('Searching for sitemap...', 'sitemap-health');
+                discovery = await discoverSitemap(domain);
+            }
 
             if (!discovery.sitemapUrl) {
                 // Build descriptive message
@@ -684,7 +696,8 @@ export const checkSitemapHealthTool = tool(
             'Can run in parallel with other tools after process_url.',
         schema: z.object({
             url: z.string().describe('The documentation URL whose domain to check'),
-            sessionId: z.string().describe('The analysis session ID')
+            sessionId: z.string().describe('The analysis session ID'),
+            sitemapUrl: z.string().optional().describe('User-provided sitemap URL. If provided, skip discovery and use this URL directly.')
         })
     }
 );

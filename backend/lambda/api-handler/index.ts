@@ -20,6 +20,9 @@ interface AnalysisRequest {
     cacheControl?: {
         enabled: boolean;
     };
+    sitemapUrl?: string;
+    llmsTxtUrl?: string;
+    useAgent?: boolean;
 }
 
 export const handler: Handler<any, any> = async (event: any) => {
@@ -182,7 +185,10 @@ async function handleAnalyzeRequest(body: string | null, corsHeaders: Record<str
         };
     }
 
-    const useAgent = process.env.USE_AGENT === 'true';
+    // Client can override agent mode; default to env var
+    const useAgent = analysisRequest.useAgent !== undefined
+        ? analysisRequest.useAgent
+        : process.env.USE_AGENT === 'true';
     const analysisPayload = {
         ...analysisRequest,
         analysisStartTime: Date.now()
@@ -361,7 +367,31 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
             console.log('No sitemap health results found, checking for doc mode results');
         }
 
-        // DOC MODE: Check for dimension results
+        // AGENT MODE: Check for pre-assembled report.json from the agent's generate_report tool
+        try {
+            const reportKey = `sessions/${sessionId}/report.json`;
+            const reportResponse = await s3.send(new GetObjectCommand({
+                Bucket: bucketName,
+                Key: reportKey
+            }));
+            const reportContent = await reportResponse.Body.transformToString();
+            const agentReport = JSON.parse(reportContent);
+            console.log('Found agent-assembled report.json, using it directly');
+
+            return {
+                statusCode: 200,
+                headers: corsHeaders,
+                body: JSON.stringify({
+                    sessionId,
+                    status: 'completed',
+                    report: agentReport
+                })
+            };
+        } catch (reportError) {
+            console.log('No agent report.json found, falling back to manual assembly');
+        }
+
+        // DOC MODE (legacy): Check for dimension results
         try {
             const dimensionKey = `sessions/${sessionId}/dimension-results.json`;
             const dimensionResponse = await s3.send(new GetObjectCommand({
@@ -444,13 +474,35 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
                     accessibilityIssues: processedContent.mediaElements?.filter((m: any) => m.analysisNote?.includes('accessibility')).length || 0,
                     missingAltText: processedContent.mediaElements?.filter((m: any) => m.type === 'image' && !m.alt).length || 0
                 },
-                linkAnalysis: processedContent.linkAnalysis || processedContent.enhancedLinkAnalysis || {},
+                linkAnalysis: {
+                    ...(processedContent.linkAnalysis || processedContent.enhancedLinkAnalysis || {}),
+                    linkIssueFindings: processedContent.linkAnalysis?.linkValidation?.linkIssueFindings || [],
+                },
                 ...(contextAnalysis && { contextAnalysis }),
-                urlSlugAnalysis: processedContent.urlSlugAnalysis || undefined, // [NEW] Include URL slug analysis
+                urlSlugAnalysis: processedContent.urlSlugAnalysis || undefined,
                 analysisTime: actualAnalysisTime,
                 retryCount: 0,
-                aiReadiness: undefined, // Will be populated below
-                sitemapHealth: undefined // Will be populated below
+                aiReadiness: undefined as any, // Will be populated below
+                sitemapHealth: undefined as any, // Will be populated below
+                scope: {
+                    url: processedContent.url || '',
+                    mode: 'single-page',
+                    pagesAnalyzed: 1,
+                    internalLinksValidated: processedContent.linkAnalysis?.totalLinks || 0,
+                    sitemapChecked: false, // Updated below if sitemap found
+                    aiReadinessChecked: false, // Updated below if AI readiness found
+                },
+                _debug: {
+                    toolExecutionTimes: Object.fromEntries(
+                        Object.entries(dimensionResults).map(([dim, r]: [string, any]) => [dim, r.processingTime || 0])
+                    ),
+                    llmCallCount: validScores.length,
+                    pipelineSteps: [
+                        { tool: 'process_url', status: 'success', durationMs: 0 },
+                        { tool: 'detect_structure', status: 'success', durationMs: 0 },
+                        { tool: 'analyze_dimensions', status: validScores.length > 0 ? 'success' : 'failed', durationMs: Object.values(dimensionResults).reduce((sum: number, r: any) => sum + (r.processingTime || 0), 0) },
+                    ],
+                },
             };
 
             console.log('DEBUG: About to fetch AI Readiness for session:', sessionId);
@@ -465,6 +517,7 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
                 }));
                 const aiReadinessContent = await aiReadinessResponse.Body.transformToString();
                 report.aiReadiness = JSON.parse(aiReadinessContent);
+                report.scope.aiReadinessChecked = true;
                 console.log('Successfully retrieved AI Readiness results');
             } catch (aiError) {
                 console.log('No AI Readiness results found:', aiError);
@@ -489,6 +542,7 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
                     timeoutUrls: rawSitemapHealth.timeoutUrls || 0,
                     otherErrorUrls: rawSitemapHealth.otherErrorUrls || 0
                 };
+                report.scope.sitemapChecked = true;
                 console.log('Successfully retrieved sitemap health results');
             } catch (sitemapError) {
                 console.log('No sitemap health results found:', sitemapError);
@@ -505,6 +559,32 @@ async function handleStatusRequest(path: string, corsHeaders: Record<string, str
             };
 
         } catch (docModeError) {
+            // No report artifacts found yet — check status.json for explicit failure
+            try {
+                const statusKey = `sessions/${sessionId}/status.json`;
+                const statusResponse = await s3.send(new GetObjectCommand({
+                    Bucket: bucketName,
+                    Key: statusKey
+                }));
+                const statusContent = await statusResponse.Body.transformToString();
+                const sessionStatus = JSON.parse(statusContent);
+
+                if (sessionStatus.status === 'failed') {
+                    return {
+                        statusCode: 200,
+                        headers: corsHeaders,
+                        body: JSON.stringify({
+                            sessionId,
+                            status: 'failed',
+                            error: sessionStatus.error || sessionStatus.message || 'Analysis failed'
+                        })
+                    };
+                }
+            } catch (statusError) {
+                // No status.json yet or not readable — assume still in progress
+                console.log('No status.json found, assuming in progress');
+            }
+
             return {
                 statusCode: 200,
                 headers: corsHeaders,
