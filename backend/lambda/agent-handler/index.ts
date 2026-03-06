@@ -3,6 +3,12 @@ import { runAgent, AgentRunInput } from './agent';
 import { ProgressPublisher } from './shared/progress-publisher';
 import { writeSessionArtifact } from './shared/s3-helpers';
 
+// Enable LangSmith tracing when API key is available
+if (process.env.LANGSMITH_API_KEY) {
+    process.env.LANGSMITH_TRACING = 'true';
+    process.env.LANGSMITH_PROJECT = `lensy-${process.env.LENSY_ENV || 'prod'}`;
+}
+
 /**
  * Lensy Agent Handler — Lambda entry point
  *
@@ -26,6 +32,8 @@ interface AgentHandlerEvent {
     cacheControl?: {
         enabled: boolean;
     };
+    sitemapUrl?: string;
+    llmsTxtUrl?: string;
 }
 
 export const handler: Handler<AgentHandlerEvent, void> = async (event) => {
@@ -38,7 +46,9 @@ export const handler: Handler<AgentHandlerEvent, void> = async (event) => {
         selectedModel = 'claude',
         analysisStartTime = Date.now(),
         contextAnalysis,
-        cacheControl
+        cacheControl,
+        sitemapUrl,
+        llmsTxtUrl,
     } = event;
 
     // Validate required fields
@@ -87,6 +97,8 @@ export const handler: Handler<AgentHandlerEvent, void> = async (event) => {
             analysisStartTime,
             contextAnalysis,
             cacheControl,
+            sitemapUrl,
+            llmsTxtUrl,
         };
 
         // Run the LangGraph agent
@@ -97,18 +109,35 @@ export const handler: Handler<AgentHandlerEvent, void> = async (event) => {
         console.log('[AgentHandler] Agent completed successfully');
         console.log('[AgentHandler] Result preview:', result.substring(0, 500));
 
-        // The agent's generate_report tool already writes report.json and status.json
-        // But let's verify status was written
-        await writeSessionArtifact(sessionId, 'status.json', {
-            status: 'completed',
-            sessionId,
-            url,
-            startTime: analysisStartTime,
-            endTime: Date.now(),
-            duration: Date.now() - analysisStartTime,
-            engine: 'agent',
-            message: 'Analysis completed successfully'
-        });
+        // The agent's generate_report tool writes report.json on success.
+        // But if the content gate stopped the pipeline, report.json won't exist.
+        // Check before marking as completed.
+        const reportExists = await readSessionArtifact(sessionId, 'report.json');
+
+        if (reportExists) {
+            await writeSessionArtifact(sessionId, 'status.json', {
+                status: 'completed',
+                sessionId,
+                url,
+                startTime: analysisStartTime,
+                endTime: Date.now(),
+                duration: Date.now() - analysisStartTime,
+                engine: 'agent',
+                message: 'Analysis completed successfully'
+            });
+        } else {
+            // Agent finished without generating a report (e.g., content gate rejection)
+            console.log('[AgentHandler] Agent completed but no report.json found — marking as failed');
+            await writeSessionArtifact(sessionId, 'status.json', {
+                status: 'failed',
+                sessionId,
+                url,
+                startTime: analysisStartTime,
+                endTime: Date.now(),
+                engine: 'agent',
+                error: 'Analysis was stopped before report generation. Check progress messages for details.'
+            });
+        }
 
     } catch (error) {
         clearTimeout(watchdogTimeout);

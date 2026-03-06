@@ -133,6 +133,23 @@ function ConsoleLayout() {
                         </span>
                     </a>
 
+                    {/* Environment Badge — only shown in non-prod */}
+                    {process.env.REACT_APP_ENV && process.env.REACT_APP_ENV !== 'prod' && (
+                        <span style={{
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: '0.6875rem',
+                            fontWeight: 700,
+                            color: '#fff',
+                            background: process.env.REACT_APP_ENV === 'gamma' ? '#d97706' : '#6366f1',
+                            padding: '0.2rem 0.5rem',
+                            borderRadius: '4px',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                        }}>
+                            {process.env.REACT_APP_ENV}
+                        </span>
+                    )}
+
                     {/* Right: Email + Sign Out */}
                     <div style={{
                         display: 'flex',

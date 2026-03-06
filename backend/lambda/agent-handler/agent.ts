@@ -24,15 +24,18 @@ const AgentState = Annotation.Root({
 
 // ─── Tools ───────────────────────────────────────────────────
 
+// Tool order matters — models are biased toward tools listed earlier.
+// Order matches the doc-mode execution sequence so the agent naturally
+// follows: detect → ai-readiness → process → structure → dimensions → report.
 const tools = [
     detectInputTypeTool,
+    checkAIReadinessTool,
+    publishProgressTool,
     processUrlTool,
     detectStructureTool,
-    checkAIReadinessTool,
     analyzeDimensionsTool,
     checkSitemapHealthTool,
     generateReportTool,
-    publishProgressTool,
 ];
 
 // ─── Model Configuration ────────────────────────────────────
@@ -55,14 +58,14 @@ You have 8 tools available. Follow this EXACT sequence for doc-mode analysis:
 ## Doc Mode Analysis (when input type is "doc")
 
 1. Call \`detect_input_type\` with the URL to determine if it's a doc page or sitemap
-2. Call \`publish_progress\` with message "Starting URL processing..." and phase "url-processing"
-3. Call \`process_url\` to fetch, parse, and analyze the URL content
-4. Call \`publish_progress\` with message "Detecting document structure..." and phase "structure-detection"
-5. Call \`detect_structure\` to classify the document type
-6. Call \`check_ai_readiness\` to check AI-friendliness of the domain
+2. **MANDATORY when llmsTxtUrl is present**: Call \`check_ai_readiness\` with the llmsTxtUrl. This MUST happen BEFORE process_url because it crawls pages and builds the Knowledge Base. Do NOT skip this step when llmsTxtUrl is in the user message. If no llmsTxtUrl was provided, skip this step.
+3. Call \`publish_progress\` with message "Starting URL processing..." and phase "url-processing"
+4. Call \`process_url\` to fetch, parse, and analyze the URL content
+5. Call \`publish_progress\` with message "Detecting document structure..." and phase "structure-detection"
+6. Call \`detect_structure\` to classify the document type
 7. Call \`publish_progress\` with message "Analyzing documentation quality across 5 dimensions..." and phase "dimension-analysis"
 8. Call \`analyze_dimensions\` to score the document across 5 quality dimensions
-9. Call \`check_sitemap_health\` to check the domain's sitemap health (runs alongside other analysis)
+9. If the user provided a sitemapUrl, call \`check_sitemap_health\` with that sitemapUrl. Otherwise SKIP this step.
 10. Call \`publish_progress\` with message "Generating final report..." and phase "report-generation"
 11. Call \`generate_report\` with sourceMode "doc" to create the final report
 12. Call \`publish_progress\` with type "success" and message "Analysis complete!"
@@ -80,10 +83,12 @@ You have 8 tools available. Follow this EXACT sequence for doc-mode analysis:
 
 - ALWAYS pass the correct sessionId to every tool call
 - ALWAYS call publish_progress between major steps to keep the user informed
-- If a tool fails, log the error and continue with the next tool — produce a partial report rather than failing entirely
+- If \`process_url\` returns \`"contentGateFailed": true\`, STOP the pipeline immediately. Call \`publish_progress\` with type "error" and the failure message, then respond with the error explanation. Do NOT proceed to \`detect_structure\`, \`analyze_dimensions\`, or \`generate_report\`.
+- If a tool fails for other reasons, log the error and continue with the next tool — produce a partial report rather than failing entirely
 - After generate_report succeeds, respond with the final summary. Do NOT call any more tools after that.
 - Keep your text responses minimal — the tools do the work, you orchestrate them.
 - You MUST call tools in the order specified above. Do not skip tools unless a prerequisite failed.
+- CRITICAL: When the user message contains "llms.txt URL", you MUST call \`check_ai_readiness\` BEFORE \`process_url\`. This populates the Knowledge Base that process_url depends on.
 `;
 
 // ─── Graph Nodes ─────────────────────────────────────────────
@@ -137,6 +142,8 @@ export interface AgentRunInput {
     cacheControl?: {
         enabled: boolean;
     };
+    sitemapUrl?: string;
+    llmsTxtUrl?: string;
 }
 
 /**
@@ -190,6 +197,15 @@ function buildUserMessage(input: AgentRunInput): string {
 
     if (input.cacheControl?.enabled === false) {
         parts.push('Cache: disabled (force fresh analysis)');
+    }
+
+    if (input.sitemapUrl) {
+        parts.push(`Sitemap URL (user-provided): ${input.sitemapUrl}`);
+    }
+
+    if (input.llmsTxtUrl) {
+        parts.push(`\nIMPORTANT — llms.txt URL provided: ${input.llmsTxtUrl}`);
+        parts.push(`You MUST call check_ai_readiness with this llmsTxtUrl IMMEDIATELY after detect_input_type and BEFORE process_url. This will crawl the llms.txt pages and build the Knowledge Base that process_url needs for context enrichment. Do NOT skip this step.`);
     }
 
     return parts.join('\n');

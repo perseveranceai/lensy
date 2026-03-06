@@ -10,11 +10,16 @@ import * as https from 'https';
 import { URL } from 'url';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, BatchWriteCommand } from '@aws-sdk/lib-dynamodb';
 import { ProgressPublisher } from './progress-publisher';
 
 const bedrockClient = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'us-east-1' });
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
+const dynamoClient = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' });
+const docClient = DynamoDBDocumentClient.from(dynamoClient);
 const ANALYSIS_BUCKET = process.env.ANALYSIS_BUCKET || '';
+const PAGE_KB_TABLE = process.env.PAGE_KB_TABLE || '';
 const CACHE_TTL_HOURS = 168; // 7 days — docs sites don't change hourly
 const MAX_ISSUES_PER_SESSION = parseInt(process.env.MAX_ISSUES_PER_SESSION || '5');
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
@@ -173,6 +178,73 @@ async function putDomainCache(domain: string, cache: DomainDocsCache): Promise<v
     } catch (err) {
         console.error(`Error writing cache for ${domain}:`, err);
     }
+}
+
+// ─── DynamoDB Page Knowledge Base ──────────────────────────────────────────────────
+
+/**
+ * Derive a safe domain key from a URL (e.g., "www.dotcms.com" → "dotcms-com").
+ * Strips subdomains so all subdomains share the same KB partition.
+ * Must stay in sync with page-summarizer.ts deriveSafeDomain().
+ */
+function deriveSafeDomainForKB(urlString: string): string {
+    try {
+        const urlObj = new URL(urlString);
+        const hostname = urlObj.hostname.replace(/^www\./, '');
+        const parts = hostname.split('.');
+        const domain = parts.length > 2 ? parts.slice(-2).join('.') : hostname;
+        return domain.replace(/\./g, '-');
+    } catch {
+        return urlString.replace(/[^a-zA-Z0-9-]/g, '-');
+    }
+}
+
+/**
+ * Write summarized pages to DynamoDB Page Knowledge Base.
+ * Runs alongside S3 writes (transitional — GH Issues analyzer will become fully agentic).
+ */
+async function writePagesToKB(domain: string, pages: CachedPage[]): Promise<void> {
+    if (!PAGE_KB_TABLE || pages.length === 0) return;
+
+    // Derive safe domain from first page URL, or from domain string
+    const safeDomain = pages[0]?.url
+        ? deriveSafeDomainForKB(pages[0].url)
+        : domain.replace(/[^a-zA-Z0-9-]/g, '-');
+
+    const expiresAt = Math.floor(Date.now() / 1000) + 7 * 86400; // 7-day TTL
+    const batchSize = 25;
+
+    for (let i = 0; i < pages.length; i += batchSize) {
+        const batch = pages.slice(i, i + batchSize);
+        try {
+            await docClient.send(new BatchWriteCommand({
+                RequestItems: {
+                    [PAGE_KB_TABLE]: batch.map(p => ({
+                        PutRequest: {
+                            Item: {
+                                domain: safeDomain,
+                                url: p.url,
+                                title: p.title,
+                                category: p.category,
+                                topic: p.topic,
+                                keyTerms: p.keyTerms,
+                                covers: p.covers,
+                                codeExamples: p.codeExamples,
+                                limitations: p.limitations,
+                                crawledAt: p.crawledAt,
+                                source: 'github-issues',
+                                expiresAt,
+                            }
+                        }
+                    }))
+                }
+            }));
+        } catch (err) {
+            console.error(`[GH-Issues] Failed to batch write pages to KB (batch ${Math.floor(i / batchSize) + 1}):`, err);
+        }
+    }
+
+    console.log(`[GH-Issues] Wrote ${pages.length} pages to DynamoDB KB for domain ${safeDomain}`);
 }
 
 // ─── Structured Summary Parser ──────────────────────────────────────────────────────
@@ -1334,6 +1406,14 @@ async function crawlDocsWebsite(
             pages: summarizedPages
         };
         await putDomainCache(domain, newCache);
+
+        // Also write to DynamoDB Page Knowledge Base (shared with Doc Audit mode)
+        try {
+            await writePagesToKB(domain, summarizedPages);
+        } catch (err) {
+            console.error(`[GH-Issues] DynamoDB KB write failed (non-fatal):`, err);
+        }
+
         await publisher?.success(`Cached ${summarizedPages.length} pages for ${domain}`, { cacheStatus: 'miss', contextPages: summarizedPages.length });
 
         cachedPages = summarizedPages;

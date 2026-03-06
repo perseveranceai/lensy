@@ -2,6 +2,8 @@ import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { writeSessionArtifact } from '../shared/s3-helpers';
 import { URL } from 'url';
+import { parseLlmsTxt, crawlAndPopulateKB } from '../shared/crawl-helpers';
+import { createProgressHelper } from './publish-progress';
 
 /**
  * Tool 4: Check AI Readiness
@@ -12,6 +14,9 @@ import { URL } from 'url';
  * - robots.txt AI bot directives
  * - JSON-LD structured data
  * - Markdown export links
+ *
+ * When llms.txt is found, also parses entries, crawls pages,
+ * and populates the DynamoDB Knowledge Base for richer context analysis.
  */
 export const checkAIReadinessTool = tool(
     async (input): Promise<string> => {
@@ -19,7 +24,23 @@ export const checkAIReadinessTool = tool(
 
         try {
             const domain = new URL(input.url).hostname;
-            const results = await checkAIReadiness(domain);
+            const progress = createProgressHelper(input.sessionId);
+            const results = await checkAIReadiness(domain, input.llmsTxtUrl);
+
+            // If llms.txt was found with content, populate the Knowledge Base
+            // crawlAndPopulateKB handles: relevance filtering, skip existing, cap at 50/run
+            let kbPagesWritten = 0;
+            if (results.llmsTxt.found && results.llmsTxt.fullContent) {
+                const baseUrl = `https://${domain}`;
+                const entries = parseLlmsTxt(results.llmsTxt.fullContent, baseUrl);
+                console.log(`check_ai_readiness: Parsed ${entries.length} entries from llms.txt`);
+
+                if (entries.length > 0) {
+                    await progress.info(`Found llms.txt with ${entries.length} pages — indexing relevant pages...`);
+                    kbPagesWritten = await crawlAndPopulateKB(entries, input.url, 50, progress);
+                    await progress.success(`Knowledge Base: ${kbPagesWritten} pages indexed for this section`);
+                }
+            }
 
             // Store results in S3
             await writeSessionArtifact(input.sessionId, 'ai-readiness-results.json', results);
@@ -32,7 +53,9 @@ export const checkAIReadinessTool = tool(
                 hasJsonLd: results.structuredData.hasJsonLd,
                 aiDirectivesCount: results.robotsTxt.aiDirectives.length,
                 recommendationCount: results.recommendations.length,
-                message: `AI readiness score: ${results.overallScore}/100`
+                kbPagesWritten,
+                message: `AI readiness score: ${results.overallScore}/100` +
+                    (kbPagesWritten > 0 ? `. KB populated with ${kbPagesWritten} pages.` : '')
             });
 
         } catch (error) {
@@ -45,16 +68,17 @@ export const checkAIReadinessTool = tool(
     },
     {
         name: 'check_ai_readiness',
-        description: 'Checks if the domain is AI-friendly by looking for llms.txt, robots.txt AI directives, JSON-LD structured data, and markdown exports. Returns an AI readiness score (0-100). Can run in parallel with other tools after process_url.',
+        description: 'Checks if the domain is AI-friendly by looking for llms.txt, robots.txt AI directives, JSON-LD structured data, and markdown exports. Returns an AI readiness score (0-100). When llms.txt is found, also crawls and indexes all listed pages into the Knowledge Base for richer context analysis. IMPORTANT: When the user provides a llmsTxtUrl, call this tool BEFORE process_url so the KB is populated before context analysis runs.',
         schema: z.object({
             url: z.string().describe('The URL to check AI readiness for'),
-            sessionId: z.string().describe('The analysis session ID')
+            sessionId: z.string().describe('The analysis session ID'),
+            llmsTxtUrl: z.string().optional().describe('User-provided llms.txt URL. If provided, check this URL directly instead of auto-discovering.')
         })
     }
 );
 
 interface AIReadinessResult {
-    llmsTxt: { found: boolean; url: string; content?: string };
+    llmsTxt: { found: boolean; url: string; content?: string; fullContent?: string };
     llmsFullTxt: { found: boolean; url: string };
     robotsTxt: { found: boolean; aiDirectives: Array<{ userAgent: string; rule: 'Allow' | 'Disallow' }> };
     markdownExports: { available: boolean; sampleUrls: string[] };
@@ -63,13 +87,13 @@ interface AIReadinessResult {
     recommendations: string[];
 }
 
-async function checkAIReadiness(domain: string): Promise<AIReadinessResult> {
+async function checkAIReadiness(domain: string, explicitLlmsTxtUrl?: string): Promise<AIReadinessResult> {
     const baseUrl = `https://${domain}`;
     const recommendations: string[] = [];
     let score = 0;
 
-    // 1. Check llms.txt
-    const llmsTxtUrl = `${baseUrl}/llms.txt`;
+    // 1. Check llms.txt (use explicit URL if provided)
+    const llmsTxtUrl = explicitLlmsTxtUrl || `${baseUrl}/llms.txt`;
     const llmsTxt = await checkUrl(llmsTxtUrl, true);
     if (llmsTxt.found) {
         score += 30;
@@ -154,7 +178,7 @@ async function checkAIReadiness(domain: string): Promise<AIReadinessResult> {
     }
 
     return {
-        llmsTxt: { found: llmsTxt.found, url: llmsTxtUrl, content: llmsTxt.content?.slice(0, 200) },
+        llmsTxt: { found: llmsTxt.found, url: llmsTxtUrl, content: llmsTxt.content?.slice(0, 200), fullContent: llmsTxt.content },
         llmsFullTxt: { found: llmsFullTxt.found, url: llmsFullTxtUrl },
         robotsTxt: { found: robotsCheck.found, aiDirectives },
         markdownExports: { available: markdownAvailable, sampleUrls: sampleMdUrls },

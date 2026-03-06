@@ -8,8 +8,9 @@ import { gfm } from 'turndown-plugin-gfm';
 import * as crypto from 'crypto';
 
 import { writeSessionArtifact, readSessionArtifact, writeToS3, readFromS3, ANALYSIS_BUCKET } from '../shared/s3-helpers';
-import { invokeBedrockModel, getModelId } from '../shared/bedrock-helpers';
+import { invokeBedrockModel, invokeBedrockForJson, getModelId } from '../shared/bedrock-helpers';
 import { createProgressHelper } from './publish-progress';
+import { deriveSafeDomain, queryKB, writePageToKB, summarizeAndParsePage, type KBPageEntry, type PageSummary } from '../shared/page-summarizer';
 
 /**
  * Tool 2: Process URL
@@ -51,6 +52,12 @@ interface ContextPage {
     title: string;
     relationship: 'parent' | 'child' | 'sibling';
     confidence: number;
+    // KB enrichment fields (populated from DynamoDB Page Knowledge Base)
+    documentationType?: string;
+    topic?: string;
+    covers?: string[];
+    codeExamples?: string;
+    keyTerms?: string[];
 }
 
 interface LinkIssue {
@@ -112,7 +119,11 @@ type DocumentationType =
     | 'troubleshooting'
     | 'overview'
     | 'changelog'
-    | 'mixed';
+    | 'mixed'
+    | 'blog-post'
+    | 'landing-page'
+    | 'marketing-page'
+    | 'non-documentation';
 
 // ─── Technical terms allowlist ───────────────────────────────
 const TECH_TERMS_ALLOWLIST = [
@@ -596,6 +607,41 @@ function analyzeLinkStructure(document: Document, baseUrl: string) {
 
 // ─── Link validation ─────────────────────────────────────────
 
+/**
+ * Retry a link check with GET when HEAD fails.
+ * Some servers block HEAD requests or return errors for them.
+ */
+async function retryWithGet(url: string, timeout: number): Promise<{
+    ok: boolean;
+    status?: number;
+    statusText?: string;
+    timedOut?: boolean;
+    errorMessage?: string;
+}> {
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: { 'User-Agent': 'Lensy Documentation Quality Auditor/1.0' },
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (response.status < 400) {
+            return { ok: true };
+        }
+        return { ok: false, status: response.status, statusText: response.statusText };
+    } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+            return { ok: false, timedOut: true };
+        }
+        return { ok: false, errorMessage: error instanceof Error ? error.message : 'Unknown error' };
+    }
+}
+
 async function validateInternalLinks(
     linksToValidate: Array<{ url: string; anchorText: string; element: Element }>,
     progress: ReturnType<typeof createProgressHelper>
@@ -613,13 +659,14 @@ async function validateInternalLinks(
     const linkIssues: LinkIssue[] = [];
     let healthyLinks = 0;
     const maxConcurrent = 10;
-    const timeout = 5000;
+    const timeout = 10000; // 10s timeout (increased from 5s to reduce false positives)
 
     for (let i = 0; i < uniqueLinks.length; i += maxConcurrent) {
         const batch = uniqueLinks.slice(i, i + maxConcurrent);
 
         const promises = batch.map(async (linkInfo) => {
             try {
+                // Step 1: Try HEAD request first (fast, low bandwidth)
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), timeout);
 
@@ -632,6 +679,7 @@ async function validateInternalLinks(
                 clearTimeout(timeoutId);
 
                 if (response.status === 404) {
+                    // 404 from HEAD is definitive — no retry needed
                     linkIssues.push({
                         url: linkInfo.url,
                         status: 404,
@@ -641,50 +689,55 @@ async function validateInternalLinks(
                         issueType: '404'
                     });
                     await progress.info(`Warning: Broken link (404): ${linkInfo.url}`);
-                } else if (response.status === 401 || response.status === 403) {
-                    linkIssues.push({
-                        url: linkInfo.url,
-                        status: response.status,
-                        anchorText: linkInfo.anchorText,
-                        sourceLocation: 'main page',
-                        errorMessage: `Access denied (${response.status} ${response.status === 401 ? 'Unauthorized' : 'Forbidden'})`,
-                        issueType: 'access-denied'
-                    });
-                    await progress.info(`Warning: Link issue (${response.status}): ${linkInfo.url}`);
                 } else if (response.status >= 400) {
-                    linkIssues.push({
-                        url: linkInfo.url,
-                        status: response.status,
-                        anchorText: linkInfo.anchorText,
-                        sourceLocation: 'main page',
-                        errorMessage: `HTTP ${response.status}: ${response.statusText}`,
-                        issueType: 'error'
-                    });
-                    await progress.info(`Warning: Link issue (${response.status}): ${linkInfo.url}`);
+                    // Non-404 error from HEAD — some servers block HEAD requests.
+                    // Retry with GET before reporting as an issue.
+                    const getResult = await retryWithGet(linkInfo.url, timeout);
+                    if (getResult.ok) {
+                        healthyLinks++;
+                    } else {
+                        const issueType = (getResult.status === 401 || getResult.status === 403) ? 'access-denied' : 'error';
+                        const errorMessage = (getResult.status === 401 || getResult.status === 403)
+                            ? `Access denied (${getResult.status} ${getResult.status === 401 ? 'Unauthorized' : 'Forbidden'})`
+                            : `HTTP ${getResult.status}: ${getResult.statusText}`;
+                        linkIssues.push({
+                            url: linkInfo.url,
+                            status: getResult.status,
+                            anchorText: linkInfo.anchorText,
+                            sourceLocation: 'main page',
+                            errorMessage,
+                            issueType
+                        });
+                        await progress.info(`Warning: Link issue (${getResult.status}): ${linkInfo.url}`);
+                    }
                 } else {
                     healthyLinks++;
                 }
             } catch (error) {
-                if (error instanceof Error && error.name === 'AbortError') {
+                // HEAD failed (timeout or network error) — retry with GET
+                const getResult = await retryWithGet(linkInfo.url, timeout);
+                if (getResult.ok) {
+                    healthyLinks++;
+                } else if (getResult.timedOut) {
                     linkIssues.push({
                         url: linkInfo.url,
                         status: 'timeout',
                         anchorText: linkInfo.anchorText,
                         sourceLocation: 'main page',
-                        errorMessage: 'Request timeout (>5 seconds)',
+                        errorMessage: 'Request timeout (HEAD + GET both timed out after 10s)',
                         issueType: 'timeout'
                     });
                     await progress.info(`Warning: Link timeout: ${linkInfo.url}`);
                 } else {
                     linkIssues.push({
                         url: linkInfo.url,
-                        status: 'error',
+                        status: getResult.status || 'error',
                         anchorText: linkInfo.anchorText,
                         sourceLocation: 'main page',
-                        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+                        errorMessage: getResult.errorMessage || 'Unknown error',
                         issueType: 'error'
                     });
-                    await progress.info(`Warning: Link error: ${linkInfo.url} (${error instanceof Error ? error.message : 'Unknown error'})`);
+                    await progress.info(`Warning: Link error: ${linkInfo.url} (${getResult.errorMessage || 'Unknown error'})`);
                 }
             }
         });
@@ -779,10 +832,33 @@ Important guidelines:
             temperature: 0.1
         });
 
-        // Try to extract JSON from markdown code block
+        // Extract JSON robustly — handles trailing text after JSON
+        let analysisResult: any;
         const jsonMatch = aiResponse.match(/```(?:json)?\s*([\s\S]*?)```/);
-        const jsonString = jsonMatch ? jsonMatch[1].trim() : aiResponse.trim();
-        const analysisResult = JSON.parse(jsonString);
+        if (jsonMatch) {
+            analysisResult = JSON.parse(jsonMatch[1].trim());
+        } else {
+            const trimmed = aiResponse.trim();
+            try {
+                analysisResult = JSON.parse(trimmed);
+            } catch {
+                // Find the outermost { } and parse just that portion
+                const startIdx = trimmed.indexOf('{');
+                if (startIdx === -1) throw new Error('No JSON found in response');
+                let depth = 0; let inStr = false; let esc = false;
+                for (let i = startIdx; i < trimmed.length; i++) {
+                    const ch = trimmed[i];
+                    if (esc) { esc = false; continue; }
+                    if (ch === '\\' && inStr) { esc = true; continue; }
+                    if (ch === '"') { inStr = !inStr; continue; }
+                    if (inStr) continue;
+                    if (ch === '{') depth++;
+                    if (ch === '}') depth--;
+                    if (depth === 0) { analysisResult = JSON.parse(trimmed.substring(startIdx, i + 1)); break; }
+                }
+                if (!analysisResult) throw new Error('Unbalanced JSON');
+            }
+        }
 
         const deprecatedCode: DeprecatedCodeFinding[] = (analysisResult.deprecatedCode || []).map((item: any) => ({
             language: item.language || snippet.language || 'unknown',
@@ -926,6 +1002,44 @@ function discoverContextPages(document: Document, baseUrl: string): ContextPage[
     return uniquePages.slice(0, 5);
 }
 
+// ─── Content validation gate ────────────────────────────────
+
+function validateContentReadability(markdown: string, url: string): { valid: boolean; reason?: string } {
+    const trimmed = markdown.trim();
+
+    if (trimmed.length < 100) {
+        return {
+            valid: false,
+            reason: `Insufficient content extracted (${trimmed.length} characters). The page may require JavaScript rendering, authentication, or may be empty. Lensy uses static HTML fetching and cannot process SPAs, Google Docs, or auth-walled pages.`
+        };
+    }
+
+    const loadingPatterns = /^(loading|please wait|styles are loading|initializing|redirecting|just a moment|checking your browser|enable javascript)/i;
+    if (loadingPatterns.test(trimmed)) {
+        return {
+            valid: false,
+            reason: 'Page appears to be a JavaScript-rendered application. Only the loading state was captured. Lensy requires server-rendered HTML content.'
+        };
+    }
+
+    return { valid: true };
+}
+
+// ─── Non-documentation URL patterns ─────────────────────────
+
+const NON_DOC_URL_PATTERNS = [
+    '/blog/', '/news/', '/press/', '/about/', '/pricing/',
+    '/careers/', '/contact/', '/signup/', '/login/', '/checkout/',
+    '/cart/', '/landing/', '/campaign/', '/newsletter/',
+    '/events/', '/webinar/', '/podcast/', '/community/',
+    '/forum/', '/support/tickets/', '/store/', '/shop/',
+];
+
+function isNonDocumentationUrl(url: string): boolean {
+    const urlLower = url.toLowerCase();
+    return NON_DOC_URL_PATTERNS.some(p => urlLower.includes(p));
+}
+
 // ─── Content type detection ──────────────────────────────────
 
 function detectByKeywords(url: string, title: string): DocumentationType | null {
@@ -935,6 +1049,12 @@ function detectByKeywords(url: string, title: string): DocumentationType | null 
 
     console.log(`Keyword detection for: ${url}`);
     console.log(`Title: ${title}`);
+
+    // ── Negative patterns first — block non-documentation URLs ──
+    if (isNonDocumentationUrl(url)) {
+        console.log(`Keyword match: non-documentation (negative URL pattern)`);
+        return 'non-documentation';
+    }
 
     if (searchText.includes('/reference/functions/') ||
         searchText.includes('/reference/classes/') ||
@@ -966,8 +1086,7 @@ function detectByKeywords(url: string, title: string): DocumentationType | null 
     if (searchText.includes('how-to') ||
         searchText.includes('/guides/') ||
         titleLower.includes('how to') ||
-        titleLower.includes('create') ||
-        titleLower.includes('build')) {
+        titleLower.includes('create')) {
         console.log(`Keyword match: how-to`);
         return 'how-to';
     }
@@ -1010,13 +1129,14 @@ function detectByKeywords(url: string, title: string): DocumentationType | null 
 async function detectByAI(url: string, title: string, description?: string): Promise<DocumentationType> {
     console.log(`Using AI fallback for content type detection`);
 
-    const prompt = `Classify this documentation page type based on URL and metadata:
+    const prompt = `Classify this page type based on URL and metadata:
 
 URL: ${url}
 Title: ${title}
 Description: ${description || 'N/A'}
 
 Classify as ONE of these types:
+DOCUMENTATION TYPES:
 - api-reference: Function/class documentation with parameters and return values
 - tutorial: Step-by-step learning guide or getting started content
 - conceptual: Architecture explanations, theory, or understanding concepts
@@ -1025,9 +1145,15 @@ Classify as ONE of these types:
 - reference: Tables, lists, specifications, or reference materials
 - troubleshooting: Problem/solution format or FAQ content
 - changelog: Version history or release notes
-- mixed: Unclear or combination of multiple types
+- mixed: Unclear or combination of multiple documentation types
 
-Respond with just the type name (e.g., "api-reference").`;
+NON-DOCUMENTATION TYPES (if the page is NOT documentation):
+- blog-post: Blog articles, opinion pieces, news posts
+- landing-page: Product pages, feature pages, marketing content
+- marketing-page: Pricing, about us, careers, contact pages
+- non-documentation: Any other non-documentation content
+
+Respond with just the type name (e.g., "api-reference" or "blog-post").`;
 
     try {
         const aiResponse = await invokeBedrockModel(prompt, {
@@ -1040,7 +1166,8 @@ Respond with just the type name (e.g., "api-reference").`;
 
         const validTypes: DocumentationType[] = [
             'api-reference', 'tutorial', 'conceptual', 'how-to',
-            'overview', 'reference', 'troubleshooting', 'changelog', 'mixed'
+            'overview', 'reference', 'troubleshooting', 'changelog', 'mixed',
+            'blog-post', 'landing-page', 'marketing-page', 'non-documentation'
         ];
 
         if (validTypes.includes(cleaned as DocumentationType)) {
@@ -1220,7 +1347,7 @@ function configureTurndownService(): TurndownService {
 
 export const processUrlTool = tool(
     async (input): Promise<string> => {
-        console.log('process_url: Processing URL:', input.url);
+        console.log(JSON.stringify({ sessionId: input.sessionId, tool: 'process_url', event: 'started', url: input.url }));
 
         const progress = createProgressHelper(input.sessionId);
 
@@ -1358,6 +1485,143 @@ export const processUrlTool = tool(
                 const contextPages = discoverContextPages(document, input.url);
                 console.log(`Found ${contextPages.length} potential context pages`);
 
+                // ── KB enrichment: read from DynamoDB Page Knowledge Base ──
+                const safeDomain = deriveSafeDomain(input.url);
+                let kbPages: KBPageEntry[] = [];
+                try {
+                    kbPages = await queryKB(safeDomain);
+                    if (kbPages.length > 0) {
+                        console.log(`[KB] Found ${kbPages.length} pages in Knowledge Base for ${safeDomain}`);
+                        // Enrich discovered context pages with KB data
+                        for (const page of contextPages) {
+                            const kbEntry = kbPages.find(p => p.url === page.url);
+                            if (kbEntry) {
+                                page.documentationType = kbEntry.documentationType;
+                                page.topic = kbEntry.topic;
+                                page.covers = kbEntry.covers;
+                                page.codeExamples = kbEntry.codeExamples;
+                                page.keyTerms = kbEntry.keyTerms;
+                                console.log(`[KB] Enriched context page: ${page.title} (${kbEntry.documentationType})`);
+                            }
+                        }
+                        // ── Use AI to select most relevant KB pages as context ──
+                        const existingUrls = new Set(contextPages.map(p => p.url));
+                        existingUrls.add(input.url);
+                        const candidateKBPages = kbPages.filter(kb => !existingUrls.has(kb.url));
+
+                        if (candidateKBPages.length > 0) {
+                            try {
+                                const kbCatalog = candidateKBPages.map((kb, i) =>
+                                    `${i}: ${kb.url} | ${kb.topic || 'unknown'} | covers: ${kb.covers?.join(', ') || 'unknown'}`
+                                ).join('\n');
+
+                                const selectionPrompt = `You are an expert documentation architect. We are auditing a specific documentation page for quality. To give grounded recommendations (e.g., "don't add X here — it's already covered in page Y"), we need to identify which other pages in this documentation site are most relevant as context.
+
+TARGET PAGE BEING AUDITED:
+- URL: ${input.url}
+- Title: ${document.title || 'Unknown'}
+- Content summary (first 800 chars):
+${(document.body?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 800)}
+
+KNOWLEDGE BASE — ALL INDEXED PAGES FOR THIS SITE:
+(index: url | topic | what it covers)
+${kbCatalog}
+
+YOUR TASK: Select up to 4 pages that the auditor MUST know about to give accurate recommendations for the target page. Prioritize:
+1. Pages that cover OVERLAPPING topics (to avoid recommending duplicate content)
+2. Pages the target page SHOULD link to but doesn't
+3. Pages at the same level in the doc hierarchy (siblings)
+4. Prerequisite/dependency pages that the target assumes knowledge of
+
+Return ONLY a JSON array of indices, e.g. [0, 3, 7, 12]. Return [] if none are relevant.`;
+
+                                const HAIKU_MODEL = 'us.anthropic.claude-3-5-haiku-20241022-v1:0';
+                                const selectedIndices: number[] = await invokeBedrockForJson(selectionPrompt, {
+                                    modelId: HAIKU_MODEL,
+                                    maxTokens: 100,
+                                    temperature: 0,
+                                });
+
+                                const validIndices = (selectedIndices || [])
+                                    .filter(i => typeof i === 'number' && i >= 0 && i < candidateKBPages.length)
+                                    .slice(0, 4);
+
+                                for (const idx of validIndices) {
+                                    const kb = candidateKBPages[idx];
+                                    contextPages.push({
+                                        url: kb.url,
+                                        title: kb.title || kb.url,
+                                        relationship: 'sibling' as any,
+                                        confidence: 0.6,
+                                        documentationType: kb.documentationType,
+                                        topic: kb.topic,
+                                        covers: kb.covers,
+                                        codeExamples: kb.codeExamples,
+                                        keyTerms: kb.keyTerms,
+                                    });
+                                }
+                                if (validIndices.length > 0) {
+                                    console.log(`[KB] AI selected ${validIndices.length} relevant context pages from ${candidateKBPages.length} KB candidates`);
+                                }
+                            } catch (err) {
+                                console.error(`[KB] AI context selection failed, skipping:`, err);
+                            }
+                        }
+                    } else {
+                        console.log(`[KB] No pages found in Knowledge Base for ${safeDomain}`);
+                    }
+                } catch (err) {
+                    console.error(`[KB] Failed to query Knowledge Base:`, err);
+                }
+
+                // ── Fetch & summarize top context pages not in KB (Step 4.6) ──
+                const unenrichedPages = contextPages.filter(p => !p.topic);
+                const pagesToFetch = unenrichedPages.slice(0, 3); // Top 3 not in KB
+                if (pagesToFetch.length > 0) {
+                    console.log(`[KB] Fetching ${pagesToFetch.length} context pages not in KB...`);
+                    await progress.info(`Fetching ${pagesToFetch.length} related pages for deeper context...`);
+
+                    for (const page of pagesToFetch) {
+                        try {
+                            const controller = new AbortController();
+                            const timeoutId = setTimeout(() => controller.abort(), 15000);
+                            const resp = await fetch(page.url, {
+                                headers: { 'User-Agent': 'Lensy Documentation Quality Auditor/1.0' },
+                                signal: controller.signal
+                            });
+                            clearTimeout(timeoutId);
+
+                            if (resp.ok) {
+                                const html = await resp.text();
+                                // Quick extraction: use JSDOM to get text content
+                                const ctxDom = new JSDOM(html);
+                                const ctxBody = ctxDom.window.document.body;
+                                // Remove nav/footer/script/style
+                                ctxBody.querySelectorAll('nav, footer, script, style, header').forEach(el => el.remove());
+                                const rawContent = ctxBody.textContent?.replace(/\s+/g, ' ').trim() || '';
+
+                                if (rawContent.length > 200) {
+                                    // Summarize with Haiku and write to KB
+                                    const pageSummary = await summarizeAndParsePage(page.url, page.title, rawContent, undefined);
+                                    page.documentationType = pageSummary.documentationType;
+                                    page.topic = pageSummary.topic;
+                                    page.covers = pageSummary.covers;
+                                    page.codeExamples = pageSummary.codeExamples;
+                                    page.keyTerms = pageSummary.keyTerms;
+
+                                    // Write to KB (non-blocking, fire-and-forget)
+                                    writePageToKB(safeDomain, pageSummary, 'doc-audit').catch(err =>
+                                        console.error(`[KB] Failed to write context page ${page.url}:`, err)
+                                    );
+                                    console.log(`[KB] Fetched & summarized context page: ${page.title}`);
+                                }
+                            }
+                        } catch (err) {
+                            console.log(`[KB] Failed to fetch context page ${page.url}: ${err}`);
+                        }
+                    }
+                }
+
                 contextAnalysisResult = {
                     contextPages,
                     analysisScope: contextPages.length > 0 ? 'with-context' : 'single-page',
@@ -1365,12 +1629,14 @@ export const processUrlTool = tool(
                 };
 
                 contextPages.forEach(page => {
-                    console.log(`Context page (${page.relationship}): ${page.title} - ${page.url}`);
+                    console.log(`Context page (${page.relationship}): ${page.title} - ${page.url}${page.topic ? ` [KB: ${page.documentationType}]` : ''}`);
                 });
 
                 if (contextPages.length > 0) {
-                    await progress.success(`Context: ${contextPages.length} related pages discovered`, {
-                        contextPages: contextPages.length
+                    const enrichedCount = contextPages.filter(p => p.topic).length;
+                    await progress.success(`Context: ${contextPages.length} related pages discovered (${enrichedCount} enriched from KB)`, {
+                        contextPages: contextPages.length,
+                        enrichedFromKB: enrichedCount
                     });
                 }
             }
@@ -1380,8 +1646,46 @@ export const processUrlTool = tool(
             const markdownContent = turndownService.turndown(cleanHtml);
             console.log(`Final markdown size: ${markdownContent.length} chars`);
 
+            // ── Content validation gate ────────────────────────
+            const contentValidation = validateContentReadability(markdownContent, input.url);
+            if (!contentValidation.valid) {
+                console.log(`Content validation FAILED: ${contentValidation.reason}`);
+                console.log(JSON.stringify({ sessionId: input.sessionId, tool: 'process_url', event: 'content_gate_failed', reason: contentValidation.reason, contentLength: markdownContent.trim().length }));
+                await progress.error(`Content validation failed: ${contentValidation.reason}`);
+                return JSON.stringify({
+                    success: false,
+                    sessionId: input.sessionId,
+                    cacheStatus: 'miss',
+                    wordCount: 0,
+                    linkCount: 0,
+                    codeSnippets: 0,
+                    contentGateFailed: true,
+                    message: contentValidation.reason
+                });
+            }
+
             const contentType = await detectContentTypeEnhanced(document, markdownContent, input.url);
 
+            // ── Non-documentation type gate ─────────────────────
+            const nonDocTypes: DocumentationType[] = ['blog-post', 'landing-page', 'marketing-page', 'non-documentation'];
+            if (nonDocTypes.includes(contentType)) {
+                const reason = `This URL appears to be a ${contentType.replace('-', ' ')} rather than documentation. Lensy analyzes technical documentation pages (API references, tutorials, guides, etc.). Please provide a documentation URL.`;
+                console.log(JSON.stringify({ sessionId: input.sessionId, tool: 'process_url', event: 'non_doc_type_blocked', contentType }));
+                await progress.error(reason);
+                return JSON.stringify({
+                    success: false,
+                    sessionId: input.sessionId,
+                    cacheStatus: 'miss',
+                    wordCount: 0,
+                    linkCount: 0,
+                    codeSnippets: 0,
+                    contentGateFailed: true,
+                    contentType,
+                    message: reason
+                });
+            }
+
+            console.log(JSON.stringify({ sessionId: input.sessionId, tool: 'process_url', event: 'content_type_detected', contentType, markdownLength: markdownContent.length }));
             await progress.success(`Content type: ${contentType}`, { contentType });
 
             // ── Build processed content object ─────────────────
@@ -1435,6 +1739,21 @@ export const processUrlTool = tool(
             // ── Store processed content in S3 ──────────────────
             await writeSessionArtifact(input.sessionId, 'processed-content.json', processedContent);
             console.log(`Stored processed content in S3: sessions/${input.sessionId}/processed-content.json`);
+
+            // ── Write current page to DynamoDB KB (Step 4.2) ──
+            try {
+                const safeDomainForKB = deriveSafeDomain(input.url);
+                const currentPageSummary = await summarizeAndParsePage(
+                    input.url,
+                    document.title || input.url,
+                    markdownContent,
+                    undefined
+                );
+                await writePageToKB(safeDomainForKB, currentPageSummary, 'doc-audit');
+                console.log(`[KB] Wrote current page to KB: ${input.url}`);
+            } catch (err) {
+                console.error(`[KB] Failed to write current page to KB (non-fatal):`, err);
+            }
 
             // ── Store session metadata ─────────────────────────
             await storeSessionMetadata(input.sessionId, input.url, input.selectedModel);
