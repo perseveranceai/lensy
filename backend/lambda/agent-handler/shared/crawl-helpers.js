@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parseLlmsTxt = parseLlmsTxt;
 exports.crawlSinglePage = crawlSinglePage;
+exports.filterRelevantEntries = filterRelevantEntries;
 exports.crawlAndPopulateKB = crawlAndPopulateKB;
 const page_summarizer_1 = require("./page-summarizer");
 /**
@@ -81,12 +82,56 @@ async function crawlSinglePage(url) {
     }
 }
 /**
- * Crawl pages from llms.txt entries, summarize each with Haiku,
- * and write all summaries to the DynamoDB Knowledge Base.
+ * Filter llms.txt entries to those relevant to the target URL.
+ * Relevance = shared URL path prefix (siblings/ancestors).
+ */
+function filterRelevantEntries(entries, targetUrl) {
+    try {
+        const target = new URL(targetUrl);
+        const targetPath = target.pathname.replace(/\/$/, '');
+        const targetSegments = targetPath.split('/').filter(Boolean);
+        // Parent path: /docs/sdk-react-library → /docs
+        const parentPath = targetSegments.length > 1
+            ? '/' + targetSegments.slice(0, -1).join('/')
+            : '/';
+        return entries.filter(entry => {
+            try {
+                const entryUrl = new URL(entry.url);
+                if (entryUrl.hostname !== target.hostname) return false;
+                const entryPath = entryUrl.pathname.replace(/\/$/, '');
+                // Include if: same parent path (siblings), or is an ancestor, or is the page itself
+                return entryPath.startsWith(parentPath) || targetPath.startsWith(entryPath);
+            } catch {
+                return false;
+            }
+        });
+    } catch {
+        return entries;
+    }
+}
+/**
+ * Crawl relevant pages from llms.txt entries, summarize each with Haiku,
+ * and write summaries to the DynamoDB Knowledge Base.
+ * Filters by relevance, skips existing KB entries, caps at maxPages per run.
  */
 async function crawlAndPopulateKB(entries, sourceUrl, maxPages = 50, publisher) {
     const domain = (0, page_summarizer_1.deriveSafeDomain)(sourceUrl);
-    const toProcess = entries.slice(0, maxPages);
+    // Step 1: Filter to pages relevant to the target URL
+    const relevant = filterRelevantEntries(entries, sourceUrl);
+    console.log(`[CrawlHelpers] ${relevant.length}/${entries.length} entries relevant to ${sourceUrl}`);
+    // Step 2: Query existing KB to skip pages already indexed (within TTL)
+    const existingKB = await (0, page_summarizer_1.queryKB)(domain);
+    const existingUrls = new Set(existingKB.map(e => e.url));
+    const needsCrawl = relevant.filter(entry => !existingUrls.has(entry.url));
+    console.log(`[CrawlHelpers] ${needsCrawl.length} pages need crawling (${existingUrls.size} already in KB)`);
+    if (needsCrawl.length === 0) {
+        if (publisher) {
+            await publisher.info(`KB up-to-date for this section (${existingKB.length} pages indexed)`);
+        }
+        return existingKB.length;
+    }
+    // Step 3: Cap at maxPages per run
+    const toProcess = needsCrawl.slice(0, maxPages);
     const summaries = [];
     console.log(`[CrawlHelpers] Crawling ${toProcess.length} pages for domain ${domain}...`);
     // Crawl in batches of 10
@@ -129,5 +174,5 @@ async function crawlAndPopulateKB(entries, sourceUrl, maxPages = 50, publisher) 
         await (0, page_summarizer_1.writePagesToKB)(domain, summaries, 'doc-audit');
         console.log(`[CrawlHelpers] Wrote ${summaries.length} page summaries to KB for domain ${domain}`);
     }
-    return summaries.length;
+    return summaries.length + existingUrls.size;
 }

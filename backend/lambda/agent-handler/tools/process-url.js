@@ -696,14 +696,10 @@ Important guidelines:
 - Skip simple configuration or markup that isn't executable code
 - If uncertain, mark confidence as "medium" or "low"`;
     try {
-        const aiResponse = await (0, bedrock_helpers_1.invokeBedrockModel)(prompt, {
+        const analysisResult = await (0, bedrock_helpers_1.invokeBedrockForJson)(prompt, {
             maxTokens: 1000,
             temperature: 0.1
         });
-        // Try to extract JSON from markdown code block
-        const jsonMatch = aiResponse.match(/```(?:json)?\s*([\s\S]*?)```/);
-        const jsonString = jsonMatch ? jsonMatch[1].trim() : aiResponse.trim();
-        const analysisResult = JSON.parse(jsonString);
         const deprecatedCode = (analysisResult.deprecatedCode || []).map((item) => ({
             language: item.language || snippet.language || 'unknown',
             method: item.method || 'unknown',
@@ -1247,6 +1243,65 @@ exports.processUrlTool = (0, tools_1.tool)(async (input) => {
                             page.codeExamples = kbEntry.codeExamples;
                             page.keyTerms = kbEntry.keyTerms;
                             console.log(`[KB] Enriched context page: ${page.title} (${kbEntry.documentationType})`);
+                        }
+                    }
+                    // ── Use AI to select most relevant KB pages as context ──
+                    const existingUrls = new Set(contextPages.map(p => p.url));
+                    existingUrls.add(input.url);
+                    const candidateKBPages = kbPages.filter(kb => !existingUrls.has(kb.url));
+                    if (candidateKBPages.length > 0) {
+                        try {
+                            const kbCatalog = candidateKBPages.map((kb, i) =>
+                                `${i}: ${kb.url} | ${kb.topic || 'unknown'} | covers: ${kb.covers?.join(', ') || 'unknown'}`
+                            ).join('\n');
+                            const selectionPrompt = `You are an expert documentation architect. We are auditing a specific documentation page for quality. To give grounded recommendations (e.g., "don't add X here — it's already covered in page Y"), we need to identify which other pages in this documentation site are most relevant as context.
+
+TARGET PAGE BEING AUDITED:
+- URL: ${input.url}
+- Title: ${document.title || 'Unknown'}
+- Content summary (first 800 chars):
+${(document.body?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 800)}
+
+KNOWLEDGE BASE — ALL INDEXED PAGES FOR THIS SITE:
+(index: url | topic | what it covers)
+${kbCatalog}
+
+YOUR TASK: Select up to 4 pages that the auditor MUST know about to give accurate recommendations for the target page. Prioritize:
+1. Pages that cover OVERLAPPING topics (to avoid recommending duplicate content)
+2. Pages the target page SHOULD link to but doesn't
+3. Pages at the same level in the doc hierarchy (siblings)
+4. Prerequisite/dependency pages that the target assumes knowledge of
+
+Return ONLY a JSON array of indices, e.g. [0, 3, 7, 12]. Return [] if none are relevant.`;
+                            const HAIKU_MODEL = 'us.anthropic.claude-3-5-haiku-20241022-v1:0';
+                            const selectedIndices = await (0, bedrock_helpers_1.invokeBedrockForJson)(selectionPrompt, {
+                                modelId: HAIKU_MODEL,
+                                maxTokens: 100,
+                                temperature: 0,
+                            });
+                            const validIndices = (selectedIndices || [])
+                                .filter(i => typeof i === 'number' && i >= 0 && i < candidateKBPages.length)
+                                .slice(0, 4);
+                            for (const idx of validIndices) {
+                                const kb = candidateKBPages[idx];
+                                contextPages.push({
+                                    url: kb.url,
+                                    title: kb.title || kb.url,
+                                    relationship: 'sibling',
+                                    confidence: 0.6,
+                                    documentationType: kb.documentationType,
+                                    topic: kb.topic,
+                                    covers: kb.covers,
+                                    codeExamples: kb.codeExamples,
+                                    keyTerms: kb.keyTerms,
+                                });
+                            }
+                            if (validIndices.length > 0) {
+                                console.log(`[KB] AI selected ${validIndices.length} relevant context pages from ${candidateKBPages.length} KB candidates`);
+                            }
+                        }
+                        catch (err) {
+                            console.error(`[KB] AI context selection failed, skipping:`, err);
                         }
                     }
                 }

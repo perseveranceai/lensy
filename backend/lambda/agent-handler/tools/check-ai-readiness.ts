@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { writeSessionArtifact } from '../shared/s3-helpers';
 import { URL } from 'url';
 import { parseLlmsTxt, crawlAndPopulateKB } from '../shared/crawl-helpers';
-import { queryKB, deriveSafeDomain } from '../shared/page-summarizer';
 import { createProgressHelper } from './publish-progress';
 
 /**
@@ -29,26 +28,17 @@ export const checkAIReadinessTool = tool(
             const results = await checkAIReadiness(domain, input.llmsTxtUrl);
 
             // If llms.txt was found with content, populate the Knowledge Base
-            // Skip if KB already has entries for this domain (avoid re-crawling every run)
+            // crawlAndPopulateKB handles: relevance filtering, skip existing, cap at 50/run
             let kbPagesWritten = 0;
             if (results.llmsTxt.found && results.llmsTxt.fullContent) {
-                const safeDomain = deriveSafeDomain(input.url);
-                const existingKB = await queryKB(safeDomain);
+                const baseUrl = `https://${domain}`;
+                const entries = parseLlmsTxt(results.llmsTxt.fullContent, baseUrl);
+                console.log(`check_ai_readiness: Parsed ${entries.length} entries from llms.txt`);
 
-                if (existingKB.length >= 10) {
-                    console.log(`check_ai_readiness: KB already has ${existingKB.length} pages for ${safeDomain} — skipping crawl`);
-                    await progress.info(`Knowledge Base already populated (${existingKB.length} pages) — skipping crawl`);
-                    kbPagesWritten = existingKB.length;
-                } else {
-                    const baseUrl = `https://${domain}`;
-                    const entries = parseLlmsTxt(results.llmsTxt.fullContent, baseUrl);
-                    console.log(`check_ai_readiness: Parsed ${entries.length} entries from llms.txt`);
-
-                    if (entries.length > 0) {
-                        await progress.info(`Found llms.txt with ${entries.length} pages — building Knowledge Base...`);
-                        kbPagesWritten = await crawlAndPopulateKB(entries, input.url, 50, progress);
-                        await progress.success(`Knowledge Base built: ${kbPagesWritten} pages indexed from llms.txt`);
-                    }
+                if (entries.length > 0) {
+                    await progress.info(`Found llms.txt with ${entries.length} pages — indexing relevant pages...`);
+                    kbPagesWritten = await crawlAndPopulateKB(entries, input.url, 50, progress);
+                    await progress.success(`Knowledge Base: ${kbPagesWritten} pages indexed for this section`);
                 }
             }
 

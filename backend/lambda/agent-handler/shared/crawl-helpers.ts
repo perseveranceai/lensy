@@ -5,7 +5,7 @@
  * Extracted from github-issues-analyzer/index.ts to avoid duplication.
  */
 
-import { summarizeAndParsePage, writePagesToKB, deriveSafeDomain, PageSummary } from './page-summarizer';
+import { summarizeAndParsePage, writePagesToKB, deriveSafeDomain, queryKB, PageSummary } from './page-summarizer';
 import { ProgressPublisher } from './progress-publisher';
 
 // ─── Types ───────────────────────────────────────────────────
@@ -107,15 +107,59 @@ export async function crawlSinglePage(url: string): Promise<{ content: string; t
     }
 }
 
+// ─── Relevance Filter ─────────────────────────────────────────
+
+/**
+ * Filter llms.txt entries to those relevant to the target URL.
+ * Relevance is determined by shared URL path prefix:
+ *   - Same path depth-1 (siblings): /docs/sdk-react → all /docs/* entries
+ *   - Also includes root/parent entries
+ */
+export function filterRelevantEntries(entries: LlmsTxtEntry[], targetUrl: string): LlmsTxtEntry[] {
+    try {
+        const target = new URL(targetUrl);
+        const targetPath = target.pathname.replace(/\/$/, ''); // e.g., /docs/sdk-react-library
+        const targetSegments = targetPath.split('/').filter(Boolean); // ['docs', 'sdk-react-library']
+
+        // Build prefix paths to match against (from most specific to broadest)
+        // e.g., /docs/sdk-react-library → match /docs/* (parent section)
+        const parentPath = targetSegments.length > 1
+            ? '/' + targetSegments.slice(0, -1).join('/') // /docs
+            : '/';
+
+        return entries.filter(entry => {
+            try {
+                const entryUrl = new URL(entry.url);
+                // Must be same host (or subdomain of same domain)
+                if (entryUrl.hostname !== target.hostname) return false;
+
+                const entryPath = entryUrl.pathname.replace(/\/$/, '');
+
+                // Include if: same parent path (siblings), or is an ancestor, or is the page itself
+                return entryPath.startsWith(parentPath) || targetPath.startsWith(entryPath);
+            } catch {
+                return false;
+            }
+        });
+    } catch {
+        // If URL parsing fails, return all entries (fallback)
+        return entries;
+    }
+}
+
 // ─── Batch Crawl + Summarize + Write to KB ───────────────────
 
 /**
- * Crawl pages from llms.txt entries, summarize each with Haiku,
- * and write all summaries to the DynamoDB Knowledge Base.
+ * Crawl relevant pages from llms.txt entries, summarize each with Haiku,
+ * and write summaries to the DynamoDB Knowledge Base.
  *
- * @param entries - Parsed llms.txt entries
- * @param sourceUrl - The original URL (used to derive domain key)
- * @param maxPages - Maximum pages to process (default 50)
+ * Only crawls pages relevant to the target URL (URL path prefix match)
+ * and skips pages already in KB (within TTL). Caps at maxPages per run.
+ * KB grows incrementally across runs.
+ *
+ * @param entries - Parsed llms.txt entries (all from llms.txt)
+ * @param sourceUrl - The target URL being analyzed (used for relevance + domain key)
+ * @param maxPages - Maximum pages to crawl per run (default 50)
  * @param publisher - Optional progress publisher for WebSocket updates
  * @returns Number of pages successfully written to KB
  */
@@ -126,7 +170,26 @@ export async function crawlAndPopulateKB(
     publisher?: ProgressPublisher
 ): Promise<number> {
     const domain = deriveSafeDomain(sourceUrl);
-    const toProcess = entries.slice(0, maxPages);
+
+    // Step 1: Filter to pages relevant to the target URL
+    const relevant = filterRelevantEntries(entries, sourceUrl);
+    console.log(`[CrawlHelpers] ${relevant.length}/${entries.length} entries relevant to ${sourceUrl}`);
+
+    // Step 2: Query existing KB to skip pages already indexed (within TTL)
+    const existingKB = await queryKB(domain);
+    const existingUrls = new Set(existingKB.map(e => e.url));
+    const needsCrawl = relevant.filter(entry => !existingUrls.has(entry.url));
+    console.log(`[CrawlHelpers] ${needsCrawl.length} pages need crawling (${existingUrls.size} already in KB)`);
+
+    if (needsCrawl.length === 0) {
+        if (publisher) {
+            await publisher.info(`KB up-to-date for this section (${existingKB.length} pages indexed)`);
+        }
+        return existingKB.length;
+    }
+
+    // Step 3: Cap at maxPages per run
+    const toProcess = needsCrawl.slice(0, maxPages);
     const summaries: PageSummary[] = [];
 
     console.log(`[CrawlHelpers] Crawling ${toProcess.length} pages for domain ${domain}...`);

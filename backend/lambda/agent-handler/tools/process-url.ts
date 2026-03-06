@@ -8,7 +8,7 @@ import { gfm } from 'turndown-plugin-gfm';
 import * as crypto from 'crypto';
 
 import { writeSessionArtifact, readSessionArtifact, writeToS3, readFromS3, ANALYSIS_BUCKET } from '../shared/s3-helpers';
-import { invokeBedrockModel, getModelId } from '../shared/bedrock-helpers';
+import { invokeBedrockModel, invokeBedrockForJson, getModelId } from '../shared/bedrock-helpers';
 import { createProgressHelper } from './publish-progress';
 import { deriveSafeDomain, queryKB, writePageToKB, summarizeAndParsePage, type KBPageEntry, type PageSummary } from '../shared/page-summarizer';
 
@@ -832,10 +832,33 @@ Important guidelines:
             temperature: 0.1
         });
 
-        // Try to extract JSON from markdown code block
+        // Extract JSON robustly — handles trailing text after JSON
+        let analysisResult: any;
         const jsonMatch = aiResponse.match(/```(?:json)?\s*([\s\S]*?)```/);
-        const jsonString = jsonMatch ? jsonMatch[1].trim() : aiResponse.trim();
-        const analysisResult = JSON.parse(jsonString);
+        if (jsonMatch) {
+            analysisResult = JSON.parse(jsonMatch[1].trim());
+        } else {
+            const trimmed = aiResponse.trim();
+            try {
+                analysisResult = JSON.parse(trimmed);
+            } catch {
+                // Find the outermost { } and parse just that portion
+                const startIdx = trimmed.indexOf('{');
+                if (startIdx === -1) throw new Error('No JSON found in response');
+                let depth = 0; let inStr = false; let esc = false;
+                for (let i = startIdx; i < trimmed.length; i++) {
+                    const ch = trimmed[i];
+                    if (esc) { esc = false; continue; }
+                    if (ch === '\\' && inStr) { esc = true; continue; }
+                    if (ch === '"') { inStr = !inStr; continue; }
+                    if (inStr) continue;
+                    if (ch === '{') depth++;
+                    if (ch === '}') depth--;
+                    if (depth === 0) { analysisResult = JSON.parse(trimmed.substring(startIdx, i + 1)); break; }
+                }
+                if (!analysisResult) throw new Error('Unbalanced JSON');
+            }
+        }
 
         const deprecatedCode: DeprecatedCodeFinding[] = (analysisResult.deprecatedCode || []).map((item: any) => ({
             language: item.language || snippet.language || 'unknown',
@@ -1479,6 +1502,69 @@ export const processUrlTool = tool(
                                 page.codeExamples = kbEntry.codeExamples;
                                 page.keyTerms = kbEntry.keyTerms;
                                 console.log(`[KB] Enriched context page: ${page.title} (${kbEntry.documentationType})`);
+                            }
+                        }
+                        // ── Use AI to select most relevant KB pages as context ──
+                        const existingUrls = new Set(contextPages.map(p => p.url));
+                        existingUrls.add(input.url);
+                        const candidateKBPages = kbPages.filter(kb => !existingUrls.has(kb.url));
+
+                        if (candidateKBPages.length > 0) {
+                            try {
+                                const kbCatalog = candidateKBPages.map((kb, i) =>
+                                    `${i}: ${kb.url} | ${kb.topic || 'unknown'} | covers: ${kb.covers?.join(', ') || 'unknown'}`
+                                ).join('\n');
+
+                                const selectionPrompt = `You are an expert documentation architect. We are auditing a specific documentation page for quality. To give grounded recommendations (e.g., "don't add X here — it's already covered in page Y"), we need to identify which other pages in this documentation site are most relevant as context.
+
+TARGET PAGE BEING AUDITED:
+- URL: ${input.url}
+- Title: ${document.title || 'Unknown'}
+- Content summary (first 800 chars):
+${(document.body?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 800)}
+
+KNOWLEDGE BASE — ALL INDEXED PAGES FOR THIS SITE:
+(index: url | topic | what it covers)
+${kbCatalog}
+
+YOUR TASK: Select up to 4 pages that the auditor MUST know about to give accurate recommendations for the target page. Prioritize:
+1. Pages that cover OVERLAPPING topics (to avoid recommending duplicate content)
+2. Pages the target page SHOULD link to but doesn't
+3. Pages at the same level in the doc hierarchy (siblings)
+4. Prerequisite/dependency pages that the target assumes knowledge of
+
+Return ONLY a JSON array of indices, e.g. [0, 3, 7, 12]. Return [] if none are relevant.`;
+
+                                const HAIKU_MODEL = 'us.anthropic.claude-3-5-haiku-20241022-v1:0';
+                                const selectedIndices: number[] = await invokeBedrockForJson(selectionPrompt, {
+                                    modelId: HAIKU_MODEL,
+                                    maxTokens: 100,
+                                    temperature: 0,
+                                });
+
+                                const validIndices = (selectedIndices || [])
+                                    .filter(i => typeof i === 'number' && i >= 0 && i < candidateKBPages.length)
+                                    .slice(0, 4);
+
+                                for (const idx of validIndices) {
+                                    const kb = candidateKBPages[idx];
+                                    contextPages.push({
+                                        url: kb.url,
+                                        title: kb.title || kb.url,
+                                        relationship: 'sibling' as any,
+                                        confidence: 0.6,
+                                        documentationType: kb.documentationType,
+                                        topic: kb.topic,
+                                        covers: kb.covers,
+                                        codeExamples: kb.codeExamples,
+                                        keyTerms: kb.keyTerms,
+                                    });
+                                }
+                                if (validIndices.length > 0) {
+                                    console.log(`[KB] AI selected ${validIndices.length} relevant context pages from ${candidateKBPages.length} KB candidates`);
+                                }
+                            } catch (err) {
+                                console.error(`[KB] AI context selection failed, skipping:`, err);
                             }
                         }
                     } else {

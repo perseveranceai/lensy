@@ -49,16 +49,54 @@ exports.invokeBedrockModel = (0, traceable_1.traceable)(async (prompt, options =
     return responseText;
 }, { name: 'bedrock_invoke', run_type: 'llm' });
 /**
+ * Extract the first valid JSON object or array from a string.
+ * Handles cases where Bedrock returns JSON with trailing text.
+ */
+function extractJson(text) {
+    // Strategy 1: Try markdown code block
+    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (jsonMatch) {
+        return JSON.parse(jsonMatch[1].trim());
+    }
+    // Strategy 2: Try the full text as-is
+    const trimmed = text.trim();
+    try {
+        return JSON.parse(trimmed);
+    }
+    catch (_a) {
+        // Strategy 3: Find the outermost { } or [ ] and parse just that
+        const startIdx = trimmed.search(/[{\[]/);
+        if (startIdx === -1)
+            throw new Error('No JSON object or array found');
+        const openChar = trimmed[startIdx];
+        const closeChar = openChar === '{' ? '}' : ']';
+        let depth = 0;
+        let inString = false;
+        let escape = false;
+        for (let i = startIdx; i < trimmed.length; i++) {
+            const ch = trimmed[i];
+            if (escape) { escape = false; continue; }
+            if (ch === '\\' && inString) { escape = true; continue; }
+            if (ch === '"') { inString = !inString; continue; }
+            if (inString) continue;
+            if (ch === openChar) depth++;
+            if (ch === closeChar) depth--;
+            if (depth === 0) {
+                return JSON.parse(trimmed.substring(startIdx, i + 1));
+            }
+        }
+        throw new Error('Unbalanced JSON brackets');
+    }
+}
+/**
  * Invoke Bedrock and parse the response as JSON.
  * Extracts JSON from markdown code blocks if present.
+ * Handles trailing text after JSON gracefully.
  */
 async function invokeBedrockForJson(prompt, options = {}) {
     const text = await (0, exports.invokeBedrockModel)(prompt, options);
-    // Try to extract JSON from markdown code block
-    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-    const jsonString = jsonMatch ? jsonMatch[1].trim() : text.trim();
     try {
-        return JSON.parse(jsonString);
+        return extractJson(text);
     }
     catch (error) {
         console.error('Failed to parse Bedrock response as JSON:', text.substring(0, 500));
