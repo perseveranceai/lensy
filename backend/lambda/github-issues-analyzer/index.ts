@@ -184,14 +184,16 @@ async function putDomainCache(domain: string, cache: DomainDocsCache): Promise<v
 
 /**
  * Derive a safe domain key from a URL (e.g., "www.dotcms.com" → "dotcms-com").
+ * Strips subdomains so all subdomains share the same KB partition.
  * Must stay in sync with page-summarizer.ts deriveSafeDomain().
  */
 function deriveSafeDomainForKB(urlString: string): string {
     try {
         const urlObj = new URL(urlString);
-        return urlObj.hostname
-            .replace(/^www\./, '')
-            .replace(/\./g, '-');
+        const hostname = urlObj.hostname.replace(/^www\./, '');
+        const parts = hostname.split('.');
+        const domain = parts.length > 2 ? parts.slice(-2).join('.') : hostname;
+        return domain.replace(/\./g, '-');
     } catch {
         return urlString.replace(/[^a-zA-Z0-9-]/g, '-');
     }

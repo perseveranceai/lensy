@@ -24,15 +24,18 @@ const AgentState = Annotation.Root({
 
 // ─── Tools ───────────────────────────────────────────────────
 
+// Tool order matters — models are biased toward tools listed earlier.
+// Order matches the doc-mode execution sequence so the agent naturally
+// follows: detect → ai-readiness → process → structure → dimensions → report.
 const tools = [
     detectInputTypeTool,
+    checkAIReadinessTool,
+    publishProgressTool,
     processUrlTool,
     detectStructureTool,
-    checkAIReadinessTool,
     analyzeDimensionsTool,
     checkSitemapHealthTool,
     generateReportTool,
-    publishProgressTool,
 ];
 
 // ─── Model Configuration ────────────────────────────────────
@@ -55,11 +58,11 @@ You have 8 tools available. Follow this EXACT sequence for doc-mode analysis:
 ## Doc Mode Analysis (when input type is "doc")
 
 1. Call \`detect_input_type\` with the URL to determine if it's a doc page or sitemap
-2. Call \`publish_progress\` with message "Starting URL processing..." and phase "url-processing"
-3. Call \`process_url\` to fetch, parse, and analyze the URL content
-4. Call \`publish_progress\` with message "Detecting document structure..." and phase "structure-detection"
-5. Call \`detect_structure\` to classify the document type
-6. If the user provided a llmsTxtUrl, call \`check_ai_readiness\` with that URL. Otherwise SKIP this step.
+2. **MANDATORY when llmsTxtUrl is present**: Call \`check_ai_readiness\` with the llmsTxtUrl. This MUST happen BEFORE process_url because it crawls pages and builds the Knowledge Base. Do NOT skip this step when llmsTxtUrl is in the user message. If no llmsTxtUrl was provided, skip this step.
+3. Call \`publish_progress\` with message "Starting URL processing..." and phase "url-processing"
+4. Call \`process_url\` to fetch, parse, and analyze the URL content
+5. Call \`publish_progress\` with message "Detecting document structure..." and phase "structure-detection"
+6. Call \`detect_structure\` to classify the document type
 7. Call \`publish_progress\` with message "Analyzing documentation quality across 5 dimensions..." and phase "dimension-analysis"
 8. Call \`analyze_dimensions\` to score the document across 5 quality dimensions
 9. If the user provided a sitemapUrl, call \`check_sitemap_health\` with that sitemapUrl. Otherwise SKIP this step.
@@ -85,6 +88,7 @@ You have 8 tools available. Follow this EXACT sequence for doc-mode analysis:
 - After generate_report succeeds, respond with the final summary. Do NOT call any more tools after that.
 - Keep your text responses minimal — the tools do the work, you orchestrate them.
 - You MUST call tools in the order specified above. Do not skip tools unless a prerequisite failed.
+- CRITICAL: When the user message contains "llms.txt URL", you MUST call \`check_ai_readiness\` BEFORE \`process_url\`. This populates the Knowledge Base that process_url depends on.
 `;
 
 // ─── Graph Nodes ─────────────────────────────────────────────
@@ -200,7 +204,8 @@ function buildUserMessage(input: AgentRunInput): string {
     }
 
     if (input.llmsTxtUrl) {
-        parts.push(`llms.txt URL (user-provided): ${input.llmsTxtUrl}`);
+        parts.push(`\nIMPORTANT — llms.txt URL provided: ${input.llmsTxtUrl}`);
+        parts.push(`You MUST call check_ai_readiness with this llmsTxtUrl IMMEDIATELY after detect_input_type and BEFORE process_url. This will crawl the llms.txt pages and build the Knowledge Base that process_url needs for context enrichment. Do NOT skip this step.`);
     }
 
     return parts.join('\n');

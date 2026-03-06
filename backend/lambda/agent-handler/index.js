@@ -12,7 +12,7 @@ if (process.env.LANGSMITH_API_KEY) {
 const handler = async (event) => {
     console.log('[AgentHandler] Received event:', JSON.stringify(event, null, 2));
     console.log('[AgentHandler] Lensy Agent v1.0.0 — LangGraph + Bedrock');
-    const { url, sessionId, selectedModel = 'claude', analysisStartTime = Date.now(), contextAnalysis, cacheControl } = event;
+    const { url, sessionId, selectedModel = 'claude', analysisStartTime = Date.now(), contextAnalysis, cacheControl, sitemapUrl, llmsTxtUrl } = event;
     // Validate required fields
     if (!url || !sessionId) {
         console.error('[AgentHandler] Missing required fields: url and sessionId');
@@ -54,6 +54,8 @@ const handler = async (event) => {
             analysisStartTime,
             contextAnalysis,
             cacheControl,
+            sitemapUrl,
+            llmsTxtUrl,
         };
         // Run the LangGraph agent
         const result = await (0, agent_1.runAgent)(agentInput);

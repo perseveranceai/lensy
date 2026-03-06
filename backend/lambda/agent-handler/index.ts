@@ -32,6 +32,8 @@ interface AgentHandlerEvent {
     cacheControl?: {
         enabled: boolean;
     };
+    sitemapUrl?: string;
+    llmsTxtUrl?: string;
 }
 
 export const handler: Handler<AgentHandlerEvent, void> = async (event) => {
@@ -44,7 +46,9 @@ export const handler: Handler<AgentHandlerEvent, void> = async (event) => {
         selectedModel = 'claude',
         analysisStartTime = Date.now(),
         contextAnalysis,
-        cacheControl
+        cacheControl,
+        sitemapUrl,
+        llmsTxtUrl,
     } = event;
 
     // Validate required fields
@@ -93,6 +97,8 @@ export const handler: Handler<AgentHandlerEvent, void> = async (event) => {
             analysisStartTime,
             contextAnalysis,
             cacheControl,
+            sitemapUrl,
+            llmsTxtUrl,
         };
 
         // Run the LangGraph agent

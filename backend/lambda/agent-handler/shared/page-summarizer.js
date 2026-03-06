@@ -89,9 +89,10 @@ function parseSummaryFields(text, title) {
 function deriveSafeDomain(urlString) {
     try {
         const urlObj = new URL(urlString);
-        return urlObj.hostname
-            .replace(/^www\./, '')
-            .replace(/\./g, '-');
+        const hostname = urlObj.hostname.replace(/^www\./, '');
+        const parts = hostname.split('.');
+        const domain = parts.length > 2 ? parts.slice(-2).join('.') : hostname;
+        return domain.replace(/\./g, '-');
     }
     catch {
         return urlString.replace(/[^a-zA-Z0-9-]/g, '-');

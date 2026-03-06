@@ -132,13 +132,17 @@ export function parseSummaryFields(text: string, title: string): Pick<PageSummar
 
 /**
  * Derive a safe domain key from a URL (e.g., "www.dotcms.com" → "dotcms-com").
+ * Strips subdomains so all subdomains share the same KB partition
+ * (e.g., dev.dotcms.com and www.dotcms.com both → "dotcms-com").
  */
 export function deriveSafeDomain(urlString: string): string {
     try {
         const urlObj = new URL(urlString);
-        return urlObj.hostname
-            .replace(/^www\./, '')
-            .replace(/\./g, '-');
+        const hostname = urlObj.hostname.replace(/^www\./, '');
+        // Extract registrable domain: keep last 2 parts (or 3 for country-code TLDs)
+        const parts = hostname.split('.');
+        const domain = parts.length > 2 ? parts.slice(-2).join('.') : hostname;
+        return domain.replace(/\./g, '-');
     } catch {
         return urlString.replace(/[^a-zA-Z0-9-]/g, '-');
     }
