@@ -13,6 +13,26 @@ import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as targets from 'aws-cdk-lib/aws-route53-targets';
 import { Construct } from 'constructs';
 import * as path from 'path';
+import * as fs from 'fs';
+
+// ── Load .env file so API keys aren't lost on deploy ────────────────────
+// Reads backend/.env and merges into process.env (won't overwrite existing vars)
+const envPath = path.join(__dirname, '../.env');
+if (fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, 'utf-8');
+    for (const line of envContent.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eqIndex = trimmed.indexOf('=');
+        if (eqIndex < 0) continue;
+        const key = trimmed.substring(0, eqIndex).trim();
+        const value = trimmed.substring(eqIndex + 1).trim();
+        // Don't overwrite — terminal vars take precedence if set
+        if (!process.env[key]) {
+            process.env[key] = value;
+        }
+    }
+}
 
 interface LensyStackProps extends cdk.StackProps {
     lensyEnv: string;
@@ -69,7 +89,16 @@ export class LensyStack extends cdk.Stack {
             removalPolicy: cdk.RemovalPolicy.RETAIN,
         });
 
-        // 2c. Page Knowledge Base — shared context store for Doc Audit + GitHub Issues modes
+        // 2c. Usage Tracking — rate limiting for free public tier (3 audits/day per IP)
+        const usageTrackingTable = new dynamodb.Table(this, 'UsageTrackingTable', {
+            partitionKey: { name: 'ipHash', type: dynamodb.AttributeType.STRING },
+            sortKey: { name: 'date', type: dynamodb.AttributeType.STRING },
+            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+            timeToLiveAttribute: 'ttl',
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+        });
+
+        // 2d. Page Knowledge Base — shared context store for Doc Audit + GitHub Issues modes
         // Each page URL is its own item, enabling concurrent writes from both modes without conflicts
         const pageKnowledgeBaseTable = new dynamodb.Table(this, 'PageKnowledgeBaseTable', {
             partitionKey: { name: 'domain', type: dynamodb.AttributeType.STRING },
@@ -210,6 +239,8 @@ export class LensyStack extends cdk.Stack {
                 CACHE_TTL_DAYS: '7',
                 LENSY_ENV: lensyEnv,
                 LANGSMITH_API_KEY: process.env.LANGSMITH_API_KEY || '',
+                PERPLEXITY_API_KEY: process.env.PERPLEXITY_API_KEY || '',
+                BRAVE_API_KEY: process.env.BRAVE_API_KEY || '',
             }
         });
         analysisBucket.grantReadWrite(agentHandler);
@@ -265,9 +296,12 @@ export class LensyStack extends cdk.Stack {
             GITHUB_ISSUES_ANALYZER_FUNCTION_NAME: githubIssuesAnalyzer.functionName,
             USE_AGENT: useAgent,
             AGENT_FUNCTION_NAME: agentHandler.functionName,
+            USAGE_TRACKING_TABLE: usageTrackingTable.tableName,
+            FREE_TIER_DAILY_LIMIT: '3',
         });
 
         stateMachine.grantStartExecution(apiHandler);
+        usageTrackingTable.grantReadWriteData(apiHandler);
         agentHandler.grantInvoke(apiHandler);
         issueDiscoverer.grantInvoke(apiHandler);
         issueValidator.grantInvoke(apiHandler);
@@ -302,6 +336,7 @@ export class LensyStack extends cdk.Stack {
         httpApi.addRoutes({ path: '/github-issues/create-pr', methods: [apigwv2.HttpMethod.POST], integration: apiIntegration });
         httpApi.addRoutes({ path: '/github-issues/results/{sessionId}', methods: [apigwv2.HttpMethod.GET], integration: apiIntegration });
         httpApi.addRoutes({ path: '/github-issues/preview-docs', methods: [apigwv2.HttpMethod.GET], integration: apiIntegration });
+        httpApi.addRoutes({ path: '/console/feedback', methods: [apigwv2.HttpMethod.POST], integration: apiIntegration });
 
         // 6b. Console Login Logger — records login events for audit trail
         const consoleLoginLogger = new lambda.Function(this, 'ConsoleLoginLoggerFunction', {
@@ -355,81 +390,18 @@ export class LensyStack extends cdk.Stack {
         });
         consoleBucket.grantRead(consoleOAI);
 
-        // 7e. CloudFront Function for Password Protection
+        // 7e. CloudFront Function — SPA routing (public access, rate limiting at API layer)
         const passwordAuthFunction = new cloudfront.Function(this, 'ConsolePasswordAuthFunction', {
             code: cloudfront.FunctionCode.fromInline(`
 function handler(event) {
     var request = event.request;
-    var cookies = request.cookies;
     var uri = request.uri;
 
-    // Bypass auth for login page, legal pages, and static assets
-    if (uri === '/login' || uri === '/login/' ||
-        uri === '/terms' || uri === '/terms/' ||
-        uri === '/privacy' || uri === '/privacy/' ||
-        uri.startsWith('/static/') ||
-        uri.endsWith('.ico') || uri.endsWith('.png') || uri.endsWith('.svg') ||
-        uri.endsWith('.woff') || uri.endsWith('.woff2') ||
-        uri === '/manifest.json' || uri === '/favicon.png') {
-        // Rewrite SPA routes to index.html (except actual static files)
-        if (!uri.startsWith('/static/') && !uri.includes('.')) {
-            request.uri = '/index.html';
-        }
-        return request;
+    // SPA routing: rewrite non-static paths to index.html
+    if (!uri.startsWith('/static/') && !uri.includes('.')) {
+        request.uri = '/index.html';
     }
-
-    // Check for valid access token cookie
-    var token = cookies['perseverance_console_token']
-        ? cookies['perseverance_console_token'].value : null;
-
-    if (token && isValidToken(token)) {
-        // Rewrite SPA routes to index.html (except actual static files)
-        if (!uri.startsWith('/static/') && !uri.includes('.')) {
-            request.uri = '/index.html';
-        }
-        return request;
-    }
-
-    // Not authenticated - redirect to login (with error flag if they had a bad/expired token)
-    var loginPath = token ? '/login?error=auth' : '/login';
-    return {
-        statusCode: 302,
-        statusDescription: 'Found',
-        headers: {
-            'location': { value: loginPath },
-            'cache-control': { value: 'no-store' }
-        }
-    };
-}
-
-function isValidToken(token) {
-    // UPDATE THESE PASSWORDS AS NEEDED (cdk deploy to apply changes)
-    // Format: { 'password': createdTimestampMs }
-    // Passcodes expire 48 hours after CREATION DATE (not login time)
-    var validPasswords = {
-        'LensyBeta2026!': 1772956800000,
-        'ShawnBeta2026!': 1772323200000
-    };
-
-    var parts = token.split(':');
-    if (parts.length < 2) return false;
-
-    var password = parts.slice(0, -1).join(':');
-    var loginTime = parseInt(parts[parts.length - 1], 10);
-
-    if (!validPasswords[password]) return false;
-
-    var now = Date.now();
-    var passcodeExpiryMs = 48 * 60 * 60 * 1000;
-    var passwordCreatedTime = validPasswords[password];
-
-    // Check if the passcode itself has expired (48hrs from creation)
-    if (now - passwordCreatedTime > passcodeExpiryMs) return false;
-
-    // Check if login session has expired (48hrs from login)
-    if (now - loginTime > passcodeExpiryMs) return false;
-
-    return true;
+    return request;
 }
             `),
             functionName: `perseverance-console-auth${envSuffix}`,

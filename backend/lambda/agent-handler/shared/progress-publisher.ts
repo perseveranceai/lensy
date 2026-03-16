@@ -9,7 +9,7 @@ const CONNECTIONS_TABLE = process.env.CONNECTIONS_TABLE || 'lensy-websocket-conn
 const WEBSOCKET_API_ENDPOINT = process.env.WEBSOCKET_API_ENDPOINT;
 
 export interface ProgressMessage {
-    type: 'info' | 'success' | 'error' | 'progress' | 'cache-hit' | 'cache-miss';
+    type: 'info' | 'success' | 'error' | 'progress' | 'cache-hit' | 'cache-miss' | 'category-result';
     message: string;
     timestamp: number;
     sessionId?: string;
@@ -22,6 +22,8 @@ export interface ProgressMessage {
         contentType?: string;
         contextPages?: number;
         toolName?: string;
+        category?: string;
+        data?: any;
         [key: string]: any;
     };
 }
@@ -132,5 +134,18 @@ export class ProgressPublisher {
 
     async cacheMiss(message: string, metadata?: ProgressMessage['metadata']): Promise<void> {
         await this.publish({ type: 'cache-miss', message, timestamp: Date.now(), metadata });
+    }
+
+    /**
+     * Publish a category result for async card loading.
+     * Frontend receives this and immediately populates the corresponding card.
+     */
+    async categoryResult(category: string, data: any, message?: string): Promise<void> {
+        await this.publish({
+            type: 'category-result',
+            message: message || `${category} analysis complete`,
+            timestamp: Date.now(),
+            metadata: { category, data },
+        });
     }
 }

@@ -1,4 +1,13 @@
 "use strict";
+/**
+ * Shared Page Summarizer — used by both Doc Audit and GitHub Issues modes
+ * to build and query the Page Knowledge Base (DynamoDB).
+ *
+ * Provides:
+ * - summarizePage(): Haiku-powered structured summary of a doc page
+ * - parseSummaryFields(): Extract structured fields from Haiku output
+ * - writePageToKB() / queryKB(): DynamoDB read/write for page knowledge base
+ */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.summarizePage = summarizePage;
 exports.parseSummaryFields = parseSummaryFields;
@@ -13,7 +22,8 @@ const bedrock_helpers_1 = require("./bedrock-helpers");
 const dynamoClient = new client_dynamodb_1.DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' });
 const docClient = lib_dynamodb_1.DynamoDBDocumentClient.from(dynamoClient);
 const PAGE_KB_TABLE = process.env.PAGE_KB_TABLE || '';
-const HAIKU_MODEL_ID = 'us.anthropic.claude-3-5-haiku-20241022-v1:0';
+const HAIKU_MODEL_ID = 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
+// ─── Summarization ───────────────────────────────────────────
 /**
  * Use Haiku to generate a structured summary of a documentation page.
  * Returns the raw Haiku output text (parse with parseSummaryFields()).
@@ -83,13 +93,17 @@ function parseSummaryFields(text, title) {
         limitations
     };
 }
+// ─── DynamoDB Knowledge Base Operations ──────────────────────
 /**
  * Derive a safe domain key from a URL (e.g., "www.dotcms.com" → "dotcms-com").
+ * Strips subdomains so all subdomains share the same KB partition
+ * (e.g., dev.dotcms.com and www.dotcms.com both → "dotcms-com").
  */
 function deriveSafeDomain(urlString) {
     try {
         const urlObj = new URL(urlString);
         const hostname = urlObj.hostname.replace(/^www\./, '');
+        // Extract registrable domain: keep last 2 parts (or 3 for country-code TLDs)
         const parts = hostname.split('.');
         const domain = parts.length > 2 ? parts.slice(-2).join('.') : hostname;
         return domain.replace(/\./g, '-');

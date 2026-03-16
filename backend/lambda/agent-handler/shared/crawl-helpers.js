@@ -1,10 +1,17 @@
 "use strict";
+/**
+ * Shared crawl helpers for parsing llms.txt and crawling documentation pages.
+ * Used by check-ai-readiness tool to populate the Page Knowledge Base.
+ *
+ * Extracted from github-issues-analyzer/index.ts to avoid duplication.
+ */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parseLlmsTxt = parseLlmsTxt;
 exports.crawlSinglePage = crawlSinglePage;
 exports.filterRelevantEntries = filterRelevantEntries;
 exports.crawlAndPopulateKB = crawlAndPopulateKB;
 const page_summarizer_1 = require("./page-summarizer");
+// ─── llms.txt Parser ─────────────────────────────────────────
 /**
  * Parse an llms.txt file into structured entries.
  * Handles markdown links [Title](url), plain URLs, and relative paths.
@@ -14,7 +21,8 @@ function parseLlmsTxt(content, baseUrl) {
     const lines = content.split('\n');
     for (const line of lines) {
         const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('>')) continue;
+        if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('>'))
+            continue;
         // Match markdown links: [Title](url) or [Title](url): description
         const linkMatch = trimmed.match(/^\-?\s*\[([^\]]+)\]\(([^)]+)\)(?:\s*:?\s*(.*))?$/);
         if (linkMatch) {
@@ -22,7 +30,8 @@ function parseLlmsTxt(content, baseUrl) {
             // Resolve relative URLs
             if (url.startsWith('/')) {
                 url = `${baseUrl}${url}`;
-            } else if (!url.startsWith('http')) {
+            }
+            else if (!url.startsWith('http')) {
                 url = `${baseUrl}/${url}`;
             }
             entries.push({
@@ -43,6 +52,7 @@ function parseLlmsTxt(content, baseUrl) {
     }
     return entries;
 }
+// ─── Single Page Crawl ───────────────────────────────────────
 /**
  * Fetch a single page and extract its text content.
  * Strips scripts, styles, nav, footer, header.
@@ -81,38 +91,57 @@ async function crawlSinglePage(url) {
         return { content: '', title: '' };
     }
 }
+// ─── Relevance Filter ─────────────────────────────────────────
 /**
  * Filter llms.txt entries to those relevant to the target URL.
- * Relevance = shared URL path prefix (siblings/ancestors).
+ * Relevance is determined by shared URL path prefix:
+ *   - Same path depth-1 (siblings): /docs/sdk-react → all /docs/* entries
+ *   - Also includes root/parent entries
  */
 function filterRelevantEntries(entries, targetUrl) {
     try {
         const target = new URL(targetUrl);
-        const targetPath = target.pathname.replace(/\/$/, '');
-        const targetSegments = targetPath.split('/').filter(Boolean);
-        // Parent path: /docs/sdk-react-library → /docs
+        const targetPath = target.pathname.replace(/\/$/, ''); // e.g., /docs/sdk-react-library
+        const targetSegments = targetPath.split('/').filter(Boolean); // ['docs', 'sdk-react-library']
+        // Build prefix paths to match against (from most specific to broadest)
+        // e.g., /docs/sdk-react-library → match /docs/* (parent section)
         const parentPath = targetSegments.length > 1
-            ? '/' + targetSegments.slice(0, -1).join('/')
+            ? '/' + targetSegments.slice(0, -1).join('/') // /docs
             : '/';
         return entries.filter(entry => {
             try {
                 const entryUrl = new URL(entry.url);
-                if (entryUrl.hostname !== target.hostname) return false;
+                // Must be same host (or subdomain of same domain)
+                if (entryUrl.hostname !== target.hostname)
+                    return false;
                 const entryPath = entryUrl.pathname.replace(/\/$/, '');
                 // Include if: same parent path (siblings), or is an ancestor, or is the page itself
                 return entryPath.startsWith(parentPath) || targetPath.startsWith(entryPath);
-            } catch {
+            }
+            catch {
                 return false;
             }
         });
-    } catch {
+    }
+    catch {
+        // If URL parsing fails, return all entries (fallback)
         return entries;
     }
 }
+// ─── Batch Crawl + Summarize + Write to KB ───────────────────
 /**
  * Crawl relevant pages from llms.txt entries, summarize each with Haiku,
  * and write summaries to the DynamoDB Knowledge Base.
- * Filters by relevance, skips existing KB entries, caps at maxPages per run.
+ *
+ * Only crawls pages relevant to the target URL (URL path prefix match)
+ * and skips pages already in KB (within TTL). Caps at maxPages per run.
+ * KB grows incrementally across runs.
+ *
+ * @param entries - Parsed llms.txt entries (all from llms.txt)
+ * @param sourceUrl - The target URL being analyzed (used for relevance + domain key)
+ * @param maxPages - Maximum pages to crawl per run (default 50)
+ * @param publisher - Optional progress publisher for WebSocket updates
+ * @returns Number of pages successfully written to KB
  */
 async function crawlAndPopulateKB(entries, sourceUrl, maxPages = 50, publisher) {
     const domain = (0, page_summarizer_1.deriveSafeDomain)(sourceUrl);
@@ -153,7 +182,8 @@ async function crawlAndPopulateKB(entries, sourceUrl, maxPages = 50, publisher) 
         }
         // Summarize pages that have content
         for (const page of crawlResults) {
-            if (page.content.length < 100) continue;
+            if (page.content.length < 100)
+                continue; // Skip empty/error pages
             try {
                 const summary = await (0, page_summarizer_1.summarizeAndParsePage)(page.url, page.title, page.content, page.category);
                 summaries.push(summary);
@@ -174,5 +204,5 @@ async function crawlAndPopulateKB(entries, sourceUrl, maxPages = 50, publisher) 
         await (0, page_summarizer_1.writePagesToKB)(domain, summaries, 'doc-audit');
         console.log(`[CrawlHelpers] Wrote ${summaries.length} page summaries to KB for domain ${domain}`);
     }
-    return summaries.length + existingUrls.size;
+    return summaries.length;
 }

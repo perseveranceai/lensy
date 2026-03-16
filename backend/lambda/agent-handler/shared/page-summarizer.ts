@@ -16,7 +16,7 @@ const dynamoClient = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
 const PAGE_KB_TABLE = process.env.PAGE_KB_TABLE || '';
 
-const HAIKU_MODEL_ID = 'us.anthropic.claude-3-5-haiku-20241022-v1:0';
+const HAIKU_MODEL_ID = 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
 
 // ─── Types ───────────────────────────────────────────────────
 

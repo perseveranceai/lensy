@@ -218,6 +218,150 @@ async function cacheDimensionResults(bucketName, processedContent, contextualSet
         // Don't throw — caching failure shouldn't break the main flow
     }
 }
+function computeStructuralSignals(processedContent) {
+    const md = processedContent.markdownContent || '';
+    const pageUrl = processedContent.url || '';
+    // --- Headings ---
+    const headingRegex = /^(#{1,6})\s+(.+)$/gm;
+    const headings = [];
+    let match;
+    while ((match = headingRegex.exec(md)) !== null) {
+        headings.push({ level: match[1].length, text: match[2].trim() });
+    }
+    const headingCount = headings.length;
+    const maxHeadingDepth = headings.length > 0 ? Math.max(...headings.map(h => h.level)) : 0;
+    // Check hierarchy validity (no skipped levels, e.g., h1 → h3 with no h2)
+    let headingHierarchyValid = true;
+    const levelsUsed = new Set(headings.map(h => h.level));
+    if (levelsUsed.size > 1) {
+        const sorted = Array.from(levelsUsed).sort((a, b) => a - b);
+        for (let i = 1; i < sorted.length; i++) {
+            if (sorted[i] - sorted[i - 1] > 1) {
+                headingHierarchyValid = false;
+                break;
+            }
+        }
+    }
+    // --- Sections (text between headings) ---
+    const sectionSplits = md.split(/^#{1,6}\s+/m).filter(s => s.trim().length > 0);
+    const sectionWordCounts = sectionSplits.map(s => s.split(/\s+/).filter(Boolean).length);
+    const sectionCount = sectionSplits.length;
+    const avgSectionWordCount = sectionCount > 0
+        ? Math.round(sectionWordCounts.reduce((a, b) => a + b, 0) / sectionCount)
+        : 0;
+    const maxSectionWordCount = sectionWordCounts.length > 0 ? Math.max(...sectionWordCounts) : 0;
+    // --- Strip code blocks for paragraph/list analysis ---
+    const mdNoCode = md.replace(/```[\s\S]*?```/g, '');
+    // --- Paragraphs ---
+    const paragraphs = mdNoCode.split(/\n\s*\n/)
+        .map(p => p.trim())
+        .filter(p => p.length > 0 && !p.startsWith('#') && !p.startsWith('|') && !p.match(/^[-*+]\s|^\d+\.\s/));
+    const paragraphCount = paragraphs.length;
+    const paragraphWordCounts = paragraphs.map(p => p.split(/\s+/).filter(Boolean).length);
+    const avgParagraphLength = paragraphCount > 0
+        ? Math.round(paragraphWordCounts.reduce((a, b) => a + b, 0) / paragraphCount)
+        : 0;
+    const longParagraphCount = paragraphWordCounts.filter(wc => wc > 150).length;
+    // --- Lists ---
+    const listItemRegex = /^[\s]*[-*+]\s|^[\s]*\d+\.\s/gm;
+    const listItemCount = (mdNoCode.match(listItemRegex) || []).length;
+    // --- Tables ---
+    const tableRowRegex = /^\|.+\|$/gm;
+    const tableRows = (mdNoCode.match(tableRowRegex) || []).length;
+    // Estimate table count: groups of consecutive table rows separated by non-table lines
+    const tableCount = processedContent.mediaElements?.filter?.((m) => m.type === 'table')?.length
+        || (tableRows > 0 ? Math.max(1, Math.floor(tableRows / 3)) : 0);
+    // --- Structure ratio ---
+    const totalBlocks = paragraphCount + listItemCount + tableCount;
+    const structureRatio = totalBlocks > 0 ? (listItemCount + tableCount) / totalBlocks : 0;
+    // --- Code blocks ---
+    const codeBlockRegex = /```(\w*)/g;
+    let codeBlockCount = 0;
+    let codeBlocksWithLangTag = 0;
+    while ((match = codeBlockRegex.exec(md)) !== null) {
+        codeBlockCount++;
+        if (match[1] && match[1].length > 0) {
+            codeBlocksWithLangTag++;
+        }
+    }
+    // --- Links ---
+    const linkRegex = /\[([^\]]*)\]\(([^)]+)\)/g;
+    let internalLinkCount = 0;
+    let externalLinkCount = 0;
+    let pageDomain = '';
+    try {
+        pageDomain = new URL(pageUrl).hostname;
+    }
+    catch { /* ignore */ }
+    while ((match = linkRegex.exec(md)) !== null) {
+        const href = match[2];
+        if (href.startsWith('#') || href.startsWith('/') || (pageDomain && href.includes(pageDomain))) {
+            internalLinkCount++;
+        }
+        else if (href.startsWith('http')) {
+            externalLinkCount++;
+        }
+    }
+    // --- TL;DR / Summary detection ---
+    const firstHeading = headings.length > 0 ? headings[0].text.toLowerCase() : '';
+    const hasTldrOrSummary = /summary|overview|tl;?dr|introduction|at a glance|quick start/i.test(firstHeading);
+    // --- Front-loaded answer ---
+    const firstParagraph = paragraphs.length > 0 ? paragraphs[0].toLowerCase() : '';
+    const pageTitle = (processedContent.title || '').toLowerCase();
+    const titleWords = pageTitle.split(/\s+/).filter((w) => w.length > 3);
+    const frontLoadedAnswer = titleWords.length > 0 && titleWords.some((w) => firstParagraph.includes(w));
+    // --- Defined terms (bold-colon pattern: **Term**: definition) ---
+    const definedTermRegex = /\*\*[^*]+\*\*\s*[:–—]/g;
+    const definedTermCount = (md.match(definedTermRegex) || []).length;
+    // --- Total word count ---
+    const totalWordCount = md.split(/\s+/).filter(Boolean).length;
+    return {
+        headingCount,
+        maxHeadingDepth,
+        headingHierarchyValid,
+        sectionCount,
+        avgSectionWordCount,
+        maxSectionWordCount,
+        paragraphCount,
+        listItemCount,
+        tableCount,
+        structureRatio,
+        codeBlockCount,
+        codeBlocksWithLangTag,
+        internalLinkCount,
+        externalLinkCount,
+        hasTldrOrSummary,
+        frontLoadedAnswer,
+        avgParagraphLength,
+        longParagraphCount,
+        definedTermCount,
+        totalWordCount,
+    };
+}
+// ---------------------------------------------------------------------------
+// Calibrated scoring rubric
+// ---------------------------------------------------------------------------
+const SCORING_RUBRIC = `
+CALIBRATED SCORING RUBRIC — You MUST use this rubric. Scores MUST differentiate.
+
+95-100: EXEMPLARY. Zero issues found. Could serve as a model for other pages.
+        Use this score ONLY if you genuinely cannot find a single improvement.
+80-94:  GOOD. Minor issues that most readers would not notice.
+        Solid fundamentals, small polish items only.
+60-79:  ADEQUATE. Noticeable gaps or structural issues that affect usability.
+        A competent reader can work around them but should not have to.
+40-59:  NEEDS WORK. Significant problems that impede comprehension or
+        make the page unreliable. Multiple sections need revision.
+20-39:  POOR. Major structural or content failures. The page fails its
+        primary purpose for most readers.
+0-19:   BROKEN. The page is fundamentally unusable.
+
+ANTI-CLUSTERING RULES:
+- You MUST NOT score between 80-89 by default. Justify any score in that range.
+- If MEASURED FACTS show issues (e.g., structureRatio < 0.1, no headings,
+  long paragraphs), the score MUST reflect them — not be explained away.
+- Anchor your score to MEASURED FACTS first, then adjust for content quality.
+`;
 // ---------------------------------------------------------------------------
 // Content-type-aware scoring weights
 // ---------------------------------------------------------------------------
@@ -240,8 +384,8 @@ function applyContentTypeWeights(dimensionResults, contentType) {
 // ---------------------------------------------------------------------------
 // Single dimension analysis via Bedrock
 // ---------------------------------------------------------------------------
-async function analyzeDimension(dimension, processedContent, selectedModel) {
-    const prompt = buildPromptForDimension(dimension, processedContent);
+async function analyzeDimension(dimension, processedContent, selectedModel, signals) {
+    const prompt = buildPromptForDimension(dimension, processedContent, signals);
     const modelId = (0, bedrock_helpers_1.getModelId)(selectedModel);
     // Different models use different API formats
     let requestBody;
@@ -312,7 +456,7 @@ async function analyzeDimension(dimension, processedContent, selectedModel) {
 // ---------------------------------------------------------------------------
 // Prompt builder
 // ---------------------------------------------------------------------------
-function buildPromptForDimension(dimension, processedContent) {
+function buildPromptForDimension(dimension, processedContent, signals) {
     const contentType = processedContent.contentType || 'mixed';
     const weights = CONTENT_TYPE_WEIGHTS[contentType];
     const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -320,11 +464,8 @@ function buildPromptForDimension(dimension, processedContent) {
 Analysis Date: ${today}
 URL: ${processedContent.url}
 Content Type: ${contentType} (${dimension} weight: ${Math.round(weights[dimension] * 100)}%)
-Code Snippets: ${processedContent.codeSnippets?.length || 0}
-Media Elements: ${processedContent.mediaElements?.length || 0}
-Total Links: ${processedContent.linkAnalysis?.totalLinks || 0}
 
-Content (first 3000 chars):
+PAGE CONTENT:
 ${processedContent.markdownContent?.slice(0, 50000) || ''}
 `;
     // Context analysis information — with rich KB data when available
@@ -358,9 +499,8 @@ GROUNDING RULES FOR RECOMMENDATIONS:
    that related page.
 3. Frame recommendations as structural, not additive:
    WRONG: "Add version compatibility information and system requirements"
-   RIGHT: "Version and system requirement info is covered on the linked 'Current Releases' page.
-          Consider adding a cross-reference link or brief summary with a 'see Current Releases
-          for details' pointer."
+   RIGHT: "Version info is covered on the linked 'Current Releases' page.
+          Consider adding a cross-reference link or brief summary pointer."
 4. If the target page is a TOC/overview, evaluate navigation completeness —
    not whether each topic is fully explained inline.
 5. Always cite which related page covers the topic when deferring to it.
@@ -369,14 +509,10 @@ GROUNDING RULES FOR RECOMMENDATIONS:
         else {
             contextInfo = `
 CONTEXT ANALYSIS ENABLED:
-Analysis Scope: ${processedContent.contextAnalysis.analysisScope}
-Total Pages Analyzed: ${processedContent.contextAnalysis.totalPagesAnalyzed}
 Related Pages Discovered:
 ${processedContent.contextAnalysis.contextPages.map((page) => `- ${page.relationship.toUpperCase()}: "${page.title}" [${page.url}]`).join('\n')}
 
 Consider this broader documentation context when evaluating the target page.
-The target page is part of a larger documentation structure, so evaluate how well it fits
-within this context and whether it properly references or builds upon related pages.
 `;
         }
     }
@@ -385,113 +521,35 @@ within this context and whether it properly references or builds upon related pa
 CONTEXT ANALYSIS: Single page analysis (no related pages discovered)
 `;
     }
-    // Content-type-specific evaluation criteria
     const contentTypeGuidance = getContentTypeGuidance(contentType, dimension);
-    const dimensionPrompts = {
-        relevance: `Analyze the RELEVANCE of this technical developer documentation.
-
-${baseContext}
-${contextInfo}
-
-CONTENT TYPE SPECIFIC GUIDANCE:
-${contentTypeGuidance}
-
-Evaluate:
-1. Is the content relevant to the target developer audience?
-2. Are examples practical and applicable?
-3. Does it address real developer needs?
-4. Is the scope appropriate for the topic?
-5. If context pages are available, does this page fit well within the broader documentation structure?
-
+    const constraints = `
 CONSTRAINTS:
 - Only reference issues observable in the provided content above.
 - Do NOT suggest checking console errors, network requests, runtime behavior, or browser developer tools.
 - Do NOT recommend actions that require running code, visiting the page, or testing interactively.
 - This system analyzes static HTML content only. All recommendations must be actionable from the content alone.
 - Every recommendation MUST include an "evidence" field with an exact quote or specific element from the content that triggered it.
-
+- Every finding MUST reference a specific section heading or content area — no generic praise.`;
+    const jsonFormat = `
 Respond in JSON format:
 {
   "score": 0-100,
-  "findings": ["finding 1", "finding 2"],
+  "findings": ["finding 1 — must reference specific section", "finding 2"],
   "recommendations": [
     {
       "priority": "high|medium|low",
-      "action": "specific action",
-      "impact": "expected impact",
-      "evidence": "exact quote or element from content that triggered this recommendation",
+      "action": "specific action referencing a section or element",
+      "impact": "expected impact on readers and AI consumers",
+      "evidence": "exact quote or element from content that triggered this",
       "location": "heading or section where the issue appears"
     }
   ]
-}`,
-        freshness: `Analyze the FRESHNESS of this technical developer documentation.
-
-${baseContext}
-${contextInfo}
-
-CONTENT TYPE SPECIFIC GUIDANCE:
-${contentTypeGuidance}
-
-Code Snippets with Version Info:
-${processedContent.codeSnippets?.filter((s) => s.hasVersionInfo).map((s) => s.code.slice(0, 200)).join('\n---\n') || 'None'}
-
-Evaluate:
-1. Are version references current and accurate?
-2. Are code examples using modern practices?
-3. Are deprecated features flagged?
-4. Is the content up-to-date?
-5. If context pages are available, consider whether this page's version information is consistent with related pages.
-
-CONSTRAINTS:
-- Only reference issues observable in the provided content above.
-- Do NOT suggest checking console errors, network requests, runtime behavior, or browser developer tools.
-- Do NOT recommend actions that require running code, visiting the page, or testing interactively.
-- This system analyzes static HTML content only. All recommendations must be actionable from the content alone.
-- Every recommendation MUST include an "evidence" field with an exact quote or specific element from the content that triggered it.
-
+}`;
+    const jsonFormatClarity = `
 Respond in JSON format:
 {
   "score": 0-100,
-  "findings": ["finding 1", "finding 2"],
-  "recommendations": [
-    {
-      "priority": "high|medium|low",
-      "action": "specific action",
-      "impact": "expected impact",
-      "evidence": "exact quote or element from content that triggered this recommendation",
-      "location": "heading or section where the issue appears"
-    }
-  ]
-}`,
-        clarity: `Analyze the CLARITY of this technical documentation.
-
-${baseContext}
-${contextInfo}
-
-CONTENT TYPE SPECIFIC GUIDANCE:
-${contentTypeGuidance}
-
-CRITICAL: CHECK FOR SPELLING AND TYPOS
-Scan the ENTIRE content for spelling errors and typos. This is a high-priority check.
-
-Evaluate:
-1. Is the content well-structured and organized?
-2. SPELLING & TYPOS: Identify any misspelled words or typos (e.g., "clech" vs "check", "teh" vs "the").
-3. TERMINOLOGY: Is terminology consistent (e.g., "Agent" vs "Bot")?
-4. Is technical jargon explained for the target audience?
-5. Are instructions easy to follow?
-
-CONSTRAINTS:
-- Only reference issues observable in the provided content above.
-- Do NOT suggest checking console errors, network requests, runtime behavior, or browser developer tools.
-- Do NOT recommend actions that require running code, visiting the page, or testing interactively.
-- This system analyzes static HTML content only. All recommendations must be actionable from the content alone.
-- Every recommendation MUST include an "evidence" field with an exact quote or specific element from the content that triggered it.
-
-Respond in JSON format:
-{
-  "score": 0-100,
-  "findings": ["finding 1", "finding 2"],
+  "findings": ["finding 1 — must reference specific section", "finding 2"],
   "spellingIssues": [
     {"incorrect": "word", "correct": "word", "context": "surrounding text snippet"}
   ],
@@ -501,48 +559,21 @@ Respond in JSON format:
   "recommendations": [
     {
       "priority": "high|medium|low",
-      "action": "specific action",
-      "impact": "expected impact",
-      "evidence": "exact quote or element from content that triggered this recommendation",
+      "action": "specific action referencing a section or element",
+      "impact": "expected impact on readers and AI consumers",
+      "evidence": "exact quote or element from content that triggered this",
       "location": "heading or section where the issue appears"
     }
   ]
-}`,
-        accuracy: `Analyze the ACCURACY of this technical documentation.
-
-${baseContext}
-${contextInfo}
-
-IMPORTANT: Today's date is ${today}. Do NOT flag dates as "future-dated" if they are on or before today's date.
-
-CONTENT TYPE SPECIFIC GUIDANCE:
-${contentTypeGuidance}
-
-Code Snippets:
-${processedContent.codeSnippets?.map((s) => `Language: ${s.language}\n${s.code.slice(0, 300)}`).join('\n---\n') || 'None'}
-
-Evaluate:
-1. Are code examples syntactically correct?
-2. JSON VALIDATION: Are JSON configuration examples valid? Check for missing quotes, trailing commas, or unbalanced braces.
-3. CONFIGURATION: Are placeholder values (e.g., <YOUR_KEY>) clearly marked?
-4. Is API usage accurate?
-5. Are there any misleading statements?
-6. DATE ACCURACY: Only flag dates as "future-dated" if they are AFTER ${today}.
-
-CONSTRAINTS:
-- Only reference issues observable in the provided content above.
-- Do NOT suggest checking console errors, network requests, runtime behavior, or browser developer tools.
-- Do NOT recommend actions that require running code, visiting the page, or testing interactively.
-- This system analyzes static HTML content only. All recommendations must be actionable from the content alone.
-- Every recommendation MUST include an "evidence" field with an exact quote or specific element from the content that triggered it.
-
+}`;
+    const jsonFormatAccuracy = `
 Respond in JSON format:
 {
   "score": 0-100,
-  "findings": ["finding 1", "finding 2"],
+  "findings": ["finding 1 — must reference specific section", "finding 2"],
   "codeIssues": [
     {
-      "type": "json-syntax" | "config-incomplete" | "other",
+      "type": "json-syntax|config-incomplete|missing-import|other",
       "location": "description of location",
       "description": "what is wrong",
       "codeFragment": "snippet"
@@ -551,128 +582,326 @@ Respond in JSON format:
   "recommendations": [
     {
       "priority": "high|medium|low",
-      "action": "specific action",
-      "impact": "expected impact",
-      "evidence": "exact quote or element from content that triggered this recommendation",
+      "action": "specific action referencing a section or element",
+      "impact": "expected impact on readers and AI consumers",
+      "evidence": "exact quote or element from content that triggered this",
       "location": "heading or section where the issue appears"
     }
   ]
-}`,
-        completeness: `Analyze the COMPLETENESS of this technical developer documentation.
+}`;
+    const dimensionPrompts = {
+        relevance: `Analyze the STRUCTURE & PARSABILITY of this documentation page.
 
 ${baseContext}
 ${contextInfo}
 
-CONTENT TYPE SPECIFIC GUIDANCE:
-${contentTypeGuidance}
+MEASURED FACTS (computed from the page — do NOT dispute these numbers):
+- Heading count: ${signals.headingCount}
+- Max heading depth: H${signals.maxHeadingDepth || 'none'}
+- Heading hierarchy valid (no skipped levels): ${signals.headingHierarchyValid}
+- Section count: ${signals.sectionCount}
+- Avg section word count: ${signals.avgSectionWordCount}
+- Max section word count: ${signals.maxSectionWordCount}
+- Structure ratio (lists+tables / total blocks): ${signals.structureRatio.toFixed(2)}
+- Table count: ${signals.tableCount}
+- Total word count: ${signals.totalWordCount}
+
+CONTENT TYPE GUIDANCE: ${contentTypeGuidance}
+
+HUMAN LENS — evaluate:
+1. Does the heading hierarchy create a logical outline? Cite any skipped heading levels
+   (e.g., "jumps from H2 to H4 under 'Authentication Methods'").
+2. Are sections balanced in length, or are some bloated while others are stubs?
+   Name the longest section (${signals.maxSectionWordCount} words) and whether it should be split.
+3. Can a reader find what they need from headings alone (without reading body text)?
+4. Does the page follow consistent structural patterns (e.g., every method has same
+   subsections like Parameters/Returns/Example)?
+
+AI/LLM LENS — evaluate:
+5. Could an LLM retrieve a single section and have it make sense without the rest
+   of the page? (self-contained sections for RAG retrieval)
+6. Are sections chunked at appropriate granularity for AI retrieval (300-800 words ideal)?
+   Sections over 800 words should be flagged.
+7. Does each heading accurately describe its section content? (heading-content alignment)
+8. Are there consistent patterns an LLM could learn to parse?
+
+SCORING ANCHORS (apply these BEFORE subjective assessment):
+- headingCount == 0 → score CANNOT exceed 50
+- headingHierarchyValid == false → deduct 10 points
+- maxSectionWordCount > 1000 → deduct 5 points (bloated section)
+- avgSectionWordCount < 50 → deduct 5 points (stub sections)
+
+${SCORING_RUBRIC}
+${constraints}
+${jsonFormat}`,
+        freshness: `Analyze the FRESHNESS & CURRENCY of this documentation page.
+
+${baseContext}
+${contextInfo}
+
+MEASURED FACTS:
+- Code blocks found: ${signals.codeBlockCount}
+- Code blocks with language tags: ${signals.codeBlocksWithLangTag}
+- Version-referencing snippets: ${processedContent.codeSnippets?.filter((s) => s.hasVersionInfo).length || 0}
+- Analysis date: ${today}
+
+Code Snippets with Version Info:
+${processedContent.codeSnippets?.filter((s) => s.hasVersionInfo).map((s) => s.code.slice(0, 200)).join('\n---\n') || 'None'}
+
+CONTENT TYPE GUIDANCE: ${contentTypeGuidance}
+
+HUMAN LENS — evaluate:
+1. Does the page reference specific version numbers? LIST EACH ONE found and whether
+   it appears current as of ${today}. If none found, flag as a major gap.
+2. Are there deprecated APIs, methods, or patterns in code examples? NAME each one
+   with the specific code block where it appears.
+3. Does the page contain date markers ("last updated", "since v3.2", "added in 2024")?
+   If none, flag as "no temporal signals."
+4. Are there references to technologies or standards that have been superseded?
+   Name each with its modern replacement.
+
+AI/LLM LENS — evaluate:
+5. Would an LLM trained on current data produce DIFFERENT answers than what this page
+   shows? Identify specific areas of conflict risk.
+6. Are version constraints explicit enough that an LLM could determine applicability?
+   (e.g., "Works with Node 18+" is good; "Works with Node" is vague)
+7. Could an LLM distinguish current vs. legacy content on this page, or are they mixed
+   without clear markers?
+
+SCORING ANCHORS:
+- No version numbers or dates found anywhere → score CANNOT exceed 60
+- Deprecated patterns found without deprecation notice → deduct 10 per instance
+- No "last updated" or temporal marker → deduct 5 points
+
+IMPORTANT: Today's date is ${today}. Do NOT flag dates as "future-dated" if they are on or before today.
+
+${SCORING_RUBRIC}
+${constraints}
+${jsonFormat}`,
+        clarity: `Analyze the CLARITY & SCANNABILITY of this documentation page.
+
+${baseContext}
+${contextInfo}
+
+MEASURED FACTS (computed from the page — do NOT dispute these numbers):
+- Average paragraph length: ${signals.avgParagraphLength} words
+- Long paragraphs (>150 words): ${signals.longParagraphCount}
+- List items: ${signals.listItemCount}
+- Table count: ${signals.tableCount}
+- Structure ratio (lists+tables / total blocks): ${signals.structureRatio.toFixed(2)}
+- Has TL;DR or summary at top: ${signals.hasTldrOrSummary}
+- Front-loaded answer: ${signals.frontLoadedAnswer}
+- Defined terms (bold-colon pattern): ${signals.definedTermCount}
+- Total word count: ${signals.totalWordCount}
+
+CONTENT TYPE GUIDANCE: ${contentTypeGuidance}
+
+HUMAN LENS — evaluate:
+1. SPELLING & TYPOS: Scan the ENTIRE content. List every misspelled word with surrounding context.
+2. TERMINOLOGY CONSISTENCY: Are the same concepts called different names?
+   (e.g., "Agent" vs "Bot", "endpoint" vs "route") List each pair found.
+3. SCANNABILITY: Can a reader get the key takeaway from each section in under
+   10 seconds? If not, NAME which sections are wall-of-text.
+4. VISUAL HIERARCHY: Are lists, tables, and callouts used where they would
+   improve comprehension? Name specific paragraphs that SHOULD be tables or lists.
+5. PROGRESSIVE DISCLOSURE: Does the page front-load the most important information,
+   or bury it after background context?
+
+AI/LLM LENS — evaluate:
+6. Are key facts expressed as structured data (tables, lists, key-value pairs)
+   rather than buried in prose? An LLM extracts facts from tables far more
+   reliably than from mid-paragraph mentions.
+7. Does the page use consistent formatting patterns (bold for terms, code font
+   for values) that help an LLM distinguish identifiers from prose?
+8. Are there ambiguous pronouns ("it", "this", "that") that would confuse an LLM
+   parsing a single section out of context?
+
+SCORING ANCHORS (apply these BEFORE subjective assessment):
+- structureRatio < 0.10 → score CANNOT exceed 65 (all prose, no structured elements)
+- avgParagraphLength > 120 words → deduct 10 points (wall-of-text)
+- longParagraphCount > 3 → deduct 5 points per additional long paragraph beyond 3
+- hasTldrOrSummary == false AND totalWordCount > 500 → deduct 5 points
+- Each spelling error found → deduct 2 points
+
+${SCORING_RUBRIC}
+${constraints}
+${jsonFormatClarity}`,
+        accuracy: `Analyze the ACCURACY & CODE VALIDITY of this documentation page.
+
+${baseContext}
+${contextInfo}
+
+MEASURED FACTS:
+- Code blocks: ${signals.codeBlockCount}
+- Code blocks with language tags: ${signals.codeBlocksWithLangTag} (${signals.codeBlockCount > 0 ? Math.round((signals.codeBlocksWithLangTag / signals.codeBlockCount) * 100) : 'N/A'}%)
+- Languages detected: ${processedContent.codeSnippets?.map((s) => s.language).filter(Boolean).join(', ') || 'None'}
+
+IMPORTANT: Today's date is ${today}. Do NOT flag dates as "future-dated" if they are on or before today.
+
+Code Snippets:
+${processedContent.codeSnippets?.map((s) => `Language: ${s.language}\n${s.code.slice(0, 300)}`).join('\n---\n') || 'None'}
+
+CONTENT TYPE GUIDANCE: ${contentTypeGuidance}
+
+HUMAN LENS — evaluate:
+1. CODE SYNTAX: Are code examples syntactically valid? Check for:
+   - Missing semicolons, unclosed brackets, wrong method signatures
+   - JSON with trailing commas or unquoted keys
+   - Shell commands with wrong flags or nonexistent subcommands
+   Name each issue with the EXACT code fragment.
+2. PLACEHOLDER MARKING: Are placeholder values (API keys, URLs, tokens) clearly
+   marked with angle brackets, ALL_CAPS, or explicit labels?
+   List any bare placeholders like "abc123" that look like real values.
+3. CONFIGURATION COMPLETENESS: Are config examples complete enough to actually use?
+   Or are critical fields omitted (auth, required headers, environment variables)?
+4. API ACCURACY: Do described parameters, return types, and endpoints match
+   the code examples shown?
+
+AI/LLM LENS — evaluate:
+5. CODE LANGUAGE TAGS: Do code blocks have language identifiers?
+   (${signals.codeBlocksWithLangTag}/${signals.codeBlockCount} tagged)
+   Untagged blocks are harder for LLMs to interpret correctly.
+6. COPY-PASTE READINESS: Could an LLM extract a code example and produce a working
+   snippet? Or are there implicit imports, missing context, or assumed setup steps?
+7. Are code examples self-contained (have imports, variable declarations) or do they
+   assume context from previous examples on the page?
+
+SCORING ANCHORS:
+- codeBlockCount > 0 AND codeBlocksWithLangTag/codeBlockCount < 0.5 → deduct 10 points
+- Each confirmed syntax error in code → deduct 5 points
+- Bare placeholders (look like real values) → deduct 3 points each
+
+${SCORING_RUBRIC}
+${constraints}
+${jsonFormatAccuracy}`,
+        completeness: `Analyze the COMPLETENESS & SELF-CONTAINEDNESS of this documentation page.
+
+${baseContext}
+${contextInfo}
+
+MEASURED FACTS:
+- Total word count: ${signals.totalWordCount}
+- Internal links: ${signals.internalLinkCount}
+- External links: ${signals.externalLinkCount}
+- Section count: ${signals.sectionCount}
+- Defined terms (bold-colon pattern): ${signals.definedTermCount}
+- Code blocks: ${signals.codeBlockCount}
 
 Sub-pages Referenced: ${processedContent.linkAnalysis?.subPagesIdentified?.join(', ') || 'None'}
 
-Evaluate:
-1. Does it cover the main topic thoroughly?
-2. Are important details missing?
-3. Are edge cases addressed?
-4. Is error handling documented?
-5. If context pages are available, does this page properly reference or link to related information in parent/child/sibling pages?
+CONTENT TYPE GUIDANCE: ${contentTypeGuidance}
 
-CONSTRAINTS:
-- Only reference issues observable in the provided content above.
-- Do NOT suggest checking console errors, network requests, runtime behavior, or browser developer tools.
-- Do NOT recommend actions that require running code, visiting the page, or testing interactively.
-- This system analyzes static HTML content only. All recommendations must be actionable from the content alone.
-- Every recommendation MUST include an "evidence" field with an exact quote or specific element from the content that triggered it.
+HUMAN LENS — evaluate:
+1. PREREQUISITE GAPS: Does the page assume knowledge that it does not define or link to?
+   Name each assumed concept and say whether a link exists.
+2. MISSING WORKFLOW STEPS: For procedural content, are any steps missing?
+   Can a reader complete the task from start to finish using only this page?
+3. ERROR HANDLING: Does the page explain what to do when things go wrong?
+   Are common error messages documented?
+4. EDGE CASES: Does the page address boundary conditions, limitations, or
+   platform-specific differences?
+5. CROSS-REFERENCES: Are related pages linked where a reader would need them?
+   Or does the page assume the reader knows where else to look?
 
-Respond in JSON format:
-{
-  "score": 0-100,
-  "findings": ["finding 1", "finding 2"],
-  "recommendations": [
-    {
-      "priority": "high|medium|low",
-      "action": "specific action",
-      "impact": "expected impact",
-      "evidence": "exact quote or element from content that triggered this recommendation",
-      "location": "heading or section where the issue appears"
-    }
-  ]
-}`
+AI/LLM LENS — evaluate:
+6. QUERYABILITY: If a user asked an LLM "How do I [primary task of this page]?",
+   would this page contain a complete answer? Or would the LLM need to combine
+   this page with others?
+7. CONTEXT INDEPENDENCE: Could each major section be retrieved independently
+   and still provide a useful answer? Or do sections depend heavily on earlier
+   sections for context?
+8. GLOSSARY COVERAGE: Are technical terms defined on this page or linked to
+   definitions? An LLM serving a novice user needs these definitions nearby.
+
+SCORING ANCHORS:
+- internalLinkCount == 0 → deduct 10 points (no cross-references)
+- totalWordCount < 200 → deduct 10 points (stub page)
+- No error handling section for procedural/how-to content → deduct 5 points
+
+IMPORTANT: When context pages are available (KNOWLEDGE BASE section above),
+do NOT recommend adding information that already exists on a linked page.
+Instead, evaluate whether this page adequately cross-references that information.
+
+${SCORING_RUBRIC}
+${constraints}
+${jsonFormat}`
     };
     return dimensionPrompts[dimension];
 }
 // ---------------------------------------------------------------------------
-// Content-type-specific evaluation guidance
+// Content-type-specific evaluation guidance (dual-lens)
 // ---------------------------------------------------------------------------
 function getContentTypeGuidance(contentType, dimension) {
     const guidance = {
         'api-reference': {
-            relevance: 'API docs should focus on practical developer needs. Lower weight (15%) - inherently relevant.',
-            freshness: 'Critical for API docs (25% weight) - APIs change frequently. Check for current version references.',
-            clarity: 'Important (20% weight) - developers need clear parameter descriptions and return values.',
-            accuracy: 'CRITICAL (30% weight) - wrong API info breaks developer code. Verify syntax and parameters.',
-            completeness: 'Lower priority (10% weight) - can link to examples elsewhere. Focus on core API info.'
+            relevance: 'API reference (15% weight): Check if parameters, returns, and examples follow consistent, repeatable templates. AI lens: Each method section should be independently retrievable — description, parameters, returns, example, errors in every section.',
+            freshness: 'API reference (25% weight): APIs change frequently. Every endpoint should show its API version. AI lens: Version constraints must be explicit enough for an LLM to determine applicability.',
+            clarity: 'API reference (20% weight): Parameters need clear types and descriptions. AI lens: Tables for parameters are far more AI-parseable than inline prose descriptions.',
+            accuracy: 'API reference (30% weight — CRITICAL): Wrong API info breaks developer code. Verify every parameter name, type, and return value. AI lens: Code examples must be copy-paste ready with all imports.',
+            completeness: 'API reference (10% weight): Focus on core API info. AI lens: Each endpoint needs enough context to use independently without reading the full page.'
         },
         'tutorial': {
-            relevance: 'Must solve real developer problems (20% weight). Check if examples are practical.',
-            freshness: 'Important (20% weight) - outdated tutorials mislead learners. Verify current practices.',
-            clarity: 'CRITICAL (30% weight) - tutorials must be easy to follow step-by-step.',
-            accuracy: 'Important (20% weight) - wrong steps break the learning experience.',
-            completeness: 'Lower priority (10% weight) - can focus on specific learning objectives.'
+            relevance: 'Tutorial (20% weight): Must solve real developer problems with practical examples. AI lens: Steps should be numbered and self-contained for LLM extraction.',
+            freshness: 'Tutorial (20% weight): Outdated tutorials mislead learners. Verify current practices and dependencies. AI lens: Dependency versions must be explicit.',
+            clarity: 'Tutorial (30% weight — CRITICAL): Must be easy to follow step-by-step. AI lens: Each step should be a discrete, retrievable unit with clear input/output.',
+            accuracy: 'Tutorial (20% weight): Wrong steps break the learning experience. Every code block must be runnable. AI lens: Code must include all imports and setup.',
+            completeness: 'Tutorial (10% weight): Can focus on specific learning objectives. AI lens: Prerequisites must be explicitly listed, not assumed.'
         },
         'conceptual': {
-            relevance: 'High importance (25% weight) - must address real understanding needs.',
-            freshness: 'Lower priority (10% weight) - concepts change slowly, focus on timeless principles.',
-            clarity: 'CRITICAL (35% weight) - must explain complex ideas clearly to diverse audiences.',
-            accuracy: 'Important (20% weight) - wrong concepts mislead understanding.',
-            completeness: 'Lower priority (10% weight) - can focus on specific conceptual aspects.'
+            relevance: 'Conceptual (25% weight): Must address real understanding needs with clear mental models. AI lens: Concepts should be defined with explicit relationships to other concepts.',
+            freshness: 'Conceptual (10% weight): Concepts change slowly. Focus on timeless principles. AI lens: Mark any time-dependent statements explicitly.',
+            clarity: 'Conceptual (35% weight — CRITICAL): Must explain complex ideas clearly. AI lens: Use analogies, diagrams (described in text), and structured comparisons that an LLM can reference.',
+            accuracy: 'Conceptual (20% weight): Wrong concepts mislead understanding. AI lens: Definitions must be precise enough for an LLM to use as ground truth.',
+            completeness: 'Conceptual (10% weight): Can focus on specific conceptual aspects. AI lens: Each concept should be fully defined without requiring external context.'
         },
         'how-to': {
-            relevance: 'High importance (25% weight) - must solve specific, real problems.',
-            freshness: 'Medium priority (15% weight) - methods evolve but not as rapidly as APIs.',
-            clarity: 'High importance (25% weight) - procedural steps must be crystal clear.',
-            accuracy: 'High importance (25% weight) - wrong steps break workflows and waste time.',
-            completeness: 'Lower priority (10% weight) - can be task-focused rather than comprehensive.'
+            relevance: 'How-to (25% weight): Must solve specific, real problems. AI lens: The page title should map directly to a user query an LLM would receive.',
+            freshness: 'How-to (15% weight): Methods evolve. Check for current best practices. AI lens: Flag if multiple approaches are shown without indicating which is current.',
+            clarity: 'How-to (25% weight): Procedural steps must be crystal clear. AI lens: Steps should be numbered, each with a single action and expected result.',
+            accuracy: 'How-to (25% weight): Wrong steps break workflows. AI lens: Every command and config should be copy-paste ready with expected output shown.',
+            completeness: 'How-to (10% weight): Can be task-focused. AI lens: Must include error handling for the happy path — "what to do when step X fails."'
         },
         'overview': {
-            relevance: 'CRITICAL (30% weight) - overviews must provide valuable high-level perspective.',
-            freshness: 'Medium priority (15% weight) - overviews change moderately with ecosystem evolution.',
-            clarity: 'CRITICAL (30% weight) - must be accessible to newcomers and provide clear mental models.',
-            accuracy: 'Medium priority (15% weight) - high-level accuracy important but details can be elsewhere.',
-            completeness: 'Lower priority (10% weight) - intentionally high-level, comprehensive details elsewhere.'
+            relevance: 'Overview (30% weight — CRITICAL): Must provide valuable high-level perspective. AI lens: Should serve as a navigation hub — LLMs use overviews to route users to specific pages.',
+            freshness: 'Overview (15% weight): Overviews change moderately. AI lens: Links to sub-pages must be current and working.',
+            clarity: 'Overview (30% weight — CRITICAL): Must be accessible to newcomers. AI lens: Should provide a mental model or taxonomy that an LLM can use to categorize sub-topics.',
+            accuracy: 'Overview (15% weight): High-level accuracy important. AI lens: Summary descriptions of sub-topics must match what those pages actually contain.',
+            completeness: 'Overview (10% weight): Intentionally high-level. AI lens: Every major sub-topic should be linked — an LLM needs a complete map of the doc surface.'
         },
         'reference': {
-            relevance: 'Lower priority (15% weight) - reference material is inherently relevant to its domain.',
-            freshness: 'Important (20% weight) - reference data must be current and accurate.',
-            clarity: 'Important (20% weight) - must be scannable and well-organized for quick lookup.',
-            accuracy: 'CRITICAL (35% weight) - reference material must be completely accurate.',
-            completeness: 'Lower priority (10% weight) - can be comprehensive in scope elsewhere.'
+            relevance: 'Reference (15% weight): Inherently relevant to its domain. AI lens: Should be organized for lookup, not reading — tables and structured lists are essential.',
+            freshness: 'Reference (20% weight): Reference data must be current. AI lens: Each entry should show its applicable version range.',
+            clarity: 'Reference (20% weight): Must be scannable for quick lookup. AI lens: Key-value patterns, consistent formatting, and tables make reference docs AI-friendly.',
+            accuracy: 'Reference (35% weight — CRITICAL): Must be completely accurate. AI lens: An LLM will treat reference content as authoritative — any error propagates to all AI users.',
+            completeness: 'Reference (10% weight): Focus on scope coverage. AI lens: Missing entries mean an LLM cannot answer questions about those items.'
         },
         'product-guide': {
-            relevance: 'Medium (20%) - must help non-technical users achieve goals.',
-            freshness: 'Medium (15%) - check if screenshots match described UI.',
-            clarity: 'CRITICAL (35%) - check for TYPOS, spelling errors, and jargon. Must be crystal clear.',
-            accuracy: 'Important (20%) - validate all JSON payloads and curl commands.',
-            completeness: 'Low (10%) - focus on happy-path task completion.'
+            relevance: 'Product guide (20% weight): Must help users achieve goals. AI lens: Task-oriented headings (verbs) are more queryable than feature-oriented ones (nouns).',
+            freshness: 'Product guide (15% weight): Check if described UI matches current version. AI lens: UI element names must match what users see, so LLMs can give accurate instructions.',
+            clarity: 'Product guide (35% weight — CRITICAL): Check for TYPOS, spelling errors, jargon. Must be crystal clear. AI lens: Instructions should reference exact UI labels in code font.',
+            accuracy: 'Product guide (20% weight): Validate all commands and configs. AI lens: Every path described should be complete enough for an LLM to walk a user through it.',
+            completeness: 'Product guide (10% weight): Focus on happy-path task completion. AI lens: Include "what you\'ll need" prerequisites and expected outcomes.'
         },
         'troubleshooting': {
-            relevance: 'High importance (25% weight) - must address real, common problems developers face.',
-            freshness: 'Important (20% weight) - solutions evolve as technology and best practices change.',
-            clarity: 'High importance (25% weight) - problem descriptions and solutions must be clear.',
-            accuracy: 'High importance (25% weight) - wrong solutions waste significant developer time.',
-            completeness: 'Lower priority (5% weight) - can focus on specific issues rather than comprehensive coverage.'
+            relevance: 'Troubleshooting (25% weight): Must address real, common problems. AI lens: Error messages should be exact strings — LLMs match on these.',
+            freshness: 'Troubleshooting (20% weight): Solutions evolve. AI lens: Solutions must specify which versions they apply to.',
+            clarity: 'Troubleshooting (25% weight): Problem-solution pairs must be clear. AI lens: Each problem should be a self-contained section with symptom → cause → fix.',
+            accuracy: 'Troubleshooting (25% weight): Wrong solutions waste time. AI lens: Commands and fixes must be copy-paste ready.',
+            completeness: 'Troubleshooting (5% weight): Can focus on specific issues. AI lens: Related issues should be cross-linked.'
         },
         'changelog': {
-            relevance: 'Important (20% weight) - changes must be relevant to the target audience.',
-            freshness: 'CRITICAL (35% weight) - changelogs must be current and up-to-date.',
-            clarity: 'Important (20% weight) - changes must be clearly described and categorized.',
-            accuracy: 'Important (20% weight) - must accurately describe what changed.',
-            completeness: 'Lower priority (5% weight) - can be incremental, comprehensive history elsewhere.'
+            relevance: 'Changelog (20% weight): Changes must be relevant to target audience. AI lens: Each entry should clearly state what changed and who it affects.',
+            freshness: 'Changelog (35% weight — CRITICAL): Must be current. AI lens: Date formats should be consistent and machine-parseable.',
+            clarity: 'Changelog (20% weight): Changes must be clearly categorized. AI lens: Use consistent labels (Added/Changed/Deprecated/Removed/Fixed) per keepachangelog.com.',
+            accuracy: 'Changelog (20% weight): Must accurately describe changes. AI lens: Version numbers and dates must be precise.',
+            completeness: 'Changelog (5% weight): Can be incremental. AI lens: Each entry should link to related docs for migration guidance.'
         },
         'mixed': {
-            relevance: 'Balanced approach (20% weight) - evaluate relevance across all content types present.',
-            freshness: 'Balanced approach (20% weight) - consider freshness needs of different content sections.',
-            clarity: 'High importance (25% weight) - mixed content especially needs clear organization.',
-            accuracy: 'High importance (25% weight) - accuracy important across all content types.',
-            completeness: 'Lower priority (10% weight) - mixed content can have varied completeness needs.'
+            relevance: 'Mixed content (20% weight): Evaluate whether different content types are clearly separated. AI lens: Each section should be identifiable by type for targeted retrieval.',
+            freshness: 'Mixed content (20% weight): Consider freshness needs of each section type. AI lens: Mark which sections are time-sensitive vs. evergreen.',
+            clarity: 'Mixed content (25% weight): Clear organization is critical when mixing content types. AI lens: Headings should indicate content type (e.g., "Tutorial: Setting Up" vs. "Reference: API Endpoints").',
+            accuracy: 'Mixed content (25% weight): Accuracy important across all sections. AI lens: Cross-references between sections must be consistent.',
+            completeness: 'Mixed content (10% weight): Varied completeness needs. AI lens: Each content type section should be independently useful.'
         }
     };
     return guidance[contentType]?.[dimension] || 'Apply standard evaluation criteria for this dimension.';
@@ -732,12 +961,20 @@ exports.analyzeDimensionsTool = (0, tools_1.tool)(async (input) => {
         // 4. Run all 5 dimensions IN PARALLEL
         // ---------------------------------------------------------------
         console.log('Starting parallel dimension analysis...');
+        // Pre-compute structural signals (pure string parsing, no LLM call)
+        const structuralSignals = computeStructuralSignals(processedContent);
+        console.log(JSON.stringify({
+            sessionId: input.sessionId, tool: 'analyze_dimensions', event: 'structural_signals_computed',
+            headingCount: structuralSignals.headingCount, sectionCount: structuralSignals.sectionCount,
+            structureRatio: structuralSignals.structureRatio, codeBlockCount: structuralSignals.codeBlockCount,
+            totalWordCount: structuralSignals.totalWordCount, avgParagraphLength: structuralSignals.avgParagraphLength,
+        }));
         const dimensionPromises = DIMENSIONS.map(async (dimension, index) => {
             const startTime = Date.now();
             console.log(`Starting ${dimension} analysis`);
             await progress.progress(`Analyzing ${dimension.charAt(0).toUpperCase() + dimension.slice(1)} (${index + 1}/5)...`, 'dimension-analysis', { dimension });
             try {
-                const result = await analyzeDimension(dimension, processedContent, input.selectedModel);
+                const result = await analyzeDimension(dimension, processedContent, input.selectedModel, structuralSignals);
                 const processingTime = Date.now() - startTime;
                 console.log(JSON.stringify({
                     sessionId: input.sessionId, tool: 'analyze_dimensions', event: 'dimension_scored',

@@ -30,7 +30,8 @@ import {
     Collapse,
     IconButton,
     Checkbox,
-    Divider
+    Divider,
+    Skeleton
 } from '@mui/material';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -52,7 +53,7 @@ import jsPDF from 'jspdf';
 import { JAKARTA_REGULAR, JAKARTA_BOLD } from './jakartaFonts';
 
 // [NEW] Collapsible Component Helper
-const CollapsibleCard = ({ title, children, defaultExpanded = true, count = 0, color = "default" }: any) => {
+const CollapsibleCard = ({ title, subtitle, children, defaultExpanded = true, count = 0, color = "default" }: any) => {
     const [expanded, setExpanded] = useState(defaultExpanded);
 
     // Status-based color mapping
@@ -72,9 +73,9 @@ const CollapsibleCard = ({ title, children, defaultExpanded = true, count = 0, c
             borderTop: color !== 'default' ? `4px solid ${statusColor.border}` : 'none',
             borderLeft: color !== 'default' ? `3px solid ${statusColor.border}` : 'none',
             transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-            bgcolor: expanded ? 'rgba(0,0,0,0.2)' : (color !== 'default' ? statusColor.bg : 'var(--bg-secondary)'),
-            border: expanded ? '1px solid rgba(255,255,255,0.08)' : '1px solid var(--border-subtle)',
-            boxShadow: expanded ? '0 8px 32px rgba(0,0,0,0.4)' : 'none',
+            bgcolor: expanded ? 'var(--bg-tertiary)' : (color !== 'default' ? statusColor.bg : 'var(--bg-secondary)'),
+            border: expanded ? '1px solid var(--border-default)' : '1px solid var(--border-subtle)',
+            boxShadow: expanded ? '0 8px 32px rgba(0,0,0,0.15)' : 'none',
             overflow: 'hidden'
         }}>
             <Box
@@ -84,36 +85,50 @@ const CollapsibleCard = ({ title, children, defaultExpanded = true, count = 0, c
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     cursor: 'pointer',
-                    bgcolor: expanded ? 'rgba(255,255,255,0.02)' : 'transparent',
+                    bgcolor: expanded ? 'var(--bg-tertiary)' : 'transparent',
                     '&:hover': {
-                        bgcolor: 'rgba(255,255,255,0.05)'
+                        bgcolor: 'var(--bg-tertiary)'
                     }
                 }}
                 onClick={() => setExpanded(!expanded)}
             >
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Typography variant="h6" component="div" sx={{
-                        fontWeight: 600,
-                        color: expanded ? 'var(--text-primary)' : 'var(--text-secondary)',
-                        letterSpacing: '-0.01em'
-                    }}>
-                        {title}
-                    </Typography>
-                    {count > 0 && (
-                        <Chip
-                            label={count}
-                            size="small"
-                            color={color === 'error' ? 'error' : color === 'warning' ? 'warning' : 'default'}
-                            sx={{ ml: 2, fontWeight: 700, height: 20 }}
-                        />
-                    )}
+                <Box sx={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
+                    <Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <Typography variant="h6" component="div" sx={{
+                                fontWeight: 600,
+                                color: expanded ? 'var(--text-primary)' : 'var(--text-secondary)',
+                                letterSpacing: '-0.01em'
+                            }}>
+                                {title}
+                            </Typography>
+                            {count > 0 && (
+                                <Chip
+                                    label={count}
+                                    size="small"
+                                    color={color === 'error' ? 'error' : color === 'warning' ? 'warning' : 'default'}
+                                    sx={{ ml: 2, fontWeight: 700, height: 20 }}
+                                />
+                            )}
+                        </Box>
+                        {subtitle && (
+                            <Typography variant="body2" sx={{
+                                color: 'var(--text-muted)',
+                                fontSize: '0.8rem',
+                                mt: 0.25,
+                                lineHeight: 1.4,
+                            }}>
+                                {subtitle}
+                            </Typography>
+                        )}
+                    </Box>
                 </Box>
-                <IconButton size="small" sx={{ color: 'var(--text-muted)' }}>
+                <IconButton size="small" sx={{ color: 'var(--text-muted)', flexShrink: 0 }}>
                     {expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
                 </IconButton>
             </Box>
             <Collapse in={expanded}>
-                <Divider sx={{ borderColor: 'rgba(255,255,255,0.05)' }} />
+                <Divider sx={{ borderColor: 'var(--border-subtle)' }} />
                 <CardContent sx={{ p: 3 }}>
                     {children}
                 </CardContent>
@@ -171,6 +186,76 @@ interface DimensionResult {
     }>;
 }
 
+// ── NEW: AI Readiness Category Interfaces ────────────────────────────────
+
+interface BotAccessData {
+    robotsTxtFound: boolean;
+    bots: Array<{ name: string; userAgent: string; status: 'allowed' | 'blocked' | 'not-mentioned' }>;
+    allowedCount: number;
+    blockedCount: number;
+}
+
+interface DiscoverabilityData {
+    llmsTxt: { found: boolean; url: string };
+    llmsFullTxt: { found: boolean; url: string };
+    sitemapXml: { found: boolean; url?: string; referencedInRobotsTxt: boolean };
+    openGraph: { found: boolean; tags: Record<string, string> };
+    canonical: { found: boolean; url?: string };
+    metaRobots: { found: boolean; content?: string; blocksIndexing: boolean };
+}
+
+interface ConsumabilityData {
+    markdownAvailable: { found: boolean; urls: string[]; discoverable: boolean; discoveryMethod?: string };
+    textToHtmlRatio: { ratio: number; textBytes: number; htmlBytes: number; status: 'good' | 'low' | 'very-low' };
+    jsRendered: boolean;
+    headingHierarchy: { h1Count: number; h2Count: number; h3Count: number; hasProperNesting: boolean; headings: string[] };
+    codeBlocks: { count: number; withLanguageHints: number; hasCode: boolean };
+    internalLinkDensity: { count: number; perKWords: number; status: 'good' | 'sparse' | 'excessive' };
+    wordCount?: number;
+}
+
+interface StructuredDataData {
+    jsonLd: { found: boolean; types: string[]; isValidSchemaType: boolean };
+    schemaCompleteness: { status: 'complete' | 'partial' | 'missing'; missingFields: string[] };
+    openGraphCompleteness: { score: 'complete' | 'partial' | 'missing'; missingTags: string[] };
+    breadcrumbs: { found: boolean };
+}
+
+interface AIDiscoverabilityData {
+    queries: string[];
+    queryTypes?: Array<'context-aware' | 'context-free'>;
+    engines: {
+        perplexity?: {
+            available: boolean;
+            results: Array<{ query: string; cited: boolean; totalCitations: number; citedUrl?: string; competingDomains?: string[] }>;
+            foundRate: number;
+        };
+        brave?: {
+            available: boolean;
+            results: Array<{ query: string; cited: boolean; totalCitations: number; citedUrl?: string; competingDomains?: string[] }>;
+            foundRate: number;
+        };
+    };
+    overallDiscoverability: 'high' | 'partial' | 'low' | 'not-found';
+    recommendations: Array<{ priority: string; issue: string; fix: string }>;
+}
+
+interface AIReadinessCategories {
+    botAccess: BotAccessData;
+    discoverability: DiscoverabilityData;
+    consumability: ConsumabilityData;
+    structuredData: StructuredDataData;
+}
+
+interface ScoreBreakdown {
+    botAccess: number;
+    discoverability: number;
+    consumability: number;
+    structuredData: number;
+    aiDiscoverability: number;
+}
+
+// Legacy interface kept for backward compat (old reports)
 interface AIReadinessResult {
     llmsTxt: { found: boolean; url: string; content?: string };
     llmsFullTxt: { found: boolean; url: string };
@@ -183,11 +268,18 @@ interface AIReadinessResult {
 
 interface FinalReport {
     overallScore: number;
-    dimensionsAnalyzed: number;
-    dimensionsTotal: number;
-    confidence: 'high' | 'medium' | 'low';
-    modelUsed: string;
-    dimensions: Record<string, DimensionResult>;
+    // New AI readiness fields
+    scoreBreakdown?: ScoreBreakdown;
+    categories?: AIReadinessCategories;
+    aiDiscoverability?: AIDiscoverabilityData | null;
+    contextualSuggestions?: string[];
+    recommendations?: Array<{ category: string; priority: 'high' | 'medium' | 'low'; issue: string; fix: string; codeSnippet?: string }>;
+    // Legacy fields (kept for old report compat)
+    dimensionsAnalyzed?: number;
+    dimensionsTotal?: number;
+    confidence?: 'high' | 'medium' | 'low';
+    modelUsed?: string;
+    dimensions?: Record<string, DimensionResult>;
     codeAnalysis: {
         snippetsFound: number;
         syntaxErrors: number;
@@ -309,11 +401,11 @@ interface FinalReport {
 }
 
 interface ProgressMessage {
-    type: 'info' | 'success' | 'error' | 'warning' | 'progress' | 'cache-hit' | 'cache-miss';
+    type: 'info' | 'success' | 'error' | 'warning' | 'progress' | 'cache-hit' | 'cache-miss' | 'category-result';
     message: string;
     timestamp: number;
     sessionId?: string;
-    phase?: 'url-processing' | 'structure-detection' | 'dimension-analysis' | 'report-generation' | 'fix-generation';
+    phase?: 'url-processing' | 'structure-detection' | 'dimension-analysis' | 'report-generation' | 'fix-generation' | 'input-detection' | 'ai-readiness' | 'sitemap-health';
     metadata?: {
         dimension?: string;
         score?: number;
@@ -321,6 +413,8 @@ interface ProgressMessage {
         cacheStatus?: 'hit' | 'miss';
         contentType?: string;
         contextPages?: number;
+        category?: string;
+        data?: any;
         [key: string]: any;
     };
 }
@@ -422,6 +516,7 @@ function LensyApp() {
     const [progressExpanded, setProgressExpanded] = useState(true);
     const wsRef = useRef<WebSocket | null>(null);
     const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const currentSessionIdRef = useRef<string>('');
     const progressEndRef = useRef<HTMLDivElement>(null);
     const issuesListRef = useRef<HTMLDivElement>(null);
     const [showScrollIndicator, setShowScrollIndicator] = useState(false);
@@ -439,6 +534,18 @@ function LensyApp() {
     const [useAgentEngine, setUseAgentEngine] = useState(true);
     const [fixSuccessMessage, setFixSuccessMessage] = useState<string | null>(null);
     const [lastModifiedFile, setLastModifiedFile] = useState<string | null>(null);
+
+    // ── Async Card State (populated via WebSocket category-result messages) ──
+    const [asyncCards, setAsyncCards] = useState<{
+        botAccess?: BotAccessData;
+        discoverability?: DiscoverabilityData;
+        consumability?: ConsumabilityData;
+        structuredData?: StructuredDataData;
+        aiDiscoverability?: AIDiscoverabilityData;
+        overallScore?: { overallScore: number; scoreBreakdown: ScoreBreakdown; recommendationCount: number; contextualSuggestionCount: number };
+    }>({});
+    const [activeDetailCard, setActiveDetailCard] = useState<'score' | 'bots' | 'content' | 'queries' | null>(null);
+    const [showAllRecs, setShowAllRecs] = useState(false);
 
     // Keep kbBuildState ref in sync (for use in WebSocket callbacks where state is stale)
     useEffect(() => {
@@ -531,9 +638,12 @@ function LensyApp() {
     };
 
     const connectWebSocket = (sessionId: string): Promise<WebSocket> => {
+        // Always update the current session ID ref so the onmessage filter works
+        currentSessionIdRef.current = sessionId;
+
         // If already connected and ready, just return the existing socket
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-            console.log('Reusing existing WebSocket connection');
+            console.log('Reusing existing WebSocket connection for session:', sessionId);
             // Re-subscribe just in case (the backend handler is idempotent for subscriptions)
             wsRef.current.send(JSON.stringify({
                 action: 'subscribe',
@@ -580,9 +690,9 @@ function LensyApp() {
                     // Use console.debug for heartbeat to avoid clutter
                     if (message.message === 'pong') return;
 
-                    // Filter: only accept messages for the session this handler was created for
-                    if (message.sessionId && message.sessionId !== sessionId) {
-                        console.debug('Ignoring message for different session:', message.sessionId, '(expected:', sessionId, ')');
+                    // Filter: only accept messages for the current active session (uses ref, not closure)
+                    if (message.sessionId && message.sessionId !== currentSessionIdRef.current) {
+                        console.debug('Ignoring message for different session:', message.sessionId, '(expected:', currentSessionIdRef.current, ')');
                         return;
                     }
 
@@ -610,6 +720,15 @@ function LensyApp() {
                             }));
                             return;
                         }
+                    }
+
+                    // Handle category-result messages for async card loading
+                    if (message.type === 'category-result' && message.metadata?.category && message.metadata?.data) {
+                        const { category, data } = message.metadata;
+                        console.log(`Async card update: ${category}`, data);
+                        setAsyncCards(prev => ({ ...prev, [category]: data }));
+                        // Don't add category-result to progress messages (noisy)
+                        return;
                     }
 
                     setAnalysisState(prev => ({
@@ -1428,6 +1547,9 @@ function LensyApp() {
     const handleAnalyze = async () => {
         setFixSuccessMessage(null);
         setLastModifiedFile(null);
+        setAsyncCards({}); // Clear async card state for fresh analysis
+        setActiveDetailCard(null);
+        setShowAllRecs(false);
         const currentMode = manualModeOverride || selectedMode;
 
         // Handle GitHub Issues mode
@@ -1584,6 +1706,10 @@ function LensyApp() {
                 });
 
                 if (!response.ok) {
+                    if (response.status === 429) {
+                        const errorData = await response.json().catch(() => ({}));
+                        throw new Error(errorData.message || "You've reached your daily audit limit. Come back tomorrow for 3 more free audits!");
+                    }
                     throw new Error(`HTTP ${response.status}`);
                 }
 
@@ -1631,19 +1757,19 @@ function LensyApp() {
     const getProgressIcon = (type: ProgressMessage['type']) => {
         switch (type) {
             case 'success':
-                return <CheckCircleIcon sx={{ color: 'success.main' }} />;
+                return <CheckCircleIcon sx={{ color: 'var(--text-primary)' }} />;
             case 'error':
-                return <ErrorIcon sx={{ color: 'error.main' }} />;
+                return <ErrorIcon sx={{ color: '#dc2626' }} />;
             case 'warning':
-                return <WarningIcon sx={{ color: 'warning.main' }} />;
+                return <WarningIcon sx={{ color: 'var(--text-muted)' }} />;
             case 'cache-hit':
-                return <FlashOnIcon sx={{ color: 'success.main' }} />;
+                return <FlashOnIcon sx={{ color: 'var(--text-primary)' }} />;
             case 'cache-miss':
-                return <CachedIcon sx={{ color: 'info.main' }} />;
+                return <CachedIcon sx={{ color: 'var(--text-muted)' }} />;
             case 'progress':
-                return <HourglassEmptyIcon sx={{ color: 'action.active' }} />;
+                return <HourglassEmptyIcon sx={{ color: 'var(--text-muted)' }} />;
             default:
-                return <InfoIcon sx={{ color: 'info.main' }} />;
+                return <InfoIcon sx={{ color: 'var(--text-muted)' }} />;
         }
     };
 
@@ -1939,7 +2065,7 @@ function LensyApp() {
             markdown += `**Overall Score:** ${report.overallScore}/100\n\n`;
 
             markdown += `## DIMENSION SCORES\n\n`;
-            Object.entries(report.dimensions).forEach(([dimension, result]) => {
+            Object.entries(report.dimensions || {}).forEach(([dimension, result]) => {
                 const rawScore = result.score || 0;
                 const displayScore = rawScore > 10 ? (rawScore / 10).toFixed(1) : rawScore;
                 markdown += `**${dimension.charAt(0).toUpperCase() + dimension.slice(1)}:** ${displayScore}/10\n`;
@@ -1975,7 +2101,7 @@ function LensyApp() {
             }
 
             // Spelling & Typos
-            const spellingIssues = report.dimensions.clarity?.spellingIssues || [];
+            const spellingIssues = report.dimensions?.clarity?.spellingIssues || [];
             if (spellingIssues.length > 0) {
                 markdown += `\n## SPELLING & TYPOS (${spellingIssues.length})\n\n`;
                 markdown += `| Incorrect | Correct | Context |\n`;
@@ -1986,7 +2112,7 @@ function LensyApp() {
             }
 
             // Configuration & Code Issues
-            const configIssues = report.dimensions.accuracy?.codeIssues || [];
+            const configIssues = report.dimensions?.accuracy?.codeIssues || [];
             if (configIssues.length > 0) {
                 markdown += `\n## CONFIGURATION & CODE ISSUES (${configIssues.length})\n\n`;
                 configIssues.forEach((issue, i) => {
@@ -2075,7 +2201,7 @@ function LensyApp() {
             }
 
             markdown += `## RECOMMENDATIONS\n\n`;
-            Object.entries(report.dimensions).forEach(([dimension, result]) => {
+            Object.entries(report.dimensions || {}).forEach(([dimension, result]) => {
                 if (result.recommendations.length > 0) {
                     markdown += `### ${dimension.charAt(0).toUpperCase() + dimension.slice(1)}\n\n`;
                     result.recommendations.forEach((rec, i) => {
@@ -2591,7 +2717,7 @@ function LensyApp() {
             // --- DOC MODE (Amazon narrative style) ---
 
             // Build dimension data
-            const dimEntries = Object.entries(report.dimensions);
+            const dimEntries = Object.entries(report.dimensions || {});
             const strengths: string[] = [];
             const weaknesses: string[] = [];
             const improvements: { action: string; impact: string }[] = [];
@@ -2655,7 +2781,7 @@ function LensyApp() {
             // 3. Critical findings
             const linkIssueCountSummary = (report.linkAnalysis.linkIssueFindings || report.linkAnalysis.linkValidation?.linkIssueFindings)?.length || 0;
             const deprecatedCountSummary = report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length || 0;
-            const spellingCountSummary = (report.dimensions.clarity?.spellingIssues || []).length;
+            const spellingCountSummary = (report.dimensions?.clarity?.spellingIssues || []).length;
             if (linkIssueCountSummary > 0) {
                 improvements.push({
                     action: `${linkIssueCountSummary} broken or problematic link${linkIssueCountSummary !== 1 ? 's' : ''} need attention`,
@@ -2883,7 +3009,7 @@ function LensyApp() {
             }
 
             // --- A3: Spelling & Typos ---
-            const spellingIssues = report.dimensions.clarity?.spellingIssues || [];
+            const spellingIssues = report.dimensions?.clarity?.spellingIssues || [];
             if (spellingIssues.length > 0) {
                 heading('Spelling and Typos');
                 para(`${spellingIssues.length} spelling issue${spellingIssues.length !== 1 ? 's were' : ' was'} detected in the documentation.`);
@@ -2899,7 +3025,7 @@ function LensyApp() {
             }
 
             // --- A4: Configuration & Code Issues ---
-            const configIssues = report.dimensions.accuracy?.codeIssues || [];
+            const configIssues = report.dimensions?.accuracy?.codeIssues || [];
             if (configIssues.length > 0) {
                 heading('Configuration and Code Issues');
                 para(`${configIssues.length} code or configuration issue${configIssues.length !== 1 ? 's were' : ' was'} identified.`);
@@ -2995,7 +3121,7 @@ function LensyApp() {
 
             // --- A8: All Recommendations (sorted, deduplicated) ---
             const priorityOrder: Record<string, number> = { high: 0, HIGH: 0, medium: 1, MEDIUM: 1, low: 2, LOW: 2 };
-            const allRecsRaw = Object.entries(report.dimensions)
+            const allRecsRaw = Object.entries(report.dimensions || {})
                 .flatMap(([dim, result]) => (result.recommendations || []).map(rec => ({ ...rec, dimension: dim })))
                 .sort((a, b) => (priorityOrder[a.priority] ?? 3) - (priorityOrder[b.priority] ?? 3));
 
@@ -3108,73 +3234,27 @@ function LensyApp() {
                     Lensy
                 </Typography>
                 <Typography variant="body2" sx={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                    Documentation Quality Auditor
+                    AI Readiness Checker for Docs
                 </Typography>
             </Box>
 
             <Container maxWidth={selectedMode === 'github-issues' && (analysisState.status === 'analyzing' || githubAnalysisResults) ? 'xl' : 'lg'} sx={{ py: 4, transition: 'max-width 0.3s ease' }}>
 
                 <Paper sx={{ p: 4, mb: 4 }}>
-                    <Box sx={{ position: 'relative', display: 'flex', justifyContent: 'center', mb: 3, alignItems: 'center' }}>
-                        {/* Segmented toggle bar */}
-                        <Box sx={{
-                            display: 'inline-flex',
-                            bgcolor: 'rgba(255,255,255,0.06)',
-                            borderRadius: '10px',
-                            p: '3px',
-                            gap: '2px',
-                        }}>
-                            {[
-                                { key: 'doc', label: 'Doc Audit' },
-                                { key: 'github-issues', label: 'GitHub Issues' },
-                            ].map((tab) => (
-                                <Box
-                                    key={tab.key}
-                                    onClick={() => { setSelectedMode(tab.key as any); setManualModeOverride(tab.key as any); }}
-                                    sx={{
-                                        px: 2, py: 0.75,
-                                        borderRadius: '8px',
-                                        cursor: 'pointer',
-                                        fontWeight: 600,
-                                        fontSize: '0.82rem',
-                                        color: selectedMode === tab.key ? '#fff' : '#94a3b8',
-                                        bgcolor: selectedMode === tab.key ? 'rgba(255,255,255,0.12)' : 'transparent',
-                                        transition: 'all 0.15s ease',
-                                        userSelect: 'none',
-                                        '&:hover': {
-                                            color: selectedMode === tab.key ? '#fff' : '#cbd5e1',
-                                            bgcolor: selectedMode === tab.key ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)',
-                                        },
-                                    }}
-                                >
-                                    {tab.label}
-                                </Box>
-                            ))}
+                    <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3, alignItems: 'center' }}>
+                        <Box sx={{ textAlign: 'center' }}>
+                            <Typography variant="h5" component="h1" sx={{ fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.02em', fontSize: '1.25rem' }}>
+                                Is your technical documentation AI-ready?
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: 'var(--text-muted)', mt: 0.5 }}>
+                                Check if AI search engines can find, consume, and cite your docs
+                            </Typography>
                         </Box>
-                        <Typography
-                            variant="caption"
-                            sx={{
-                                position: 'absolute',
-                                right: 0,
-                                fontWeight: 700,
-                                fontSize: '0.6rem',
-                                color: '#818cf8',
-                                bgcolor: 'rgba(129, 140, 248, 0.1)',
-                                border: '1px solid rgba(129, 140, 248, 0.25)',
-                                borderRadius: '4px',
-                                px: 0.75,
-                                py: 0.25,
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.05em',
-                                lineHeight: 1,
-                            }}
-                        >
-                            Beta
-                        </Typography>
                     </Box>
 
-                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
-                        <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                    <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2, alignItems: { xs: 'stretch', sm: 'flex-start' } }}>
+                        <Box sx={{ flexGrow: 1, minWidth: 0, width: { xs: '100%', sm: 'auto' } }}>
+                            {/* GitHub Issues mode removed — AI Readiness only */}
                             {selectedMode === 'github-issues' ? (
                                 <>
                                     <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
@@ -3225,15 +3305,15 @@ function LensyApp() {
                                                 ...((githubIssues.length > 0 && !docsContextReady && kbBuildState !== 'building') ||
                                                     (githubIssues.length > 0 && docsContextReady && selectedGithubIssues.length === 0)
                                                     ? {
-                                                        bgcolor: 'rgba(255,255,255,0.12)',
-                                                        color: 'rgba(255,255,255,0.45)',
+                                                        bgcolor: 'var(--bg-tertiary)',
+                                                        color: 'var(--text-muted)',
                                                         boxShadow: 'none',
-                                                        border: '1px solid rgba(255,255,255,0.15)',
-                                                        '&:hover': { bgcolor: 'rgba(255,255,255,0.12)', boxShadow: 'none' },
+                                                        border: '1px solid var(--border-default)',
+                                                        '&:hover': { bgcolor: 'var(--bg-tertiary)', boxShadow: 'none' },
                                                         '&.Mui-disabled': {
-                                                            backgroundColor: 'rgba(255,255,255,0.12) !important',
-                                                            color: 'rgba(255,255,255,0.45) !important',
-                                                            border: '1px solid rgba(255,255,255,0.15)',
+                                                            backgroundColor: 'var(--bg-tertiary) !important',
+                                                            color: 'var(--text-muted) !important',
+                                                            border: '1px solid var(--border-default)',
                                                         }
                                                     }
                                                     : {
@@ -3248,13 +3328,13 @@ function LensyApp() {
                                                 <CircularProgress size={20} color="inherit" />
                                             ) : githubIssues.length === 0 ? 'Fetch Issues' :
                                                 !docsContextReady ? (kbBuildState === 'building' ? 'Building KB...' : 'Build KB First') :
-                                                selectedGithubIssues.length > 0 ? `Analyze (${selectedGithubIssues.length})` : 'Select Issues'}
+                                                    selectedGithubIssues.length > 0 ? `Analyze (${selectedGithubIssues.length})` : 'Select Issues'}
                                         </Button>
                                     </Box>
                                     {isFetchingGithubIssues && (
                                         <Box sx={{ display: 'flex', alignItems: 'center', mt: 2, mb: 1 }}>
                                             <CircularProgress size={16} sx={{ mr: 1.5 }} />
-                                            <Typography variant="caption" color="text.secondary">
+                                            <Typography variant="caption" sx={{ color: 'var(--text-muted)' }}>
                                                 Fetching open issues and discovering docs repos...
                                             </Typography>
                                         </Box>
@@ -3269,7 +3349,7 @@ function LensyApp() {
                                                 bgcolor: 'rgba(34, 197, 94, 0.08)',
                                                 border: '1px solid rgba(34, 197, 94, 0.2)',
                                                 '& .MuiAlert-icon': { color: '#22c55e' },
-                                                '& .MuiAlert-message': { color: '#e2e8f0', width: '100%' }
+                                                '& .MuiAlert-message': { color: 'var(--text-secondary)', width: '100%' }
                                             }}
                                         >
                                             <Box>
@@ -3302,7 +3382,7 @@ function LensyApp() {
                                                     >
                                                         <Box sx={{
                                                             width: 16, height: 16, borderRadius: '50%',
-                                                            border: githubDocsUrl === repoSuggestion.fullName ? '2px solid #22c55e' : '2px solid #64748b',
+                                                            border: githubDocsUrl === repoSuggestion.fullName ? '2px solid #22c55e' : '2px solid var(--border-strong)',
                                                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                                                             flexShrink: 0
                                                         }}>
@@ -3311,10 +3391,10 @@ function LensyApp() {
                                                             )}
                                                         </Box>
                                                         <Box>
-                                                            <Typography variant="caption" sx={{ fontWeight: 600, color: '#e2e8f0' }}>
+                                                            <Typography variant="caption" sx={{ fontWeight: 600, color: 'var(--text-secondary)' }}>
                                                                 {repoSuggestion.fullName}
                                                             </Typography>
-                                                            <Typography variant="caption" sx={{ display: 'block', color: '#94a3b8', fontSize: '0.65rem' }}>
+                                                            <Typography variant="caption" sx={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.65rem' }}>
                                                                 {repoSuggestion.description || `${repoSuggestion.contentFileCount} docs files found`}
                                                             </Typography>
                                                         </Box>
@@ -3327,9 +3407,9 @@ function LensyApp() {
                                                         mt: 0.5,
                                                         display: 'inline-block',
                                                         fontSize: '0.65rem',
-                                                        color: '#94a3b8',
+                                                        color: 'var(--text-muted)',
                                                         cursor: 'pointer',
-                                                        '&:hover': { color: '#e2e8f0' }
+                                                        '&:hover': { color: 'var(--text-secondary)' }
                                                     }}
                                                 >
                                                     {showManualDocsEntry ? 'Hide' : 'Or enter a different docs repo URL'}
@@ -3347,13 +3427,13 @@ function LensyApp() {
                                                             mt: 0.75,
                                                             '& .MuiOutlinedInput-root': {
                                                                 fontSize: '0.8rem',
-                                                                bgcolor: 'rgba(0,0,0,0.2)',
+                                                                bgcolor: 'var(--bg-code-block)',
                                                                 '& fieldset': { borderColor: 'rgba(34, 197, 94, 0.3)' }
                                                             },
-                                                            '& .MuiInputBase-input': { color: '#e2e8f0', py: 0.75 }
+                                                            '& .MuiInputBase-input': { color: 'var(--text-secondary)', py: 0.75 }
                                                         }}
                                                         helperText="e.g., owner/docs-repo or https://github.com/owner/docs-repo"
-                                                        FormHelperTextProps={{ sx: { color: '#94a3b8', fontSize: '0.65rem' } }}
+                                                        FormHelperTextProps={{ sx: { color: 'var(--text-muted)', fontSize: '0.65rem' } }}
                                                     />
                                                 )}
                                             </Box>
@@ -3369,14 +3449,14 @@ function LensyApp() {
                                                 bgcolor: 'rgba(245, 158, 11, 0.08)',
                                                 border: '1px solid rgba(245, 158, 11, 0.25)',
                                                 '& .MuiAlert-icon': { color: '#f59e0b' },
-                                                '& .MuiAlert-message': { color: '#e2e8f0', width: '100%' }
+                                                '& .MuiAlert-message': { color: 'var(--text-secondary)', width: '100%' }
                                             }}
                                         >
                                             <Box>
                                                 <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
                                                     We found {suggestedDocsRepos.filter(r => !r.hasDocsContent).map(r => r.fullName).join(', ')} but no documentation content
                                                 </Typography>
-                                                <Typography variant="caption" sx={{ display: 'block', mb: 1.5, color: '#94a3b8', lineHeight: 1.5 }}>
+                                                <Typography variant="caption" sx={{ display: 'block', mb: 1.5, color: 'var(--text-muted)', lineHeight: 1.5 }}>
                                                     {suggestedDocsRepos.filter(r => !r.hasDocsContent).map(r =>
                                                         `${r.name}: ${r.codeFileCount} code files, ${r.contentFileCount < 0 ? 'has llms.txt' : `${r.contentFileCount} docs files`}`
                                                     ).join(' · ')}
@@ -3412,7 +3492,7 @@ function LensyApp() {
                                                         }}
                                                         sx={{
                                                             bgcolor: '#f59e0b',
-                                                            color: '#0f172a',
+                                                            color: 'var(--text-primary)',
                                                             fontWeight: 700,
                                                             textTransform: 'none',
                                                             fontSize: '0.75rem',
@@ -3435,14 +3515,14 @@ function LensyApp() {
                                                 bgcolor: 'rgba(59, 130, 246, 0.08)',
                                                 border: '1px solid rgba(59, 130, 246, 0.2)',
                                                 '& .MuiAlert-icon': { color: '#3b82f6' },
-                                                '& .MuiAlert-message': { color: '#e2e8f0', width: '100%' }
+                                                '& .MuiAlert-message': { color: 'var(--text-secondary)', width: '100%' }
                                             }}
                                         >
                                             <Box>
                                                 <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
                                                     The repos we found don't appear to contain documentation files
                                                 </Typography>
-                                                <Typography variant="caption" sx={{ display: 'block', mb: 1, color: '#94a3b8', lineHeight: 1.5 }}>
+                                                <Typography variant="caption" sx={{ display: 'block', mb: 1, color: 'var(--text-muted)', lineHeight: 1.5 }}>
                                                     Select a repo and search for docs, or enter a different docs repo URL.
                                                 </Typography>
                                                 {suggestedDocsRepos.filter(r => !r.hasDocsContent).map((repoSuggestion) => (
@@ -3464,7 +3544,7 @@ function LensyApp() {
                                                     >
                                                         <Box sx={{
                                                             width: 16, height: 16, borderRadius: '50%',
-                                                            border: githubDocsUrl === repoSuggestion.fullName ? '2px solid #3b82f6' : '2px solid #64748b',
+                                                            border: githubDocsUrl === repoSuggestion.fullName ? '2px solid #3b82f6' : '2px solid var(--border-strong)',
                                                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                                                             flexShrink: 0
                                                         }}>
@@ -3473,10 +3553,10 @@ function LensyApp() {
                                                             )}
                                                         </Box>
                                                         <Box>
-                                                            <Typography variant="caption" sx={{ fontWeight: 600, color: '#e2e8f0' }}>
+                                                            <Typography variant="caption" sx={{ fontWeight: 600, color: 'var(--text-secondary)' }}>
                                                                 {repoSuggestion.fullName}
                                                             </Typography>
-                                                            <Typography variant="caption" sx={{ display: 'block', color: '#94a3b8', fontSize: '0.65rem' }}>
+                                                            <Typography variant="caption" sx={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.65rem' }}>
                                                                 {repoSuggestion.codeFileCount} code files, {repoSuggestion.contentFileCount} docs files
                                                             </Typography>
                                                         </Box>
@@ -3494,13 +3574,13 @@ function LensyApp() {
                                                         mt: 0.75,
                                                         '& .MuiOutlinedInput-root': {
                                                             fontSize: '0.8rem',
-                                                            bgcolor: 'rgba(0,0,0,0.2)',
+                                                            bgcolor: 'var(--bg-code-block)',
                                                             '& fieldset': { borderColor: 'rgba(59, 130, 246, 0.3)' }
                                                         },
-                                                        '& .MuiInputBase-input': { color: '#e2e8f0', py: 0.75 }
+                                                        '& .MuiInputBase-input': { color: 'var(--text-secondary)', py: 0.75 }
                                                     }}
                                                     helperText="Or enter a different docs repo (e.g., owner/docs-repo)"
-                                                    FormHelperTextProps={{ sx: { color: '#94a3b8', fontSize: '0.65rem' } }}
+                                                    FormHelperTextProps={{ sx: { color: 'var(--text-muted)', fontSize: '0.65rem' } }}
                                                 />
                                                 <Box sx={{ display: 'flex', gap: 1, mt: 1, alignItems: 'center' }}>
                                                     <Button
@@ -3538,7 +3618,7 @@ function LensyApp() {
                                                             textTransform: 'none',
                                                             fontSize: '0.75rem',
                                                             '&:hover': { bgcolor: '#2563eb' },
-                                                            '&:disabled': { bgcolor: 'rgba(59,130,246,0.3)', color: '#64748b' }
+                                                            '&:disabled': { bgcolor: 'rgba(59,130,246,0.3)', color: 'var(--text-muted)' }
                                                         }}
                                                     >
                                                         Search Docs
@@ -3550,7 +3630,7 @@ function LensyApp() {
                                                             setDocsAsCodeConfirmation('pending');
                                                             setGithubDocsUrl('');
                                                         }}
-                                                        sx={{ color: '#94a3b8', textTransform: 'none', fontSize: '0.7rem' }}
+                                                        sx={{ color: 'var(--text-muted)', textTransform: 'none', fontSize: '0.7rem' }}
                                                     >
                                                         Back
                                                     </Button>
@@ -3568,7 +3648,7 @@ function LensyApp() {
                                                 bgcolor: 'rgba(59, 130, 246, 0.08)',
                                                 border: '1px solid rgba(59, 130, 246, 0.2)',
                                                 '& .MuiAlert-icon': { color: '#3b82f6' },
-                                                '& .MuiAlert-message': { color: '#e2e8f0', width: '100%' }
+                                                '& .MuiAlert-message': { color: 'var(--text-secondary)', width: '100%' }
                                             }}
                                         >
                                             <Box>
@@ -3587,13 +3667,13 @@ function LensyApp() {
                                                         mt: 0.5,
                                                         '& .MuiOutlinedInput-root': {
                                                             fontSize: '0.8rem',
-                                                            bgcolor: 'rgba(0,0,0,0.2)',
+                                                            bgcolor: 'var(--bg-code-block)',
                                                             '& fieldset': { borderColor: 'rgba(59, 130, 246, 0.3)' }
                                                         },
-                                                        '& .MuiInputBase-input': { color: '#e2e8f0', py: 0.75 }
+                                                        '& .MuiInputBase-input': { color: 'var(--text-secondary)', py: 0.75 }
                                                     }}
                                                     helperText="GitHub docs repo URL (e.g., owner/docs-repo)"
-                                                    FormHelperTextProps={{ sx: { color: '#94a3b8', fontSize: '0.65rem' } }}
+                                                    FormHelperTextProps={{ sx: { color: 'var(--text-muted)', fontSize: '0.65rem' } }}
                                                 />
                                                 <Typography
                                                     variant="caption"
@@ -3628,11 +3708,11 @@ function LensyApp() {
                                             <Typography variant="caption" sx={{ fontWeight: 700, color: '#22c55e', fontSize: '0.72rem' }}>
                                                 Knowledge base ready
                                             </Typography>
-                                            <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.65rem' }}>
+                                            <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>
                                                 {kbInfo.pageCount} pages from {kbInfo.domain}
                                             </Typography>
                                             {analysisState.status !== 'analyzing' && !githubAnalysisResults && (
-                                                <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.62rem', ml: 'auto' }}>
+                                                <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.62rem', ml: 'auto' }}>
                                                     Select issues below to analyze
                                                 </Typography>
                                             )}
@@ -3649,14 +3729,14 @@ function LensyApp() {
                                                     bgcolor: 'rgba(245, 158, 11, 0.08)',
                                                     border: '1px solid rgba(245, 158, 11, 0.25)',
                                                     '& .MuiAlert-icon': { color: '#f59e0b' },
-                                                    '& .MuiAlert-message': { color: '#e2e8f0', width: '100%' }
+                                                    '& .MuiAlert-message': { color: 'var(--text-secondary)', width: '100%' }
                                                 }}
                                             >
                                                 <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 1 }}>
                                                     Enter your public docs website URL
                                                 </Typography>
-                                                <Typography variant="caption" sx={{ display: 'block', mb: 1.5, color: '#94a3b8' }}>
-                                                    We'll check for <code style={{ color: '#a78bfa' }}>llms.txt</code> or <code style={{ color: '#a78bfa' }}>sitemap.xml</code> to build a knowledge base for analysis.
+                                                <Typography variant="caption" sx={{ display: 'block', mb: 1.5, color: 'var(--text-muted)' }}>
+                                                    We'll check for <code style={{ color: 'var(--text-code-inline)' }}>llms.txt</code> or <code style={{ color: 'var(--text-code-inline)' }}>sitemap.xml</code> to build a knowledge base for analysis.
                                                 </Typography>
                                                 <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
                                                     <TextField
@@ -3674,11 +3754,11 @@ function LensyApp() {
                                                             flexGrow: 1,
                                                             '& .MuiOutlinedInput-root': {
                                                                 fontSize: '0.8rem',
-                                                                bgcolor: 'rgba(0,0,0,0.25)',
+                                                                bgcolor: 'var(--bg-code-block)',
                                                                 '& fieldset': { borderColor: 'rgba(245, 158, 11, 0.3)' },
                                                                 '&:hover fieldset': { borderColor: 'rgba(245, 158, 11, 0.5)' }
                                                             },
-                                                            '& .MuiInputBase-input': { color: '#e2e8f0', py: 0.75 }
+                                                            '& .MuiInputBase-input': { color: 'var(--text-secondary)', py: 0.75 }
                                                         }}
                                                     />
                                                     <Button
@@ -3689,13 +3769,13 @@ function LensyApp() {
                                                         sx={{
                                                             whiteSpace: 'nowrap',
                                                             height: 36,
-                                                            bgcolor: '#fff',
-                                                            color: '#111',
+                                                            bgcolor: 'var(--text-primary)',
+                                                            color: 'var(--bg-primary)',
                                                             fontWeight: 600,
-                                                            '&:hover': { bgcolor: '#e2e8f0', color: '#111' },
+                                                            '&:hover': { bgcolor: 'var(--text-secondary)', color: 'var(--bg-primary)' },
                                                             '&.Mui-disabled': {
-                                                                backgroundColor: 'rgba(255,255,255,0.08) !important',
-                                                                color: 'rgba(255,255,255,0.25) !important',
+                                                                backgroundColor: 'var(--bg-tertiary) !important',
+                                                                color: 'var(--text-muted) !important',
                                                             }
                                                         }}
                                                     >
@@ -3713,20 +3793,20 @@ function LensyApp() {
                                                         bgcolor: 'rgba(59, 130, 246, 0.07)',
                                                         border: '1px solid rgba(59, 130, 246, 0.25)',
                                                         '& .MuiAlert-icon': { color: '#3b82f6' },
-                                                        '& .MuiAlert-message': { color: '#e2e8f0', width: '100%' }
+                                                        '& .MuiAlert-message': { color: 'var(--text-secondary)', width: '100%' }
                                                     }}
                                                 >
                                                     <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
-                                                        Found <code style={{ color: '#a78bfa' }}>{previewDocs.source}</code> at {previewDocs.domain}
+                                                        Found <code style={{ color: 'var(--text-code-inline)' }}>{previewDocs.source}</code> at {previewDocs.domain}
                                                         {previewDocs.pageCount ? ` — ${previewDocs.pageCount} pages` : ''}
                                                     </Typography>
                                                     {previewDocs.categories && previewDocs.categories.length > 0 && (
-                                                        <Typography variant="caption" sx={{ display: 'block', color: '#94a3b8', mb: 1 }}>
+                                                        <Typography variant="caption" sx={{ display: 'block', color: 'var(--text-muted)', mb: 1 }}>
                                                             Categories: {previewDocs.categories.slice(0, 5).join(', ')}
                                                             {previewDocs.categories.length > 5 ? ` +${previewDocs.categories.length - 5} more` : ''}
                                                         </Typography>
                                                     )}
-                                                    <Typography variant="caption" sx={{ display: 'block', color: '#64748b', mb: 1 }}>
+                                                    <Typography variant="caption" sx={{ display: 'block', color: 'var(--text-muted)', mb: 1 }}>
                                                         Build a Knowledge Base from these docs to enable issue analysis. Crawls all pages, generates AI summaries, and caches for 7 days. Takes 1–2 min for new domains, instant if cached.
                                                     </Typography>
                                                     <Button
@@ -3753,7 +3833,7 @@ function LensyApp() {
                                                         bgcolor: 'rgba(59, 130, 246, 0.07)',
                                                         border: '1px solid rgba(59, 130, 246, 0.25)',
                                                         '& .MuiAlert-icon': { color: '#3b82f6', pt: 0.5 },
-                                                        '& .MuiAlert-message': { color: '#e2e8f0', width: '100%' }
+                                                        '& .MuiAlert-message': { color: 'var(--text-secondary)', width: '100%' }
                                                     }}
                                                 >
                                                     <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 1 }}>
@@ -3763,11 +3843,11 @@ function LensyApp() {
                                                         {kbBuildProgress.map((msg, idx) => (
                                                             <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.25 }}>
                                                                 {msg.type === 'success' ? <CheckCircleIcon sx={{ fontSize: 12, color: '#22c55e' }} /> :
-                                                                 msg.type === 'error' ? <ErrorIcon sx={{ fontSize: 12, color: '#ef4444' }} /> :
-                                                                 msg.type === 'cache-hit' ? <FlashOnIcon sx={{ fontSize: 12, color: '#f59e0b' }} /> :
-                                                                 msg.type === 'cache-miss' ? <CachedIcon sx={{ fontSize: 12, color: '#94a3b8' }} /> :
-                                                                 <InfoIcon sx={{ fontSize: 12, color: '#64748b' }} />}
-                                                                <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.65rem' }}>
+                                                                    msg.type === 'error' ? <ErrorIcon sx={{ fontSize: 12, color: '#ef4444' }} /> :
+                                                                        msg.type === 'cache-hit' ? <FlashOnIcon sx={{ fontSize: 12, color: '#f59e0b' }} /> :
+                                                                            msg.type === 'cache-miss' ? <CachedIcon sx={{ fontSize: 12, color: 'var(--text-muted)' }} /> :
+                                                                                <InfoIcon sx={{ fontSize: 12, color: 'var(--text-muted)' }} />}
+                                                                <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>
                                                                     {msg.message}
                                                                 </Typography>
                                                             </Box>
@@ -3785,7 +3865,7 @@ function LensyApp() {
                                                         bgcolor: 'rgba(239, 68, 68, 0.07)',
                                                         border: '1px solid rgba(239, 68, 68, 0.25)',
                                                         '& .MuiAlert-icon': { color: '#ef4444' },
-                                                        '& .MuiAlert-message': { color: '#e2e8f0', width: '100%' }
+                                                        '& .MuiAlert-message': { color: 'var(--text-secondary)', width: '100%' }
                                                     }}
                                                 >
                                                     <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
@@ -3811,13 +3891,13 @@ function LensyApp() {
                                                         bgcolor: 'rgba(239, 68, 68, 0.07)',
                                                         border: '1px solid rgba(239, 68, 68, 0.25)',
                                                         '& .MuiAlert-icon': { color: '#ef4444' },
-                                                        '& .MuiAlert-message': { color: '#e2e8f0', width: '100%' }
+                                                        '& .MuiAlert-message': { color: 'var(--text-secondary)', width: '100%' }
                                                     }}
                                                 >
                                                     <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
                                                         Could not find llms.txt or sitemap.xml at <strong>{previewDocs.domain}</strong>
                                                     </Typography>
-                                                    <Typography variant="caption" sx={{ display: 'block', color: '#94a3b8', mb: 1 }}>
+                                                    <Typography variant="caption" sx={{ display: 'block', color: 'var(--text-muted)', mb: 1 }}>
                                                         Please provide the direct URL to your llms.txt or sitemap.xml to continue.
                                                     </Typography>
                                                     <Box sx={{ display: 'flex', gap: 1 }}>
@@ -3832,10 +3912,10 @@ function LensyApp() {
                                                                 flexGrow: 1,
                                                                 '& .MuiOutlinedInput-root': {
                                                                     fontSize: '0.78rem',
-                                                                    bgcolor: 'rgba(0,0,0,0.25)',
+                                                                    bgcolor: 'var(--bg-code-block)',
                                                                     '& fieldset': { borderColor: 'rgba(239, 68, 68, 0.3)' }
                                                                 },
-                                                                '& .MuiInputBase-input': { color: '#e2e8f0', py: 0.75 }
+                                                                '& .MuiInputBase-input': { color: 'var(--text-secondary)', py: 0.75 }
                                                             }}
                                                         />
                                                         <Button
@@ -3855,11 +3935,11 @@ function LensyApp() {
 
                                     {/* Zero issues found after fetch */}
                                     {githubFetchCompleted && githubIssues.length === 0 && !isFetchingGithubIssues && (
-                                        <Box sx={{ mt: 3, p: 3, textAlign: 'center', bgcolor: 'rgba(255, 255, 255, 0.03)', borderRadius: 2, border: '1px solid var(--border-subtle)' }}>
+                                        <Box sx={{ mt: 3, p: 3, textAlign: 'center', bgcolor: 'var(--bg-card-dim)', borderRadius: 2, border: '1px solid var(--border-subtle)' }}>
                                             <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5, color: 'var(--text-primary)' }}>
                                                 No open issues found
                                             </Typography>
-                                            <Typography variant="caption" color="text.secondary">
+                                            <Typography variant="caption" sx={{ color: 'var(--text-muted)' }}>
                                                 This repository has no open issues, or the issues could not be retrieved. Try a different repository.
                                             </Typography>
                                         </Box>
@@ -3871,7 +3951,7 @@ function LensyApp() {
                                             <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5, color: 'var(--text-primary)' }}>
                                                 No documentation-related issues found
                                             </Typography>
-                                            <Typography variant="caption" color="text.secondary">
+                                            <Typography variant="caption" sx={{ color: 'var(--text-muted)' }}>
                                                 Found {githubIssues.length} open issue{githubIssues.length !== 1 ? 's' : ''}, but none appear to be related to documentation gaps. Great docs!
                                             </Typography>
                                         </Box>
@@ -3896,11 +3976,11 @@ function LensyApp() {
                                                 </Typography>
                                             </Box>
                                             <Box>
-                                                <Typography variant="caption" sx={{ fontWeight: 600, color: '#e2e8f0', display: 'block', lineHeight: 1.3 }}>
+                                                <Typography variant="caption" sx={{ fontWeight: 600, color: 'var(--text-secondary)', display: 'block', lineHeight: 1.3 }}>
                                                     {githubIssues.filter(i => i.isDocsRelated).length} docs-related issue{githubIssues.filter(i => i.isDocsRelated).length !== 1 ? 's' : ''} found
                                                     {githubFetchMeta && <> · {githubFetchMeta.totalFetched} scanned ({githubFetchMeta.dateRange})</>}
                                                 </Typography>
-                                                <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.65rem' }}>
+                                                <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>
                                                     {previewDocs?.found && kbBuildState === 'idle'
                                                         ? 'Build the Knowledge Base above to unlock issue selection'
                                                         : kbBuildState === 'building'
@@ -3926,7 +4006,7 @@ function LensyApp() {
                                                                 {githubIssues.filter(i => i.isDocsRelated).length} docs-related issues found
                                                             </Typography>
                                                             {githubFetchMeta && (
-                                                                <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.68rem' }}>
+                                                                <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.68rem' }}>
                                                                     Scanned {githubFetchMeta.totalFetched} open issues · {githubFetchMeta.dateRange} · AI-classified
                                                                 </Typography>
                                                             )}
@@ -3961,99 +4041,99 @@ function LensyApp() {
                                                         '&::-webkit-scrollbar': { width: 6 },
                                                         '&::-webkit-scrollbar-track': { background: 'transparent' },
                                                         '&::-webkit-scrollbar-thumb': { background: 'transparent', borderRadius: 3, transition: 'background 0.2s' },
-                                                        '&:hover::-webkit-scrollbar-thumb': { background: 'rgba(255,255,255,0.15)' },
-                                                        '&:hover::-webkit-scrollbar-thumb:hover': { background: 'rgba(255,255,255,0.3)' },
+                                                        '&:hover::-webkit-scrollbar-thumb': { background: 'var(--border-default)' },
+                                                        '&:hover::-webkit-scrollbar-thumb:hover': { background: 'var(--border-strong)' },
                                                         scrollbarWidth: 'thin',
                                                         scrollbarColor: 'transparent transparent',
-                                                        '&:hover': { scrollbarColor: 'rgba(255,255,255,0.15) transparent' },
+                                                        '&:hover': { scrollbarColor: 'var(--border-default) transparent' },
                                                     }}>
                                                         {githubIssues
                                                             .filter(i => i.isDocsRelated)
                                                             .sort((a, b) => (b.docsConfidence || 0) - (a.docsConfidence || 0))
                                                             .map((issue, index, arr) => (
-                                                            <Box
-                                                                key={issue.number}
-                                                                sx={{
-                                                                    display: 'flex',
-                                                                    alignItems: 'center',
-                                                                    px: 1.5,
-                                                                    py: 0.75,
-                                                                    borderBottom: index < arr.length - 1 ? '1px solid' : 'none',
-                                                                    borderBottomColor: 'var(--border-subtle)',
-                                                                    bgcolor: selectedGithubIssues.includes(issue.number) ? 'rgba(59, 130, 246, 0.05)' : 'transparent',
-                                                                    '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.02)' },
-                                                                    cursor: 'pointer',
-                                                                    transition: 'all 0.2s'
-                                                                }}
-                                                                onClick={() => {
-                                                                    if (selectedGithubIssues.includes(issue.number)) {
-                                                                        setSelectedGithubIssues(selectedGithubIssues.filter(n => n !== issue.number));
-                                                                    } else {
-                                                                        setSelectedGithubIssues([...selectedGithubIssues, issue.number]);
-                                                                    }
-                                                                }}
-                                                            >
-                                                                <Checkbox
-                                                                    checked={selectedGithubIssues.includes(issue.number)}
-                                                                    disabled={analysisState.status === 'analyzing'}
-                                                                    size="small"
-                                                                    sx={{ mr: 1 }}
-                                                                />
-                                                                <Box sx={{ flex: 1, minWidth: 0 }}>
-                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.25 }}>
-                                                                        <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', flex: 1, minWidth: 0 }}>
-                                                                            #{issue.number}: {issue.title}
-                                                                        </Typography>
-                                                                        {(issue.docsConfidence ?? 0) > 0 && (
-                                                                            <Chip
-                                                                                label={`${issue.docsConfidence}%`}
-                                                                                size="small"
-                                                                                sx={{
-                                                                                    height: 20,
-                                                                                    fontSize: '0.6rem',
-                                                                                    fontWeight: 800,
-                                                                                    flexShrink: 0,
-                                                                                    bgcolor: (issue.docsConfidence || 0) >= 80 ? 'rgba(34, 197, 94, 0.12)' : (issue.docsConfidence || 0) >= 60 ? 'rgba(245, 158, 11, 0.12)' : 'rgba(107, 114, 128, 0.10)',
-                                                                                    color: (issue.docsConfidence || 0) >= 80 ? '#22c55e' : (issue.docsConfidence || 0) >= 60 ? '#f59e0b' : '#737373',
-                                                                                    border: '1px solid',
-                                                                                    borderColor: (issue.docsConfidence || 0) >= 80 ? 'rgba(34, 197, 94, 0.25)' : (issue.docsConfidence || 0) >= 60 ? 'rgba(245, 158, 11, 0.25)' : 'rgba(107, 114, 128, 0.20)',
-                                                                                }}
-                                                                            />
-                                                                        )}
-                                                                    </Box>
-                                                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 0.25 }}>
-                                                                        {(issue.docsCategories || []).map(cat => (
-                                                                            <Chip key={cat} label={cat} size="small"
-                                                                                sx={{ height: 18, fontSize: '0.55rem', fontWeight: 700, bgcolor: 'rgba(59, 130, 246, 0.10)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.20)', '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' } }} />
-                                                                        ))}
-                                                                        {issue.labels.slice(0, 2).map(l => (
-                                                                            <Chip key={l.name} label={l.name} size="small"
-                                                                                sx={{ height: 18, fontSize: '0.55rem', fontWeight: 700, maxWidth: 150, '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' } }} />
-                                                                        ))}
-                                                                        {issue.labels.length > 2 && (
-                                                                            <Typography variant="caption" sx={{ fontSize: '0.55rem', color: 'var(--text-secondary)', lineHeight: '18px' }}>
-                                                                                +{issue.labels.length - 2}
+                                                                <Box
+                                                                    key={issue.number}
+                                                                    sx={{
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        px: 1.5,
+                                                                        py: 0.75,
+                                                                        borderBottom: index < arr.length - 1 ? '1px solid' : 'none',
+                                                                        borderBottomColor: 'var(--border-subtle)',
+                                                                        bgcolor: selectedGithubIssues.includes(issue.number) ? 'rgba(59, 130, 246, 0.05)' : 'transparent',
+                                                                        '&:hover': { bgcolor: 'var(--bg-card-dim)' },
+                                                                        cursor: 'pointer',
+                                                                        transition: 'all 0.2s'
+                                                                    }}
+                                                                    onClick={() => {
+                                                                        if (selectedGithubIssues.includes(issue.number)) {
+                                                                            setSelectedGithubIssues(selectedGithubIssues.filter(n => n !== issue.number));
+                                                                        } else {
+                                                                            setSelectedGithubIssues([...selectedGithubIssues, issue.number]);
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    <Checkbox
+                                                                        checked={selectedGithubIssues.includes(issue.number)}
+                                                                        disabled={analysisState.status === 'analyzing'}
+                                                                        size="small"
+                                                                        sx={{ mr: 1 }}
+                                                                    />
+                                                                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.25 }}>
+                                                                            <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', flex: 1, minWidth: 0 }}>
+                                                                                #{issue.number}: {issue.title}
                                                                             </Typography>
-                                                                        )}
-                                                                    </Box>
-                                                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem', lineHeight: 1.3, mt: 0.25 }}>
-                                                                        {issue.body ? issue.body.substring(0, 80).replace(/\n/g, ' ') + '...' : 'No description'}
-                                                                    </Typography>
-                                                                    <Box sx={{ display: 'flex', gap: 1.5, mt: 0.25 }}>
-                                                                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
-                                                                            💬 {issue.comments} comments
+                                                                            {(issue.docsConfidence ?? 0) > 0 && (
+                                                                                <Chip
+                                                                                    label={`${issue.docsConfidence}%`}
+                                                                                    size="small"
+                                                                                    sx={{
+                                                                                        height: 20,
+                                                                                        fontSize: '0.6rem',
+                                                                                        fontWeight: 800,
+                                                                                        flexShrink: 0,
+                                                                                        bgcolor: (issue.docsConfidence || 0) >= 80 ? 'rgba(34, 197, 94, 0.12)' : (issue.docsConfidence || 0) >= 60 ? 'rgba(245, 158, 11, 0.12)' : 'rgba(107, 114, 128, 0.10)',
+                                                                                        color: (issue.docsConfidence || 0) >= 80 ? '#22c55e' : (issue.docsConfidence || 0) >= 60 ? '#f59e0b' : '#737373',
+                                                                                        border: '1px solid',
+                                                                                        borderColor: (issue.docsConfidence || 0) >= 80 ? 'rgba(34, 197, 94, 0.25)' : (issue.docsConfidence || 0) >= 60 ? 'rgba(245, 158, 11, 0.25)' : 'rgba(107, 114, 128, 0.20)',
+                                                                                    }}
+                                                                                />
+                                                                            )}
+                                                                        </Box>
+                                                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 0.25 }}>
+                                                                            {(issue.docsCategories || []).map(cat => (
+                                                                                <Chip key={cat} label={cat} size="small"
+                                                                                    sx={{ height: 18, fontSize: '0.55rem', fontWeight: 700, bgcolor: 'rgba(59, 130, 246, 0.10)', color: 'var(--accent-hover)', border: '1px solid rgba(59, 130, 246, 0.20)', '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' } }} />
+                                                                            ))}
+                                                                            {issue.labels.slice(0, 2).map(l => (
+                                                                                <Chip key={l.name} label={l.name} size="small"
+                                                                                    sx={{ height: 18, fontSize: '0.55rem', fontWeight: 700, maxWidth: 150, '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' } }} />
+                                                                            ))}
+                                                                            {issue.labels.length > 2 && (
+                                                                                <Typography variant="caption" sx={{ fontSize: '0.55rem', color: 'var(--text-secondary)', lineHeight: '18px' }}>
+                                                                                    +{issue.labels.length - 2}
+                                                                                </Typography>
+                                                                            )}
+                                                                        </Box>
+                                                                        <Typography variant="caption" sx={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem', lineHeight: 1.3, mt: 0.25 }}>
+                                                                            {issue.body ? issue.body.substring(0, 80).replace(/\n/g, ' ') + '...' : 'No description'}
                                                                         </Typography>
-                                                                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
-                                                                            <a href={issue.html_url} target="_blank" rel="noopener noreferrer"
-                                                                                style={{ color: 'inherit', textDecoration: 'underline' }}
-                                                                                onClick={(e) => e.stopPropagation()}>
-                                                                                View on GitHub ↗
-                                                                            </a>
-                                                                        </Typography>
+                                                                        <Box sx={{ display: 'flex', gap: 1.5, mt: 0.25 }}>
+                                                                            <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>
+                                                                                💬 {issue.comments} comments
+                                                                            </Typography>
+                                                                            <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>
+                                                                                <a href={issue.html_url} target="_blank" rel="noopener noreferrer"
+                                                                                    style={{ color: 'inherit', textDecoration: 'underline' }}
+                                                                                    onClick={(e) => e.stopPropagation()}>
+                                                                                    View on GitHub ↗
+                                                                                </a>
+                                                                            </Typography>
+                                                                        </Box>
                                                                     </Box>
                                                                 </Box>
-                                                            </Box>
-                                                        ))}
+                                                            ))}
                                                     </Box>
                                                     {/* Down arrow scroll indicator — only when list has overflow and not scrolled to bottom */}
                                                     {showScrollIndicator && (
@@ -4067,7 +4147,7 @@ function LensyApp() {
                                                                 '50%': { transform: 'translateY(3px)' },
                                                             }
                                                         }}>
-                                                            <Typography variant="caption" sx={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 500 }}>
+                                                            <Typography variant="caption" sx={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 500 }}>
                                                                 ▼ scroll for more
                                                             </Typography>
                                                         </Box>
@@ -4087,7 +4167,7 @@ function LensyApp() {
                                                                         Analyzing {selectedGithubIssues.length} issue{selectedGithubIssues.length !== 1 ? 's' : ''}...
                                                                     </Typography>
                                                                 </Box>
-                                                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5, fontSize: '0.75rem' }}>
+                                                                <Typography variant="caption" sx={{ color: 'var(--text-muted)', display: 'block', mb: 1.5, fontSize: '0.75rem' }}>
                                                                     Fetching repo docs and running AI analysis. This takes 5-15 seconds per issue.
                                                                 </Typography>
                                                                 {/* Inline progress messages */}
@@ -4118,14 +4198,14 @@ function LensyApp() {
                                                                     bgcolor: 'rgba(245, 158, 11, 0.08)',
                                                                     border: '1px solid rgba(245, 158, 11, 0.2)',
                                                                     '& .MuiAlert-icon': { color: '#f59e0b' },
-                                                                    '& .MuiAlert-message': { color: '#e2e8f0', width: '100%' }
+                                                                    '& .MuiAlert-message': { color: 'var(--text-secondary)', width: '100%' }
                                                                 }}
                                                             >
                                                                 <Box>
                                                                     <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
                                                                         No documentation files found in {githubDocsUrl}
                                                                     </Typography>
-                                                                    <Typography variant="caption" sx={{ display: 'block', color: '#94a3b8', lineHeight: 1.5 }}>
+                                                                    <Typography variant="caption" sx={{ display: 'block', color: 'var(--text-muted)', lineHeight: 1.5 }}>
                                                                         It looks like this repo contains website code, not documentation files. Scroll up and enter your docs website URL to use the website crawl path instead.
                                                                     </Typography>
                                                                 </Box>
@@ -4142,7 +4222,7 @@ function LensyApp() {
                                                                     <Card key={idx} sx={{
                                                                         mb: 2.5,
                                                                         border: '1px solid',
-                                                                        borderColor: 'rgba(255,255,255,0.1)',
+                                                                        borderColor: 'var(--border-subtle)',
                                                                         borderLeft: '3px solid',
                                                                         borderLeftColor: '#3b82f6',
                                                                         overflow: 'hidden'
@@ -4154,7 +4234,7 @@ function LensyApp() {
                                                                                     #{result.number}: {result.title}
                                                                                 </Typography>
                                                                                 <a href={result.html_url} target="_blank" rel="noopener noreferrer"
-                                                                                    style={{ marginLeft: 8, color: '#94a3b8', display: 'inline-flex' }}
+                                                                                    style={{ marginLeft: 8, color: 'var(--text-muted)', display: 'inline-flex' }}
                                                                                     title="View issue on GitHub">
                                                                                     <OpenInNewIcon sx={{ fontSize: 18, '&:hover': { color: '#3b82f6' } }} />
                                                                                 </a>
@@ -4166,7 +4246,7 @@ function LensyApp() {
                                                                                     label={result.docsGap?.gapType?.replace('-', ' ') || 'analysis pending'}
                                                                                     size="small"
                                                                                     variant="outlined"
-                                                                                    sx={{ fontWeight: 600, textTransform: 'capitalize', fontSize: '0.7rem', borderColor: 'rgba(59, 130, 246, 0.20)', color: '#60a5fa' }}
+                                                                                    sx={{ fontWeight: 600, textTransform: 'capitalize', fontSize: '0.7rem', borderColor: 'rgba(59, 130, 246, 0.20)', color: 'var(--accent-hover)' }}
                                                                                 />
                                                                                 <Chip
                                                                                     label={`${result.docsGap?.confidence || 0}%`}
@@ -4184,7 +4264,7 @@ function LensyApp() {
 
                                                                             {/* Section context */}
                                                                             {result.docsGap?.section && (
-                                                                                <Typography variant="caption" sx={{ display: 'block', mb: 1, color: '#cbd5e1', fontSize: '0.75rem' }}>
+                                                                                <Typography variant="caption" sx={{ display: 'block', mb: 1, color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
                                                                                     {result.docsGap.section}{result.docsGap.lineContext ? ` · ${result.docsGap.lineContext}` : ''}
                                                                                 </Typography>
                                                                             )}
@@ -4200,7 +4280,7 @@ function LensyApp() {
                                                                                 }}>
                                                                                     {/* Page URLs */}
                                                                                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, alignItems: 'baseline' }}>
-                                                                                        <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                                                                                        <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
                                                                                             Page URLs:
                                                                                         </Typography>
                                                                                         {result.docsGap.affectedDocs.map((doc: string, docIdx: number) => (
@@ -4211,7 +4291,7 @@ function LensyApp() {
                                                                                                     target="_blank"
                                                                                                     rel="noopener noreferrer"
                                                                                                     style={{
-                                                                                                        color: '#60a5fa',
+                                                                                                        color: 'var(--accent-hover)',
                                                                                                         fontSize: '0.8rem',
                                                                                                         textDecoration: 'underline',
                                                                                                         wordBreak: 'break-all'
@@ -4220,7 +4300,7 @@ function LensyApp() {
                                                                                                     {new URL(doc).pathname}
                                                                                                 </a>
                                                                                             ) : (
-                                                                                                <Typography key={docIdx} variant="caption" sx={{ color: '#cbd5e1', fontSize: '0.8rem' }}>
+                                                                                                <Typography key={docIdx} variant="caption" sx={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
                                                                                                     {doc}
                                                                                                 </Typography>
                                                                                             )
@@ -4229,10 +4309,10 @@ function LensyApp() {
                                                                                     {/* Reasoning */}
                                                                                     {result.docsGap?.affectedDocsReason && (
                                                                                         <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'baseline' }}>
-                                                                                            <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em', flexShrink: 0 }}>
+                                                                                            <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em', flexShrink: 0 }}>
                                                                                                 Reasoning:
                                                                                             </Typography>
-                                                                                            <Typography variant="caption" sx={{ color: '#cbd5e1', fontSize: '0.8rem', lineHeight: 1.5 }}>
+                                                                                            <Typography variant="caption" sx={{ color: 'var(--text-secondary)', fontSize: '0.8rem', lineHeight: 1.5 }}>
                                                                                                 {result.docsGap.affectedDocsReason}
                                                                                             </Typography>
                                                                                         </Box>
@@ -4245,48 +4325,48 @@ function LensyApp() {
                                                                                 <Box sx={{ mb: 1 }}>
                                                                                     {/* Before */}
                                                                                     <Box sx={{ mb: 1 }}>
-                                                                                        <Typography variant="caption" sx={{ fontWeight: 700, color: '#94a3b8', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.5, display: 'block' }}>
+                                                                                        <Typography variant="caption" sx={{ fontWeight: 700, color: 'var(--text-muted)', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.5, display: 'block' }}>
                                                                                             Before
                                                                                         </Typography>
                                                                                         <Box sx={{
-                                                                                            bgcolor: 'rgba(255,255,255,0.03)',
-                                                                                            border: '1px solid rgba(255,255,255,0.06)',
+                                                                                            bgcolor: 'var(--bg-card-dim)',
+                                                                                            border: '1px solid var(--border-card-dim)',
                                                                                             borderRadius: 1,
                                                                                             p: 1.5,
                                                                                             overflow: 'auto',
                                                                                             wordBreak: 'break-word',
-                                                                                            '& h1, & h2, & h3, & h4, & h5, & h6': { color: '#cbd5e1', fontSize: '0.85rem', fontWeight: 700, mt: 1, mb: 0.5, '&:first-of-type': { mt: 0 } },
-                                                                                            '& p': { color: '#cbd5e1', fontSize: '0.8rem', lineHeight: 1.6, mb: 0.75, '&:last-child': { mb: 0 } },
-                                                                                            '& code': { bgcolor: 'rgba(255,255,255,0.08)', color: '#93c5fd', px: 0.5, py: 0.25, borderRadius: '3px', fontSize: '0.75rem', fontFamily: 'monospace', wordBreak: 'break-all' },
-                                                                                            '& pre': { bgcolor: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 1, p: 1.5, overflow: 'auto', mb: 0.75, maxWidth: '100%', '& code': { bgcolor: 'transparent', p: 0, color: '#e2e8f0', wordBreak: 'normal' } },
-                                                                                            '& ul, & ol': { color: '#cbd5e1', fontSize: '0.8rem', pl: 2.5, mb: 0.75 },
+                                                                                            '& h1, & h2, & h3, & h4, & h5, & h6': { color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 700, mt: 1, mb: 0.5, '&:first-of-type': { mt: 0 } },
+                                                                                            '& p': { color: 'var(--text-secondary)', fontSize: '0.8rem', lineHeight: 1.6, mb: 0.75, '&:last-child': { mb: 0 } },
+                                                                                            '& code': { bgcolor: 'var(--bg-code-inline)', color: 'var(--text-code-inline)', px: 0.5, py: 0.25, borderRadius: '3px', fontSize: '0.75rem', fontFamily: 'monospace', wordBreak: 'break-all' },
+                                                                                            '& pre': { bgcolor: 'var(--bg-code-block)', border: '1px solid var(--border-code)', borderRadius: 1, p: 1.5, overflow: 'auto', mb: 0.75, maxWidth: '100%', '& code': { bgcolor: 'transparent', p: 0, color: 'var(--text-code-block)', wordBreak: 'normal' } },
+                                                                                            '& ul, & ol': { color: 'var(--text-secondary)', fontSize: '0.8rem', pl: 2.5, mb: 0.75 },
                                                                                             '& li': { mb: 0.25 },
-                                                                                            '& a': { color: '#60a5fa', textDecoration: 'underline' },
-                                                                                            '& blockquote': { borderLeft: '3px solid rgba(255,255,255,0.15)', pl: 1.5, ml: 0, color: '#94a3b8' },
+                                                                                            '& a': { color: 'var(--accent-hover)', textDecoration: 'underline' },
+                                                                                            '& blockquote': { borderLeft: '3px solid var(--border-default)', pl: 1.5, ml: 0, color: 'var(--text-muted)' },
                                                                                         }}>
                                                                                             <ReactMarkdown>{result.docsGap.originalText}</ReactMarkdown>
                                                                                         </Box>
                                                                                     </Box>
                                                                                     {/* After */}
                                                                                     <Box>
-                                                                                        <Typography variant="caption" sx={{ fontWeight: 700, color: '#94a3b8', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.5, display: 'block' }}>
+                                                                                        <Typography variant="caption" sx={{ fontWeight: 700, color: 'var(--text-muted)', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.5, display: 'block' }}>
                                                                                             After
                                                                                         </Typography>
                                                                                         <Box sx={{
-                                                                                            bgcolor: 'rgba(255,255,255,0.03)',
-                                                                                            border: '1px solid rgba(255,255,255,0.06)',
+                                                                                            bgcolor: 'var(--bg-card-dim)',
+                                                                                            border: '1px solid var(--border-card-dim)',
                                                                                             borderRadius: 1,
                                                                                             p: 1.5,
                                                                                             overflow: 'auto',
                                                                                             wordBreak: 'break-word',
-                                                                                            '& h1, & h2, & h3, & h4, & h5, & h6': { color: '#e2e8f0', fontSize: '0.85rem', fontWeight: 700, mt: 1, mb: 0.5, '&:first-of-type': { mt: 0 } },
-                                                                                            '& p': { color: '#e2e8f0', fontSize: '0.8rem', lineHeight: 1.6, mb: 0.75, '&:last-child': { mb: 0 } },
-                                                                                            '& code': { bgcolor: 'rgba(255,255,255,0.08)', color: '#93c5fd', px: 0.5, py: 0.25, borderRadius: '3px', fontSize: '0.75rem', fontFamily: 'monospace', wordBreak: 'break-all' },
-                                                                                            '& pre': { bgcolor: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 1, p: 1.5, overflow: 'auto', mb: 0.75, maxWidth: '100%', '& code': { bgcolor: 'transparent', p: 0, color: '#e2e8f0', wordBreak: 'normal' } },
-                                                                                            '& ul, & ol': { color: '#e2e8f0', fontSize: '0.8rem', pl: 2.5, mb: 0.75 },
+                                                                                            '& h1, & h2, & h3, & h4, & h5, & h6': { color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 700, mt: 1, mb: 0.5, '&:first-of-type': { mt: 0 } },
+                                                                                            '& p': { color: 'var(--text-secondary)', fontSize: '0.8rem', lineHeight: 1.6, mb: 0.75, '&:last-child': { mb: 0 } },
+                                                                                            '& code': { bgcolor: 'var(--bg-code-inline)', color: 'var(--text-code-inline)', px: 0.5, py: 0.25, borderRadius: '3px', fontSize: '0.75rem', fontFamily: 'monospace', wordBreak: 'break-all' },
+                                                                                            '& pre': { bgcolor: 'var(--bg-code-block)', border: '1px solid var(--border-code)', borderRadius: 1, p: 1.5, overflow: 'auto', mb: 0.75, maxWidth: '100%', '& code': { bgcolor: 'transparent', p: 0, color: 'var(--text-code-block)', wordBreak: 'normal' } },
+                                                                                            '& ul, & ol': { color: 'var(--text-secondary)', fontSize: '0.8rem', pl: 2.5, mb: 0.75 },
                                                                                             '& li': { mb: 0.25 },
-                                                                                            '& a': { color: '#60a5fa', textDecoration: 'underline' },
-                                                                                            '& blockquote': { borderLeft: '3px solid rgba(255,255,255,0.15)', pl: 1.5, ml: 0, color: '#94a3b8' },
+                                                                                            '& a': { color: 'var(--accent-hover)', textDecoration: 'underline' },
+                                                                                            '& blockquote': { borderLeft: '3px solid var(--border-default)', pl: 1.5, ml: 0, color: 'var(--text-muted)' },
                                                                                         }}>
                                                                                             <ReactMarkdown>{result.docsGap.correctedText}</ReactMarkdown>
                                                                                         </Box>
@@ -4297,7 +4377,7 @@ function LensyApp() {
                                                                             {/* Source References — prove recommendation is grounded */}
                                                                             {result.docsGap?.sourceReferences?.length > 0 && (
                                                                                 <Box sx={{ mb: 1 }}>
-                                                                                    <Typography variant="caption" sx={{ fontWeight: 700, color: '#94a3b8', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.5, display: 'block' }}>
+                                                                                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'var(--text-muted)', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.5, display: 'block' }}>
                                                                                         Sources
                                                                                     </Typography>
                                                                                     <Box sx={{
@@ -4318,17 +4398,17 @@ function LensyApp() {
                                                                                                         flexShrink: 0,
                                                                                                         mt: 0.25,
                                                                                                         bgcolor: ref.type === 'docs-page' ? 'rgba(59, 130, 246, 0.12)' : 'rgba(245, 158, 11, 0.12)',
-                                                                                                        color: ref.type === 'docs-page' ? '#60a5fa' : '#fbbf24',
+                                                                                                        color: ref.type === 'docs-page' ? 'var(--accent-hover)' : '#fbbf24',
                                                                                                         border: '1px solid',
                                                                                                         borderColor: ref.type === 'docs-page' ? 'rgba(59, 130, 246, 0.25)' : 'rgba(245, 158, 11, 0.25)',
                                                                                                     }}
                                                                                                 />
                                                                                                 <Box sx={{ minWidth: 0 }}>
-                                                                                                    <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.7rem', lineHeight: 1.4, display: 'block', fontStyle: 'italic' }}>
+                                                                                                    <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.7rem', lineHeight: 1.4, display: 'block', fontStyle: 'italic' }}>
                                                                                                         "{ref.excerpt}"
                                                                                                     </Typography>
                                                                                                     {ref.url && (
-                                                                                                        <Typography variant="caption" sx={{ fontSize: '0.6rem', color: '#64748b' }}>
+                                                                                                        <Typography variant="caption" sx={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>
                                                                                                             <a href={ref.url} target="_blank" rel="noopener noreferrer"
                                                                                                                 style={{ color: 'inherit', textDecoration: 'underline' }}
                                                                                                                 onClick={(e: any) => e.stopPropagation()}>
@@ -4450,9 +4530,9 @@ function LensyApp() {
                                                                                                     fontWeight: 600,
                                                                                                     fontSize: '0.7rem',
                                                                                                     whiteSpace: 'nowrap',
-                                                                                                    color: '#a78bfa',
-                                                                                                    borderColor: '#a78bfa',
-                                                                                                    '&:hover': { borderColor: '#8b5cf6', bgcolor: 'rgba(139,92,246,0.05)' }
+                                                                                                    color: 'var(--text-code-inline)',
+                                                                                                    borderColor: 'var(--accent-primary)',
+                                                                                                    '&:hover': { borderColor: 'var(--accent-hover)', bgcolor: 'rgba(139,92,246,0.05)' }
                                                                                                 }}
                                                                                             >
                                                                                                 {isCreating ? 'Creating PR...' : 'Open PR'}
@@ -4479,7 +4559,7 @@ function LensyApp() {
                                                                 <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
                                                                     No documentation gaps found
                                                                 </Typography>
-                                                                <Typography variant="caption" color="text.secondary">
+                                                                <Typography variant="caption" sx={{ color: 'var(--text-muted)' }}>
                                                                     Great docs! The selected issues don't reveal documentation problems.
                                                                 </Typography>
                                                             </Box>
@@ -4524,7 +4604,7 @@ function LensyApp() {
                                     {isSearchingIssues && (
                                         <Box sx={{ display: 'flex', alignItems: 'center', mt: 2, mb: 1 }}>
                                             <CircularProgress size={16} sx={{ mr: 1.5 }} />
-                                            <Typography variant="caption" color="text.secondary">
+                                            <Typography variant="caption" sx={{ color: 'var(--text-muted)' }}>
                                                 Searching for developer complaints online...
                                             </Typography>
                                         </Box>
@@ -4547,7 +4627,7 @@ function LensyApp() {
                                                             borderBottomColor: 'var(--border-subtle)',
                                                             bgcolor: selectedIssues.includes(issue.id) ? 'rgba(59, 130, 246, 0.05)' : 'transparent',
                                                             '&:hover': {
-                                                                bgcolor: 'rgba(255, 255, 255, 0.02)',
+                                                                bgcolor: 'var(--bg-card-dim)',
                                                             },
                                                             cursor: 'pointer',
                                                             transition: 'all 0.2s'
@@ -4577,7 +4657,7 @@ function LensyApp() {
                                                                     sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }}
                                                                 />
                                                             </Box>
-                                                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.75rem' }}>
+                                                            <Typography variant="caption" sx={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.75rem' }}>
                                                                 {issue.description}
                                                             </Typography>
                                                         </Box>
@@ -4590,12 +4670,39 @@ function LensyApp() {
                             ) : (
                                 <TextField
                                     fullWidth
-                                    label={selectedMode === 'sitemap' ? "Sitemap URL" : "Documentation URL"}
                                     variant="outlined"
                                     value={url}
                                     onChange={(e) => setUrl(e.target.value)}
-                                    placeholder={selectedMode === 'sitemap' ? "https://example.com/sitemap.xml" : "https://docs.example.com/getting-started"}
+                                    placeholder="Documentation Page URL"
                                     disabled={analysisState.status === 'analyzing'}
+                                    sx={{
+                                        '& .MuiOutlinedInput-root': {
+                                            borderRadius: '12px',
+                                            bgcolor: 'var(--bg-secondary)',
+                                            '& fieldset': {
+                                                borderColor: 'var(--border-default)',
+                                            },
+                                            '&:hover fieldset': {
+                                                borderColor: 'var(--border-strong)',
+                                            },
+                                            '&.Mui-focused fieldset': {
+                                                borderColor: 'var(--border-strong)',
+                                                borderWidth: '1px',
+                                            },
+                                        },
+                                        '& .MuiInputBase-input': {
+                                            fontSize: '1rem',
+                                            py: 2,
+                                        },
+                                        '& .MuiInputBase-input::placeholder': {
+                                            color: 'var(--text-muted)',
+                                            opacity: 1,
+                                        },
+                                        '& .MuiInputBase-input.Mui-disabled': {
+                                            WebkitTextFillColor: 'var(--text-primary)',
+                                            opacity: 0.7,
+                                        },
+                                    }}
                                 />
                             )}
                         </Box>
@@ -4611,6 +4718,7 @@ function LensyApp() {
                                 height: 56,
                                 minWidth: 120,
                                 px: 4,
+                                width: { xs: '100%', sm: 'auto' },
                                 whiteSpace: 'nowrap',
                                 boxShadow: '0 0 20px rgba(59, 130, 246, 0.15)',
                                 '&:hover': {
@@ -4627,72 +4735,12 @@ function LensyApp() {
                             ) : (fixSuccessMessage || (!analysisState.report && currentSessionId)) ? (
                                 'Re-scan'
                             ) : (
-                                'Start'
+                                'Check Readiness'
                             )}
                         </Button>}
                     </Box>
 
-                    {/* Advanced Options (below URL row, doc mode only) */}
-                    {selectedMode === 'doc' && (
-                        <Box sx={{ mt: 0.5 }}>
-                            <Typography
-                                variant="body2"
-                                sx={{
-                                    color: '#cbd5e1',
-                                    cursor: 'pointer',
-                                    userSelect: 'none',
-                                    fontSize: '0.8rem',
-                                    '&:hover': { color: '#f1f5f9' },
-                                }}
-                                onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
-                            >
-                                {showAdvancedOptions ? '▾' : '▸'} Advanced Options
-                            </Typography>
-                            {showAdvancedOptions && (
-                                <Box sx={{ mt: 1.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                    <Box sx={{ display: 'flex', gap: 2, flexDirection: { xs: 'column', md: 'row' } }}>
-                                        <TextField
-                                            size="small"
-                                            label="Sitemap URL (optional)"
-                                            variant="outlined"
-                                            value={sitemapUrl}
-                                            onChange={(e) => setSitemapUrl(e.target.value)}
-                                            placeholder="https://example.com/sitemap.xml"
-                                            disabled={analysisState.status === 'analyzing'}
-                                            sx={{ flex: 1 }}
-                                            helperText="Check sitemap health alongside page analysis"
-                                        />
-                                        <TextField
-                                            size="small"
-                                            label="llms.txt URL (optional)"
-                                            variant="outlined"
-                                            value={llmsTxtUrl}
-                                            onChange={(e) => setLlmsTxtUrl(e.target.value)}
-                                            placeholder="https://example.com/llms.txt"
-                                            disabled={analysisState.status === 'analyzing'}
-                                            sx={{ flex: 1 }}
-                                            helperText="Check AI readiness of the documentation"
-                                        />
-                                    </Box>
-                                    <FormControlLabel
-                                        control={
-                                            <Switch
-                                                size="small"
-                                                checked={useAgentEngine}
-                                                onChange={(e) => setUseAgentEngine(e.target.checked)}
-                                                disabled={analysisState.status === 'analyzing'}
-                                            />
-                                        }
-                                        label={
-                                            <Typography variant="caption" color="text.secondary">
-                                                AI Agent engine {useAgentEngine ? '(recommended)' : '(legacy pipeline)'}
-                                            </Typography>
-                                        }
-                                    />
-                                </Box>
-                            )}
-                        </Box>
-                    )}
+                    {/* Advanced Options removed — all auto-detected in AI readiness pipeline */}
 
                     {/* AI Model Selection hidden per branding guidelines */}
                     <input type="hidden" name="selectedModel" value={selectedModel} />
@@ -4704,12 +4752,12 @@ function LensyApp() {
                     )}
                 </Paper>
 
-                {/* Progress Messages — hidden for github-issues mode (shown inline in right column) */}
-                {analysisState.progressMessages.length > 0 && selectedMode !== 'github-issues' && analysisState.sourceMode !== 'github-issues' && (
+                {/* Progress Messages — only visible while analyzing, hidden after results show */}
+                {analysisState.status === 'analyzing' && analysisState.progressMessages.length > 0 && selectedMode !== 'github-issues' && analysisState.sourceMode !== 'github-issues' && (
                     <Paper elevation={3} sx={{ p: 3, mb: 4 }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
                             <Typography variant="h6">
-                                Real-time Progress ({analysisState.progressMessages.length} messages)
+                                Analysis Progress ({analysisState.progressMessages.length})
                             </Typography>
                             <IconButton
                                 onClick={() => setProgressExpanded(!progressExpanded)}
@@ -4720,7 +4768,7 @@ function LensyApp() {
                         </Box>
 
                         <Collapse in={progressExpanded}>
-                            <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
+                            <Box sx={{ maxHeight: 200, overflow: 'auto' }}>
                                 <List>
                                     {analysisState.progressMessages.map((msg, index) => (
                                         <ListItem key={index} sx={{ py: 0.5 }}>
@@ -4732,12 +4780,11 @@ function LensyApp() {
                                                 secondary={new Date(msg.timestamp).toLocaleTimeString()}
                                                 primaryTypographyProps={{
                                                     sx: {
-                                                        color: msg.type === 'error' ? 'error.main' :
-                                                            msg.type === 'success' ? 'success.main' :
-                                                                msg.type === 'cache-hit' ? 'success.main' :
-                                                                    msg.type === 'warning' ? 'warning.main' :
-                                                                        'text.primary'
+                                                        color: msg.type === 'error' ? '#dc2626' : 'var(--text-primary)'
                                                     }
+                                                }}
+                                                secondaryTypographyProps={{
+                                                    sx: { color: 'var(--text-muted)' }
                                                 }}
                                             />
                                         </ListItem>
@@ -4793,11 +4840,11 @@ function LensyApp() {
                             <Grid item xs={12} md={3}>
                                 <Card>
                                     <CardContent sx={{ textAlign: 'center' }}>
-                                        <Typography variant="h3" color="success.main">
+                                        <Typography variant="h3" sx={{ color: 'var(--accent-success)' }}>
                                             {validationResults.summary.resolved}
                                         </Typography>
                                         <Typography variant="h6">✅ Resolved</Typography>
-                                        <Typography variant="body2" color="text.secondary">
+                                        <Typography variant="body2" sx={{ color: 'var(--text-muted)' }}>
                                             Documentation is complete
                                         </Typography>
                                     </CardContent>
@@ -4806,11 +4853,11 @@ function LensyApp() {
                             <Grid item xs={12} md={3}>
                                 <Card>
                                     <CardContent sx={{ textAlign: 'center' }}>
-                                        <Typography variant="h3" color="warning.main">
+                                        <Typography variant="h3" sx={{ color: 'var(--accent-warning)' }}>
                                             {validationResults.summary.potentialGaps}
                                         </Typography>
                                         <Typography variant="h6">⚠️ Potential Gaps</Typography>
-                                        <Typography variant="body2" color="text.secondary">
+                                        <Typography variant="body2" sx={{ color: 'var(--text-muted)' }}>
                                             Pages exist but incomplete
                                         </Typography>
                                     </CardContent>
@@ -4819,11 +4866,11 @@ function LensyApp() {
                             <Grid item xs={12} md={3}>
                                 <Card>
                                     <CardContent sx={{ textAlign: 'center' }}>
-                                        <Typography variant="h3" color="error.main">
+                                        <Typography variant="h3" sx={{ color: 'var(--accent-error)' }}>
                                             {validationResults.summary.criticalGaps}
                                         </Typography>
                                         <Typography variant="h6">❌ Critical Gaps</Typography>
-                                        <Typography variant="body2" color="text.secondary">
+                                        <Typography variant="body2" sx={{ color: 'var(--text-muted)' }}>
                                             No relevant pages found
                                         </Typography>
                                     </CardContent>
@@ -4832,7 +4879,7 @@ function LensyApp() {
                             <Grid item xs={12} md={3}>
                                 <Card>
                                     <CardContent sx={{ textAlign: 'center' }}>
-                                        <Typography variant="h3" color="primary">
+                                        <Typography variant="h3" sx={{ color: 'var(--accent-primary)' }}>
                                             {validationResults.processingTime}ms
                                         </Typography>
                                         <Typography variant="h6">Processing Time</Typography>
@@ -4851,7 +4898,7 @@ function LensyApp() {
                                     <Grid item xs={12} md={3}>
                                         <Card>
                                             <CardContent sx={{ textAlign: 'center' }}>
-                                                <Typography variant="h3" color="primary">
+                                                <Typography variant="h3" sx={{ color: 'var(--accent-primary)' }}>
                                                     {validationResults.sitemapHealth.totalUrls}
                                                 </Typography>
                                                 <Typography variant="h6">Total URLs</Typography>
@@ -4861,11 +4908,11 @@ function LensyApp() {
                                     <Grid item xs={12} md={3}>
                                         <Card>
                                             <CardContent sx={{ textAlign: 'center' }}>
-                                                <Typography variant="h3" color="success.main">
+                                                <Typography variant="h3" sx={{ color: 'var(--accent-success)' }}>
                                                     {validationResults.sitemapHealth.healthyUrls}
                                                 </Typography>
                                                 <Typography variant="h6">Healthy</Typography>
-                                                <Typography variant="body2" color="text.secondary">
+                                                <Typography variant="body2" sx={{ color: 'var(--text-muted)' }}>
                                                     {validationResults.sitemapHealth.healthPercentage}%
                                                 </Typography>
                                             </CardContent>
@@ -4874,7 +4921,7 @@ function LensyApp() {
                                     <Grid item xs={12} md={3}>
                                         <Card>
                                             <CardContent sx={{ textAlign: 'center' }}>
-                                                <Typography variant="h3" color="error.main">
+                                                <Typography variant="h3" sx={{ color: 'var(--accent-error)' }}>
                                                     {validationResults.sitemapHealth.brokenUrls || 0}
                                                 </Typography>
                                                 <Typography variant="h6">Broken (404)</Typography>
@@ -4884,13 +4931,13 @@ function LensyApp() {
                                     <Grid item xs={12} md={3}>
                                         <Card>
                                             <CardContent sx={{ textAlign: 'center' }}>
-                                                <Typography variant="h3" color="warning.main">
+                                                <Typography variant="h3" sx={{ color: 'var(--accent-warning)' }}>
                                                     {(validationResults.sitemapHealth.accessDeniedUrls || 0) +
                                                         (validationResults.sitemapHealth.timeoutUrls || 0) +
                                                         (validationResults.sitemapHealth.otherErrorUrls || 0)}
                                                 </Typography>
                                                 <Typography variant="h6">Other Issues</Typography>
-                                                <Typography variant="body2" color="text.secondary">
+                                                <Typography variant="body2" sx={{ color: 'var(--text-muted)' }}>
                                                     {validationResults.sitemapHealth.accessDeniedUrls || 0} access denied, {' '}
                                                     {validationResults.sitemapHealth.timeoutUrls || 0} timeout, {' '}
                                                     {validationResults.sitemapHealth.otherErrorUrls || 0} errors
@@ -4915,7 +4962,7 @@ function LensyApp() {
                                                                 issue.issueType === 'access-denied' ? '🟡' :
                                                                     issue.issueType === 'timeout' ? '🟠' : '⚫'} {issue.url}
                                                         </Typography>
-                                                        <Typography variant="body2" color="text.secondary">
+                                                        <Typography variant="body2" sx={{ color: 'var(--text-muted)' }}>
                                                             {issue.errorMessage}
                                                         </Typography>
                                                     </Box>
@@ -4983,7 +5030,7 @@ function LensyApp() {
                                                             />
                                                         )}
                                                     </Box>
-                                                    <Typography variant="caption" color="text.secondary">
+                                                    <Typography variant="caption" sx={{ color: 'var(--text-muted)' }}>
                                                         {evidence.codeExamples} code examples •
                                                         {evidence.productionGuidance ? ' Production guidance ✓' : ' No production guidance'}
                                                         {evidence.contentGaps.length > 0 && ` • Missing: ${evidence.contentGaps.join(', ')}`}
@@ -5038,12 +5085,12 @@ function LensyApp() {
                                                                     </Box>
                                                                 ) : (
                                                                     <code className={className} {...props} style={{
-                                                                        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                                                        backgroundColor: 'var(--bg-code-inline)',
                                                                         padding: '2px 6px',
                                                                         borderRadius: '3px',
                                                                         fontFamily: 'monospace',
                                                                         fontSize: '0.9em',
-                                                                        color: '#60a5fa'
+                                                                        color: 'var(--text-code-inline)'
                                                                     }}>
                                                                         {children}
                                                                     </code>
@@ -5079,7 +5126,7 @@ function LensyApp() {
                                     {/* Potential Gaps */}
                                     {result.potentialGaps && result.potentialGaps.length > 0 && (
                                         <Box sx={{ mt: 2 }}>
-                                            <Typography variant="subtitle2" gutterBottom color="warning.main">
+                                            <Typography variant="subtitle2" gutterBottom sx={{ color: 'var(--accent-warning)' }}>
                                                 ⚠️ Potential Gaps:
                                             </Typography>
                                             {result.potentialGaps.map((gap: any, idx: number) => (
@@ -5087,7 +5134,7 @@ function LensyApp() {
                                                     <Typography variant="body2">
                                                         <strong>{gap.pageUrl}</strong>
                                                     </Typography>
-                                                    <Typography variant="caption" color="text.secondary">
+                                                    <Typography variant="caption" sx={{ color: 'var(--text-muted)' }}>
                                                         {gap.reasoning}
                                                     </Typography>
                                                 </Box>
@@ -5112,635 +5159,883 @@ function LensyApp() {
                     </Paper>
                 )}
 
-                {/* Results — only show for doc/sitemap modes, not GitHub Issues */}
-                {analysisState.status === 'completed' && analysisState.report && selectedMode !== 'github-issues' && selectedMode !== 'issue-discovery' && (
-                    <Paper elevation={3} sx={{ p: 4 }}>
-                        <Typography variant="h5" gutterBottom>
-                            Analysis Results
+                {/* ══════════════════════════════════════════════════════════
+                    ASYNC CARD LOADING — Shows cards as data arrives via WebSocket
+                    Even before the full report is complete
+                   ══════════════════════════════════════════════════════════ */}
+                {(analysisState.status === 'analyzing' || analysisState.status === 'completed') && selectedMode !== 'github-issues' && selectedMode !== 'issue-discovery' && (
+                    <Paper elevation={3} sx={{ p: 4, mb: 4 }}>
+                        <Typography variant="h5" gutterBottom sx={{ fontWeight: 700, letterSpacing: '-0.02em' }}>
+                            AI Readiness Results
                         </Typography>
 
-                        <Grid container spacing={3} sx={{ mb: 4 }}>
-                            <Grid item xs={12} md={4}>
-                                <Card>
-                                    <CardContent sx={{ textAlign: 'center' }}>
-                                        <Typography variant="h3" color={getScoreColor(analysisState.report.overallScore)}>
-                                            {analysisState.report.overallScore}
-                                        </Typography>
-                                        <Typography variant="h6">Overall Score</Typography>
-                                    </CardContent>
-                                </Card>
-                            </Grid>
-                            <Grid item xs={12} md={4}>
-                                <Card>
-                                    <CardContent sx={{ textAlign: 'center' }}>
-                                        <Typography variant="h4">
-                                            {analysisState.report.dimensionsAnalyzed}/{analysisState.report.dimensionsTotal}
-                                        </Typography>
-                                        <Typography variant="h6">Dimensions</Typography>
-                                    </CardContent>
-                                </Card>
-                            </Grid>
-                            <Grid item xs={12} md={4}>
-                                <Card>
-                                    <CardContent sx={{ textAlign: 'center' }}>
-                                        <Chip
-                                            label={analysisState.report.confidence.toUpperCase()}
-                                            color={getConfidenceColor(analysisState.report.confidence)}
-                                        />
-                                        <Typography variant="h6" sx={{ mt: 1 }}>Confidence</Typography>
-                                    </CardContent>
-                                </Card>
-                            </Grid>
-                        </Grid>
+                        {/* ── Content Health Check Counter ── */}
+                        {(() => {
+                            let chPassed = 0, chTotal = 0;
+                            if (asyncCards.discoverability) {
+                                const d = asyncCards.discoverability;
+                                const checks = [d.llmsTxt.found, d.llmsFullTxt.found, d.sitemapXml.found, d.openGraph.found, d.canonical.found, !d.metaRobots.blocksIndexing];
+                                chTotal += checks.length; chPassed += checks.filter(Boolean).length;
+                            }
+                            if (asyncCards.consumability) {
+                                const c = asyncCards.consumability;
+                                const checks = [c.textToHtmlRatio.status === 'good', !c.jsRendered, c.headingHierarchy.h1Count === 1, c.markdownAvailable.found, !c.codeBlocks.hasCode || c.codeBlocks.withLanguageHints > 0, c.internalLinkDensity.status === 'good'];
+                                chTotal += checks.length; chPassed += checks.filter(Boolean).length;
+                            }
+                            if (asyncCards.structuredData) {
+                                const s = asyncCards.structuredData;
+                                const checks = [s.jsonLd.found, s.schemaCompleteness.status !== 'missing', s.openGraphCompleteness.score !== 'missing', s.breadcrumbs.found];
+                                chTotal += checks.length; chPassed += checks.filter(Boolean).length;
+                            }
+                            const chHasData = !!(asyncCards.discoverability || asyncCards.consumability || asyncCards.structuredData);
 
-                        {/* Scope Indicator */}
-                        {analysisState.report.scope && (
-                            <Alert severity="info" sx={{ mb: 3 }} icon={false}>
-                                <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
-                                    Analysis Scope
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary" component="div">
-                                    {analysisState.report.scope.mode === 'single-page' ? 'Single page' : 'Sitemap'} analysis
-                                    {' \u2022 '}{analysisState.report.scope.internalLinksValidated} links validated
-                                    {analysisState.report.scope.sitemapChecked ? ' \u2022 Sitemap checked' : ''}
-                                    {analysisState.report.scope.aiReadinessChecked ? ' \u2022 AI readiness checked' : ''}
-                                </Typography>
-                            </Alert>
-                        )}
+                            // Recommendations helpers
+                            const recs = analysisState.report?.recommendations || [];
+                            const quickWins = recs.filter((r: any) => r.priority === 'high');
+                            const deeperImprovements = recs.filter((r: any) => r.priority !== 'high');
+                            const topRecs = [...quickWins, ...deeperImprovements].slice(0, 3);
+                            const getImpactLabel = (rec: any) => rec.priority === 'high' ? 'High impact' : rec.priority === 'medium' ? 'Medium impact' : 'Low impact';
+                            const getEffortLabel = (rec: any) => rec.codeSnippet ? 'Medium effort' : 'Low effort';
 
-                        {/* ──── SECTION 1: MEASURED FACTS ──── */}
-                        <Typography variant="overline" sx={{
-                            display: 'block',
-                            mb: 1,
-                            mt: 2,
-                            fontWeight: 700,
-                            letterSpacing: '0.1em',
-                            color: 'text.secondary',
-                            borderBottom: '1px solid',
-                            borderColor: 'divider',
-                            pb: 0.5,
-                        }}>
-                            Measured Facts
-                        </Typography>
+                            // AI Discoverability helpers for card
+                            const aiDisc = asyncCards.aiDiscoverability;
+                            const aiTotalQueries = aiDisc?.queries.length || 0;
+                            const aiPerplexityFound = aiDisc?.engines.perplexity?.results?.filter(r => r.cited).length || 0;
+                            const aiBraveFound = aiDisc?.engines.brave?.results?.filter(r => r.cited).length || 0;
+                            const aiBestFound = Math.max(aiPerplexityFound, aiBraveFound);
+                            const aiHasEngines = aiDisc?.engines.perplexity?.available || aiDisc?.engines.brave?.available;
 
-                        {/* Sitemap Health Summary (only for sitemap mode or if doc mode has health data) */}
-                        {analysisState.report.sitemapHealth && (
-                            <CollapsibleCard
-                                title="Sitemap Health Summary"
-                                defaultExpanded={true}
-                                color={analysisState.report.sitemapHealth.error ? 'error' : ((analysisState.report.sitemapHealth.healthPercentage || 0) < 100 ? 'warning' : 'success')}
-                            >
-                                {analysisState.report.sitemapHealth.error ? (
-                                    <Alert severity="error" sx={{ mb: 2 }}>
-                                        <Typography variant="subtitle1" fontWeight="bold">Sitemap Check Failed</Typography>
-                                        <Typography variant="body2">{analysisState.report.sitemapHealth.error}</Typography>
-                                    </Alert>
-                                ) : (
-                                    <>
-                                        <Grid container spacing={3}>
-                                            <Grid item xs={12} md={3}>
-                                                <Card variant="outlined">
-                                                    <CardContent sx={{ textAlign: 'center' }}>
-                                                        <Typography variant="h3" color="primary">
-                                                            {analysisState.report.sitemapHealth.totalUrls}
-                                                        </Typography>
-                                                        <Typography variant="h6">Total URLs</Typography>
-                                                    </CardContent>
-                                                </Card>
-                                            </Grid>
-                                            <Grid item xs={12} md={3}>
-                                                <Card variant="outlined">
-                                                    <CardContent sx={{ textAlign: 'center' }}>
-                                                        <Typography variant="h3" color="success.main">
-                                                            {analysisState.report.sitemapHealth.healthyUrls}
-                                                        </Typography>
-                                                        <Typography variant="h6">Healthy</Typography>
-                                                        <Typography variant="body2" color="text.secondary">
-                                                            {analysisState.report.sitemapHealth.healthPercentage}%
-                                                        </Typography>
-                                                    </CardContent>
-                                                </Card>
-                                            </Grid>
-                                            <Grid item xs={12} md={3}>
-                                                <Card variant="outlined">
-                                                    <CardContent sx={{ textAlign: 'center' }}>
-                                                        <Typography variant="h3" color="error.main">
-                                                            {analysisState.report.sitemapHealth.brokenUrls}
-                                                        </Typography>
-                                                        <Typography variant="h6">Broken (404)</Typography>
-                                                    </CardContent>
-                                                </Card>
-                                            </Grid>
-                                            <Grid item xs={12} md={3}>
-                                                <Card variant="outlined">
-                                                    <CardContent sx={{ textAlign: 'center' }}>
-                                                        <Typography variant="h3" color="warning.main">
-                                                            {(analysisState.report.sitemapHealth.accessDeniedUrls || 0) +
-                                                                (analysisState.report.sitemapHealth.timeoutUrls || 0) +
-                                                                (analysisState.report.sitemapHealth.otherErrorUrls || 0)}
-                                                        </Typography>
-                                                        <Typography variant="h6">Other Issues</Typography>
-                                                        <Typography variant="body2" color="text.secondary">
-                                                            {(analysisState.report.sitemapHealth.accessDeniedUrls || 0)} access denied, {' '}
-                                                            {(analysisState.report.sitemapHealth.timeoutUrls || 0)} timeout, {' '}
-                                                            {(analysisState.report.sitemapHealth.otherErrorUrls || 0)} errors
-                                                        </Typography>
-                                                    </CardContent>
-                                                </Card>
-                                            </Grid>
-                                        </Grid>
-                                        {(analysisState.report.sitemapHealth.linkIssues?.length || 0) > 0 && (
-                                            <Box sx={{ mt: 3 }}>
-                                                <Divider sx={{ my: 2 }} />
-                                                <Typography variant="h6" gutterBottom>
-                                                    Link Issues Details ({(analysisState.report.sitemapHealth.linkIssues?.length || 0)})
+                            const renderRec = (rec: any, i: number) => (
+                                <Box key={i} sx={{
+                                    mb: 2, p: 2, borderRadius: 1,
+                                    borderLeft: '3px solid var(--text-primary)',
+                                    bgcolor: 'var(--bg-tertiary)',
+                                }}>
+                                    <Typography variant="body2" sx={{ fontWeight: 700, mb: 0.5, color: 'var(--text-primary)' }}>{rec.issue}</Typography>
+                                    <Box sx={{ display: 'flex', gap: 0.75, mb: 1, flexWrap: 'wrap' }}>
+                                        <Chip label={getImpactLabel(rec)} size="small" sx={{
+                                            height: 20, fontSize: '0.65rem', fontWeight: 600,
+                                            bgcolor: 'var(--bg-secondary)', color: 'var(--text-secondary)',
+                                            border: '1px solid var(--border-default)',
+                                        }} />
+                                        <Chip label={getEffortLabel(rec)} size="small" sx={{
+                                            height: 20, fontSize: '0.65rem', fontWeight: 600,
+                                            bgcolor: 'rgba(148,163,184,0.1)', color: 'var(--text-muted)',
+                                        }} />
+                                        <Chip label={rec.category} size="small" sx={{
+                                            height: 20, fontSize: '0.6rem', fontWeight: 500,
+                                            bgcolor: 'rgba(148,163,184,0.06)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)',
+                                        }} />
+                                    </Box>
+                                    <Typography variant="body2" sx={{ color: 'var(--text-secondary)', fontSize: '0.8rem', lineHeight: 1.5 }}>{rec.fix}</Typography>
+                                    {rec.codeSnippet && (
+                                        <Box sx={{ mt: 1.5, p: 1.5, bgcolor: 'var(--bg-code-block)', color: 'var(--text-code-block)', borderRadius: 1, fontFamily: 'var(--font-mono)', fontSize: '0.75rem', whiteSpace: 'pre-wrap', overflowX: 'auto', border: '1px solid var(--border-subtle)' }}>
+                                            {rec.codeSnippet}
+                                        </Box>
+                                    )}
+                                </Box>
+                            );
+
+                            return (
+                                <>
+                                    {/* ═══ ROW 1: Hero Area — Top Actions (left) + 2×2 Cards (right) ═══ */}
+                                    <Grid container spacing={3} sx={{ mb: 3, alignItems: 'flex-start' }}>
+                                        {/* ── Left Column: Top Actions ── */}
+                                        <Grid item xs={12} md={7}>
+                                            <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                                                <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5, fontSize: '1rem' }}>
+                                                    Top Actions
                                                 </Typography>
-                                                <Box sx={{ maxHeight: 300, overflow: 'auto', border: 1, borderColor: 'divider', borderRadius: 1, p: 2 }}>
-                                                    {(analysisState.report.sitemapHealth.linkIssues || []).map((issue, index) => (
-                                                        <Box key={index} sx={{ mb: 1, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
-                                                            <Typography variant="body2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
-                                                                <span style={{ marginRight: '8px' }}>
-                                                                    {issue.issueType === '404' ? '🔴' :
-                                                                        issue.issueType === 'access-denied' ? '🟡' :
-                                                                            issue.issueType === 'timeout' ? '🟠' : '⚫'}
-                                                                </span>
-                                                                {issue.url}
+                                                {topRecs.length > 0 ? (
+                                                    <>
+                                                        {topRecs.map((rec: any, i: number) => (
+                                                            <Box key={i} sx={{
+                                                                display: 'flex', alignItems: 'flex-start', gap: 1.5, mb: 1.5, p: 1.5,
+                                                                borderRadius: 1, bgcolor: 'var(--bg-tertiary)',
+                                                                borderLeft: '3px solid var(--text-primary)',
+                                                            }}>
+                                                                <Box sx={{
+                                                                    width: 22, height: 22, borderRadius: '50%', flexShrink: 0, mt: 0.1,
+                                                                    bgcolor: 'var(--bg-secondary)', color: 'var(--text-secondary)',
+                                                                    border: '1px solid var(--border-default)',
+                                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                    fontSize: '0.7rem', fontWeight: 700,
+                                                                }}>
+                                                                    {i + 1}
+                                                                </Box>
+                                                                <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                                    <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--text-primary)', lineHeight: 1.4 }}>
+                                                                        {rec.issue}
+                                                                    </Typography>
+                                                                    <Chip label={rec.category} size="small" sx={{
+                                                                        height: 18, fontSize: '0.6rem', fontWeight: 500, mt: 0.5,
+                                                                        bgcolor: 'rgba(148,163,184,0.06)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)',
+                                                                    }} />
+                                                                </Box>
+                                                            </Box>
+                                                        ))}
+                                                        {recs.length > 3 && (
+                                                            <Typography
+                                                                variant="body2"
+                                                                onClick={() => setShowAllRecs(!showAllRecs)}
+                                                                sx={{ color: 'var(--accent-primary)', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem', mt: 0.5, '&:hover': { textDecoration: 'underline' } }}
+                                                            >
+                                                                {showAllRecs ? 'Show less' : `View all ${recs.length} recommendations →`}
                                                             </Typography>
-                                                            <Typography variant="body2" color="text.secondary" sx={{ ml: 4 }}>
-                                                                {issue.errorMessage}
+                                                        )}
+                                                    </>
+                                                ) : (
+                                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                                                        {[1, 2, 3].map(i => (
+                                                            <Skeleton key={i} animation="wave" variant="rectangular" height={60} sx={{ borderRadius: 1, bgcolor: 'var(--border-default)' }} />
+                                                        ))}
+                                                    </Box>
+                                                )}
+                                            </Box>
+                                        </Grid>
+
+                                        {/* ── Right Column: 2×2 Card Grid ── */}
+                                        <Grid item xs={12} md={5}>
+                                            <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                                                <Typography variant="h6" aria-hidden="true" sx={{ fontWeight: 700, mb: 1.5, fontSize: '1rem', visibility: 'hidden' }}>
+                                                    Placeholder
+                                                </Typography>
+                                                <Grid container spacing={1.5}>
+                                                    {/* Card: Bots Allowed */}
+                                                    <Grid item xs={6}>
+                                                        <Card
+                                                            onClick={() => setActiveDetailCard(activeDetailCard === 'bots' ? null : 'bots')}
+                                                            sx={{
+                                                                cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', height: 110,
+                                                                border: activeDetailCard === 'bots' ? '2px solid var(--accent-primary)' : '1px solid var(--border-default)',
+                                                                boxShadow: activeDetailCard === 'bots' ? '0 0 0 1px var(--accent-primary), 0 2px 8px rgba(59,130,246,0.2)' : 'none',
+                                                                '&:hover': {
+                                                                    borderColor: activeDetailCard === 'bots' ? 'var(--accent-primary)' : 'var(--border-strong)',
+                                                                    transform: 'translateY(-2px)',
+                                                                    boxShadow: activeDetailCard === 'bots' ? '0 0 0 1px var(--accent-primary), 0 8px 24px rgba(59,130,246,0.2)' : '0 8px 24px rgba(0,0,0,0.1)'
+                                                                },
+                                                            }}
+                                                        >
+                                                            <CardContent sx={{ textAlign: 'center', py: 2, px: 1.5, '&:last-child': { pb: 2 }, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                                                                {asyncCards.botAccess ? (
+                                                                    <>
+                                                                        <Typography variant="h5" sx={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                                                                            {asyncCards.botAccess.allowedCount}<Typography component="span" variant="body2" sx={{ color: 'var(--text-muted)' }}>/10</Typography>
+                                                                        </Typography>
+                                                                        <Typography variant="caption" sx={{ display: 'block', mt: 0.5, fontWeight: 600, color: 'var(--text-muted)', fontSize: '0.7rem' }}>
+                                                                            Bots Allowed
+                                                                        </Typography>
+                                                                    </>
+                                                                ) : (
+                                                                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%' }}>
+                                                                        <Skeleton animation="wave" variant="rectangular" width={40} height={30} sx={{ bgcolor: 'var(--border-default)', mb: 0.5, borderRadius: 1 }} />
+                                                                        <Skeleton animation="wave" variant="text" width={70} sx={{ bgcolor: 'var(--border-default)' }} />
+                                                                    </Box>
+                                                                )}
+                                                            </CardContent>
+                                                        </Card>
+                                                    </Grid>
+
+                                                    {/* Card: Content Health */}
+                                                    <Grid item xs={6}>
+                                                        <Card
+                                                            onClick={() => setActiveDetailCard(activeDetailCard === 'content' ? null : 'content')}
+                                                            sx={{
+                                                                cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', height: 110,
+                                                                border: activeDetailCard === 'content' ? '2px solid var(--accent-primary)' : '1px solid var(--border-default)',
+                                                                boxShadow: activeDetailCard === 'content' ? '0 0 0 1px var(--accent-primary), 0 2px 8px rgba(59,130,246,0.2)' : 'none',
+                                                                '&:hover': {
+                                                                    borderColor: activeDetailCard === 'content' ? 'var(--accent-primary)' : 'var(--border-strong)',
+                                                                    transform: 'translateY(-2px)',
+                                                                    boxShadow: activeDetailCard === 'content' ? '0 0 0 1px var(--accent-primary), 0 8px 24px rgba(59,130,246,0.2)' : '0 8px 24px rgba(0,0,0,0.1)'
+                                                                },
+                                                            }}
+                                                        >
+                                                            <CardContent sx={{ textAlign: 'center', py: 2, px: 1.5, '&:last-child': { pb: 2 }, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                                                                {chHasData ? (
+                                                                    <>
+                                                                        <Typography variant="h5" sx={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                                                                            {chPassed}<Typography component="span" variant="body2" sx={{ color: 'var(--text-muted)' }}>/{chTotal}</Typography>
+                                                                        </Typography>
+                                                                        <Typography variant="caption" sx={{ display: 'block', mt: 0.5, fontWeight: 600, color: 'var(--text-muted)', fontSize: '0.7rem' }}>
+                                                                            Content Health
+                                                                        </Typography>
+                                                                        {chTotal < 16 && (
+                                                                            <Typography variant="caption" sx={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.6rem' }}>
+                                                                                Checking more...
+                                                                            </Typography>
+                                                                        )}
+                                                                    </>
+                                                                ) : (
+                                                                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%' }}>
+                                                                        <Skeleton animation="wave" variant="rectangular" width={40} height={30} sx={{ bgcolor: 'var(--border-default)', mb: 0.5, borderRadius: 1 }} />
+                                                                        <Skeleton animation="wave" variant="text" width={70} sx={{ bgcolor: 'var(--border-default)' }} />
+                                                                    </Box>
+                                                                )}
+                                                            </CardContent>
+                                                        </Card>
+                                                    </Grid>
+
+                                                    {/* Card: Queries Visible */}
+                                                    <Grid item xs={6}>
+                                                        <Card
+                                                            onClick={() => setActiveDetailCard(activeDetailCard === 'queries' ? null : 'queries')}
+                                                            sx={{
+                                                                cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', height: 110,
+                                                                border: activeDetailCard === 'queries' ? '2px solid var(--accent-primary)' : '1px solid var(--border-default)',
+                                                                boxShadow: activeDetailCard === 'queries' ? '0 0 0 1px var(--accent-primary), 0 2px 8px rgba(59,130,246,0.2)' : 'none',
+                                                                '&:hover': {
+                                                                    borderColor: activeDetailCard === 'queries' ? 'var(--accent-primary)' : 'var(--border-strong)',
+                                                                    transform: 'translateY(-2px)',
+                                                                    boxShadow: activeDetailCard === 'queries' ? '0 0 0 1px var(--accent-primary), 0 8px 24px rgba(59,130,246,0.2)' : '0 8px 24px rgba(0,0,0,0.1)'
+                                                                },
+                                                            }}
+                                                        >
+                                                            <CardContent sx={{ textAlign: 'center', py: 2, px: 1.5, '&:last-child': { pb: 2 }, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                                                                {aiDisc ? (
+                                                                    <>
+                                                                        {aiHasEngines ? (
+                                                                            <Typography variant="h5" sx={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                                                                                {aiBestFound}<Typography component="span" variant="body2" sx={{ color: 'var(--text-muted)' }}>/{aiTotalQueries}</Typography>
+                                                                            </Typography>
+                                                                        ) : (
+                                                                            <Chip
+                                                                                label={aiDisc.overallDiscoverability.toUpperCase().replace('-', ' ')}
+                                                                                sx={{
+                                                                                    fontWeight: 700, fontSize: '0.7rem', height: 26,
+                                                                                    bgcolor: 'var(--bg-tertiary)',
+                                                                                    color: 'var(--text-primary)',
+                                                                                    border: '1px solid var(--border-default)',
+                                                                                }}
+                                                                            />
+                                                                        )}
+                                                                        <Typography variant="caption" sx={{ display: 'block', mt: 0.5, fontWeight: 600, color: 'var(--text-muted)', fontSize: '0.7rem' }}>
+                                                                            {aiHasEngines ? 'Queries Visible' : 'AI Discoverability'}
+                                                                        </Typography>
+                                                                    </>
+                                                                ) : (
+                                                                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%' }}>
+                                                                        <Skeleton animation="wave" variant="rectangular" width={40} height={30} sx={{ bgcolor: 'var(--border-default)', mb: 0.5, borderRadius: 1 }} />
+                                                                        <Skeleton animation="wave" variant="text" width={70} sx={{ bgcolor: 'var(--border-default)' }} />
+                                                                    </Box>
+                                                                )}
+                                                            </CardContent>
+                                                        </Card>
+                                                    </Grid>
+
+                                                    {/* Card: AI Readiness Score */}
+                                                    <Grid item xs={6}>
+                                                        <Card
+                                                            onClick={() => setActiveDetailCard(activeDetailCard === 'score' ? null : 'score')}
+                                                            sx={{
+                                                                cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', height: 110,
+                                                                border: activeDetailCard === 'score' ? '2px solid var(--accent-primary)' : '1px solid var(--border-default)',
+                                                                boxShadow: activeDetailCard === 'score' ? '0 0 0 1px var(--accent-primary), 0 2px 8px rgba(59,130,246,0.2)' : 'none',
+                                                                '&:hover': {
+                                                                    borderColor: activeDetailCard === 'score' ? 'var(--accent-primary)' : 'var(--border-strong)',
+                                                                    transform: 'translateY(-2px)',
+                                                                    boxShadow: activeDetailCard === 'score' ? '0 0 0 1px var(--accent-primary), 0 8px 24px rgba(59,130,246,0.2)' : '0 8px 24px rgba(0,0,0,0.1)'
+                                                                },
+                                                            }}
+                                                        >
+                                                            <CardContent sx={{ textAlign: 'center', py: 2, px: 1.5, '&:last-child': { pb: 2 }, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                                                                {asyncCards.overallScore ? (
+                                                                    <>
+                                                                        <Box sx={{ position: 'relative', display: 'inline-flex' }}>
+                                                                            <CircularProgress
+                                                                                variant="determinate"
+                                                                                value={asyncCards.overallScore.overallScore}
+                                                                                size={48}
+                                                                                thickness={4}
+                                                                                sx={{
+                                                                                    color: 'var(--text-primary)',
+                                                                                    '& .MuiCircularProgress-circle': { strokeLinecap: 'round' }
+                                                                                }}
+                                                                            />
+                                                                            <Box sx={{ position: 'absolute', top: 0, left: 0, bottom: 0, right: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                                <Typography variant="body1" sx={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+                                                                                    {asyncCards.overallScore.overallScore}
+                                                                                </Typography>
+                                                                            </Box>
+                                                                        </Box>
+                                                                        <Typography variant="caption" sx={{ display: 'block', mt: 0.5, fontWeight: 600, color: 'var(--text-muted)', fontSize: '0.7rem' }}>
+                                                                            AI Readiness
+                                                                        </Typography>
+                                                                    </>
+                                                                ) : (
+                                                                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%' }}>
+                                                                        <Skeleton animation="wave" variant="circular" width={48} height={48} sx={{ bgcolor: 'var(--border-default)', mb: 1 }} />
+                                                                        <Skeleton animation="wave" variant="text" width={70} sx={{ bgcolor: 'var(--border-default)' }} />
+                                                                    </Box>
+                                                                )}
+                                                            </CardContent>
+                                                        </Card>
+                                                    </Grid>
+                                                </Grid>
+                                            </Box>
+                                        </Grid>
+                                    </Grid>
+
+                                    {/* ── Expanded Recommendations (when "View all" clicked) ── */}
+                                    {showAllRecs && recs.length > 0 && (
+                                        <Box sx={{ mb: 3 }}>
+                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                                <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1rem' }}>
+                                                    All Recommendations ({recs.length})
+                                                </Typography>
+                                                <Typography
+                                                    variant="body2"
+                                                    onClick={() => setShowAllRecs(false)}
+                                                    sx={{ color: 'var(--accent-primary)', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem', '&:hover': { textDecoration: 'underline' } }}
+                                                >
+                                                    Collapse ↑
+                                                </Typography>
+                                            </Box>
+                                            {quickWins.length > 0 && (
+                                                <>
+                                                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1.5, fontSize: '0.75rem' }}>
+                                                        Quick Wins
+                                                    </Typography>
+                                                    {quickWins.map(renderRec)}
+                                                </>
+                                            )}
+                                            {deeperImprovements.length > 0 && (
+                                                <>
+                                                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1.5, mt: quickWins.length > 0 ? 3 : 0, fontSize: '0.75rem' }}>
+                                                        Deeper Improvements
+                                                    </Typography>
+                                                    {deeperImprovements.map(renderRec)}
+                                                </>
+                                            )}
+                                        </Box>
+                                    )}
+
+
+                                    {/* ═══ ROW 2: Click-Driven Detail Area ═══ */}
+                                    {activeDetailCard && (
+                                        <Box sx={{ mb: 3, mt: 1 }}>
+                                            {/* ── Score Breakdown ── */}
+                                            {activeDetailCard === 'score' && asyncCards.overallScore && (
+                                                <Box>
+                                                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 2, fontSize: '1rem' }}>
+                                                        Score Breakdown
+                                                    </Typography>
+                                                    {[
+                                                        { label: 'Bot Access', score: asyncCards.overallScore.scoreBreakdown.botAccess, max: 15 },
+                                                        { label: 'Discoverability', score: asyncCards.overallScore.scoreBreakdown.discoverability, max: 15 },
+                                                        { label: 'Consumability', score: asyncCards.overallScore.scoreBreakdown.consumability, max: 15 },
+                                                        { label: 'Structured Data', score: asyncCards.overallScore.scoreBreakdown.structuredData, max: 15 },
+                                                        { label: 'AI Discoverability', score: asyncCards.overallScore.scoreBreakdown.aiDiscoverability, max: 40 },
+                                                    ].map((cat, i) => (
+                                                        <Box key={i} sx={{ mb: 1.5, display: 'flex', alignItems: 'center', gap: 2 }}>
+                                                            <Typography variant="body2" sx={{ width: 140, fontWeight: 600, fontSize: '0.82rem', color: 'var(--text-primary)', flexShrink: 0 }}>
+                                                                {cat.label}
+                                                            </Typography>
+                                                            <Box sx={{ flex: 1, bgcolor: 'var(--bg-tertiary)', borderRadius: 1, height: 8, overflow: 'hidden' }}>
+                                                                <Box sx={{ width: `${(cat.score / cat.max) * 100}%`, bgcolor: 'var(--text-primary)', height: '100%', borderRadius: 1, transition: 'width 0.5s ease', opacity: 0.7 }} />
+                                                            </Box>
+                                                            <Typography variant="body2" sx={{ width: 50, textAlign: 'right', fontWeight: 700, fontSize: '0.82rem', color: 'var(--text-primary)' }}>
+                                                                {cat.score}/{cat.max}
                                                             </Typography>
                                                         </Box>
                                                     ))}
-                                                </Box>
-                                            </Box>
-                                        )}
-                                    </>
-                                )}
-                            </CollapsibleCard>
-                        )}
-
-
-                        {/* AI Readiness Section */}
-                        {analysisState.report.aiReadiness && (
-                            <CollapsibleCard
-                                title="AI Readiness Assessment"
-                                defaultExpanded={false}
-                                color={analysisState.report.aiReadiness.overallScore < 80 ? 'warning' : 'success'}
-                                count={analysisState.report.aiReadiness.overallScore + '/100'}
-                            >
-                                <Grid container spacing={2}>
-                                    <Grid item xs={12} md={6}>
-                                        <Card variant="outlined" sx={{ height: '100%' }}>
-                                            <CardContent>
-                                                <Typography variant="h6" gutterBottom>Configuration Checks</Typography>
-                                                <List dense>
-                                                    <ListItem>
-                                                        <ListItemIcon>
-                                                            {analysisState.report.aiReadiness.llmsTxt.found ? <CheckCircleIcon color="success" /> : <ErrorIcon color="error" />}
-                                                        </ListItemIcon>
-                                                        <ListItemText
-                                                            primary="llms.txt"
-                                                            secondary={analysisState.report.aiReadiness.llmsTxt.found ? "Found" : "Missing"}
-                                                        />
-                                                    </ListItem>
-                                                    <ListItem>
-                                                        <ListItemIcon>
-                                                            {analysisState.report.aiReadiness.llmsFullTxt.found ? <CheckCircleIcon color="success" /> : <ErrorIcon color="error" />}
-                                                        </ListItemIcon>
-                                                        <ListItemText
-                                                            primary="llms-full.txt"
-                                                            secondary={analysisState.report.aiReadiness.llmsFullTxt.found ? "Found" : "Missing"}
-                                                        />
-                                                    </ListItem>
-                                                    <ListItem>
-                                                        <ListItemIcon>
-                                                            {analysisState.report.aiReadiness.structuredData.hasJsonLd ? <CheckCircleIcon color="success" /> : <ErrorIcon color="error" />}
-                                                        </ListItemIcon>
-                                                        <ListItemText
-                                                            primary="JSON-LD Structured Data"
-                                                            secondary={analysisState.report.aiReadiness.structuredData.hasJsonLd ? "Found" : "Missing"}
-                                                        />
-                                                    </ListItem>
-                                                </List>
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                    <Grid item xs={12} md={6}>
-                                        <Card variant="outlined" sx={{ height: '100%' }}>
-                                            <CardContent>
-                                                <Typography variant="h6" gutterBottom>Robots & Access</Typography>
-                                                <List dense>
-                                                    <ListItem>
-                                                        <ListItemIcon>
-                                                            {analysisState.report.aiReadiness.robotsTxt.aiDirectives.length > 0 ? <CheckCircleIcon color="success" /> : <InfoIcon color="action" />}
-                                                        </ListItemIcon>
-                                                        <ListItemText
-                                                            primary="Robots.txt AI Rules"
-                                                            secondary={analysisState.report.aiReadiness.robotsTxt.aiDirectives.length > 0 ? `${analysisState.report.aiReadiness.robotsTxt.aiDirectives.length} rules found` : "No specific AI rules found"}
-                                                        />
-                                                    </ListItem>
-                                                    <ListItem>
-                                                        <ListItemIcon>
-                                                            {analysisState.report.aiReadiness.markdownExports.available ? <CheckCircleIcon color="success" /> : <InfoIcon color="action" />}
-                                                        </ListItemIcon>
-                                                        <ListItemText
-                                                            primary="Markdown Exports"
-                                                            secondary={analysisState.report.aiReadiness.markdownExports.available ? "Available" : "Not detected"}
-                                                        />
-                                                    </ListItem>
-                                                </List>
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                    {analysisState.report.aiReadiness.recommendations.length > 0 && (
-                                        <Grid item xs={12}>
-                                            <Alert severity="info">
-                                                <Typography variant="subtitle2">Recommendations:</Typography>
-                                                <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
-                                                    {analysisState.report.aiReadiness.recommendations.map((rec, i) => (
-                                                        <li key={i}>{rec}</li>
-                                                    ))}
-                                                </ul>
-                                            </Alert>
-                                        </Grid>
-                                    )}
-                                </Grid>
-                            </CollapsibleCard>
-                        )}
-
-                        {/* ──── SECTION 2: AI QUALITY ANALYSIS ──── */}
-                        <Typography variant="overline" sx={{
-                            display: 'block',
-                            mb: 1,
-                            mt: 3,
-                            fontWeight: 700,
-                            letterSpacing: '0.1em',
-                            color: 'text.secondary',
-                            borderBottom: '1px solid',
-                            borderColor: 'divider',
-                            pb: 0.5,
-                        }}>
-                            AI Quality Analysis
-                        </Typography>
-                        <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
-                            Scores and recommendations below are generated by AI analysis and may contain subjective assessments.
-                        </Alert>
-
-                        {/* Dimension Analysis Section */}
-                        <CollapsibleCard
-                            title="Dimension Analysis"
-                            defaultExpanded={false}
-                        >
-                            <Grid container spacing={3}>
-                                {Object.entries(analysisState.report.dimensions).map(([dimension, result]: [string, any]) => (
-                                    <Grid item xs={12} md={6} key={dimension}>
-                                        <Card variant="outlined">
-                                            <CardContent>
-                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                                                    <Typography variant="h6" sx={{ textTransform: 'capitalize' }}>
-                                                        {dimension}
-                                                    </Typography>
-                                                    <Chip
-                                                        label={`${result.score}/10`}
-                                                        color={getScoreColor((result.score || 0) * 10)}
-                                                        variant="outlined"
-                                                        sx={{ fontWeight: 'bold' }}
-                                                    />
-                                                </Box>
-                                                {result.findings && result.findings.length > 0 ? (
-                                                    <List dense>
-                                                        {result.findings.slice(0, 3).map((finding: string, i: number) => (
-                                                            <ListItem key={i} disableGutters>
-                                                                <ListItemIcon sx={{ minWidth: 30 }}>
-                                                                    <InfoIcon fontSize="small" color="info" />
-                                                                </ListItemIcon>
-                                                                <ListItemText primary={finding} primaryTypographyProps={{ variant: 'body2' }} />
-                                                            </ListItem>
-                                                        ))}
-                                                        {result.findings.length > 3 && (
-                                                            <Typography variant="caption" color="text.secondary" sx={{ ml: 4 }}>
-                                                                ...and {result.findings.length - 3} more
-                                                            </Typography>
-                                                        )}
-                                                    </List>
-                                                ) : (
-                                                    <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
-                                                        No major findings.
-                                                    </Typography>
-                                                )}
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                ))}
-                            </Grid>
-                        </CollapsibleCard>
-                        <CollapsibleCard
-                            title="Critical Findings (Top Issues)"
-                            defaultExpanded={true}
-                            color="error"
-                        >
-                            <Grid container spacing={2}>
-                                {/* Link Issues */}
-                                <Grid item xs={12} md={4}>
-                                    <Card>
-                                        <CardContent>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                                                {(analysisState.report.linkAnalysis.linkIssueFindings || analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings)?.length ? (
-                                                    <>
-                                                        <ErrorIcon sx={{ color: 'warning.main', mr: 1 }} />
-                                                        <Typography variant="h6">
-                                                            Link Issues: {(analysisState.report.linkAnalysis.linkIssueFindings || analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings || []).length}
-                                                            {(() => {
-                                                                const broken = (analysisState.report.linkAnalysis.linkIssueFindings || analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings || []).filter((l: any) => l.issueType === '404').length;
-                                                                return broken > 0 ? ` (${broken} broken)` : '';
-                                                            })()}
+                                                    <Box sx={{ mt: 2, p: 1.5, bgcolor: 'var(--bg-tertiary)', borderRadius: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <Typography variant="body2" sx={{ fontWeight: 700, color: 'var(--text-primary)' }}>Overall Score</Typography>
+                                                        <Typography variant="h6" sx={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                                                            {asyncCards.overallScore.overallScore}/100
                                                         </Typography>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <CheckCircleIcon sx={{ color: 'success.main', mr: 1 }} />
-                                                        <Typography variant="h6">
-                                                            Link Issues: None found
-                                                        </Typography>
-                                                    </>
-                                                )}
-                                            </Box>
-                                            {(() => {
-                                                const allIssues = (analysisState.report.linkAnalysis.linkIssueFindings || analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings) || [];
-                                                const broken = allIssues.filter((l: any) => l.issueType === '404');
-                                                const authProtected = allIssues.filter((l: any) => l.issueType === 'access-denied');
-                                                const timeouts = allIssues.filter((l: any) => l.issueType === 'timeout');
-                                                const otherErrors = allIssues.filter((l: any) => l.issueType === 'error');
-
-                                                const renderGroup = (label: string, items: any[], accentColor: string, note?: string) => items.length > 0 ? (
-                                                    <Box key={label} sx={{
-                                                        mb: 1.5,
-                                                        borderLeft: `2px solid ${accentColor}`,
-                                                        bgcolor: `${accentColor}0A`,
-                                                        borderRadius: '4px',
-                                                        px: 1.5,
-                                                        py: 1
-                                                    }}>
-                                                        <Typography variant="caption" sx={{ color: accentColor, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', mb: 0.5 }}>
-                                                            {label} ({items.length})
-                                                        </Typography>
-                                                        {note && (
-                                                            <Typography variant="caption" sx={{ color: '#737373', display: 'block', mb: 0.5, fontStyle: 'italic', fontSize: '0.7rem' }}>
-                                                                {note}
-                                                            </Typography>
-                                                        )}
-                                                        {items.map((link: any, i: number) => (
-                                                            <Typography key={i} variant="body2" sx={{ color: '#94a3b8', mb: 0.3, wordBreak: 'break-all', fontSize: '0.8rem' }}>
-                                                                • {link.url ? (
-                                                                    <a href={link.url} target="_blank" rel="noopener noreferrer" style={{ color: '#60a5fa', textDecoration: 'none' }}>
-                                                                        {link.anchorText || link.url}
-                                                                    </a>
-                                                                ) : link.anchorText}
-                                                                <span style={{ color: '#737373' }}>{' → '}{link.status}</span>
-                                                            </Typography>
-                                                        ))}
                                                     </Box>
-                                                ) : null;
-
-                                                return (
-                                                    <>
-                                                        {renderGroup('Broken Links', broken, '#ef4444')}
-                                                        {renderGroup('Auth-Protected', authProtected, '#f59e0b', 'May require authentication — likely not broken')}
-                                                        {renderGroup('Timeouts', timeouts, '#525252')}
-                                                        {renderGroup('Other Errors', otherErrors, '#525252')}
-                                                    </>
-                                                );
-                                            })()}
-                                        </CardContent>
-                                    </Card>
-                                </Grid>
-
-                                {/* Deprecated Code */}
-                                <Grid item xs={12} md={4}>
-                                    <Card>
-                                        <CardContent>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                                                {analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length ? (
-                                                    <>
-                                                        <ErrorIcon sx={{ color: 'warning.main', mr: 1 }} />
-                                                        <Typography variant="h6">
-                                                            Deprecated Code: {analysisState.report.codeAnalysis.enhancedAnalysis.deprecatedFindings.length}
-                                                        </Typography>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <CheckCircleIcon sx={{ color: 'success.main', mr: 1 }} />
-                                                        <Typography variant="h6">
-                                                            Deprecated Code: None found
-                                                        </Typography>
-                                                    </>
-                                                )}
-                                            </Box>
-                                            {analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.slice(0, 2).map((finding, i) => (
-                                                <Typography key={i} variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                                                    • {finding.method} (deprecated in {finding.deprecatedIn})
-                                                </Typography>
-                                            ))}
-                                            {(analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length || 0) > 2 && (
-                                                <Typography variant="body2" color="text.secondary">
-                                                    ... and {(analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length || 0) - 2} more
-                                                </Typography>
+                                                </Box>
                                             )}
-                                        </CardContent>
-                                    </Card>
-                                </Grid>
 
-                                {/* Syntax Errors */}
-                                <Grid item xs={12} md={4}>
-                                    <Card>
-                                        <CardContent>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                                                {analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.length ? (
-                                                    <>
-                                                        <ErrorIcon sx={{ color: 'error.main', mr: 1 }} />
-                                                        <Typography variant="h6">
-                                                            Syntax Errors: {analysisState.report.codeAnalysis.enhancedAnalysis.syntaxErrorFindings.length}
-                                                        </Typography>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <CheckCircleIcon sx={{ color: 'success.main', mr: 1 }} />
-                                                        <Typography variant="h6">
-                                                            Syntax Errors: None found
-                                                        </Typography>
-                                                    </>
-                                                )}
-                                            </Box>
-                                            {analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.slice(0, 2).map((error, i) => (
-                                                <Typography key={i} variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                                                    • {error.errorType}: {error.description}
-                                                </Typography>
-                                            ))}
-                                            {(analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.length || 0) > 2 && (
-                                                <Typography variant="body2" color="text.secondary">
-                                                    ... and {(analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.length || 0) - 2} more
-                                                </Typography>
-                                            )}
-                                        </CardContent>
-                                    </Card>
-                                </Grid>
-
-                                {/* URL Slug Issues - NEW */}
-                                {(analysisState.report as any).urlSlugAnalysis && (
-                                    <Grid item xs={12} md={4}>
-                                        <Card>
-                                            <CardContent>
-                                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                                                    {(analysisState.report as any).urlSlugAnalysis.issues?.length ? (
-                                                        <>
-                                                            <ErrorIcon sx={{ color: 'warning.main', mr: 1 }} />
-                                                            <Typography variant="h6">
-                                                                URL Slug Issues: {(analysisState.report as any).urlSlugAnalysis.issues.length}
-                                                            </Typography>
-                                                        </>
+                                            {/* ── Bot Access Detail ── */}
+                                            {activeDetailCard === 'bots' && (
+                                                <Box>
+                                                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 2, fontSize: '1rem' }}>
+                                                        Bot Access
+                                                    </Typography>
+                                                    {asyncCards.botAccess ? (
+                                                        <Box>
+                                                            {/* Summary row */}
+                                                            <Box sx={{
+                                                                display: 'flex', alignItems: 'center', gap: 1.5, mb: 2, p: 1.5,
+                                                                bgcolor: asyncCards.botAccess.blockedCount === 0 ? 'rgba(34,197,94,0.06)' : 'rgba(239,68,68,0.06)',
+                                                                borderRadius: 1, border: `1px solid ${asyncCards.botAccess.blockedCount === 0 ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)'}`,
+                                                            }}>
+                                                                {asyncCards.botAccess.blockedCount === 0 ? (
+                                                                    <CheckCircleIcon sx={{ color: '#22c55e', fontSize: 20 }} />
+                                                                ) : (
+                                                                    <WarningIcon sx={{ color: '#ef4444', fontSize: 20 }} />
+                                                                )}
+                                                                <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.85rem' }}>
+                                                                    {asyncCards.botAccess.blockedCount === 0
+                                                                        ? `All ${asyncCards.botAccess.allowedCount} bots allowed — no action needed`
+                                                                        : `${asyncCards.botAccess.blockedCount} bot${asyncCards.botAccess.blockedCount > 1 ? 's' : ''} blocked — may reduce AI visibility`}
+                                                                </Typography>
+                                                            </Box>
+                                                            <Box sx={{ overflowX: 'auto' }}>
+                                                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                                                    <thead>
+                                                                        <tr>
+                                                                            <th style={{ textAlign: 'left', padding: '8px 12px', borderBottom: '1px solid var(--border-default)', color: 'var(--text-secondary)', fontSize: '0.8rem', fontWeight: 600 }}>Bot</th>
+                                                                            <th style={{ textAlign: 'left', padding: '8px 12px', borderBottom: '1px solid var(--border-default)', color: 'var(--text-secondary)', fontSize: '0.8rem', fontWeight: 600 }}>User Agent</th>
+                                                                            <th style={{ textAlign: 'center', padding: '8px 12px', borderBottom: '1px solid var(--border-default)', color: 'var(--text-secondary)', fontSize: '0.8rem', fontWeight: 600 }}>Status</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        {asyncCards.botAccess.bots.map((bot, i) => (
+                                                                            <tr key={i} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                                                                                <td style={{ padding: '8px 12px', fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-primary)' }}>{bot.name}</td>
+                                                                                <td style={{ padding: '8px 12px', color: 'var(--text-muted)', fontSize: '0.8rem', fontFamily: 'monospace' }}>{bot.userAgent}</td>
+                                                                                <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                                                                    {(bot.status === 'allowed' || bot.status === 'not-mentioned') && <Chip label="Allowed" size="small" sx={{ bgcolor: 'rgba(34,197,94,0.15)', color: '#22c55e', fontWeight: 600, fontSize: '0.7rem' }} />}
+                                                                                    {bot.status === 'blocked' && <Chip label="Blocked" size="small" sx={{ bgcolor: 'rgba(239,68,68,0.15)', color: '#ef4444', fontWeight: 600, fontSize: '0.7rem' }} />}
+                                                                                </td>
+                                                                            </tr>
+                                                                        ))}
+                                                                    </tbody>
+                                                                </table>
+                                                            </Box>
+                                                        </Box>
                                                     ) : (
-                                                        <>
-                                                            <CheckCircleIcon sx={{ color: 'success.main', mr: 1 }} />
-                                                            <Typography variant="h6">
-                                                                URL Slug Quality: Clean
-                                                            </Typography>
-                                                        </>
+                                                        <Box sx={{ textAlign: 'center', py: 3 }}><CircularProgress size={24} sx={{ opacity: 0.3 }} /></Box>
                                                     )}
                                                 </Box>
-                                                {(analysisState.report as any).urlSlugAnalysis.issues?.slice(0, 2).map((issue: any, i: number) => (
-                                                    <Typography key={i} variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                                                        • "{issue.segment}" → "{issue.suggestion}"
+                                            )}
+
+                                            {/* ── Content Health Detail (3-column) ── */}
+                                            {activeDetailCard === 'content' && (
+                                                <Box>
+                                                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 2, fontSize: '1rem' }}>
+                                                        Content Health
                                                     </Typography>
-                                                ))}
-                                                {((analysisState.report as any).urlSlugAnalysis.issues?.length || 0) > 2 && (
-                                                    <Typography variant="body2" color="text.secondary">
-                                                        ... and {((analysisState.report as any).urlSlugAnalysis.issues?.length || 0) - 2} more
+                                                    <Grid container spacing={2}>
+                                                        {/* Column 1: Discoverability */}
+                                                        <Grid item xs={12} md={4}>
+                                                            <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1.5, fontSize: '0.7rem' }}>
+                                                                Discoverability
+                                                            </Typography>
+                                                            {asyncCards.discoverability ? (() => {
+                                                                const items = [
+                                                                    { label: 'llms.txt', pass: asyncCards.discoverability!.llmsTxt.found, detail: asyncCards.discoverability!.llmsTxt.found ? 'AI assistants can discover docs' : 'Add llms.txt for AI discovery' },
+                                                                    { label: 'llms-full.txt', pass: asyncCards.discoverability!.llmsFullTxt.found, detail: asyncCards.discoverability!.llmsFullTxt.found ? 'Full content available' : 'Add full docs for AI' },
+                                                                    { label: 'Sitemap', pass: asyncCards.discoverability!.sitemapXml.found, detail: asyncCards.discoverability!.sitemapXml.found ? 'All pages discoverable' : 'Add sitemap.xml' },
+                                                                    { label: 'OpenGraph', pass: asyncCards.discoverability!.openGraph.found, detail: asyncCards.discoverability!.openGraph.found ? 'Rich previews work' : 'Add og: tags' },
+                                                                    { label: 'Canonical URL', pass: asyncCards.discoverability!.canonical.found, detail: asyncCards.discoverability!.canonical.found ? 'No duplicate issues' : 'Add canonical URL' },
+                                                                    { label: 'Meta Robots', pass: !asyncCards.discoverability!.metaRobots.blocksIndexing, detail: !asyncCards.discoverability!.metaRobots.blocksIndexing ? 'Indexing allowed' : 'Blocks indexing!' },
+                                                                ];
+                                                                return items.map((item, i) => (
+                                                                    <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>
+                                                                        {item.pass ? <CheckCircleIcon sx={{ color: '#22c55e', fontSize: 16, mt: 0.2 }} /> : <ErrorIcon sx={{ color: '#ef4444', fontSize: 16, mt: 0.2 }} />}
+                                                                        <Box>
+                                                                            <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', lineHeight: 1.3, color: 'var(--text-primary)' }}>{item.label}</Typography>
+                                                                            <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.68rem', lineHeight: 1.2 }}>{item.detail}</Typography>
+                                                                        </Box>
+                                                                    </Box>
+                                                                ));
+                                                            })() : <CircularProgress size={20} sx={{ opacity: 0.3 }} />}
+                                                        </Grid>
+
+                                                        {/* Column 2: Consumability */}
+                                                        <Grid item xs={12} md={4}>
+                                                            <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1.5, fontSize: '0.7rem' }}>
+                                                                Consumability
+                                                            </Typography>
+                                                            {asyncCards.consumability ? (() => {
+                                                                const c = asyncCards.consumability!;
+                                                                const h2Count = c.headingHierarchy.h2Count || 0;
+                                                                const h3Count = c.headingHierarchy.h3Count || 0;
+                                                                const wordCount = c.wordCount || 0;
+                                                                const items: { label: string; pass: boolean; detail: string; fix?: string }[] = [
+                                                                    {
+                                                                        label: `Text/HTML: ${(c.textToHtmlRatio.ratio * 100).toFixed(1)}%`,
+                                                                        pass: c.textToHtmlRatio.status === 'good',
+                                                                        detail: c.textToHtmlRatio.status === 'good' ? 'Clean content' : 'Too much markup',
+                                                                        fix: c.textToHtmlRatio.status !== 'good' ? 'Move inline scripts/styles to external files to increase text ratio above 20%.' : undefined,
+                                                                    },
+                                                                    {
+                                                                        label: 'Server-Side Rendered',
+                                                                        pass: !c.jsRendered,
+                                                                        detail: !c.jsRendered ? 'Content visible without JS' : 'JS-rendered — bots may miss',
+                                                                        fix: c.jsRendered ? 'Use SSR or SSG so AI crawlers see content in the initial HTML.' : undefined,
+                                                                    },
+                                                                    {
+                                                                        label: `Headings: ${c.headingHierarchy.h1Count} H1, ${h2Count} H2, ${h3Count} H3`,
+                                                                        pass: c.headingHierarchy.h1Count === 1 && h2Count >= 1,
+                                                                        detail: c.headingHierarchy.hasProperNesting ? 'Proper nesting' : 'Check nesting',
+                                                                        fix: h2Count === 0 ? 'Add at least one H2 per major task so AI can chunk sections into focused answers.' : (!c.headingHierarchy.hasProperNesting ? 'Fix heading nesting (H1→H2→H3) — skipped levels confuse AI chunking.' : undefined),
+                                                                    },
+                                                                    ...(wordCount > 0 ? [{
+                                                                        label: `Word count: ${wordCount.toLocaleString()}`,
+                                                                        pass: wordCount >= 300,
+                                                                        detail: wordCount >= 300 ? (wordCount > 3000 ? 'Long page — consider splitting' : 'Sufficient content') : 'Thin content',
+                                                                        fix: wordCount < 300 ? 'Add explanatory text — pages under 300 words lack depth for AI retrieval.' : (wordCount > 3000 ? 'Consider splitting into focused sub-pages so AI can produce precise, single-topic answers.' : undefined),
+                                                                    }] : []),
+                                                                    {
+                                                                        label: 'Markdown',
+                                                                        pass: c.markdownAvailable.found,
+                                                                        detail: c.markdownAvailable.found ? (c.markdownAvailable.discoverable ? 'Found & discoverable' : 'Found, not discoverable') : 'Not detected',
+                                                                        fix: !c.markdownAvailable.found ? 'Serve a .md version and add <link rel="alternate" type="text/markdown"> for cleaner AI ingestion.' : undefined,
+                                                                    },
+                                                                    ...(c.codeBlocks.hasCode ? [{
+                                                                        label: `Code: ${c.codeBlocks.withLanguageHints}/${c.codeBlocks.count} hinted`,
+                                                                        pass: c.codeBlocks.withLanguageHints > 0,
+                                                                        detail: c.codeBlocks.withLanguageHints > 0 ? 'Has language hints' : 'Add language hints',
+                                                                        fix: c.codeBlocks.withLanguageHints === 0 ? 'Add language class to code blocks (e.g., class="language-python") so AI knows the language.' : undefined,
+                                                                    }] : []),
+                                                                    {
+                                                                        label: `Links: ${c.internalLinkDensity.count}`,
+                                                                        pass: c.internalLinkDensity.status === 'good',
+                                                                        detail: `${c.internalLinkDensity.perKWords.toFixed(1)} per 1k words`,
+                                                                        fix: c.internalLinkDensity.status === 'sparse' ? 'Add links to related pages — AI uses cross-references to understand content relationships.' : undefined,
+                                                                    },
+                                                                ];
+
+                                                                // Generate research-backed chunking insight
+                                                                // Ref: LlamaIndex, Pinecone, Weaviate chunking research — optimal chunks 200-500 tokens (~200-400 words per section)
+                                                                const avgWordsPerH2 = h2Count > 0 ? Math.round(wordCount / h2Count) : wordCount;
+                                                                const chunkingInsights: { severity: 'error' | 'warning' | 'info'; message: string }[] = [];
+
+                                                                // Rule 1: Missing H1 = no primary topic signal (hard fail)
+                                                                if (c.headingHierarchy.h1Count === 0) {
+                                                                    chunkingInsights.push({ severity: 'error', message: 'No H1 found. AI can\'t determine this page\'s primary topic — retrieval accuracy drops significantly.' });
+                                                                }
+                                                                // Rule 2: Long sections (avg words per H2 > 500) — mixed chunking
+                                                                if (h2Count > 0 && avgWordsPerH2 > 500) {
+                                                                    chunkingInsights.push({ severity: 'warning', message: `Long sections detected (~${avgWordsPerH2} words per heading). AI retrieves sections as chunks — consider adding H2s to break into focused tasks.` });
+                                                                }
+                                                                // Rule 3: Long page + few H2s = 1-2 giant mixed chunks
+                                                                if (wordCount > 1500 && h2Count < 3) {
+                                                                    chunkingInsights.push({ severity: 'warning', message: `This page is ${wordCount.toLocaleString()} words with only ${h2Count} H2 heading${h2Count === 1 ? '' : 's'}. AI will produce ${h2Count < 1 ? '1 large' : '1–2'} mixed chunk${h2Count < 1 ? '' : 's'}. Split into separate task sections or add more H2 structure.` });
+                                                                }
+                                                                // Rule 4: Very short page — not enough context
+                                                                if (wordCount > 0 && wordCount < 100) {
+                                                                    chunkingInsights.push({ severity: 'warning', message: `Very short page (~${wordCount} words). May lack enough context for AI to answer questions from it alone.` });
+                                                                }
+                                                                // Rule 5: Too many headings on short page — thin chunks
+                                                                if (h2Count > 8 && wordCount < 600) {
+                                                                    chunkingInsights.push({ severity: 'warning', message: `${h2Count} headings with only ${wordCount} words — AI chunks will be too thin to be useful. Expand each section.` });
+                                                                }
+                                                                // Rule 6: Very low text/HTML ratio — noise injection
+                                                                if (c.textToHtmlRatio.status === 'very-low') {
+                                                                    chunkingInsights.push({ severity: 'error', message: `Page is mostly markup/scripts (${(c.textToHtmlRatio.ratio * 100).toFixed(1)}% usable text). AI bots extract very little content.` });
+                                                                } else if (c.textToHtmlRatio.status === 'low') {
+                                                                    chunkingInsights.push({ severity: 'warning', message: `Low text ratio (~${(c.textToHtmlRatio.ratio * 100).toFixed(1)}%). AI will extract limited content from this page.` });
+                                                                }
+                                                                // Rule 7: No H2 on medium+ pages — no chunk boundaries
+                                                                if (h2Count === 0 && wordCount > 200) {
+                                                                    chunkingInsights.push({ severity: 'warning', message: 'No H2 headings — AI has no section boundaries to create focused chunks. Add H2s for each major task.' });
+                                                                }
+
+                                                                const chunkingSummary = chunkingInsights.length > 0
+                                                                    ? null // will render individual insights below
+                                                                    : `Page structure is well-suited for AI chunking and retrieval (~${h2Count} sections, ~${avgWordsPerH2} words each).`;
+
+                                                                return (
+                                                                    <>
+                                                                        {/* AI Chunking Insights */}
+                                                                        {chunkingInsights.length > 0 ? (
+                                                                            <Box sx={{ mb: 1.5 }}>
+                                                                                <Typography variant="caption" sx={{ fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.6rem', mb: 0.5, display: 'block' }}>
+                                                                                    AI Chunking Analysis
+                                                                                </Typography>
+                                                                                {chunkingInsights.map((insight, idx) => (
+                                                                                    <Box key={idx} sx={{
+                                                                                        fontSize: '0.72rem', lineHeight: 1.4, mb: 0.5, px: 1, py: 0.5, borderRadius: 1,
+                                                                                        bgcolor: insight.severity === 'error' ? 'rgba(239,68,68,0.06)' : 'rgba(245,158,11,0.06)',
+                                                                                        border: `1px solid ${insight.severity === 'error' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)'}`,
+                                                                                        color: 'var(--text-secondary)', fontWeight: 500,
+                                                                                        display: 'flex', alignItems: 'flex-start', gap: 0.5,
+                                                                                    }}>
+                                                                                        <span style={{ flexShrink: 0 }}>{insight.severity === 'error' ? '🔴' : '🟡'}</span>
+                                                                                        <span>{insight.message}</span>
+                                                                                    </Box>
+                                                                                ))}
+                                                                            </Box>
+                                                                        ) : (
+                                                                            <Typography variant="body2" sx={{
+                                                                                fontSize: '0.75rem', lineHeight: 1.5, mb: 1.5, p: 1, borderRadius: 1,
+                                                                                bgcolor: 'rgba(34,197,94,0.06)',
+                                                                                border: '1px solid rgba(34,197,94,0.15)',
+                                                                                color: 'var(--text-secondary)', fontWeight: 500,
+                                                                            }}>
+                                                                                ✅ {chunkingSummary}
+                                                                            </Typography>
+                                                                        )}
+                                                                        {items.map((item, i) => (
+                                                                            <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>
+                                                                                {item.pass ? <CheckCircleIcon sx={{ color: '#22c55e', fontSize: 16, mt: 0.2 }} /> : <WarningIcon sx={{ color: '#f59e0b', fontSize: 16, mt: 0.2 }} />}
+                                                                                <Box>
+                                                                                    <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', lineHeight: 1.3, color: 'var(--text-primary)' }}>{item.label}</Typography>
+                                                                                    <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.68rem', lineHeight: 1.2 }}>{item.detail}</Typography>
+                                                                                    {item.fix && (
+                                                                                        <Typography variant="caption" sx={{ display: 'block', color: '#f59e0b', fontSize: '0.65rem', lineHeight: 1.3, mt: 0.25, fontWeight: 500 }}>
+                                                                                            → {item.fix}
+                                                                                        </Typography>
+                                                                                    )}
+                                                                                </Box>
+                                                                            </Box>
+                                                                        ))}
+                                                                    </>
+                                                                );
+                                                            })() : <CircularProgress size={20} sx={{ opacity: 0.3 }} />}
+                                                        </Grid>
+
+                                                        {/* Column 3: Structured Data */}
+                                                        <Grid item xs={12} md={4}>
+                                                            <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1.5, fontSize: '0.7rem' }}>
+                                                                Structured Data
+                                                            </Typography>
+                                                            {asyncCards.structuredData ? (() => {
+                                                                const s = asyncCards.structuredData!;
+                                                                const items = [
+                                                                    { label: 'JSON-LD', pass: s.jsonLd.found, detail: s.jsonLd.found ? `Types: ${s.jsonLd.types.join(', ')}` : 'Missing — add JSON-LD' },
+                                                                    { label: 'Schema', pass: s.schemaCompleteness.status !== 'missing', detail: s.schemaCompleteness.status === 'complete' ? 'Complete' : s.schemaCompleteness.status === 'partial' ? `Missing: ${s.schemaCompleteness.missingFields.slice(0, 2).join(', ')}` : 'No schema detected' },
+                                                                    { label: 'OpenGraph', pass: s.openGraphCompleteness.score !== 'missing', detail: s.openGraphCompleteness.score === 'complete' ? 'Complete' : s.openGraphCompleteness.score === 'partial' ? `Missing: ${s.openGraphCompleteness.missingTags.slice(0, 2).join(', ')}` : 'Missing OG tags' },
+                                                                    { label: 'Breadcrumbs', pass: s.breadcrumbs.found, detail: s.breadcrumbs.found ? 'Helps AI nav context' : 'Consider adding' },
+                                                                ];
+                                                                return items.map((item, i) => (
+                                                                    <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>
+                                                                        {item.pass ? <CheckCircleIcon sx={{ color: '#22c55e', fontSize: 16, mt: 0.2 }} /> : <ErrorIcon sx={{ color: '#ef4444', fontSize: 16, mt: 0.2 }} />}
+                                                                        <Box>
+                                                                            <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', lineHeight: 1.3, color: 'var(--text-primary)' }}>{item.label}</Typography>
+                                                                            <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.68rem', lineHeight: 1.2 }}>{item.detail}</Typography>
+                                                                        </Box>
+                                                                    </Box>
+                                                                ));
+                                                            })() : <CircularProgress size={20} sx={{ opacity: 0.3 }} />}
+                                                        </Grid>
+                                                    </Grid>
+                                                </Box>
+                                            )}
+
+                                            {/* ── Queries Detail ── */}
+                                            {activeDetailCard === 'queries' && (
+                                                <Box>
+                                                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 0.5, fontSize: '1rem' }}>
+                                                        Where Am I Invisible?
                                                     </Typography>
-                                                )}
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                )}
-                            </Grid>
+                                                    <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontSize: '0.8rem', mb: 2 }}>
+                                                        AI-generated queries tested against search engines — are you being cited?
+                                                    </Typography>
+                                                    {asyncCards.aiDiscoverability ? (() => {
+                                                        const disc = asyncCards.aiDiscoverability!;
+                                                        const totalQueries = disc.queries.length;
+                                                        const queryTypes: string[] = disc.queryTypes || disc.queries.map(() => 'context-free');
+                                                        const hasPerplexity = disc.engines.perplexity?.available;
+                                                        const hasBrave = disc.engines.brave?.available;
+                                                        const hasEngines = hasPerplexity || hasBrave;
+                                                        const perplexityResults = disc.engines.perplexity?.results || [];
+                                                        const braveResults = disc.engines.brave?.results || [];
 
-                            <Alert severity="info" sx={{ mb: 4 }}>
-                                See full report for complete details on all findings and recommendations.
-                            </Alert>
-                        </CollapsibleCard>
+                                                        // Per-category stats
+                                                        const awareIndices = queryTypes.map((t: string, i: number) => t === 'context-aware' ? i : -1).filter((i: number) => i >= 0);
+                                                        const freeIndices = queryTypes.map((t: string, i: number) => t === 'context-free' ? i : -1).filter((i: number) => i >= 0);
+                                                        const awareFound = awareIndices.filter((i: number) => perplexityResults[i]?.cited || braveResults[i]?.cited).length;
+                                                        const freeFound = freeIndices.filter((i: number) => perplexityResults[i]?.cited || braveResults[i]?.cited).length;
+                                                        const visibleCount = awareFound + freeFound;
 
-                        {/* Top Recommendations */}
-                        <CollapsibleCard title="Top Recommendations" defaultExpanded={false} color="info">
-                            <Grid container spacing={2}>
-                                {(() => {
-                                    // Flatten all recommendations from all dimensions
-                                    const allRecs = Object.entries(analysisState.report.dimensions)
-                                        .flatMap(([dim, result]) => (result.recommendations || []).map(rec => ({ ...rec, dimension: dim })));
+                                                        const renderQueryRow = (query: string, qi: number) => {
+                                                            const pResult = perplexityResults[qi];
+                                                            const bResult = braveResults[qi];
+                                                            const isCited = pResult?.cited || bResult?.cited;
+                                                            return (
+                                                                <tr key={qi} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                                                                    <td style={{ padding: '8px 12px', fontSize: '0.83rem' }}>
+                                                                        <span style={{ color: 'var(--text-primary)' }}>"{query}"</span>
+                                                                    </td>
+                                                                    <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                                                        {hasEngines ? (
+                                                                            isCited ? (
+                                                                                <Chip label="Cited" size="small" sx={{
+                                                                                    bgcolor: 'rgba(34,197,94,0.1)', color: '#16a34a',
+                                                                                    fontWeight: 700, fontSize: '0.7rem',
+                                                                                }} />
+                                                                            ) : (
+                                                                                <Chip label="Not Cited" size="small" sx={{ bgcolor: 'rgba(239,68,68,0.08)', color: '#dc2626', fontSize: '0.7rem' }} />
+                                                                            )
+                                                                        ) : (
+                                                                            <Typography variant="caption" sx={{ color: 'var(--text-muted)' }}>—</Typography>
+                                                                        )}
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        };
 
-                                    // Take top 5
-                                    const top5 = allRecs.slice(0, 5);
+                                                        return (
+                                                            <>
+                                                                {/* Summary chips */}
+                                                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mb: 2.5 }}>
+                                                                    {hasEngines ? (
+                                                                        <>
+                                                                            <Chip label={`With context: ${awareFound}/${awareIndices.length}`} size="small" sx={{
+                                                                                fontWeight: 700, fontSize: '0.75rem',
+                                                                                bgcolor: awareFound > 0 ? 'rgba(34,197,94,0.08)' : 'var(--bg-secondary)',
+                                                                                color: awareFound > 0 ? '#16a34a' : 'var(--text-secondary)',
+                                                                                border: '1px solid var(--border-default)',
+                                                                            }} />
+                                                                            <Chip label={`Without context: ${freeFound}/${freeIndices.length}`} size="small" sx={{
+                                                                                fontWeight: 700, fontSize: '0.75rem',
+                                                                                bgcolor: freeFound > 0 ? 'rgba(34,197,94,0.08)' : 'var(--bg-secondary)',
+                                                                                color: freeFound > 0 ? '#16a34a' : 'var(--text-secondary)',
+                                                                                border: '1px solid var(--border-default)',
+                                                                            }} />
+                                                                            <Chip label={`Total: ${visibleCount}/${totalQueries}`} size="small" sx={{
+                                                                                fontWeight: 600, fontSize: '0.7rem',
+                                                                                bgcolor: 'var(--bg-secondary)', color: 'var(--text-muted)',
+                                                                                border: '1px solid var(--border-default)',
+                                                                            }} />
+                                                                        </>
+                                                                    ) : (
+                                                                        <Chip label="Engines not configured" size="small" sx={{ bgcolor: 'var(--bg-secondary)', border: '1px solid var(--border-default)', color: 'var(--text-muted)', fontSize: '0.7rem' }} />
+                                                                    )}
+                                                                </Box>
 
-                                    return top5.map((rec: any, i: number) => {
-                                        const recId = `${rec.dimension}-${i}`;
+                                                                {/* Engine names for column headers */}
+                                                                {(() => {
+                                                                    const engineNames: string[] = [];
+                                                                    if (hasPerplexity) engineNames.push('Perplexity');
+                                                                    if (hasBrave) engineNames.push('Brave');
+                                                                    const engineColSpan = 1 + engineNames.length;
 
-                                        return (
-                                            <Grid item xs={12} key={recId}>
-                                                <Paper
-                                                    variant="outlined"
-                                                    sx={{
-                                                        p: 2,
-                                                        borderRadius: 2,
-                                                        display: 'flex',
-                                                        alignItems: 'flex-start',
-                                                    }}
-                                                >
+                                                                    const renderSectionHeader = (label: string, isFirst: boolean) => (
+                                                                        <thead>
+                                                                            <tr>
+                                                                                <th colSpan={engineColSpan} style={{ textAlign: 'left', padding: `${isFirst ? '10px' : '16px'} 12px 6px`, color: 'var(--text-secondary)', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border-default)' }}>
+                                                                                    {label}
+                                                                                </th>
+                                                                            </tr>
+                                                                            {isFirst && engineNames.length > 0 && (
+                                                                                <tr>
+                                                                                    <th style={{ textAlign: 'left', padding: '6px 12px', color: 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 600, borderBottom: '1px solid var(--border-subtle)' }}>Query</th>
+                                                                                    {engineNames.map(name => (
+                                                                                        <th key={name} style={{ textAlign: 'center', padding: '6px 12px', color: 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 600, borderBottom: '1px solid var(--border-subtle)', width: '100px' }}>{name}</th>
+                                                                                    ))}
+                                                                                </tr>
+                                                                            )}
+                                                                        </thead>
+                                                                    );
+
+                                                                    const renderEngineRow = (query: string, qi: number) => {
+                                                                        const pResult = perplexityResults[qi];
+                                                                        const bResult = braveResults[qi];
+                                                                        const isCited = pResult?.cited || bResult?.cited;
+                                                                        // Collect competing domains from all engines for this query
+                                                                        const competing = new Set<string>();
+                                                                        if (!isCited) {
+                                                                            pResult?.competingDomains?.forEach((d: string) => competing.add(d));
+                                                                            bResult?.competingDomains?.forEach((d: string) => competing.add(d));
+                                                                        }
+                                                                        const renderCell = (result: any) => result?.cited ? (
+                                                                            <Chip label="Cited" size="small" sx={{ bgcolor: 'rgba(34,197,94,0.1)', color: '#16a34a', fontWeight: 700, fontSize: '0.7rem' }} />
+                                                                        ) : (
+                                                                            <Chip label="Not Cited" size="small" sx={{ bgcolor: 'rgba(239,68,68,0.08)', color: '#dc2626', fontSize: '0.7rem' }} />
+                                                                        );
+                                                                        return (
+                                                                            <tr key={qi} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                                                                                <td style={{ padding: '8px 12px', fontSize: '0.83rem' }}>
+                                                                                    <span style={{ color: 'var(--text-primary)' }}>"{query}"</span>
+                                                                                    {competing.size > 0 && (
+                                                                                        <div style={{ marginTop: 4, fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                                                                            Cited instead: {Array.from(competing).map((d, i) => (
+                                                                                                <span key={i} style={{ color: '#dc2626', fontWeight: 600 }}>{i > 0 ? ', ' : ''}{d}</span>
+                                                                                            ))}
+                                                                                        </div>
+                                                                                    )}
+                                                                                </td>
+                                                                                {hasPerplexity && <td style={{ padding: '8px 12px', textAlign: 'center' }}>{renderCell(pResult)}</td>}
+                                                                                {hasBrave && <td style={{ padding: '8px 12px', textAlign: 'center' }}>{renderCell(bResult)}</td>}
+                                                                            </tr>
+                                                                        );
+                                                                    };
+
+                                                                    return (
+                                                                        <Box sx={{ overflowX: 'auto' }}>
+                                                                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                                                                {awareIndices.length > 0 && (
+                                                                                    <>
+                                                                                        {renderSectionHeader('Context-Aware — IDE / Brand Search', true)}
+                                                                                        <tbody>
+                                                                                            {awareIndices.map((i: number) => renderEngineRow(disc.queries[i], i))}
+                                                                                        </tbody>
+                                                                                    </>
+                                                                                )}
+                                                                                {freeIndices.length > 0 && (
+                                                                                    <>
+                                                                                        {renderSectionHeader('Context-Free — Organic / Generic Search', awareIndices.length === 0)}
+                                                                                        <tbody>
+                                                                                            {freeIndices.map((i: number) => renderEngineRow(disc.queries[i], i))}
+                                                                                        </tbody>
+                                                                                    </>
+                                                                                )}
+                                                                            </table>
+                                                                        </Box>
+                                                                    );
+                                                                })()}
+                                                                <Typography variant="caption" sx={{ display: 'block', mt: 2, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                                                    Context-aware = developer knows your product. Context-free = discovering organically via AI search.
+                                                                </Typography>
+                                                            </>
+                                                        );
+                                                    })() : (
+                                                        <Box sx={{ textAlign: 'center', py: 4 }}>
+                                                            <CircularProgress size={32} sx={{ opacity: 0.3, mb: 1 }} />
+                                                            <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontWeight: 500 }}>
+                                                                Probing AI search...
+                                                            </Typography>
+                                                        </Box>
+                                                    )}
+                                                </Box>
+                                            )}
+                                        </Box>
+                                    )}
+
+                                    {/* ═══ AI-Powered Suggestions (always visible at bottom) ═══ */}
+                                    {analysisState.report?.contextualSuggestions && analysisState.report.contextualSuggestions.length > 0 && (
+                                        <Box sx={{ mb: 2 }}>
+                                            <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5, fontSize: '1rem' }}>
+                                                AI-Powered Suggestions
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ mb: 2, color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                                                Personalized content improvements for this page:
+                                            </Typography>
+                                            {analysisState.report.contextualSuggestions.map((suggestion: string, i: number) => (
+                                                <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', mb: 1.5 }}>
                                                     <Box sx={{
-                                                        width: 28,
-                                                        height: 28,
-                                                        borderRadius: '50%',
-                                                        bgcolor: 'rgba(59, 130, 246, 0.12)',
-                                                        color: 'var(--accent-primary)',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                        fontSize: '0.8rem',
-                                                        fontWeight: 700,
-                                                        flexShrink: 0,
-                                                        mt: 0.25,
+                                                        width: 24, height: 24, borderRadius: '50%',
+                                                        bgcolor: 'var(--bg-secondary)', color: 'var(--text-secondary)',
+                                                        border: '1px solid var(--border-default)',
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                        fontSize: '0.75rem', fontWeight: 700, flexShrink: 0, mt: 0.25,
                                                     }}>
                                                         {i + 1}
                                                     </Box>
-                                                    <Box sx={{ ml: 1.5, flexGrow: 1 }}>
-                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
-                                                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                                                {rec.action}
-                                                            </Typography>
-                                                            <Chip
-                                                                label={rec.dimension}
-                                                                size="small"
-                                                                variant="outlined"
-                                                                sx={{ height: 20, fontSize: '0.65rem', textTransform: 'uppercase' }}
-                                                            />
-                                                        </Box>
-                                                        <Typography variant="caption" color="text.secondary">
-                                                            Priority: {rec.priority?.toUpperCase()} • Impact: {rec.impact}
-                                                        </Typography>
-                                                        {rec.evidence && (
-                                                            <Typography variant="caption" sx={{
-                                                                display: 'block',
-                                                                mt: 0.5,
-                                                                color: 'text.secondary',
-                                                                fontStyle: 'italic',
-                                                                borderLeft: '2px solid',
-                                                                borderColor: 'divider',
-                                                                pl: 1,
-                                                            }}>
-                                                                Evidence: {rec.evidence}
-                                                                {rec.location && ` (${rec.location})`}
-                                                            </Typography>
-                                                        )}
-                                                    </Box>
-                                                </Paper>
-                                            </Grid>
-                                        );
-                                    });
-                                })()}
-                            </Grid>
-                        </CollapsibleCard>
+                                                    <Typography variant="body2" sx={{ ml: 1.5, color: 'var(--text-secondary)', fontSize: '0.82rem', lineHeight: 1.5 }}>{suggestion}</Typography>
+                                                </Box>
+                                            ))}
+                                        </Box>
+                                    )}
 
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 3 }}>
-                            <Typography variant="body2" color="text.secondary">
-                                Analysis completed in {(analysisState.report.analysisTime / 1000).toFixed(1)}s
-                                {analysisState.report.cacheStatus === 'hit' && ' ⚡ (cached)'}
-                            </Typography>
-                            <Button
-                                variant="outlined"
-                                onClick={() => exportPdfReport(analysisState.report!)}
-                                sx={{ ml: 2 }}
-                            >
-                                Export Report (PDF)
-                            </Button>
-
-                            {FEATURE_FLAG_AUTO_FIXES && !analysisState.report.sitemapHealth && (
-                                <Button
-                                    variant="contained"
-                                    color="secondary"
-                                    onClick={handleGenerateFixes}
-                                    disabled={isGeneratingFixes || isApplyingFixes}
-                                    startIcon={isGeneratingFixes ? <CircularProgress size={20} color="inherit" /> : <AutoFixHighIcon />}
-                                    sx={{ ml: 2 }}
-                                >
-                                    {isGeneratingFixes ? 'Generating Fixes...' : 'Generate Auto-Fixes'}
-                                </Button>
-                            )}
-                        </Box>
-
-                        {FEATURE_FLAG_AUTO_FIXES && showFixPanel && (
-                            <FixReviewPanel
-                                fixes={fixes}
-                                onApplyFixes={handleApplyFixes}
-                                isApplying={isApplyingFixes}
-                            />
-                        )}
+                                    {/* ── Methodology Footer ── */}
+                                    {analysisState.report && (
+                                        <Box sx={{ mt: 4, pt: 3, borderTop: '1px solid var(--border-subtle)' }}>
+                                            <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: '0.75rem', mb: 1, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                                Methodology
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontSize: '0.75rem', lineHeight: 1.6, mb: 1 }}>
+                                                Lensy generates developer-intent queries (context-aware with your brand name, and context-free generic queries) using AI, then checks if your page is cited in AI search engine responses. "Cited" means your URL appeared in the response citations. Competing domains are extracted when your page is not cited.
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontSize: '0.75rem', lineHeight: 1.6, mb: 1 }}>
+                                                Bot access checks 10 major AI crawlers against your robots.txt. Content health analyzes text-to-HTML ratio, heading structure, markdown availability, code blocks, and internal linking. Structured data checks JSON-LD, OpenGraph, and breadcrumbs. AI readiness score is a weighted composite of all dimensions.
+                                            </Typography>
+                                            <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                                Analysis completed in {(analysisState.report.analysisTime / 1000).toFixed(1)}s — Results approximate; AI search engines may vary in real-time.
+                                            </Typography>
+                                        </Box>
+                                    )}
+                                </>
+                            );
+                        })()}
                     </Paper>
                 )}
             </Container>

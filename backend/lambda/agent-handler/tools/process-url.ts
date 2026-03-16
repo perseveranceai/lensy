@@ -702,7 +702,7 @@ async function validateInternalLinks(
                             : `HTTP ${getResult.status}: ${getResult.statusText}`;
                         linkIssues.push({
                             url: linkInfo.url,
-                            status: getResult.status,
+                            status: getResult.status ?? 'error',
                             anchorText: linkInfo.anchorText,
                             sourceLocation: 'main page',
                             errorMessage,
@@ -1535,7 +1535,7 @@ YOUR TASK: Select up to 4 pages that the auditor MUST know about to give accurat
 
 Return ONLY a JSON array of indices, e.g. [0, 3, 7, 12]. Return [] if none are relevant.`;
 
-                                const HAIKU_MODEL = 'us.anthropic.claude-3-5-haiku-20241022-v1:0';
+                                const HAIKU_MODEL = 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
                                 const selectedIndices: number[] = await invokeBedrockForJson(selectionPrompt, {
                                     modelId: HAIKU_MODEL,
                                     maxTokens: 100,

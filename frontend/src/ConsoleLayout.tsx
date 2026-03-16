@@ -1,64 +1,49 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import FeedbackWidget from './components/FeedbackWidget';
 
-const COOKIE_NAME = 'perseverance_console_token';
-const EMAIL_COOKIE_NAME = 'perseverance_console_email';
-const LOGIN_TS_COOKIE_NAME = 'perseverance_console_login_ts';
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com';
-
-function clearCookie(name: string) {
-    document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Strict; Secure`;
-}
-
-function getCookie(name: string): string | null {
-    const match = document.cookie.split(';').find(c => c.trim().startsWith(name + '='));
-    if (!match) return null;
-    const val = match.trim().split('=')[1];
-    return val ? decodeURIComponent(val) : null;
-}
+type ThemeMode = 'dark' | 'light' | 'system';
 
 function ConsoleLayout() {
     const navigate = useNavigate();
     const location = useLocation();
-    const verifiedRef = useRef(false);
-
-    const userEmail = getCookie(EMAIL_COOKIE_NAME);
-
-    // When user successfully lands on console, mark the login attempt as "verified"
-    // This only fires if CloudFront let them through (valid passcode)
-    useEffect(() => {
-        if (verifiedRef.current) return; // Only verify once per session
-        const loginTs = getCookie(LOGIN_TS_COOKIE_NAME);
-        const email = getCookie(EMAIL_COOKIE_NAME);
-        if (loginTs && email) {
-            verifiedRef.current = true;
-            fetch(`${API_BASE_URL}/console/log-login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    email,
-                    action: 'verified',
-                    loginTimestamp: loginTs,
-                    userAgent: navigator.userAgent,
-                }),
-            })
-            .then(() => {
-                // Clear the login timestamp cookie after verifying
-                clearCookie(LOGIN_TS_COOKIE_NAME);
-            })
-            .catch(() => { /* silently fail */ });
-        }
-    }, []);
-
-    const handleSignOut = () => {
-        clearCookie(COOKIE_NAME);
-        clearCookie(EMAIL_COOKIE_NAME);
-        navigate('/login');
-    };
 
     // Determine breadcrumb based on current path
     const isLensy = location.pathname.startsWith('/console/lensy');
-    const isDashboard = location.pathname === '/console' || location.pathname === '/console/';
+
+    // Theme dropdown state
+    const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+        return (localStorage.getItem('lensy-theme') as ThemeMode) || 'system';
+    });
+    const [themeDropdownOpen, setThemeDropdownOpen] = useState(false);
+    const themeDropdownRef = useRef<HTMLDivElement>(null);
+
+    const applyTheme = useCallback((mode: ThemeMode) => {
+        document.documentElement.setAttribute('data-theme', mode);
+    }, []);
+
+    useEffect(() => {
+        applyTheme(themeMode);
+        localStorage.setItem('lensy-theme', themeMode);
+    }, [themeMode, applyTheme]);
+
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (themeDropdownRef.current && !themeDropdownRef.current.contains(e.target as Node)) {
+                setThemeDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const themeOptions: { mode: ThemeMode; icon: string; label: string }[] = [
+        { mode: 'system', icon: '\u{1F4BB}', label: 'System' },
+        { mode: 'light', icon: '\u2600\uFE0F', label: 'Light' },
+        { mode: 'dark', icon: '\u{1F319}', label: 'Dark' },
+    ];
+    const currentTheme = themeOptions.find(t => t.mode === themeMode) || themeOptions[0];
 
     return (
         <div style={{
@@ -69,7 +54,7 @@ function ConsoleLayout() {
         }}>
             {/* Console Header — frosted glass, matches perseveranceai.com nav */}
             <header style={{
-                background: 'rgba(10, 10, 10, 0.8)',
+                background: 'var(--header-bg)',
                 backdropFilter: 'blur(12px)',
                 WebkitBackdropFilter: 'blur(12px)',
                 borderBottom: '1px solid var(--border-subtle)',
@@ -88,7 +73,7 @@ function ConsoleLayout() {
                     alignItems: 'center',
                     height: '56px',
                 }}>
-                    {/* Left: Logo + Context (AWS Console style) */}
+                    {/* Left: Logo + Context */}
                     <a
                         href="/console"
                         onClick={(e) => { e.preventDefault(); navigate('/console'); }}
@@ -150,55 +135,95 @@ function ConsoleLayout() {
                         </span>
                     )}
 
-                    {/* Right: Email + Sign Out */}
+                    {/* Right: Theme toggle + Free tier badge */}
                     <div style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '0.75rem',
+                        gap: '0.5rem',
                         minWidth: 0,
                     }}>
-                        {userEmail && (
-                            <span style={{
-                                fontFamily: 'var(--font-sans, var(--font-ui))',
-                                fontSize: '0.8125rem',
-                                color: 'var(--text-muted)',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                                minWidth: 0,
-                            }}>
-                                {userEmail}
-                            </span>
-                        )}
-                        <button
-                            onClick={handleSignOut}
-                            style={{
-                                fontFamily: 'var(--font-sans, var(--font-ui))',
-                                fontSize: '0.8125rem',
-                                fontWeight: 600,
-                                color: 'var(--text-secondary)',
-                                background: 'transparent',
-                                border: '1px solid var(--border-default)',
-                                borderRadius: '6px',
-                                padding: '0.4rem 0.875rem',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s ease',
-                                flexShrink: 0,
-                                whiteSpace: 'nowrap',
-                            }}
-                            onMouseEnter={(e) => {
-                                (e.target as HTMLElement).style.color = 'var(--text-primary)';
-                                (e.target as HTMLElement).style.borderColor = 'var(--border-strong)';
-                                (e.target as HTMLElement).style.background = 'var(--bg-tertiary)';
-                            }}
-                            onMouseLeave={(e) => {
-                                (e.target as HTMLElement).style.color = 'var(--text-secondary)';
-                                (e.target as HTMLElement).style.borderColor = 'var(--border-default)';
-                                (e.target as HTMLElement).style.background = 'transparent';
-                            }}
-                        >
-                            Sign Out
-                        </button>
+                        <div ref={themeDropdownRef} style={{ position: 'relative' }}>
+                            <button
+                                onClick={() => setThemeDropdownOpen(prev => !prev)}
+                                style={{
+                                    background: 'var(--bg-tertiary)',
+                                    border: '1px solid var(--border-default)',
+                                    borderRadius: '8px',
+                                    padding: '0.3rem 0.6rem',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.3rem',
+                                    transition: 'all 0.2s ease',
+                                    fontSize: '0.75rem',
+                                    color: 'var(--text-muted)',
+                                    fontFamily: 'var(--font-sans, var(--font-ui))',
+                                    fontWeight: 600,
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-strong)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
+                            >
+                                <span style={{ fontSize: '0.85rem' }}>{currentTheme.icon}</span>
+                                <span>{currentTheme.label}</span>
+                                <span style={{ fontSize: '0.6rem', marginLeft: '0.15rem', opacity: 0.6 }}>{themeDropdownOpen ? '\u25B2' : '\u25BC'}</span>
+                            </button>
+                            {themeDropdownOpen && (
+                                <div style={{
+                                    position: 'absolute',
+                                    top: 'calc(100% + 4px)',
+                                    right: 0,
+                                    background: 'var(--bg-secondary)',
+                                    border: '1px solid var(--border-default)',
+                                    borderRadius: '8px',
+                                    boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
+                                    zIndex: 200,
+                                    minWidth: '140px',
+                                    overflow: 'hidden',
+                                }}>
+                                    {themeOptions.map(opt => (
+                                        <button
+                                            key={opt.mode}
+                                            onClick={() => { setThemeMode(opt.mode); setThemeDropdownOpen(false); }}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '0.5rem',
+                                                width: '100%',
+                                                padding: '0.5rem 0.75rem',
+                                                border: 'none',
+                                                background: themeMode === opt.mode ? 'var(--bg-tertiary)' : 'transparent',
+                                                cursor: 'pointer',
+                                                fontSize: '0.8rem',
+                                                fontWeight: themeMode === opt.mode ? 700 : 500,
+                                                color: themeMode === opt.mode ? 'var(--text-primary)' : 'var(--text-secondary)',
+                                                fontFamily: 'var(--font-sans, var(--font-ui))',
+                                                transition: 'background 0.15s ease',
+                                                textAlign: 'left',
+                                            }}
+                                            onMouseEnter={(e) => { if (themeMode !== opt.mode) e.currentTarget.style.background = 'var(--bg-tertiary)'; }}
+                                            onMouseLeave={(e) => { if (themeMode !== opt.mode) e.currentTarget.style.background = 'transparent'; }}
+                                        >
+                                            <span style={{ fontSize: '1rem' }}>{opt.icon}</span>
+                                            <span>{opt.label}</span>
+                                            {themeMode === opt.mode && <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: 'var(--accent-primary)' }}>{'\u2713'}</span>}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        <span style={{
+                            fontFamily: 'var(--font-sans, var(--font-ui))',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            color: 'var(--text-secondary)',
+                            background: 'var(--bg-tertiary)',
+                            border: '1px solid var(--border-default)',
+                            borderRadius: '12px',
+                            padding: '0.25rem 0.75rem',
+                            whiteSpace: 'nowrap',
+                        }}>
+                            Free Tier — 3 audits/day
+                        </span>
                     </div>
                 </nav>
             </header>
@@ -220,15 +245,15 @@ function ConsoleLayout() {
                 <p style={{
                     fontFamily: 'var(--font-sans, var(--font-ui))',
                     fontSize: '0.8125rem',
-                    color: 'var(--text-muted)',
+                    color: 'var(--text-secondary)',
                     margin: '0 0 0.5rem 0',
                 }}>
-                    &copy; {new Date().getFullYear()} Perseverance AI. All rights reserved. Confidential &amp; Proprietary.
+                    &copy; {new Date().getFullYear()} Perseverance AI. All rights reserved.
                 </p>
                 <p style={{
                     fontFamily: 'var(--font-sans, var(--font-ui))',
                     fontSize: '0.75rem',
-                    color: 'var(--text-muted)',
+                    color: 'var(--text-secondary)',
                     margin: 0,
                     display: 'flex',
                     justifyContent: 'center',
@@ -237,9 +262,9 @@ function ConsoleLayout() {
                     <a
                         href="/terms"
                         onClick={(e) => { e.preventDefault(); navigate('/terms'); }}
-                        style={{ color: 'var(--text-muted)', textDecoration: 'none', transition: 'color 0.2s' }}
-                        onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-secondary)')}
-                        onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+                        style={{ color: 'var(--text-secondary)', textDecoration: 'none', transition: 'color 0.2s' }}
+                        onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-secondary)')}
                     >
                         Terms of Use
                     </a>
@@ -247,14 +272,17 @@ function ConsoleLayout() {
                     <a
                         href="/privacy"
                         onClick={(e) => { e.preventDefault(); navigate('/privacy'); }}
-                        style={{ color: 'var(--text-muted)', textDecoration: 'none', transition: 'color 0.2s' }}
-                        onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-secondary)')}
-                        onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+                        style={{ color: 'var(--text-secondary)', textDecoration: 'none', transition: 'color 0.2s' }}
+                        onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-secondary)')}
                     >
                         Privacy Policy
                     </a>
                 </p>
             </footer>
+
+            {/* Feedback Widget — floating bottom-right */}
+            <FeedbackWidget />
         </div>
     );
 }

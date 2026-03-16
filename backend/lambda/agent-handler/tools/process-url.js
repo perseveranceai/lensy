@@ -572,7 +572,7 @@ async function validateInternalLinks(linksToValidate, progress) {
                             : `HTTP ${getResult.status}: ${getResult.statusText}`;
                         linkIssues.push({
                             url: linkInfo.url,
-                            status: getResult.status,
+                            status: getResult.status ?? 'error',
                             anchorText: linkInfo.anchorText,
                             sourceLocation: 'main page',
                             errorMessage,
@@ -696,10 +696,58 @@ Important guidelines:
 - Skip simple configuration or markup that isn't executable code
 - If uncertain, mark confidence as "medium" or "low"`;
     try {
-        const analysisResult = await (0, bedrock_helpers_1.invokeBedrockForJson)(prompt, {
+        const aiResponse = await (0, bedrock_helpers_1.invokeBedrockModel)(prompt, {
             maxTokens: 1000,
             temperature: 0.1
         });
+        // Extract JSON robustly — handles trailing text after JSON
+        let analysisResult;
+        const jsonMatch = aiResponse.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (jsonMatch) {
+            analysisResult = JSON.parse(jsonMatch[1].trim());
+        }
+        else {
+            const trimmed = aiResponse.trim();
+            try {
+                analysisResult = JSON.parse(trimmed);
+            }
+            catch {
+                // Find the outermost { } and parse just that portion
+                const startIdx = trimmed.indexOf('{');
+                if (startIdx === -1)
+                    throw new Error('No JSON found in response');
+                let depth = 0;
+                let inStr = false;
+                let esc = false;
+                for (let i = startIdx; i < trimmed.length; i++) {
+                    const ch = trimmed[i];
+                    if (esc) {
+                        esc = false;
+                        continue;
+                    }
+                    if (ch === '\\' && inStr) {
+                        esc = true;
+                        continue;
+                    }
+                    if (ch === '"') {
+                        inStr = !inStr;
+                        continue;
+                    }
+                    if (inStr)
+                        continue;
+                    if (ch === '{')
+                        depth++;
+                    if (ch === '}')
+                        depth--;
+                    if (depth === 0) {
+                        analysisResult = JSON.parse(trimmed.substring(startIdx, i + 1));
+                        break;
+                    }
+                }
+                if (!analysisResult)
+                    throw new Error('Unbalanced JSON');
+            }
+        }
         const deprecatedCode = (analysisResult.deprecatedCode || []).map((item) => ({
             language: item.language || snippet.language || 'unknown',
             method: item.method || 'unknown',
@@ -1234,6 +1282,7 @@ exports.processUrlTool = (0, tools_1.tool)(async (input) => {
                 kbPages = await (0, page_summarizer_1.queryKB)(safeDomain);
                 if (kbPages.length > 0) {
                     console.log(`[KB] Found ${kbPages.length} pages in Knowledge Base for ${safeDomain}`);
+                    // Enrich discovered context pages with KB data
                     for (const page of contextPages) {
                         const kbEntry = kbPages.find(p => p.url === page.url);
                         if (kbEntry) {
@@ -1251,9 +1300,7 @@ exports.processUrlTool = (0, tools_1.tool)(async (input) => {
                     const candidateKBPages = kbPages.filter(kb => !existingUrls.has(kb.url));
                     if (candidateKBPages.length > 0) {
                         try {
-                            const kbCatalog = candidateKBPages.map((kb, i) =>
-                                `${i}: ${kb.url} | ${kb.topic || 'unknown'} | covers: ${kb.covers?.join(', ') || 'unknown'}`
-                            ).join('\n');
+                            const kbCatalog = candidateKBPages.map((kb, i) => `${i}: ${kb.url} | ${kb.topic || 'unknown'} | covers: ${kb.covers?.join(', ') || 'unknown'}`).join('\n');
                             const selectionPrompt = `You are an expert documentation architect. We are auditing a specific documentation page for quality. To give grounded recommendations (e.g., "don't add X here — it's already covered in page Y"), we need to identify which other pages in this documentation site are most relevant as context.
 
 TARGET PAGE BEING AUDITED:
@@ -1273,7 +1320,7 @@ YOUR TASK: Select up to 4 pages that the auditor MUST know about to give accurat
 4. Prerequisite/dependency pages that the target assumes knowledge of
 
 Return ONLY a JSON array of indices, e.g. [0, 3, 7, 12]. Return [] if none are relevant.`;
-                            const HAIKU_MODEL = 'us.anthropic.claude-3-5-haiku-20241022-v1:0';
+                            const HAIKU_MODEL = 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
                             const selectedIndices = await (0, bedrock_helpers_1.invokeBedrockForJson)(selectionPrompt, {
                                 modelId: HAIKU_MODEL,
                                 maxTokens: 100,
@@ -1314,7 +1361,7 @@ Return ONLY a JSON array of indices, e.g. [0, 3, 7, 12]. Return [] if none are r
             }
             // ── Fetch & summarize top context pages not in KB (Step 4.6) ──
             const unenrichedPages = contextPages.filter(p => !p.topic);
-            const pagesToFetch = unenrichedPages.slice(0, 3);
+            const pagesToFetch = unenrichedPages.slice(0, 3); // Top 3 not in KB
             if (pagesToFetch.length > 0) {
                 console.log(`[KB] Fetching ${pagesToFetch.length} context pages not in KB...`);
                 await progress.info(`Fetching ${pagesToFetch.length} related pages for deeper context...`);
@@ -1329,17 +1376,21 @@ Return ONLY a JSON array of indices, e.g. [0, 3, 7, 12]. Return [] if none are r
                         clearTimeout(timeoutId);
                         if (resp.ok) {
                             const html = await resp.text();
+                            // Quick extraction: use JSDOM to get text content
                             const ctxDom = new jsdom_1.JSDOM(html);
                             const ctxBody = ctxDom.window.document.body;
+                            // Remove nav/footer/script/style
                             ctxBody.querySelectorAll('nav, footer, script, style, header').forEach(el => el.remove());
                             const rawContent = ctxBody.textContent?.replace(/\s+/g, ' ').trim() || '';
                             if (rawContent.length > 200) {
+                                // Summarize with Haiku and write to KB
                                 const pageSummary = await (0, page_summarizer_1.summarizeAndParsePage)(page.url, page.title, rawContent, undefined);
                                 page.documentationType = pageSummary.documentationType;
                                 page.topic = pageSummary.topic;
                                 page.covers = pageSummary.covers;
                                 page.codeExamples = pageSummary.codeExamples;
                                 page.keyTerms = pageSummary.keyTerms;
+                                // Write to KB (non-blocking, fire-and-forget)
                                 (0, page_summarizer_1.writePageToKB)(safeDomain, pageSummary, 'doc-audit').catch(err => console.error(`[KB] Failed to write context page ${page.url}:`, err));
                                 console.log(`[KB] Fetched & summarized context page: ${page.title}`);
                             }

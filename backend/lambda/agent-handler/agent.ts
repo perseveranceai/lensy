@@ -1,132 +1,25 @@
-import { ChatBedrockConverse } from '@langchain/aws';
-import { StateGraph, Annotation, END, START } from '@langchain/langgraph';
-import { ToolNode } from '@langchain/langgraph/prebuilt';
-import { AIMessage, BaseMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
+/**
+ * Lensy Analysis Pipeline — Direct Orchestration
+ *
+ * Replaces the LangGraph agent loop with direct tool calls.
+ * The execution order is 100% deterministic (no LLM decisions needed),
+ * so we skip the ~20s of Bedrock Sonnet round-trips and run
+ * readiness + discoverability checks in parallel.
+ *
+ * Performance improvement: ~60-70% faster than the LangGraph agent loop.
+ *
+ * Pipeline:
+ *   1. detect_input_type (inline — trivial)
+ *   2. check_ai_readiness + check_ai_discoverability (PARALLEL)
+ *   3. generate_report
+ */
 
-// Import all tools
-import { detectInputTypeTool } from './tools/detect-input-type';
-import { processUrlTool } from './tools/process-url';
-import { detectStructureTool } from './tools/detect-structure';
+import { ProgressPublisher } from './shared/progress-publisher';
+
+// Import tools for direct invocation
 import { checkAIReadinessTool } from './tools/check-ai-readiness';
-import { analyzeDimensionsTool } from './tools/analyze-dimensions';
-import { checkSitemapHealthTool } from './tools/check-sitemap-health';
+import { checkAIDiscoverabilityTool } from './tools/check-ai-discoverability';
 import { generateReportTool } from './tools/generate-report';
-import { publishProgressTool } from './tools/publish-progress';
-
-// ─── Agent State Definition ──────────────────────────────────
-
-const AgentState = Annotation.Root({
-    messages: Annotation<BaseMessage[]>({
-        reducer: (prev, next) => [...prev, ...next],
-        default: () => [],
-    }),
-});
-
-// ─── Tools ───────────────────────────────────────────────────
-
-// Tool order matters — models are biased toward tools listed earlier.
-// Order matches the doc-mode execution sequence so the agent naturally
-// follows: detect → ai-readiness → process → structure → dimensions → report.
-const tools = [
-    detectInputTypeTool,
-    checkAIReadinessTool,
-    publishProgressTool,
-    processUrlTool,
-    detectStructureTool,
-    analyzeDimensionsTool,
-    checkSitemapHealthTool,
-    generateReportTool,
-];
-
-// ─── Model Configuration ────────────────────────────────────
-
-function createModel() {
-    return new ChatBedrockConverse({
-        model: 'us.anthropic.claude-3-5-sonnet-20241022-v2:0',
-        region: process.env.AWS_REGION || 'us-east-1',
-        temperature: 0,
-        maxTokens: 4096,
-    }).bindTools(tools);
-}
-
-// ─── System Prompt ───────────────────────────────────────────
-
-const SYSTEM_PROMPT = `You are Lensy, a documentation quality analysis agent. Your job is to analyze documentation URLs and produce quality reports.
-
-You have 8 tools available. Follow this EXACT sequence for doc-mode analysis:
-
-## Doc Mode Analysis (when input type is "doc")
-
-1. Call \`detect_input_type\` with the URL to determine if it's a doc page or sitemap
-2. **MANDATORY when llmsTxtUrl is present**: Call \`check_ai_readiness\` with the llmsTxtUrl. This MUST happen BEFORE process_url because it crawls pages and builds the Knowledge Base. Do NOT skip this step when llmsTxtUrl is in the user message. If no llmsTxtUrl was provided, skip this step.
-3. Call \`publish_progress\` with message "Starting URL processing..." and phase "url-processing"
-4. Call \`process_url\` to fetch, parse, and analyze the URL content
-5. Call \`publish_progress\` with message "Detecting document structure..." and phase "structure-detection"
-6. Call \`detect_structure\` to classify the document type
-7. Call \`publish_progress\` with message "Analyzing documentation quality across 5 dimensions..." and phase "dimension-analysis"
-8. Call \`analyze_dimensions\` to score the document across 5 quality dimensions
-9. If the user provided a sitemapUrl, call \`check_sitemap_health\` with that sitemapUrl. Otherwise SKIP this step.
-10. Call \`publish_progress\` with message "Generating final report..." and phase "report-generation"
-11. Call \`generate_report\` with sourceMode "doc" to create the final report
-12. Call \`publish_progress\` with type "success" and message "Analysis complete!"
-
-## Sitemap Mode Analysis (when input type is "sitemap")
-
-1. Call \`detect_input_type\` with the URL
-2. Call \`publish_progress\` with message "Parsing sitemap..." and phase "sitemap-health"
-3. Call \`check_sitemap_health\` to parse and validate the sitemap
-4. Call \`publish_progress\` with message "Generating sitemap health report..." and phase "report-generation"
-5. Call \`generate_report\` with sourceMode "sitemap" to create the final report
-6. Call \`publish_progress\` with type "success" and message "Sitemap analysis complete!"
-
-## Important Rules
-
-- ALWAYS pass the correct sessionId to every tool call
-- ALWAYS call publish_progress between major steps to keep the user informed
-- If \`process_url\` returns \`"contentGateFailed": true\`, STOP the pipeline immediately. Call \`publish_progress\` with type "error" and the failure message, then respond with the error explanation. Do NOT proceed to \`detect_structure\`, \`analyze_dimensions\`, or \`generate_report\`.
-- If a tool fails for other reasons, log the error and continue with the next tool — produce a partial report rather than failing entirely
-- After generate_report succeeds, respond with the final summary. Do NOT call any more tools after that.
-- Keep your text responses minimal — the tools do the work, you orchestrate them.
-- You MUST call tools in the order specified above. Do not skip tools unless a prerequisite failed.
-- CRITICAL: When the user message contains "llms.txt URL", you MUST call \`check_ai_readiness\` BEFORE \`process_url\`. This populates the Knowledge Base that process_url depends on.
-`;
-
-// ─── Graph Nodes ─────────────────────────────────────────────
-
-const toolNode = new ToolNode(tools);
-
-async function agentNode(state: typeof AgentState.State) {
-    const model = createModel();
-    const response = await model.invoke(state.messages);
-    return { messages: [response] };
-}
-
-// ─── Conditional Edge: Should Continue? ──────────────────────
-
-function shouldContinue(state: typeof AgentState.State): 'tools' | typeof END {
-    const lastMessage = state.messages[state.messages.length - 1];
-
-    // If the last message is an AI message with tool calls, route to tools
-    if (lastMessage instanceof AIMessage && lastMessage.tool_calls && lastMessage.tool_calls.length > 0) {
-        return 'tools';
-    }
-
-    // Otherwise, the agent is done
-    return END;
-}
-
-// ─── Build the Graph ─────────────────────────────────────────
-
-function buildGraph() {
-    const graph = new StateGraph(AgentState)
-        .addNode('agent', agentNode)
-        .addNode('tools', toolNode)
-        .addEdge(START, 'agent')
-        .addConditionalEdges('agent', shouldContinue)
-        .addEdge('tools', 'agent');
-
-    return graph.compile();
-}
 
 // ─── Public API ──────────────────────────────────────────────
 
@@ -147,68 +40,82 @@ export interface AgentRunInput {
 }
 
 /**
- * Run the Lensy analysis agent.
- * This is the main entry point called by the Lambda handler.
+ * Run the Lensy AI readiness analysis pipeline (direct orchestration).
+ *
+ * Instead of using LangGraph's agent loop (8+ LLM round-trips at ~2.5s each),
+ * we call tools directly in a deterministic sequence. Readiness and discoverability
+ * checks run in parallel since they are independent.
  */
 export async function runAgent(input: AgentRunInput): Promise<string> {
-    console.log(`[Agent] Starting analysis for URL: ${input.url}, session: ${input.sessionId}`);
+    const { url, sessionId, analysisStartTime, llmsTxtUrl } = input;
+    const progress = new ProgressPublisher(sessionId);
 
-    const app = buildGraph();
+    console.log(`[Pipeline] Starting direct analysis for URL: ${url}, session: ${sessionId}`);
+    const pipelineStart = Date.now();
 
-    // Build the initial message that tells the agent what to do
-    const userMessage = buildUserMessage(input);
+    try {
+        // ── Step 1: Detect input type (inline — no tool call needed) ──
+        const inputType = url.toLowerCase().includes('sitemap.xml') ? 'sitemap' : 'doc';
+        console.log(`[Pipeline] Input type: ${inputType}`);
 
-    const initialState = {
-        messages: [
-            new SystemMessage(SYSTEM_PROMPT),
-            new HumanMessage(userMessage),
-        ],
-    };
+        // ── Step 2: Run readiness + discoverability in PARALLEL ──
+        await progress.info('Analyzing AI readiness and search discoverability in parallel...');
 
-    console.log('[Agent] Invoking graph...');
+        const readinessInput = llmsTxtUrl ? { url, sessionId, llmsTxtUrl } : { url, sessionId };
 
-    // Run the agent with a recursion limit to prevent infinite loops
-    const finalState = await app.invoke(initialState, {
-        recursionLimit: 50,  // Max 50 agent↔tool round-trips (typically needs ~15-20)
-    });
+        const [readinessResult, discoverabilityResult] = await Promise.allSettled([
+            checkAIReadinessTool.invoke(readinessInput),
+            checkAIDiscoverabilityTool.invoke({ url, sessionId }),
+        ]);
 
-    // Extract the final AI response
-    const lastMessage = finalState.messages[finalState.messages.length - 1];
-    const responseText = lastMessage instanceof AIMessage
-        ? lastMessage.content
-        : String(lastMessage);
+        // Log results (tools write artifacts to S3 internally)
+        if (readinessResult.status === 'fulfilled') {
+            console.log(`[Pipeline] AI readiness complete: ${String(readinessResult.value).substring(0, 200)}`);
+        } else {
+            console.error(`[Pipeline] AI readiness FAILED:`, readinessResult.reason);
+            await progress.error(`AI readiness check failed: ${readinessResult.reason}`);
+        }
 
-    console.log(`[Agent] Analysis complete. Final message length: ${String(responseText).length}`);
+        if (discoverabilityResult.status === 'fulfilled') {
+            console.log(`[Pipeline] AI discoverability complete: ${String(discoverabilityResult.value).substring(0, 200)}`);
+        } else {
+            console.error(`[Pipeline] AI discoverability FAILED:`, discoverabilityResult.reason);
+            await progress.error(`AI discoverability check failed: ${discoverabilityResult.reason}`);
+        }
 
-    return typeof responseText === 'string' ? responseText : JSON.stringify(responseText);
+        const parallelTime = Date.now() - pipelineStart;
+        console.log(`[Pipeline] Parallel checks completed in ${parallelTime}ms`);
+
+        // ── Step 3: Generate report ──
+        await progress.info('Generating report...');
+
+        const reportResult = await generateReportTool.invoke({
+            sessionId,
+            url,
+            sourceMode: 'ai-readiness',
+            analysisStartTime,
+        });
+
+        const totalTime = Date.now() - pipelineStart;
+        console.log(`[Pipeline] Report generated. Total pipeline time: ${totalTime}ms`);
+
+        // Parse report result to extract score for the final message
+        let overallScore = 0;
+        try {
+            const parsed = JSON.parse(reportResult);
+            overallScore = parsed.overallScore || 0;
+        } catch { }
+
+        await progress.success(
+            `Analysis complete! AI Readiness: ${overallScore}/100 (${(totalTime / 1000).toFixed(1)}s)`
+        );
+
+        return reportResult;
+
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error(`[Pipeline] Fatal error:`, errorMessage);
+        await progress.error(`Analysis failed: ${errorMessage}`);
+        throw error;
+    }
 }
-
-function buildUserMessage(input: AgentRunInput): string {
-    const parts = [
-        `Analyze this documentation URL: ${input.url}`,
-        `Session ID: ${input.sessionId}`,
-        `Model: ${input.selectedModel}`,
-        `Analysis start time: ${input.analysisStartTime}`,
-    ];
-
-    if (input.contextAnalysis?.enabled) {
-        parts.push(`Context analysis: enabled (max ${input.contextAnalysis.maxContextPages || 5} pages)`);
-    }
-
-    if (input.cacheControl?.enabled === false) {
-        parts.push('Cache: disabled (force fresh analysis)');
-    }
-
-    if (input.sitemapUrl) {
-        parts.push(`Sitemap URL (user-provided): ${input.sitemapUrl}`);
-    }
-
-    if (input.llmsTxtUrl) {
-        parts.push(`\nIMPORTANT — llms.txt URL provided: ${input.llmsTxtUrl}`);
-        parts.push(`You MUST call check_ai_readiness with this llmsTxtUrl IMMEDIATELY after detect_input_type and BEFORE process_url. This will crawl the llms.txt pages and build the Knowledge Base that process_url needs for context enrichment. Do NOT skip this step.`);
-    }
-
-    return parts.join('\n');
-}
-
-export { buildGraph, SYSTEM_PROMPT, tools };

@@ -101,5 +101,17 @@ class ProgressPublisher {
     async cacheMiss(message, metadata) {
         await this.publish({ type: 'cache-miss', message, timestamp: Date.now(), metadata });
     }
+    /**
+     * Publish a category result for async card loading.
+     * Frontend receives this and immediately populates the corresponding card.
+     */
+    async categoryResult(category, data, message) {
+        await this.publish({
+            type: 'category-result',
+            message: message || `${category} analysis complete`,
+            timestamp: Date.now(),
+            metadata: { category, data },
+        });
+    }
 }
 exports.ProgressPublisher = ProgressPublisher;

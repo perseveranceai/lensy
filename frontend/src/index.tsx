@@ -7,19 +7,19 @@ import './index.css';
 
 const theme = createTheme({
     palette: {
-        mode: 'dark',
+        mode: 'dark', // MUI base mode — CSS custom properties in index.css handle actual theme switching
         primary: {
-            main: '#3b82f6', // --accent-primary
+            main: '#3b82f6',
         },
         background: {
-            default: '#0a0a0a', // --bg-primary
-            paper: '#111111',   // --bg-secondary
+            default: '#0a0a0a',
+            paper: '#111111',
         },
         text: {
-            primary: '#fafafa',   // --text-primary
-            secondary: '#e5e7eb', // --text-secondary
+            primary: '#fafafa',
+            secondary: '#e5e7eb',
         },
-        divider: '#1f1f1f', // --border-subtle
+        divider: '#1f1f1f',
     },
     typography: {
         fontFamily: '"Plus Jakarta Sans", "DM Sans", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -49,18 +49,18 @@ const theme = createTheme({
         MuiAppBar: {
             styleOverrides: {
                 root: {
-                    backgroundColor: 'rgba(10, 10, 10, 0.9)',
+                    backgroundColor: 'var(--header-bg)',
                     backdropFilter: 'blur(12px)',
-                    borderBottom: '1px solid #1f1f1f',
+                    borderBottom: '1px solid var(--border-subtle)',
                 },
             },
         },
         MuiPaper: {
             styleOverrides: {
                 root: {
-                    backgroundColor: '#111111',
+                    backgroundColor: 'var(--bg-secondary)',
                     borderRadius: 12,
-                    border: '1px solid #1f1f1f',
+                    border: '1px solid var(--border-subtle)',
                 },
             },
         },

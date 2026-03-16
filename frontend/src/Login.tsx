@@ -72,14 +72,14 @@ function Login() {
                     action: 'attempt',
                 }),
             })
-            .then(res => res.json())
-            .then(data => {
-                // Save loginTimestamp in cookie so ConsoleLayout can send "verified" call
-                if (data.loginTimestamp) {
-                    setCookie(LOGIN_TS_COOKIE_NAME, data.loginTimestamp, EXPIRY_HOURS);
-                }
-            })
-            .catch(() => { /* silently fail — don't block login */ });
+                .then(res => res.json())
+                .then(data => {
+                    // Save loginTimestamp in cookie so ConsoleLayout can send "verified" call
+                    if (data.loginTimestamp) {
+                        setCookie(LOGIN_TS_COOKIE_NAME, data.loginTimestamp, EXPIRY_HOURS);
+                    }
+                })
+                .catch(() => { /* silently fail — don't block login */ });
         });
 
         // Full page redirect so CloudFront Function validates the cookie server-side.
@@ -148,8 +148,8 @@ function Login() {
                     </h1>
                     <p style={{
                         fontFamily: 'var(--font-sans, var(--font-ui))',
-                        fontSize: '0.875rem',
-                        color: 'var(--text-muted)',
+                        fontSize: '0.75rem',
+                        color: 'var(--text-secondary)',
                         margin: 0,
                     }}>
                         Enter your access code to continue
@@ -305,7 +305,9 @@ function Login() {
                                 <a
                                     href="/terms"
                                     onClick={(e) => { e.preventDefault(); navigate('/terms'); }}
-                                    style={{ color: 'var(--accent-primary, #3b82f6)', textDecoration: 'underline' }}
+                                    style={{ color: 'var(--text-secondary)', textDecoration: 'none', transition: 'color 0.2s' }}
+                                    onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
+                                    onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-secondary)')}
                                 >
                                     Terms of Use
                                 </a>
@@ -313,7 +315,9 @@ function Login() {
                                 <a
                                     href="/privacy"
                                     onClick={(e) => { e.preventDefault(); navigate('/privacy'); }}
-                                    style={{ color: 'var(--accent-primary, #3b82f6)', textDecoration: 'underline' }}
+                                    style={{ color: 'var(--text-secondary)', textDecoration: 'none', transition: 'color 0.2s' }}
+                                    onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
+                                    onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-secondary)')}
                                 >
                                     Privacy Policy
                                 </a>
@@ -348,7 +352,7 @@ function Login() {
                     <p style={{
                         fontFamily: 'var(--font-sans, var(--font-ui))',
                         fontSize: '0.8125rem',
-                        color: 'var(--text-muted)',
+                        color: 'var(--text-secondary)',
                         marginBottom: '0.75rem',
                     }}>
                         Access expires after 48 hours

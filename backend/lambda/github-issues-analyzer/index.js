@@ -132,6 +132,11 @@ async function putDomainCache(domain, cache) {
     }
 }
 // ─── DynamoDB Page Knowledge Base ──────────────────────────────────────────────────
+/**
+ * Derive a safe domain key from a URL (e.g., "www.dotcms.com" → "dotcms-com").
+ * Strips subdomains so all subdomains share the same KB partition.
+ * Must stay in sync with page-summarizer.ts deriveSafeDomain().
+ */
 function deriveSafeDomainForKB(urlString) {
     try {
         const urlObj = new url_1.URL(urlString);
@@ -144,13 +149,18 @@ function deriveSafeDomainForKB(urlString) {
         return urlString.replace(/[^a-zA-Z0-9-]/g, '-');
     }
 }
+/**
+ * Write summarized pages to DynamoDB Page Knowledge Base.
+ * Runs alongside S3 writes (transitional — GH Issues analyzer will become fully agentic).
+ */
 async function writePagesToKB(domain, pages) {
     if (!PAGE_KB_TABLE || pages.length === 0)
         return;
+    // Derive safe domain from first page URL, or from domain string
     const safeDomain = pages[0]?.url
         ? deriveSafeDomainForKB(pages[0].url)
         : domain.replace(/[^a-zA-Z0-9-]/g, '-');
-    const expiresAt = Math.floor(Date.now() / 1000) + 7 * 86400;
+    const expiresAt = Math.floor(Date.now() / 1000) + 7 * 86400; // 7-day TTL
     const batchSize = 25;
     for (let i = 0; i < pages.length; i += batchSize) {
         const batch = pages.slice(i, i + batchSize);

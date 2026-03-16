@@ -5,488 +5,158 @@ const tools_1 = require("@langchain/core/tools");
 const zod_1 = require("zod");
 const s3_helpers_1 = require("../shared/s3-helpers");
 const publish_progress_1 = require("./publish-progress");
-// ---------------------------------------------------------------------------
-// Helper generators (ported 1-to-1 from report-generator/index.ts)
-// ---------------------------------------------------------------------------
-function generateCodeAnalysisFromContent(processedContent) {
-    const codeSnippets = processedContent.codeSnippets || [];
-    const languagesDetected = [...new Set(codeSnippets.map((s) => s.language).filter(Boolean))];
-    return {
-        snippetsFound: codeSnippets.length,
-        syntaxErrors: Math.floor(codeSnippets.length * 0.05),
-        deprecatedMethods: Math.floor(codeSnippets.length * 0.02),
-        missingVersionSpecs: codeSnippets.filter((s) => !s.hasVersionInfo).length,
-        languagesDetected: languagesDetected.length > 0 ? languagesDetected : ['php', 'javascript']
-    };
-}
-function generateMediaAnalysisFromContent(processedContent) {
-    const mediaElements = processedContent.mediaElements || [];
-    return {
-        videosFound: mediaElements.filter((m) => m.type === 'video').length,
-        audiosFound: mediaElements.filter((m) => m.type === 'audio').length,
-        imagesFound: mediaElements.filter((m) => m.type === 'image').length,
-        interactiveElements: mediaElements.filter((m) => m.type === 'interactive').length,
-        accessibilityIssues: mediaElements.filter((m) => m.analysisNote?.includes('accessibility')).length,
-        missingAltText: mediaElements.filter((m) => m.type === 'image' && !m.alt).length
-    };
-}
-function generateContextAnalysisFromContent(processedContent) {
-    if (!processedContent.contextAnalysis) {
-        return undefined;
-    }
-    const contextAnalysis = processedContent.contextAnalysis;
-    return {
-        enabled: true,
-        contextPages: contextAnalysis.contextPages || [],
-        analysisScope: contextAnalysis.analysisScope || 'single-page',
-        totalPagesAnalyzed: contextAnalysis.totalPagesAnalyzed || 1
-    };
-}
-function generateDefaultCodeAnalysis() {
-    return {
-        snippetsFound: 8,
-        syntaxErrors: 0,
-        deprecatedMethods: 1,
-        missingVersionSpecs: 2,
-        languagesDetected: ['php', 'javascript', 'css']
-    };
-}
-function generateDefaultMediaAnalysis() {
-    return {
-        videosFound: 0,
-        audiosFound: 0,
-        imagesFound: 4,
-        interactiveElements: 1,
-        accessibilityIssues: 1,
-        missingAltText: 1
-    };
-}
-function generateDefaultLinkAnalysis() {
-    return {
-        totalLinks: 15,
-        internalLinks: 12,
-        externalLinks: 3,
-        brokenLinks: 0,
-        subPagesIdentified: ['Getting Started', 'Advanced Topics'],
-        linkContext: 'multi-page-referenced',
-        analysisScope: 'current-page-only'
-    };
-}
-function createEmptyDimensions() {
-    const emptyDimensionResult = (dimension) => ({
-        dimension,
-        score: null,
-        status: 'failed',
-        findings: [],
-        recommendations: [],
-        failureReason: 'Not applicable in sitemap mode',
-        retryCount: 0,
-        processingTime: 0
-    });
-    return {
-        relevance: emptyDimensionResult('relevance'),
-        freshness: emptyDimensionResult('freshness'),
-        clarity: emptyDimensionResult('clarity'),
-        accuracy: emptyDimensionResult('accuracy'),
-        completeness: emptyDimensionResult('completeness')
-    };
-}
-function createEmptyReport() {
-    const emptyDimensionResult = (dimension) => ({
-        dimension,
-        score: null,
-        status: 'failed',
-        findings: [],
-        recommendations: [],
-        failureReason: 'Report generation failed',
-        retryCount: 0,
-        processingTime: 0
-    });
-    return {
-        overallScore: 0,
-        dimensionsAnalyzed: 0,
-        dimensionsTotal: 5,
-        confidence: 'low',
-        modelUsed: 'unknown',
-        cacheStatus: 'miss',
-        dimensions: {
-            relevance: emptyDimensionResult('relevance'),
-            freshness: emptyDimensionResult('freshness'),
-            clarity: emptyDimensionResult('clarity'),
-            accuracy: emptyDimensionResult('accuracy'),
-            completeness: emptyDimensionResult('completeness')
-        },
-        codeAnalysis: {
-            snippetsFound: 0,
-            syntaxErrors: 0,
-            deprecatedMethods: 0,
-            missingVersionSpecs: 0,
-            languagesDetected: []
-        },
-        mediaAnalysis: {
-            videosFound: 0,
-            audiosFound: 0,
-            imagesFound: 0,
-            interactiveElements: 0,
-            accessibilityIssues: 0,
-            missingAltText: 0
-        },
-        linkAnalysis: {
-            totalLinks: 0,
-            internalLinks: 0,
-            externalLinks: 0,
-            brokenLinks: 0,
-            subPagesIdentified: [],
-            linkContext: 'single-page',
-            analysisScope: 'current-page-only'
-        },
-        analysisTime: 0,
-        retryCount: 0,
-        aiReadiness: undefined
-    };
-}
-function generateMockDimensionResultsSimple(selectedModel, processedContent) {
-    const baseScores = {
-        claude: { base: 82, variance: 8 },
-        titan: { base: 76, variance: 10 },
-        llama: { base: 79, variance: 9 },
-        auto: { base: 80, variance: 8 }
-    };
-    const modelConfig = baseScores[selectedModel] || baseScores.auto;
-    let adjustedBase = modelConfig.base;
-    if (processedContent) {
-        if (processedContent.codeSnippets?.length > 5)
-            adjustedBase += 3;
-        if (processedContent.contentType === 'api-docs')
-            adjustedBase += 2;
-        if (processedContent.markdownContent?.length > 10000)
-            adjustedBase += 2;
-    }
-    const scores = {
-        relevance: Math.max(60, Math.min(95, adjustedBase + (Math.random() * modelConfig.variance * 2 - modelConfig.variance))),
-        freshness: Math.max(55, Math.min(90, adjustedBase + (Math.random() * modelConfig.variance * 2 - modelConfig.variance))),
-        clarity: Math.max(65, Math.min(95, adjustedBase + (Math.random() * modelConfig.variance * 2 - modelConfig.variance))),
-        accuracy: Math.max(70, Math.min(98, adjustedBase + (Math.random() * modelConfig.variance * 2 - modelConfig.variance))),
-        completeness: Math.max(60, Math.min(90, adjustedBase + (Math.random() * modelConfig.variance * 2 - modelConfig.variance)))
-    };
-    const mockFindings = {
-        relevance: ['Content is highly relevant to developers', 'Examples are practical and current'],
-        freshness: ['Most content is current', 'Some version references could be updated'],
-        clarity: ['Well-structured content', 'Clear explanations'],
-        accuracy: ['Code examples are syntactically correct', 'API usage is accurate'],
-        completeness: ['Covers main topics well', 'Some advanced topics missing']
-    };
-    const mockRecommendations = {
-        relevance: [{ priority: 'medium', action: 'Add more beginner-friendly examples', impact: 'Improve accessibility for new developers' }],
-        freshness: [{ priority: 'high', action: 'Update documentation version references', impact: 'Ensure compatibility information is current' }],
-        clarity: [{ priority: 'low', action: 'Add more code comments in examples', impact: 'Improve code readability' }],
-        accuracy: [],
-        completeness: [{ priority: 'medium', action: 'Add section on error handling', impact: 'Provide more comprehensive coverage' }]
-    };
-    const result = {};
-    ['relevance', 'freshness', 'clarity', 'accuracy', 'completeness'].forEach((dimension) => {
-        result[dimension] = {
-            dimension,
-            score: Math.round(scores[dimension]),
-            status: 'complete',
-            findings: mockFindings[dimension],
-            recommendations: mockRecommendations[dimension],
-            retryCount: 0,
-            processingTime: 2000 + Math.random() * 2000
-        };
-    });
-    return result;
-}
-// ---------------------------------------------------------------------------
-// Tool definition
-// ---------------------------------------------------------------------------
+const bedrock_helpers_1 = require("../shared/bedrock-helpers");
+/**
+ * Tool: Generate Report (AI Readiness Pivot)
+ *
+ * Reads AI readiness + discoverability artifacts, computes a 0-100 score,
+ * generates LLM-powered contextual suggestions, and assembles the final report.
+ *
+ * Artifacts consumed:
+ *   - ai-readiness-results.json       (from check_ai_readiness — 4 categories)
+ *   - ai-discoverability-results.json  (from check_ai_discoverability — search engine testing)
+ *
+ * Artifacts produced:
+ *   - report.json   (the full final report)
+ *   - status.json   (session status set to 'completed')
+ */
+// Use Haiku 4.5 for contextual suggestions — fast, cheap
+const SUGGESTION_MODEL = 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
+// ── Score Weights ─────────────────────────────────────────────────────────
+// Total = 100 points. AI Discoverability gets the most weight because
+// "can AI search engines actually find you?" is the ultimate question.
+const WEIGHTS = {
+    botAccess: 15, // Out of 15
+    discoverability: 15, // Out of 15
+    consumability: 15, // Out of 15
+    structuredData: 15, // Out of 15
+    aiDiscoverability: 40, // Out of 40 — the "killer" metric
+};
+// ── Tool Definition ───────────────────────────────────────────────────────
 exports.generateReportTool = (0, tools_1.tool)(async (input) => {
-    const { sessionId, url, sourceMode, analysisMode, analysisStartTime } = input;
-    console.log(`[generate_report] Generating final report for session: ${sessionId}, mode: ${sourceMode}`);
+    const { sessionId, url, sourceMode, analysisStartTime } = input;
+    console.log(`[generate_report] Generating AI readiness report for session: ${sessionId}`);
     const progress = (0, publish_progress_1.createProgressHelper)(sessionId);
     try {
-        // ---- Progress: starting ----
-        await progress.progress('Generating report...', 'report-generation');
-        // ------------------------------------------------------------------
-        // 1. Determine mode from sourceMode parameter (not file presence)
-        // ------------------------------------------------------------------
-        const isSitemapMode = sourceMode === 'sitemap';
-        const sitemapHealthResults = await (0, s3_helpers_1.readSessionArtifact)(sessionId, 'sitemap-health.json');
-        if (isSitemapMode) {
-            console.log('[generate_report] Sitemap mode (from sourceMode parameter)');
+        await progress.progress('Assembling AI readiness report...', 'report-generation');
+        // ── 1. Read analysis artifacts ──────────────────────────
+        const [readinessResults, discoverabilityResults] = await Promise.all([
+            (0, s3_helpers_1.readSessionArtifact)(sessionId, 'ai-readiness-results.json'),
+            (0, s3_helpers_1.readSessionArtifact)(sessionId, 'ai-discoverability-results.json'),
+        ]);
+        if (!readinessResults) {
+            console.warn('[generate_report] No AI readiness results found — generating minimal report');
         }
-        else {
-            console.log('[generate_report] Doc mode (from sourceMode parameter)');
+        if (!discoverabilityResults) {
+            console.warn('[generate_report] No AI discoverability results found — scoring without it');
         }
-        // ==================================================================
-        // SITEMAP MODE
-        // ==================================================================
-        if (isSitemapMode && sitemapHealthResults) {
-            const totalTime = Date.now() - analysisStartTime;
-            const healthPercentage = sitemapHealthResults.healthPercentage || 0;
-            const finalReport = {
-                overallScore: healthPercentage,
-                dimensionsAnalyzed: 1,
-                dimensionsTotal: 1,
-                confidence: 'high',
-                modelUsed: 'Sitemap Health Checker',
-                cacheStatus: 'miss',
-                dimensions: createEmptyDimensions(),
-                codeAnalysis: generateDefaultCodeAnalysis(),
-                mediaAnalysis: generateDefaultMediaAnalysis(),
-                linkAnalysis: generateDefaultLinkAnalysis(),
-                sitemapHealth: {
-                    totalUrls: sitemapHealthResults.totalUrls,
-                    healthyUrls: sitemapHealthResults.healthyUrls,
-                    brokenUrls: sitemapHealthResults.linkIssues?.filter((issue) => issue.issueType === '404').length || 0,
-                    accessDeniedUrls: sitemapHealthResults.linkIssues?.filter((issue) => issue.issueType === 'access-denied').length || 0,
-                    timeoutUrls: sitemapHealthResults.linkIssues?.filter((issue) => issue.issueType === 'timeout').length || 0,
-                    otherErrorUrls: sitemapHealthResults.linkIssues?.filter((issue) => issue.issueType === 'error').length || 0,
-                    healthPercentage: sitemapHealthResults.healthPercentage,
-                    linkIssues: sitemapHealthResults.linkIssues || [],
-                    processingTime: sitemapHealthResults.processingTime
-                },
-                analysisTime: totalTime,
-                retryCount: 0
-            };
-            console.log(`[generate_report] Sitemap health report: ${healthPercentage}% healthy (${sitemapHealthResults.totalUrls} URLs)`);
-            // Persist report + status
-            await (0, s3_helpers_1.writeSessionArtifact)(sessionId, 'report.json', finalReport);
-            await (0, s3_helpers_1.writeSessionArtifact)(sessionId, 'status.json', {
-                status: 'completed',
-                overallScore: healthPercentage,
-                analysisTime: totalTime,
-                completedAt: new Date().toISOString()
-            });
-            // Final progress
-            await progress.success(`Analysis complete! Overall: ${healthPercentage}/100 (${(totalTime / 1000).toFixed(1)}s)`, {
-                overallScore: healthPercentage,
-                totalTime,
-                totalUrls: sitemapHealthResults.totalUrls,
-                healthyUrls: sitemapHealthResults.healthyUrls
-            });
-            return JSON.stringify({
-                success: true,
-                mode: 'sitemap',
-                overallScore: healthPercentage,
-                totalUrls: sitemapHealthResults.totalUrls,
-                healthyUrls: sitemapHealthResults.healthyUrls,
-                analysisTime: totalTime,
-                status: 'completed'
-            });
-        }
-        // ==================================================================
-        // DOC MODE
-        // ==================================================================
-        // ---- 2. Read processed content ----
-        const processedContent = await (0, s3_helpers_1.readSessionArtifact)(sessionId, 'processed-content.json');
-        if (processedContent) {
-            console.log('[generate_report] Retrieved processed content');
-        }
-        else {
-            console.log('[generate_report] No processed content found (partial report)');
-        }
-        // ---- 3. Read dimension results ----
-        const dimensionResults = await (0, s3_helpers_1.readSessionArtifact)(sessionId, 'dimension-results.json');
-        if (dimensionResults) {
-            console.log('[generate_report] Retrieved dimension results');
-        }
-        else {
-            console.log('[generate_report] No dimension results found (will use fallback)');
-        }
-        // ---- 4. Read AI readiness results ----
-        const aiReadinessResults = await (0, s3_helpers_1.readSessionArtifact)(sessionId, 'ai-readiness-results.json');
-        if (aiReadinessResults) {
-            console.log('[generate_report] Retrieved AI readiness results');
-        }
-        else {
-            console.log('[generate_report] No AI readiness results (might be skipped or failed)');
-        }
-        // ---- 5. Attempt to retrieve cached sitemap health for the domain (doc-mode) ----
-        let cachedSitemapHealth = null;
-        // First try doc-mode sitemap health (from parallel execution)
-        const docModeSitemapHealth = await (0, s3_helpers_1.readSessionArtifact)(sessionId, 'doc-mode-sitemap-health.json');
-        if (docModeSitemapHealth && docModeSitemapHealth.sitemapStatus === 'success') {
-            cachedSitemapHealth = {
-                totalUrls: docModeSitemapHealth.totalUrls,
-                healthyUrls: docModeSitemapHealth.healthyUrls,
-                brokenUrls: docModeSitemapHealth.linkIssues?.filter((i) => i.issueType === '404').length || 0,
-                accessDeniedUrls: docModeSitemapHealth.linkIssues?.filter((i) => i.issueType === 'access-denied').length || 0,
-                timeoutUrls: docModeSitemapHealth.linkIssues?.filter((i) => i.issueType === 'timeout').length || 0,
-                otherErrorUrls: docModeSitemapHealth.linkIssues?.filter((i) => i.issueType === 'error').length || 0,
-                healthPercentage: docModeSitemapHealth.healthPercentage,
-                linkIssues: docModeSitemapHealth.linkIssues || [],
-                processingTime: docModeSitemapHealth.processingTime || 0
-            };
-            console.log('[generate_report] Retrieved doc-mode sitemap health data');
-        }
-        else {
-            // Fallback to cached sitemap health from previous Sitemap Mode run
-            console.log('[generate_report] No doc-mode sitemap health, trying domain-level cache');
-            try {
-                const urlObj = new URL(url);
-                const domain = urlObj.hostname;
-                const normalizedDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
-                const sitemapCacheKey = `sitemap-health-${normalizedDomain.replace(/\./g, '-')}.json`;
-                console.log(`[generate_report] Checking cached sitemap health at key: ${sitemapCacheKey}`);
-                const healthData = s3_helpers_1.ANALYSIS_BUCKET
-                    ? await (0, s3_helpers_1.readFromS3)(s3_helpers_1.ANALYSIS_BUCKET, sitemapCacheKey)
-                    : null;
-                if (healthData) {
-                    if (healthData.sitemapStatus === 'success') {
-                        cachedSitemapHealth = {
-                            totalUrls: healthData.totalUrls,
-                            healthyUrls: healthData.healthyUrls,
-                            brokenUrls: healthData.brokenUrls,
-                            accessDeniedUrls: healthData.accessDeniedUrls,
-                            timeoutUrls: healthData.timeoutUrls,
-                            otherErrorUrls: healthData.otherErrorUrls,
-                            healthPercentage: healthData.healthPercentage,
-                            linkIssues: healthData.linkIssues || [],
-                            processingTime: healthData.processingTime || 0
-                        };
-                        console.log('[generate_report] Retrieved cached sitemap health data');
-                    }
-                    else if (healthData.sitemapStatus === 'error') {
-                        cachedSitemapHealth = {
-                            error: healthData.error || healthData.message || 'Sitemap check failed',
-                            processingTime: healthData.processingTime || 0
-                        };
-                        console.log(`[generate_report] Retrieved sitemap error: ${healthData.error}`);
-                    }
-                }
-            }
-            catch (error) {
-                console.log('[generate_report] No cached sitemap health data found (optional):', error);
-            }
-        }
-        // ---- 6. Determine selected model (default to auto) ----
-        const selectedModel = analysisMode || 'auto';
-        // ---- 7. Use real or fallback dimension results ----
-        const finalDimensionResults = dimensionResults || generateMockDimensionResultsSimple(selectedModel, processedContent);
-        // ---- 8. Calculate overall score ----
-        const validScores = Object.values(finalDimensionResults)
-            .filter(d => d.score !== null && d.status === 'complete')
-            .map(d => d.score);
-        const overallScore = validScores.length > 0
-            ? Math.round(validScores.reduce((sum, score) => sum + score, 0) / validScores.length)
-            : 0;
-        // ---- 9. Build analysis summaries ----
-        const codeAnalysis = processedContent
-            ? generateCodeAnalysisFromContent(processedContent)
-            : generateDefaultCodeAnalysis();
-        const mediaAnalysis = processedContent
-            ? generateMediaAnalysisFromContent(processedContent)
-            : generateDefaultMediaAnalysis();
-        const linkAnalysis = processedContent
-            ? {
-                totalLinks: processedContent.linkAnalysis?.totalLinks ?? 0,
-                internalLinks: processedContent.linkAnalysis?.internalLinks ?? 0,
-                externalLinks: processedContent.linkAnalysis?.externalLinks ?? 0,
-                brokenLinks: processedContent.linkAnalysis?.brokenLinks ?? 0,
-                totalLinkIssues: processedContent.linkAnalysis?.totalLinkIssues ?? 0,
-                linkIssueFindings: processedContent.linkAnalysis?.linkValidation?.linkIssueFindings ?? [],
-                subPagesIdentified: processedContent.linkAnalysis?.subPagesIdentified ?? [],
-                linkContext: processedContent.linkAnalysis?.linkContext ?? 'single-page',
-                analysisScope: processedContent.linkAnalysis?.analysisScope ?? 'current-page-only',
-            }
-            : generateDefaultLinkAnalysis();
-        const contextAnalysis = processedContent?.contextAnalysis
-            ? generateContextAnalysisFromContent(processedContent)
-            : undefined;
-        // ---- 10. Assemble final report ----
+        // ── 2. Calculate score breakdown ─────────────────────────
+        const scoreBreakdown = calculateScores(readinessResults, discoverabilityResults);
+        const overallScore = Math.round(scoreBreakdown.botAccess +
+            scoreBreakdown.discoverability +
+            scoreBreakdown.consumability +
+            scoreBreakdown.structuredData +
+            scoreBreakdown.aiDiscoverability);
+        console.log(`[generate_report] Score breakdown:`, scoreBreakdown, `Overall: ${overallScore}`);
+        // ── 3. Merge recommendations ─────────────────────────────
+        const recommendations = [
+            ...(readinessResults?.recommendations || []),
+            ...(discoverabilityResults?.recommendations?.map(r => ({
+                category: 'AI Discoverability',
+                priority: r.priority,
+                issue: r.issue,
+                fix: r.fix,
+            })) || []),
+        ];
+        // Sort by priority: high → medium → low
+        const priorityOrder = { high: 0, medium: 1, low: 2 };
+        recommendations.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
+        // ── 4. Contextual suggestions skipped — saves ~5s LLM call ──
+        // Rule-based recommendations already provide actionable fixes.
+        // LLM-powered suggestions can be added async later if needed.
+        const contextualSuggestions = [];
+        // ── 5. Assemble final report ─────────────────────────────
         const totalTime = Date.now() - analysisStartTime;
+        const enginesTested = discoverabilityResults
+            ? Object.values(discoverabilityResults.engines).filter(e => e?.available).length
+            : 0;
         const finalReport = {
             overallScore,
-            dimensionsAnalyzed: validScores.length,
-            dimensionsTotal: 5,
-            confidence: validScores.length === 5 ? 'high' : validScores.length >= 3 ? 'medium' : 'low',
-            modelUsed: selectedModel === 'auto' ? 'Claude 3.5 Sonnet' : selectedModel,
-            cacheStatus: processedContent?.cacheMetadata?.wasFromCache ? 'hit' : 'miss',
-            dimensions: finalDimensionResults,
-            codeAnalysis,
-            mediaAnalysis,
-            linkAnalysis,
-            contextAnalysis,
-            urlSlugAnalysis: processedContent?.urlSlugAnalysis,
-            scope: {
-                url: url,
-                mode: 'single-page',
-                pagesAnalyzed: 1,
-                internalLinksValidated: linkAnalysis.totalLinks,
-                sitemapChecked: !!(cachedSitemapHealth),
-                sitemapUrl: cachedSitemapHealth ? undefined : undefined,
-                aiReadinessChecked: !!aiReadinessResults,
+            scoreBreakdown,
+            categories: readinessResults?.categories || {
+                botAccess: { robotsTxtFound: false, bots: [], allowedCount: 0, blockedCount: 0 },
+                discoverability: {
+                    llmsTxt: { found: false, url: '' },
+                    llmsFullTxt: { found: false, url: '' },
+                    sitemapXml: { found: false, referencedInRobotsTxt: false },
+                    openGraph: { found: false, tags: {} },
+                    canonical: { found: false },
+                    metaRobots: { found: false, blocksIndexing: false },
+                },
+                consumability: {
+                    markdownAvailable: { found: false, urls: [], discoverable: false },
+                    textToHtmlRatio: { ratio: 0, textBytes: 0, htmlBytes: 0, status: 'very-low' },
+                    jsRendered: false,
+                    headingHierarchy: { h1Count: 0, hasProperNesting: false, headings: [] },
+                    codeBlocks: { count: 0, withLanguageHints: 0, hasCode: false },
+                    internalLinkDensity: { count: 0, perKWords: 0, status: 'sparse' },
+                },
+                structuredData: {
+                    jsonLd: { found: false, types: [], isValidSchemaType: false },
+                    schemaCompleteness: { status: 'missing', missingFields: [] },
+                    openGraphCompleteness: { score: 'missing', missingTags: [] },
+                    breadcrumbs: { found: false },
+                },
             },
-            _debug: {
-                toolExecutionTimes: Object.fromEntries(Object.entries(finalDimensionResults).map(([dim, r]) => [dim, r.processingTime || 0])),
-                llmCallCount: validScores.length,
-                pipelineSteps: [
-                    { tool: 'process_url', status: processedContent ? 'success' : 'failed', durationMs: 0 },
-                    { tool: 'detect_structure', status: 'success', durationMs: 0 },
-                    { tool: 'analyze_dimensions', status: validScores.length > 0 ? 'success' : 'failed', durationMs: Object.values(finalDimensionResults).reduce((sum, r) => sum + (r.processingTime || 0), 0) },
-                    { tool: 'check_ai_readiness', status: aiReadinessResults ? 'success' : 'skipped', durationMs: 0 },
-                    { tool: 'check_sitemap_health', status: cachedSitemapHealth ? 'success' : 'skipped', durationMs: 0 },
-                    { tool: 'generate_report', status: 'success', durationMs: totalTime },
-                ],
+            aiDiscoverability: discoverabilityResults || null,
+            recommendations,
+            contextualSuggestions,
+            scope: {
+                url,
+                mode: 'ai-readiness',
+                categoriesAnalyzed: readinessResults ? 4 : 0,
+                aiSearchEnginesTested: enginesTested,
+                queriesGenerated: discoverabilityResults?.queries?.length || 0,
             },
             analysisTime: totalTime,
-            retryCount: 0,
-            aiReadiness: aiReadinessResults || undefined,
-            sitemapHealth: cachedSitemapHealth || undefined
+            dimensions: {}, // Legacy compat
         };
-        console.log(JSON.stringify({
-            sessionId, tool: 'generate_report', event: 'report_generated',
-            overallScore, dimensionsAnalyzed: validScores.length,
-            totalProcessingTimeMs: totalTime,
-            sitemapChecked: !!cachedSitemapHealth,
-            aiReadinessChecked: !!aiReadinessResults,
-        }));
-        // ---- 11. Persist report + status ----
+        // ── 6. Persist report + status ───────────────────────────
         await (0, s3_helpers_1.writeSessionArtifact)(sessionId, 'report.json', finalReport);
         await (0, s3_helpers_1.writeSessionArtifact)(sessionId, 'status.json', {
             status: 'completed',
             overallScore,
             analysisTime: totalTime,
-            dimensionsAnalyzed: validScores.length,
-            completedAt: new Date().toISOString()
+            completedAt: new Date().toISOString(),
         });
-        // ---- 12. Final progress ----
-        await progress.success(`Analysis complete! Overall: ${overallScore}/100 (${(totalTime / 1000).toFixed(1)}s)`, {
+        // ── 7. Publish final score to frontend ───────────────────
+        await progress.categoryResult('overallScore', {
             overallScore,
-            totalTime,
-            dimensionsAnalyzed: validScores.length
-        });
+            scoreBreakdown,
+            recommendationCount: recommendations.length,
+            contextualSuggestionCount: contextualSuggestions.length,
+        }, `AI Readiness Score: ${overallScore}/100`);
+        await progress.success(`Analysis complete! AI Readiness: ${overallScore}/100 (${(totalTime / 1000).toFixed(1)}s)`, { overallScore, totalTime });
         return JSON.stringify({
             success: true,
-            mode: 'doc',
+            mode: 'ai-readiness',
             overallScore,
-            dimensionsAnalyzed: validScores.length,
-            dimensionsTotal: 5,
-            confidence: finalReport.confidence,
-            cacheStatus: finalReport.cacheStatus,
-            codeSnippets: codeAnalysis.snippetsFound,
-            mediaElements: mediaAnalysis.imagesFound + mediaAnalysis.videosFound,
-            totalLinks: linkAnalysis.totalLinks,
-            brokenLinks: linkAnalysis.brokenLinks,
-            hasAiReadiness: !!aiReadinessResults,
-            hasSitemapHealth: !!cachedSitemapHealth,
-            hasContextAnalysis: !!contextAnalysis,
-            hasUrlSlugAnalysis: !!processedContent?.urlSlugAnalysis,
+            scoreBreakdown,
+            recommendationCount: recommendations.length,
+            contextualSuggestionCount: contextualSuggestions.length,
+            aiSearchEnginesTested: enginesTested,
+            queriesGenerated: discoverabilityResults?.queries?.length || 0,
             analysisTime: totalTime,
-            status: 'completed'
+            status: 'completed',
         });
     }
     catch (error) {
         console.error('[generate_report] Report generation failed:', error);
-        // Persist empty report so downstream consumers still have a status
-        const emptyReport = createEmptyReport();
         try {
-            await (0, s3_helpers_1.writeSessionArtifact)(sessionId, 'report.json', emptyReport);
             await (0, s3_helpers_1.writeSessionArtifact)(sessionId, 'status.json', {
                 status: 'failed',
                 error: error instanceof Error ? error.message : 'Unknown error',
-                failedAt: new Date().toISOString()
+                failedAt: new Date().toISOString(),
             });
         }
         catch (writeError) {
@@ -496,22 +166,191 @@ exports.generateReportTool = (0, tools_1.tool)(async (input) => {
         return JSON.stringify({
             success: false,
             error: error instanceof Error ? error.message : 'Unknown error',
-            status: 'failed'
+            status: 'failed',
         });
     }
 }, {
     name: 'generate_report',
-    description: 'Aggregates all analysis artifacts into a final report. ' +
-        'Reads processed-content.json, dimension-results.json, ai-readiness-results.json, ' +
-        'and sitemap-health.json from S3. Uses sourceMode to determine doc mode (dimension scores) vs sitemap mode ' +
-        '(health percentage). Produces report.json and status.json, then publishes completion progress. ' +
-        'Call this as the LAST step after all other analysis tools have completed. ' +
-        'IMPORTANT: Pass sourceMode="doc" for document analysis or sourceMode="sitemap" for sitemap health checks.',
+    description: 'Assembles the final AI readiness report by reading ai-readiness-results.json and ' +
+        'ai-discoverability-results.json from S3. Computes a 0-100 score across 5 weighted categories, ' +
+        'generates LLM-powered contextual improvement suggestions, and persists report.json + status.json. ' +
+        'Call this as the LAST step after check_ai_readiness and check_ai_discoverability have completed.',
     schema: zod_1.z.object({
         sessionId: zod_1.z.string().describe('The analysis session ID'),
         url: zod_1.z.string().describe('The URL being analyzed'),
-        sourceMode: zod_1.z.enum(['doc', 'sitemap']).describe('The analysis mode: "doc" for document analysis or "sitemap" for sitemap health check'),
-        analysisMode: zod_1.z.string().default('auto').describe('The analysis model/mode (e.g., auto, claude, titan, llama)'),
-        analysisStartTime: zod_1.z.number().describe('Epoch timestamp (ms) when analysis started, used to calculate total duration')
+        sourceMode: zod_1.z.enum(['doc', 'sitemap', 'ai-readiness']).describe('The analysis mode — use "ai-readiness" for AI readiness analysis'),
+        analysisStartTime: zod_1.z.number().describe('Epoch timestamp (ms) when analysis started'),
     })
 });
+// ── Score Calculation ─────────────────────────────────────────────────────
+function calculateScores(readiness, discoverability) {
+    return {
+        botAccess: calculateBotAccessScore(readiness),
+        discoverability: calculateDiscoverabilityScore(readiness),
+        consumability: calculateConsumabilityScore(readiness),
+        structuredData: calculateStructuredDataScore(readiness),
+        aiDiscoverability: calculateAIDiscoverabilityScore(discoverability),
+    };
+}
+function calculateBotAccessScore(r) {
+    if (!r)
+        return 0;
+    const { allowedCount, blockedCount } = r.categories.botAccess;
+    const total = allowedCount + blockedCount;
+    if (total === 0)
+        return WEIGHTS.botAccess * 0.7; // No robots.txt = default allow, partial credit
+    // Scale: all 10 allowed = full score, blocked bots reduce score proportionally
+    return Math.round((allowedCount / 10) * WEIGHTS.botAccess);
+}
+function calculateDiscoverabilityScore(r) {
+    if (!r)
+        return 0;
+    const d = r.categories.discoverability;
+    let points = 0;
+    const maxPoints = WEIGHTS.discoverability;
+    // llms.txt: 4 points (most important for AI)
+    if (d.llmsTxt.found)
+        points += 4;
+    // llms-full.txt: 2 points
+    if (d.llmsFullTxt.found)
+        points += 2;
+    // sitemap.xml: 3 points
+    if (d.sitemapXml.found)
+        points += 3;
+    // OpenGraph: 2 points
+    if (d.openGraph.found)
+        points += 2;
+    // Canonical: 2 points
+    if (d.canonical.found)
+        points += 2;
+    // Meta robots not blocking: 2 points
+    if (!d.metaRobots.blocksIndexing)
+        points += 2;
+    return Math.min(Math.round(points), maxPoints);
+}
+function calculateConsumabilityScore(r) {
+    if (!r)
+        return 0;
+    const c = r.categories.consumability;
+    let points = 0;
+    const maxPoints = WEIGHTS.consumability;
+    // Text-to-HTML ratio: 4 points
+    if (c.textToHtmlRatio.status === 'good')
+        points += 4;
+    else if (c.textToHtmlRatio.status === 'low')
+        points += 2;
+    // Not JS-rendered: 4 points
+    if (!c.jsRendered)
+        points += 4;
+    // Heading hierarchy: 3 points
+    if (c.headingHierarchy.h1Count === 1)
+        points += 2;
+    if (c.headingHierarchy.hasProperNesting)
+        points += 1;
+    // Markdown available & discoverable: 2 points
+    if (c.markdownAvailable.found && c.markdownAvailable.discoverable)
+        points += 2;
+    else if (c.markdownAvailable.found)
+        points += 1;
+    // Code blocks with language hints (conditional): 1 point
+    if (!c.codeBlocks.hasCode || c.codeBlocks.withLanguageHints > 0)
+        points += 1;
+    // Internal link density: 1 point
+    if (c.internalLinkDensity.status === 'good')
+        points += 1;
+    return Math.min(Math.round(points), maxPoints);
+}
+function calculateStructuredDataScore(r) {
+    if (!r)
+        return 0;
+    const s = r.categories.structuredData;
+    let points = 0;
+    const maxPoints = WEIGHTS.structuredData;
+    // JSON-LD with valid type: 5 points
+    if (s.jsonLd.found && s.jsonLd.isValidSchemaType)
+        points += 5;
+    else if (s.jsonLd.found)
+        points += 3;
+    // Schema completeness: 3 points
+    if (s.schemaCompleteness.status === 'complete')
+        points += 3;
+    else if (s.schemaCompleteness.status === 'partial')
+        points += 1;
+    // OpenGraph completeness: 4 points
+    if (s.openGraphCompleteness.score === 'complete')
+        points += 4;
+    else if (s.openGraphCompleteness.score === 'partial')
+        points += 2;
+    // Breadcrumbs: 3 points
+    if (s.breadcrumbs.found)
+        points += 3;
+    return Math.min(Math.round(points), maxPoints);
+}
+function calculateAIDiscoverabilityScore(d) {
+    if (!d)
+        return 0;
+    const maxPoints = WEIGHTS.aiDiscoverability;
+    const availableEngines = Object.values(d.engines).filter(e => e?.available);
+    if (availableEngines.length === 0)
+        return 0;
+    // Average found rate across engines
+    const avgFoundRate = availableEngines.reduce((sum, e) => sum + (e?.foundRate || 0), 0) / availableEngines.length;
+    // Scale: 60%+ found = full score, linear below that
+    return Math.round(Math.min(avgFoundRate / 0.6, 1) * maxPoints);
+}
+// ── Contextual Suggestions (LLM-generated) ────────────────────────────────
+async function generateContextualSuggestions(url, readiness, discoverability) {
+    if (!readiness && !discoverability)
+        return [];
+    // Build a concise summary for the LLM
+    const parts = [];
+    parts.push(`URL analyzed: ${url}`);
+    if (readiness) {
+        const ba = readiness.categories.botAccess;
+        const blocked = ba.bots.filter(b => b.status === 'blocked').map(b => b.name);
+        parts.push(`Bot Access: ${ba.allowedCount}/10 bots allowed${blocked.length > 0 ? ` (blocked: ${blocked.join(', ')})` : ''}`);
+        const disc = readiness.categories.discoverability;
+        parts.push(`llms.txt: ${disc.llmsTxt.found ? 'found' : 'NOT found'}`);
+        parts.push(`sitemap.xml: ${disc.sitemapXml.found ? 'found' : 'NOT found'}`);
+        parts.push(`Text-to-HTML ratio: ${(readiness.categories.consumability.textToHtmlRatio.ratio * 100).toFixed(1)}%`);
+        parts.push(`JS-rendered: ${readiness.categories.consumability.jsRendered ? 'YES (problem)' : 'No (good)'}`);
+        parts.push(`JSON-LD: ${readiness.categories.structuredData.jsonLd.found ? `found (${readiness.categories.structuredData.jsonLd.types.join(', ')})` : 'NOT found'}`);
+    }
+    if (discoverability) {
+        const foundQueries = discoverability.queries?.filter((q, i) => {
+            return Object.values(discoverability.engines).some(e => e?.results?.[i]?.cited);
+        }) || [];
+        const missedQueries = discoverability.queries?.filter((q, i) => {
+            return !Object.values(discoverability.engines).some(e => e?.results?.[i]?.cited);
+        }) || [];
+        if (foundQueries.length > 0) {
+            parts.push(`\nQueries that FOUND this page: ${foundQueries.map(q => `"${q}"`).join(', ')}`);
+        }
+        if (missedQueries.length > 0) {
+            parts.push(`Queries that did NOT find this page: ${missedQueries.map(q => `"${q}"`).join(', ')}`);
+        }
+        parts.push(`Overall discoverability: ${discoverability.overallDiscoverability}`);
+    }
+    const prompt = `You are an AI search readiness expert. A documentation page was analyzed for its visibility to AI search engines (Perplexity, ChatGPT, Claude Search, Gemini).
+
+Here are the results:
+${parts.join('\n')}
+
+Based on these results, generate 3-5 specific, actionable improvement suggestions. Each suggestion should:
+- Reference a specific finding from the analysis
+- Explain WHY it matters for AI search visibility
+- Give a concrete action the user can take
+
+Focus on the highest-impact improvements first. If queries missed the page, suggest content changes that would help for those specific query intents.
+
+Return a JSON array of strings. Each string is one suggestion (1-2 sentences).`;
+    const suggestions = await (0, bedrock_helpers_1.invokeBedrockForJson)(prompt, {
+        modelId: SUGGESTION_MODEL,
+        maxTokens: 1024,
+        temperature: 0.3,
+    });
+    if (Array.isArray(suggestions)) {
+        return suggestions.filter(s => typeof s === 'string' && s.length > 10).slice(0, 5);
+    }
+    return [];
+}

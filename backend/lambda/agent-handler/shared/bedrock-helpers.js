@@ -63,7 +63,7 @@ function extractJson(text) {
     try {
         return JSON.parse(trimmed);
     }
-    catch (_a) {
+    catch {
         // Strategy 3: Find the outermost { } or [ ] and parse just that
         const startIdx = trimmed.search(/[{\[]/);
         if (startIdx === -1)
@@ -75,12 +75,24 @@ function extractJson(text) {
         let escape = false;
         for (let i = startIdx; i < trimmed.length; i++) {
             const ch = trimmed[i];
-            if (escape) { escape = false; continue; }
-            if (ch === '\\' && inString) { escape = true; continue; }
-            if (ch === '"') { inString = !inString; continue; }
-            if (inString) continue;
-            if (ch === openChar) depth++;
-            if (ch === closeChar) depth--;
+            if (escape) {
+                escape = false;
+                continue;
+            }
+            if (ch === '\\' && inString) {
+                escape = true;
+                continue;
+            }
+            if (ch === '"') {
+                inString = !inString;
+                continue;
+            }
+            if (inString)
+                continue;
+            if (ch === openChar)
+                depth++;
+            if (ch === closeChar)
+                depth--;
             if (depth === 0) {
                 return JSON.parse(trimmed.substring(startIdx, i + 1));
             }

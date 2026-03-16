@@ -27,11 +27,85 @@ exports.handler = void 0;
 const client_sfn_1 = require("@aws-sdk/client-sfn");
 const client_s3_1 = require("@aws-sdk/client-s3");
 const client_lambda_1 = require("@aws-sdk/client-lambda");
+const client_dynamodb_1 = require("@aws-sdk/client-dynamodb");
+const crypto = __importStar(require("crypto"));
 const https = __importStar(require("https"));
 const url_1 = require("url");
 const sfnClient = new client_sfn_1.SFNClient({ region: process.env.AWS_REGION || 'us-east-1' });
 const s3Client = new client_s3_1.S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
 const lambdaClient = new client_lambda_1.LambdaClient({ region: process.env.AWS_REGION || 'us-east-1' });
+const dynamoClient = new client_dynamodb_1.DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' });
+// ---------------------------------------------------------------------------
+// Rate limiting — free tier: 3 audits/day per IP
+// ---------------------------------------------------------------------------
+const USAGE_TABLE = process.env.USAGE_TRACKING_TABLE || '';
+const DAILY_LIMIT = parseInt(process.env.FREE_TIER_DAILY_LIMIT || '3', 10);
+function getClientIp(event) {
+    // API Gateway V2 (HTTP API)
+    const ip = event.requestContext?.http?.sourceIp
+        || event.requestContext?.identity?.sourceIp
+        || event.headers?.['x-forwarded-for']?.split(',')[0]?.trim()
+        || 'unknown';
+    return ip;
+}
+function hashIp(ip) {
+    return crypto.createHash('sha256').update(ip).digest('hex').substring(0, 16);
+}
+function getTodayDate() {
+    return new Date().toISOString().split('T')[0]; // e.g. "2026-03-07"
+}
+async function checkRateLimit(event) {
+    if (!USAGE_TABLE) {
+        console.log('No usage tracking table configured, skipping rate limit');
+        return { allowed: true, used: 0, limit: DAILY_LIMIT };
+    }
+    const ip = getClientIp(event);
+    const ipHash = hashIp(ip);
+    const today = getTodayDate();
+    try {
+        const result = await dynamoClient.send(new client_dynamodb_1.GetItemCommand({
+            TableName: USAGE_TABLE,
+            Key: {
+                ipHash: { S: ipHash },
+                date: { S: today },
+            },
+        }));
+        const used = result.Item?.usageCount?.N ? parseInt(result.Item.usageCount.N, 10) : 0;
+        return { allowed: used < DAILY_LIMIT, used, limit: DAILY_LIMIT };
+    }
+    catch (error) {
+        console.error('Rate limit check failed, allowing request:', error);
+        return { allowed: true, used: 0, limit: DAILY_LIMIT };
+    }
+}
+async function incrementUsage(event) {
+    if (!USAGE_TABLE)
+        return;
+    const ip = getClientIp(event);
+    const ipHash = hashIp(ip);
+    const today = getTodayDate();
+    // TTL: expire record after 48 hours (plenty of buffer past midnight)
+    const ttl = Math.floor(Date.now() / 1000) + (48 * 60 * 60);
+    try {
+        await dynamoClient.send(new client_dynamodb_1.UpdateItemCommand({
+            TableName: USAGE_TABLE,
+            Key: {
+                ipHash: { S: ipHash },
+                date: { S: today },
+            },
+            UpdateExpression: 'SET usageCount = if_not_exists(usageCount, :zero) + :one, #ttl = :ttl',
+            ExpressionAttributeNames: { '#ttl': 'ttl' },
+            ExpressionAttributeValues: {
+                ':zero': { N: '0' },
+                ':one': { N: '1' },
+                ':ttl': { N: String(ttl) },
+            },
+        }));
+    }
+    catch (error) {
+        console.error('Failed to increment usage:', error);
+    }
+}
 const handler = async (event) => {
     console.log("Lensy Production API - Deploy v1.1.0 Ready");
     console.log('API Handler received request:', JSON.stringify(event, null, 2));
@@ -57,7 +131,28 @@ const handler = async (event) => {
     }
     try {
         if (httpMethod === 'POST' && (path === '/analyze' || path === '/scan-doc')) {
-            return await handleAnalyzeRequest(body, corsHeaders);
+            // Rate limit: free tier allows 3 audits/day per IP
+            const rateLimit = await checkRateLimit(event);
+            if (!rateLimit.allowed) {
+                console.log(`Rate limit exceeded: ${rateLimit.used}/${rateLimit.limit} for today`);
+                return {
+                    statusCode: 429,
+                    headers: corsHeaders,
+                    body: JSON.stringify({
+                        error: 'rate_limit_exceeded',
+                        message: `You've used your ${rateLimit.limit} free audits today. Come back tomorrow!`,
+                        used: rateLimit.used,
+                        limit: rateLimit.limit,
+                        resetsAt: `${getTodayDate()}T23:59:59Z`,
+                    })
+                };
+            }
+            const result = await handleAnalyzeRequest(body, corsHeaders);
+            // Only count successful analysis starts (not validation errors)
+            if (result.statusCode === 200) {
+                await incrementUsage(event);
+            }
+            return result;
         }
         if (httpMethod === 'POST' && path === '/github-issues') {
             return await handleGithubIssuesRequest(body, corsHeaders, 'fetch');
@@ -98,6 +193,9 @@ const handler = async (event) => {
         }
         if (httpMethod === 'GET' && path?.startsWith('/get-fixes/')) {
             return await handleGetFixesRequest(path, corsHeaders);
+        }
+        if (httpMethod === 'POST' && path === '/console/feedback') {
+            return await handleFeedbackRequest(body, corsHeaders);
         }
         return {
             statusCode: 404,
@@ -158,6 +256,10 @@ async function handleAnalyzeRequest(body, corsHeaders) {
                 error: 'Missing required fields: url and sessionId are required'
             })
         };
+    }
+    // Normalize URL — auto-prepend https:// if no protocol specified
+    if (!/^https?:\/\//i.test(analysisRequest.url)) {
+        analysisRequest.url = `https://${analysisRequest.url}`;
     }
     // Validate URL format
     try {
@@ -1004,5 +1106,35 @@ async function handleGetFixesRequest(path, corsHeaders) {
                 message: error instanceof Error ? error.message : 'Unknown error'
             })
         };
+    }
+}
+// ─── Feedback ────────────────────────────────────────────────────────────────
+async function handleFeedbackRequest(body, corsHeaders) {
+    if (!body) {
+        return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Request body is required' }) };
+    }
+    try {
+        const data = JSON.parse(body);
+        const { message, email, auditUrl, pageUrl } = data;
+        if (!message || typeof message !== 'string' || message.trim().length === 0) {
+            return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Feedback message is required' }) };
+        }
+        // Log feedback to CloudWatch (searchable, no extra infra cost)
+        console.log(JSON.stringify({
+            event: 'USER_FEEDBACK',
+            timestamp: new Date().toISOString(),
+            message: message.trim().substring(0, 2000),
+            email: email ? String(email).trim().substring(0, 200) : undefined,
+            auditUrl: auditUrl ? String(auditUrl).substring(0, 500) : undefined,
+            pageUrl: pageUrl ? String(pageUrl).substring(0, 500) : undefined,
+        }));
+        return {
+            statusCode: 200,
+            headers: corsHeaders,
+            body: JSON.stringify({ success: true, message: 'Thank you for your feedback!' })
+        };
+    }
+    catch {
+        return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Invalid JSON body' }) };
     }
 }

@@ -1,29 +1,6 @@
 /* Font loaded via index.html: Plus Jakarta Sans + JetBrains Mono */
 
 :root {
-    /* Backgrounds */
-    --bg-primary: #0a0a0a;
-    --bg-secondary: #111111;
-    --bg-tertiary: #1a1a1a;
-
-    /* Text */
-    --text-primary: #fafafa;
-    --text-secondary: #e5e7eb;
-    --text-muted: #737373;
-    --text-code: #525252;
-
-    /* Borders & Dividers */
-    --border-subtle: #1f1f1f;
-    --border-default: #2a2a2a;
-    --border-strong: #3a3a3a;
-
-    /* Accents */
-    --accent-primary: #3b82f6;
-    --accent-hover: #60a5fa;
-    --accent-success: #22c55e;
-    --accent-warning: #f59e0b;
-    --accent-error: #ef4444;
-
     /* Fonts — Perseverance AI brand: Plus Jakarta Sans (never Inter as primary) */
     --font-sans: 'Plus Jakarta Sans', 'DM Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     --font-ui: var(--font-sans);
@@ -31,6 +8,98 @@
     --font-subheading: var(--font-sans);
     --font-serif: var(--font-sans);
     --font-mono: 'JetBrains Mono', 'Fira Code', 'Source Code Pro', monospace;
+}
+
+/* Dark theme (default) */
+:root, [data-theme="dark"] {
+    --bg-primary: #0a0a0a;
+    --bg-secondary: #111111;
+    --bg-tertiary: #1a1a1a;
+    --text-primary: #fafafa;
+    --text-secondary: #e5e7eb;
+    --text-muted: #737373;
+    --text-code: #525252;
+    --border-subtle: #1f1f1f;
+    --border-default: #2a2a2a;
+    --border-strong: #3a3a3a;
+    --accent-primary: #3b82f6;
+    --accent-hover: #60a5fa;
+    --accent-success: #22c55e;
+    --accent-warning: #f59e0b;
+    --accent-error: #ef4444;
+    --header-bg: rgba(10, 10, 10, 0.8);
+    --grid-line: rgba(255, 255, 255, 0.02);
+    /* Code blocks */
+    --bg-code-block: rgba(0, 0, 0, 0.35);
+    --bg-code-inline: rgba(255, 255, 255, 0.08);
+    --border-code: rgba(255, 255, 255, 0.08);
+    --text-code-block: #e2e8f0;
+    --text-code-inline: #93c5fd;
+    --bg-card-dim: rgba(255, 255, 255, 0.03);
+    --border-card-dim: rgba(255, 255, 255, 0.06);
+    --bg-input-hover: rgba(255, 255, 255, 0.08);
+}
+
+/* Light theme */
+[data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8f9fa;
+    --bg-tertiary: #f0f1f3;
+    --text-primary: #111111;
+    --text-secondary: #374151;
+    --text-muted: #6b7280;
+    --text-code: #9ca3af;
+    --border-subtle: #e5e7eb;
+    --border-default: #d1d5db;
+    --border-strong: #9ca3af;
+    --accent-primary: #2563eb;
+    --accent-hover: #3b82f6;
+    --accent-success: #16a34a;
+    --accent-warning: #d97706;
+    --accent-error: #dc2626;
+    --header-bg: rgba(255, 255, 255, 0.85);
+    --grid-line: rgba(0, 0, 0, 0.03);
+    /* Code blocks */
+    --bg-code-block: #1e293b;
+    --bg-code-inline: rgba(0, 0, 0, 0.06);
+    --border-code: rgba(0, 0, 0, 0.12);
+    --text-code-block: #e2e8f0;
+    --text-code-inline: #1e40af;
+    --bg-card-dim: rgba(0, 0, 0, 0.02);
+    --border-card-dim: rgba(0, 0, 0, 0.06);
+    --bg-input-hover: rgba(0, 0, 0, 0.04);
+}
+
+/* System preference: light mode when no data-theme is set */
+@media (prefers-color-scheme: light) {
+    [data-theme="system"] {
+        --bg-primary: #ffffff;
+        --bg-secondary: #f8f9fa;
+        --bg-tertiary: #f0f1f3;
+        --text-primary: #111111;
+        --text-secondary: #374151;
+        --text-muted: #6b7280;
+        --text-code: #9ca3af;
+        --border-subtle: #e5e7eb;
+        --border-default: #d1d5db;
+        --border-strong: #9ca3af;
+        --accent-primary: #2563eb;
+        --accent-hover: #3b82f6;
+        --accent-success: #16a34a;
+        --accent-warning: #d97706;
+        --accent-error: #dc2626;
+        --header-bg: rgba(255, 255, 255, 0.85);
+        --grid-line: rgba(0, 0, 0, 0.03);
+        /* Code blocks */
+        --bg-code-block: #1e293b;
+        --bg-code-inline: rgba(0, 0, 0, 0.06);
+        --border-code: rgba(0, 0, 0, 0.12);
+        --text-code-block: #e2e8f0;
+        --text-code-inline: #1e40af;
+        --bg-card-dim: rgba(0, 0, 0, 0.02);
+        --border-card-dim: rgba(0, 0, 0, 0.06);
+        --bg-input-hover: rgba(0, 0, 0, 0.04);
+    }
 }
 
 * {
@@ -41,15 +110,16 @@
 
 body {
     font-family: var(--font-ui);
-    background-color: var(--bg-primary);
-    color: var(--text-secondary);
+    background-color: var(--bg-primary) !important;
+    color: var(--text-secondary) !important;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     background-image:
-        linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+        linear-gradient(var(--grid-line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
     background-size: 50px 50px;
+    transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 h1,
@@ -78,7 +148,7 @@ h6 {
 
 /* Material UI Overrides */
 .MuiAppBar-root {
-    background: rgba(10, 10, 10, 0.9) !important;
+    background: var(--header-bg) !important;
     backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--border-subtle) !important;
     box-shadow: none !important;
@@ -126,6 +196,23 @@ h6 {
     border-radius: 8px !important;
 }
 
+.MuiOutlinedInput-root .MuiInputBase-input {
+    color: var(--text-primary) !important;
+}
+
+.MuiOutlinedInput-root .MuiInputBase-input::placeholder {
+    color: var(--text-muted) !important;
+    opacity: 1 !important;
+}
+
+.MuiInputLabel-root {
+    color: var(--text-muted) !important;
+}
+
+.MuiInputLabel-root.Mui-focused {
+    color: var(--accent-primary) !important;
+}
+
 .MuiOutlinedInput-notchedOutline {
     border-color: var(--border-default) !important;
 }
@@ -135,24 +222,200 @@ h6 {
 }
 
 .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
-    border-color: var(--accent-primary) !important;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: var(--border-strong) !important;
+    border-width: 1px !important;
+    box-shadow: none !important;
 }
 
-/* Other UI Elements */
+/* ============================================
+   GLOBAL MUI OVERRIDES — theme-aware colors
+   Forces MUI components to respect CSS custom properties
+   instead of hardcoded dark-mode palette values.
+   ============================================ */
+
+/* Alerts */
 .MuiAlert-root {
     border-radius: 8px !important;
     font-family: var(--font-ui) !important;
 }
 
+.MuiAlert-message {
+    color: var(--text-secondary) !important;
+}
+
+/* Chips */
 .MuiChip-root {
     font-family: var(--font-ui) !important;
     font-weight: 500 !important;
     border-radius: 16px !important;
 }
 
+.MuiChip-colorDefault {
+    color: var(--text-secondary) !important;
+    background-color: var(--bg-tertiary) !important;
+}
+
+.MuiChip-colorSuccess {
+    background-color: rgba(34, 197, 94, 0.15) !important;
+    color: #22c55e !important;
+}
+
+.MuiChip-colorError {
+    background-color: rgba(239, 68, 68, 0.15) !important;
+    color: #ef4444 !important;
+}
+
+.MuiChip-colorWarning {
+    background-color: rgba(245, 158, 11, 0.15) !important;
+    color: #f59e0b !important;
+}
+
+.MuiChip-colorInfo {
+    background-color: rgba(59, 130, 246, 0.15) !important;
+    color: #3b82f6 !important;
+}
+
+.MuiChip-colorPrimary {
+    background-color: rgba(59, 130, 246, 0.15) !important;
+    color: var(--accent-primary) !important;
+}
+
+/* Typography — default text color for ALL variants */
 .MuiTypography-root {
     font-family: var(--font-ui) !important;
+    color: var(--text-secondary) !important;
+}
+
+/* Typography heading variants — use primary text */
+.MuiTypography-h1,
+.MuiTypography-h2,
+.MuiTypography-h3,
+.MuiTypography-h4,
+.MuiTypography-h5,
+.MuiTypography-h6 {
+    color: var(--text-primary) !important;
+}
+
+/* Typography MUI color overrides — map MUI palette names to CSS vars */
+.MuiTypography-colorTextPrimary {
+    color: var(--text-primary) !important;
+}
+
+.MuiTypography-colorTextSecondary {
+    color: var(--text-muted) !important;
+}
+
+/* Status/accent colors — keep visible in both themes */
+.MuiTypography-colorSuccess,
+.MuiTypography-root[style*="success"] {
+    color: var(--accent-success) !important;
+}
+
+.MuiTypography-colorError,
+.MuiTypography-root[style*="error"] {
+    color: var(--accent-error) !important;
+}
+
+.MuiTypography-colorWarning,
+.MuiTypography-root[style*="warning"] {
+    color: var(--accent-warning) !important;
+}
+
+.MuiTypography-colorPrimary {
+    color: var(--accent-primary) !important;
+}
+
+/* List items */
+.MuiListItemText-primary {
+    color: var(--text-primary) !important;
+}
+
+.MuiListItemText-secondary {
+    color: var(--text-muted) !important;
+}
+
+/* Table cells */
+.MuiTableCell-root {
+    color: var(--text-secondary) !important;
+    border-bottom-color: var(--border-subtle) !important;
+}
+
+.MuiTableCell-head {
+    color: var(--text-muted) !important;
+    font-weight: 600 !important;
+}
+
+/* Checkbox */
+.MuiCheckbox-root {
+    color: var(--border-strong) !important;
+}
+
+.MuiCheckbox-root.Mui-checked {
+    color: var(--accent-primary) !important;
+}
+
+/* Card content */
+.MuiCardContent-root {
+    color: var(--text-secondary);
+}
+
+/* Collapse / expand icons */
+.MuiIconButton-root {
+    color: var(--text-muted) !important;
+}
+
+/* Dividers */
+.MuiDivider-root {
+    border-color: var(--border-subtle) !important;
+}
+
+/* Accordion / Collapse text */
+.MuiCollapse-root {
+    color: var(--text-secondary);
+}
+
+/* Tooltips */
+.MuiTooltip-tooltip {
+    font-family: var(--font-ui) !important;
+}
+
+/* Menus and Popover */
+.MuiMenu-paper,
+.MuiPopover-paper {
+    background-color: var(--bg-secondary) !important;
+    border: 1px solid var(--border-default) !important;
+}
+
+.MuiMenuItem-root {
+    color: var(--text-secondary) !important;
+}
+
+.MuiMenuItem-root:hover {
+    background-color: var(--bg-tertiary) !important;
+}
+
+/* Select dropdown */
+.MuiSelect-select {
+    color: var(--text-primary) !important;
+}
+
+/* Card content — ensure text inherits correctly */
+.MuiCardContent-root .MuiTypography-root {
+    color: var(--text-secondary) !important;
+}
+
+.MuiCardContent-root .MuiTypography-h1,
+.MuiCardContent-root .MuiTypography-h2,
+.MuiCardContent-root .MuiTypography-h3,
+.MuiCardContent-root .MuiTypography-h4,
+.MuiCardContent-root .MuiTypography-h5,
+.MuiCardContent-root .MuiTypography-h6 {
+    color: var(--text-primary) !important;
+}
+
+/* LinearProgress */
+.MuiLinearProgress-root {
+    background-color: var(--border-default) !important;
 }
 
 /* Code Blocks - Rounded 8px */
