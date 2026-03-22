@@ -34,13 +34,20 @@ const URLInputComponent: React.FC<URLInputComponentProps> = ({ onSubmit }) => {
         e.preventDefault();
         setError(null);
 
+        // Auto-prepend https:// if no protocol
+        let normalizedUrl = url.trim();
+        if (!/^https?:\/\//i.test(normalizedUrl)) {
+            normalizedUrl = `https://${normalizedUrl}`;
+        }
+
         // Basic URL validation
         try {
-            new URL(url);
+            new URL(normalizedUrl);
         } catch {
             setError('Please enter a valid URL');
             return;
         }
+        setUrl(normalizedUrl);
 
         setIsAnalyzing(true);
 

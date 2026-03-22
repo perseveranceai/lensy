@@ -1,30 +1,40 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import ConsoleLayout from './ConsoleLayout';
-import ConsoleDashboard from './ConsoleDashboard';
 import LensyApp from './LensyApp';
 import TermsOfUse from './TermsOfUse';
 import PrivacyPolicy from './PrivacyPolicy';
+import ContactPage from './pages/ContactPage';
+import EducationPage from './pages/EducationPage';
+import ArticlePage from './pages/ArticlePage';
 
 function App() {
     return (
         <BrowserRouter>
             <Routes>
-                {/* Public: Legal pages */}
-                <Route path="/terms" element={<TermsOfUse />} />
-                <Route path="/privacy" element={<PrivacyPolicy />} />
+                {/* Website shell with header + footer */}
+                <Route element={<ConsoleLayout />}>
+                    {/* Homepage = Lensy scanner */}
+                    <Route path="/" element={<LensyApp />} />
 
-                {/* Console shell with nested routes (public — no auth gate) */}
-                <Route path="/console" element={<ConsoleLayout />}>
-                    {/* Console dashboard (index route) */}
-                    <Route index element={<ConsoleDashboard />} />
+                    {/* Education hub */}
+                    <Route path="/education" element={<EducationPage />} />
+                    <Route path="/education/:slug" element={<ArticlePage />} />
 
-                    {/* Lensy service */}
-                    <Route path="lensy" element={<LensyApp />} />
+                    {/* Contact */}
+                    <Route path="/contact" element={<ContactPage />} />
+
+                    {/* Legal pages */}
+                    <Route path="/terms" element={<TermsOfUse />} />
+                    <Route path="/privacy" element={<PrivacyPolicy />} />
                 </Route>
 
-                {/* Catch-all: redirect to Lensy (primary product) */}
-                <Route path="*" element={<Navigate to="/console/lensy" replace />} />
+                {/* Legacy console routes — redirect to new paths */}
+                <Route path="/console/lensy" element={<Navigate to="/" replace />} />
+                <Route path="/console" element={<Navigate to="/" replace />} />
+
+                {/* Catch-all */}
+                <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
         </BrowserRouter>
     );

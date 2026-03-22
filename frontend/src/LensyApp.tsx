@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -31,7 +31,8 @@ import {
     IconButton,
     Checkbox,
     Divider,
-    Skeleton
+    Skeleton,
+    Tooltip
 } from '@mui/material';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -48,6 +49,7 @@ import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import FixReviewPanel, { Fix } from './components/FixReviewPanel';
 import jsPDF from 'jspdf';
 import { JAKARTA_REGULAR, JAKARTA_BOLD } from './jakartaFonts';
@@ -152,6 +154,7 @@ interface AnalysisRequest {
     sitemapUrl?: string;
     llmsTxtUrl?: string;
     useAgent?: boolean;
+    skipCitations?: boolean;
 }
 
 interface DimensionResult {
@@ -223,7 +226,7 @@ interface StructuredDataData {
 
 interface AIDiscoverabilityData {
     queries: string[];
-    queryTypes?: Array<'context-aware' | 'context-free'>;
+    queryTypes?: Array<'high' | 'mid' | 'low' | 'context-aware' | 'context-free'>;
     engines: {
         perplexity?: {
             available: boolean;
@@ -436,6 +439,27 @@ const FEATURE_FLAG_AUTO_FIXES = false;
 
 function LensyApp() {
     const [url, setUrl] = useState('');
+    const skipRateLimit = process.env.REACT_APP_SKIP_RATE_LIMIT === 'true';
+    const [usageRemaining, setUsageRemaining] = useState<number | null>(skipRateLimit ? 999 : null);
+
+    // Fetch usage on mount and after scans (skip when REACT_APP_SKIP_RATE_LIMIT=true in .env)
+    useEffect(() => {
+        if (skipRateLimit) return;
+        const fetchUsage = async () => {
+            try {
+                const res = await fetch(`${API_BASE_URL}/usage`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setUsageRemaining(data.remaining);
+                }
+            } catch { /* silent */ }
+        };
+        fetchUsage();
+        const handler = () => fetchUsage();
+        window.addEventListener('lensy:usage-changed', handler);
+        return () => window.removeEventListener('lensy:usage-changed', handler);
+    }, []);
+
     const [selectedModel, setSelectedModel] = useState<'claude' | 'titan' | 'llama' | 'auto'>('claude');
     const [contextAnalysisEnabled, setContextAnalysisEnabled] = useState(true);
     const [cacheEnabled, setCacheEnabled] = useState(false);
@@ -517,6 +541,7 @@ function LensyApp() {
     const wsRef = useRef<WebSocket | null>(null);
     const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const currentSessionIdRef = useRef<string>('');
+    const urlRef = useRef<string>('');
     const progressEndRef = useRef<HTMLDivElement>(null);
     const issuesListRef = useRef<HTMLDivElement>(null);
     const [showScrollIndicator, setShowScrollIndicator] = useState(false);
@@ -542,15 +567,61 @@ function LensyApp() {
         consumability?: ConsumabilityData;
         structuredData?: StructuredDataData;
         aiDiscoverability?: AIDiscoverabilityData;
-        overallScore?: { overallScore: number; scoreBreakdown: ScoreBreakdown; recommendationCount: number; contextualSuggestionCount: number };
+        overallScore?: { overallScore: number; scoreBreakdown: ScoreBreakdown; recommendationCount: number; contextualSuggestionCount: number; docConfidence?: { score: number; signals: string[] } };
     }>({});
     const [activeDetailCard, setActiveDetailCard] = useState<'score' | 'bots' | 'content' | 'queries' | null>(null);
     const [showAllRecs, setShowAllRecs] = useState(false);
+    const [showFullContentBreakdown, setShowFullContentBreakdown] = useState(false);
+    const [heroTab, setHeroTab] = useState<'readiness' | 'citations' | 'recommendations'>('readiness');
+    const [rejectedUrl, setRejectedUrl] = useState<string | null>(null);
+
+    // ── Persist audit state across route changes only (not page refresh) ──
+    // On full page refresh, JS globals reset → sessionAlive is false → clear storage
+    // On route change (SPA navigation), globals persist → sessionAlive stays true → restore state
+    useEffect(() => {
+        if (!(window as any).__lensy_session_alive) {
+            // Full page refresh — clear stale state and mark session alive
+            sessionStorage.removeItem('lensy-audit-state');
+            (window as any).__lensy_session_alive = true;
+            return;
+        }
+        // Route change — restore from sessionStorage
+        try {
+            const saved = sessionStorage.getItem('lensy-audit-state');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (parsed.url) setUrl(parsed.url);
+                if (parsed.asyncCards && Object.keys(parsed.asyncCards).length > 0) setAsyncCards(parsed.asyncCards);
+                if (parsed.analysisState && parsed.analysisState.status !== 'analyzing') {
+                    setAnalysisState(parsed.analysisState);
+                }
+                if (parsed.heroTab) setHeroTab(parsed.heroTab);
+                if (parsed.currentSessionId) setCurrentSessionId(parsed.currentSessionId);
+            }
+        } catch (e) { /* ignore parse errors */ }
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Save to sessionStorage on state changes (for route-change restoration)
+    useEffect(() => {
+        if (analysisState.status === 'idle' && Object.keys(asyncCards).length === 0) return;
+        try {
+            sessionStorage.setItem('lensy-audit-state', JSON.stringify({
+                url,
+                asyncCards,
+                analysisState: analysisState.status === 'analyzing' ? { ...analysisState, status: 'completed' } : analysisState,
+                heroTab,
+                currentSessionId,
+            }));
+        } catch (e) { /* ignore quota errors */ }
+    }, [url, asyncCards, analysisState, heroTab, currentSessionId]);
 
     // Keep kbBuildState ref in sync (for use in WebSocket callbacks where state is stale)
     useEffect(() => {
         kbBuildStateRef.current = kbBuildState;
     }, [kbBuildState]);
+
+    // Keep urlRef in sync for WebSocket callbacks (closures capture stale state)
+    useEffect(() => { urlRef.current = url; }, [url]);
 
     // Auto-detect input type when URL changes (for Doc/Sitemap modes)
     useEffect(() => {
@@ -563,12 +634,8 @@ function LensyApp() {
         }
     }, [url, selectedMode, manualModeOverride]);
 
-    // Auto-scroll to latest progress message
-    useEffect(() => {
-        if (progressEndRef.current && analysisState.status === 'analyzing') {
-            progressEndRef.current.scrollIntoView({ behavior: 'smooth' });
-        }
-    }, [analysisState.progressMessages, analysisState.status]);
+    // Auto-scroll disabled — let user control their own scroll position
+    // Previously scrolled to progress messages during analysis, causing jarring page jumps
 
     // Track whether issues list is scrollable and not scrolled to bottom
     useEffect(() => {
@@ -708,16 +775,24 @@ function LensyApp() {
                             'timed out',
                             'not a documentation page',
                             'Insufficient content',
+                            'unable to access',
+                            'unable to fetch',
+                            'does not appear to be',
                         ];
                         const isTerminal = terminalPatterns.some(p => message.message?.includes(p));
                         if (isTerminal) {
                             console.log('Terminal error detected via WebSocket:', message.message);
+                            // Save the URL for error display and reset input for all terminal errors
+                            setRejectedUrl(urlRef.current);
+                            setCurrentSessionId(null);
                             setAnalysisState(prev => ({
                                 ...prev,
                                 status: 'error',
                                 error: message.message,
                                 progressMessages: [...prev.progressMessages, message]
                             }));
+                            // Refresh usage counter — rejected scans get refunded
+                            window.dispatchEvent(new Event('lensy:usage-changed'));
                             return;
                         }
                     }
@@ -727,6 +802,14 @@ function LensyApp() {
                         const { category, data } = message.metadata;
                         console.log(`Async card update: ${category}`, data);
                         setAsyncCards(prev => ({ ...prev, [category]: data }));
+                        // Auto-expand bots card when it's the first to render
+                        if (category === 'botAccess' && !activeDetailCard) {
+                            setActiveDetailCard('bots');
+                        }
+                        // Stop citations loading when data arrives
+                        if (category === 'aiDiscoverability') {
+                            setCitationsLoading(false);
+                        }
                         // Don't add category-result to progress messages (noisy)
                         return;
                     }
@@ -797,14 +880,23 @@ function LensyApp() {
                         }));
                     }
 
-                    // Check for explicit failure status from backend
-                    if (statusData.status === 'failed') {
-                        console.log('Analysis failed (detected via polling):', statusData.error);
-                        setAnalysisState(prev => ({
-                            ...prev,
-                            status: 'error',
-                            error: statusData.error || 'Analysis failed. Check the progress messages for details.'
-                        }));
+                    // Check for explicit failure or rejection status from backend
+                    if (statusData.status === 'failed' || statusData.status === 'rejected') {
+                        console.log('Analysis failed/rejected (detected via polling):', statusData.error);
+                        const errorMsg = statusData.error || statusData.reason || 'Analysis failed. Check the progress messages for details.';
+                        const isDocRejection = errorMsg.includes('does not appear to be') || errorMsg.includes('not a documentation page');
+                        if (isDocRejection && !rejectedUrl) {
+                            setRejectedUrl(urlRef.current);
+                            setUrl('');
+                            setCurrentSessionId(null);
+                            setTimeout(() => { document.querySelector<HTMLInputElement>('input[placeholder*="URL"]')?.focus(); }, 100);
+                        }
+                        setAnalysisState(prev => {
+                            if (prev.status === 'error' && prev.error?.includes('does not appear to be')) {
+                                return prev;
+                            }
+                            return { ...prev, status: 'error', error: errorMsg };
+                        });
                         return;
                     }
 
@@ -1544,12 +1636,55 @@ function LensyApp() {
         }
     };
 
+    // ── Run AI Citations check on-demand ──
+    const [citationsLoading, setCitationsLoading] = useState(false);
+    const handleRunCitations = async () => {
+        if (!currentSessionId || citationsLoading) {
+            console.warn('[Citations] Skipped: sessionId=', currentSessionId, 'loading=', citationsLoading);
+            return;
+        }
+        const citationUrl = urlRef.current || url || (analysisState.report as any)?.url;
+        if (!citationUrl) {
+            console.warn('[Citations] Skipped: no URL available');
+            return;
+        }
+
+        console.log('[Citations] Starting citation check for:', citationUrl, 'session:', currentSessionId);
+        setCitationsLoading(true);
+        setHeroTab('citations');
+
+        try {
+            // Reconnect WebSocket to receive category-result messages
+            try {
+                await connectWebSocket(currentSessionId);
+                console.log('[Citations] WebSocket connected');
+            } catch (e) {
+                console.warn('[Citations] WebSocket reconnect failed, will poll:', e);
+            }
+
+            const resp = await fetch(`${API_BASE_URL}/run-citations`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: citationUrl, sessionId: currentSessionId }),
+            });
+            console.log('[Citations] API response:', resp.status);
+
+            // Timeout fallback — WebSocket should deliver results, but stop loading after 90s
+            setTimeout(() => setCitationsLoading(false), 90000);
+        } catch (e) {
+            console.error('[Citations] Citation check failed:', e);
+            setCitationsLoading(false);
+        }
+    };
+
     const handleAnalyze = async () => {
         setFixSuccessMessage(null);
         setLastModifiedFile(null);
         setAsyncCards({}); // Clear async card state for fresh analysis
+        sessionStorage.removeItem('lensy-audit-state'); // Clear stale results
         setActiveDetailCard(null);
         setShowAllRecs(false);
+        setRejectedUrl(null); // Clear any previous rejection
         const currentMode = manualModeOverride || selectedMode;
 
         // Handle GitHub Issues mode
@@ -1582,12 +1717,25 @@ function LensyApp() {
                 return;
             }
 
+            // Auto-prepend https:// if no protocol
+            let normalizedUrl = url.trim();
+            if (!/^https?:\/\//i.test(normalizedUrl)) {
+                normalizedUrl = `https://${normalizedUrl}`;
+            }
+
             try {
-                new URL(url);
+                new URL(normalizedUrl);
             } catch {
                 setAnalysisState({ status: 'error', error: 'Please enter a valid URL', progressMessages: [] });
                 return;
             }
+
+            // Update state with normalized URL so downstream code uses it
+            if (normalizedUrl !== url) {
+                setUrl(normalizedUrl);
+            }
+            // Also update the ref used by WebSocket callbacks
+            urlRef.current = normalizedUrl;
         }
 
         setAnalysisState({
@@ -1664,7 +1812,7 @@ function LensyApp() {
             } else {
                 // Original doc/sitemap mode logic
                 const analysisRequest: AnalysisRequest = {
-                    url: url,
+                    url: urlRef.current || url,
                     selectedModel,
                     sessionId,
                     inputType: finalInputType,
@@ -1678,6 +1826,7 @@ function LensyApp() {
                     sitemapUrl: sitemapUrl.trim() || undefined,
                     llmsTxtUrl: llmsTxtUrl.trim() || undefined,
                     useAgent: useAgentEngine,
+                    skipCitations: true,
                 };
                 if (forceFreshScan) setForceFreshScan(false);
 
@@ -1706,14 +1855,23 @@ function LensyApp() {
                 });
 
                 if (!response.ok) {
-                    if (response.status === 429) {
+                    if (response.status === 429 && !skipRateLimit) {
                         const errorData = await response.json().catch(() => ({}));
-                        throw new Error(errorData.message || "You've reached your daily audit limit. Come back tomorrow for 3 more free audits!");
+                        window.dispatchEvent(new Event('lensy:usage-changed'));
+                        setAnalysisState({
+                            status: 'rate-limited' as any,
+                            error: errorData.message || "You've used all your free audits for today.",
+                            progressMessages: [],
+                        });
+                        return;
                     }
                     throw new Error(`HTTP ${response.status}`);
                 }
 
                 const result = await response.json();
+
+                // Refresh usage count in header
+                window.dispatchEvent(new Event('lensy:usage-changed'));
 
                 setAnalysisState(prev => ({
                     ...prev,
@@ -3219,35 +3377,16 @@ function LensyApp() {
 
     return (
         <div className="App">
-            {/* Secondary service bar — Lensy-specific context (like AWS "Amazon S3" bar) */}
-            <Box sx={{
-                borderBottom: '1px solid var(--border-subtle)',
-                bgcolor: 'var(--bg-secondary)',
-                px: 3,
-                py: 1,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-            }}>
-                <span style={{ fontSize: '1rem' }} role="img" aria-label="Lensy">🔍</span>
-                <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
-                    Lensy
-                </Typography>
-                <Typography variant="body2" sx={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                    AI Readiness Checker for Docs
-                </Typography>
-            </Box>
-
             <Container maxWidth={selectedMode === 'github-issues' && (analysisState.status === 'analyzing' || githubAnalysisResults) ? 'xl' : 'lg'} sx={{ py: 4, transition: 'max-width 0.3s ease' }}>
 
                 <Paper sx={{ p: 4, mb: 4 }}>
                     <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3, alignItems: 'center' }}>
                         <Box sx={{ textAlign: 'center' }}>
-                            <Typography variant="h5" component="h1" sx={{ fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.02em', fontSize: '1.25rem' }}>
-                                Is your technical documentation AI-ready?
+                            <Typography variant="h4" component="h1" sx={{ fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.03em', fontSize: { xs: '1.5rem', sm: '1.75rem' } }}>
+                                Is your documentation visible to AI search?
                             </Typography>
-                            <Typography variant="body2" sx={{ color: 'var(--text-muted)', mt: 0.5 }}>
-                                Check if AI search engines can find, consume, and cite your docs
+                            <Typography variant="body1" sx={{ color: 'var(--text-secondary)', mt: 1, fontSize: '1rem', lineHeight: 1.6 }}>
+                                Developers are finding documentation through ChatGPT, Perplexity, Claude, and other AI tools. Paste your doc URL below to see if they can find yours.
                             </Typography>
                         </Box>
                     </Box>
@@ -3705,14 +3844,14 @@ function LensyApp() {
                                             display: 'flex', alignItems: 'center', gap: 1
                                         }}>
                                             <CheckCircleIcon sx={{ fontSize: 16, color: '#22c55e' }} />
-                                            <Typography variant="caption" sx={{ fontWeight: 700, color: '#22c55e', fontSize: '0.72rem' }}>
+                                            <Typography variant="caption" sx={{ fontWeight: 700, color: '#22c55e', fontSize: '0.7rem' }}>
                                                 Knowledge base ready
                                             </Typography>
                                             <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>
                                                 {kbInfo.pageCount} pages from {kbInfo.domain}
                                             </Typography>
                                             {analysisState.status !== 'analyzing' && !githubAnalysisResults && (
-                                                <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.62rem', ml: 'auto' }}>
+                                                <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.6rem', ml: 'auto' }}>
                                                     Select issues below to analyze
                                                 </Typography>
                                             )}
@@ -3911,7 +4050,7 @@ function LensyApp() {
                                                             sx={{
                                                                 flexGrow: 1,
                                                                 '& .MuiOutlinedInput-root': {
-                                                                    fontSize: '0.78rem',
+                                                                    fontSize: '0.8rem',
                                                                     bgcolor: 'var(--bg-code-block)',
                                                                     '& fieldset': { borderColor: 'rgba(239, 68, 68, 0.3)' }
                                                                 },
@@ -4006,7 +4145,7 @@ function LensyApp() {
                                                                 {githubIssues.filter(i => i.isDocsRelated).length} docs-related issues found
                                                             </Typography>
                                                             {githubFetchMeta && (
-                                                                <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.68rem' }}>
+                                                                <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>
                                                                     Scanned {githubFetchMeta.totalFetched} open issues · {githubFetchMeta.dateRange} · AI-classified
                                                                 </Typography>
                                                             )}
@@ -4673,7 +4812,14 @@ function LensyApp() {
                                     variant="outlined"
                                     value={url}
                                     onChange={(e) => setUrl(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && url.trim()) {
+                                            e.preventDefault();
+                                            handleAnalyze();
+                                        }
+                                    }}
                                     placeholder="Documentation Page URL"
+                                    autoFocus
                                     disabled={analysisState.status === 'analyzing'}
                                     sx={{
                                         '& .MuiOutlinedInput-root': {
@@ -4712,7 +4858,8 @@ function LensyApp() {
                             onClick={handleAnalyze}
                             disabled={
                                 (analysisState.status === 'analyzing' && analysisState.sourceMode !== 'github-issues') ||
-                                isFetchingGithubIssues
+                                isFetchingGithubIssues ||
+                                usageRemaining === 0
                             }
                             sx={{
                                 height: 56,
@@ -4727,13 +4874,15 @@ function LensyApp() {
                             }}
                         >
                             {(analysisState.status === 'analyzing' && analysisState.sourceMode !== 'github-issues') ? (
-                                <CircularProgress size={20} color="inherit" />
+                                <><CircularProgress size={16} color="inherit" sx={{ mr: 1 }} /> Analyzing Readiness...</>
                             ) : analysisState.status === 'generating' ? (
                                 'Generating...'
                             ) : analysisState.status === 'applying' ? (
                                 'Applying...'
                             ) : (fixSuccessMessage || (!analysisState.report && currentSessionId)) ? (
                                 'Re-scan'
+                            ) : usageRemaining === 0 ? (
+                                'Limit Reached'
                             ) : (
                                 'Check Readiness'
                             )}
@@ -4745,14 +4894,260 @@ function LensyApp() {
                     {/* AI Model Selection hidden per branding guidelines */}
                     <input type="hidden" name="selectedModel" value={selectedModel} />
 
-                    {analysisState.status === 'error' && analysisState.sourceMode !== 'github-issues' && (
-                        <Alert severity="error" sx={{ mt: 3 }}>
-                            {analysisState.error}
-                        </Alert>
+                    {/* Waitlist CTA — shown when no audits remaining and not already rate-limited */}
+                    {usageRemaining === 0 && (analysisState.status as string) !== 'rate-limited' && analysisState.status !== 'analyzing' && (
+                        <Box sx={{
+                            mt: 2,
+                            py: 1.5,
+                            px: 2,
+                            borderRadius: '10px',
+                            border: '1px solid rgba(99, 102, 241, 0.2)',
+                            background: 'linear-gradient(to right, rgba(99, 102, 241, 0.05), transparent)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1.5,
+                            flexWrap: 'wrap',
+                        }}>
+                            <AutoAwesomeIcon sx={{ color: '#6366f1', fontSize: 18, flexShrink: 0 }} />
+                            <Typography sx={{
+                                fontSize: '0.875rem',
+                                color: 'var(--text-primary)',
+                                fontWeight: 500,
+                                fontFamily: 'var(--font-sans, var(--font-ui))',
+                                flex: 1,
+                                minWidth: 0,
+                            }}>
+                                Daily limit reached.{' '}
+                                <Typography component="span" sx={{ color: 'var(--text-secondary)', fontWeight: 400 }}>
+                                    Join our waitlist to unlock unlimited scans.
+                                </Typography>
+                            </Typography>
+                            <a
+                                href="/contact?waitlist"
+                                style={{
+                                    fontSize: '0.8125rem',
+                                    fontWeight: 600,
+                                    color: '#fff',
+                                    background: 'var(--accent-primary, #6366f1)',
+                                    borderRadius: '6px',
+                                    padding: '0.375rem 0.875rem',
+                                    textDecoration: 'none',
+                                    fontFamily: 'var(--font-sans, var(--font-ui))',
+                                    whiteSpace: 'nowrap',
+                                    flexShrink: 0,
+                                }}
+                            >
+                                Join Waitlist
+                            </a>
+                        </Box>
+                    )}
+
+                    {analysisState.status === 'error' && analysisState.sourceMode !== 'github-issues' && (() => {
+                        const error = analysisState.error || '';
+                        // Classify error into branded messaging
+                        const errorConfig = error.includes('does not appear to be') || error.includes('not a documentation page')
+                            ? {
+                                title: "This page doesn't look like technical documentation",
+                                description: 'Lensy is designed for developer docs, API references, SDK guides, and technical tutorials. Try entering a specific documentation page URL instead.',
+                                showUrl: true,
+                                actionLabel: 'Try another URL',
+                                actionType: 'reset' as const,
+                            }
+                            : error.includes('unreachable') || error.includes('unable to access') || error.includes('unable to fetch')
+                            ? {
+                                title: 'This URL could not be reached',
+                                description: 'Lensy was unable to fetch content from this page. This can happen if the URL is incorrect, the site is down, or it blocks automated access. Double-check the URL and try again.',
+                                showUrl: true,
+                                actionLabel: 'Try again',
+                                actionType: 'reset' as const,
+                            }
+                            : error.includes('timed out') || error.includes('timeout')
+                            ? {
+                                title: 'Analysis timed out',
+                                description: 'The analysis took longer than expected. This can happen with very large pages or slow-responding servers. You can try again — it often works on the second attempt.',
+                                showUrl: false,
+                                actionLabel: 'Retry',
+                                actionType: 'retry' as const,
+                            }
+                            : error.includes('rate') || error.includes('throttl')
+                            ? {
+                                title: 'Too many requests',
+                                description: 'Please wait a moment before running another analysis.',
+                                showUrl: false,
+                                actionLabel: 'Try again',
+                                actionType: 'reset' as const,
+                            }
+                            : error.includes('Please enter') || error.includes('Please select') || error.includes('Invalid')
+                            ? {
+                                title: error,
+                                description: '',
+                                showUrl: false,
+                                actionLabel: '',
+                                actionType: 'none' as const,
+                            }
+                            : {
+                                title: 'Something went wrong',
+                                description: error || 'An unexpected error occurred during analysis. Please try again or reach out if the issue persists.',
+                                showUrl: false,
+                                actionLabel: 'Try again',
+                                actionType: 'reset' as const,
+                            };
+
+                        // Validation errors — compact inline style
+                        if (errorConfig.actionType === 'none') {
+                            return (
+                                <Box sx={{
+                                    mt: 2, p: 1.5, borderRadius: '8px',
+                                    border: '1px solid rgba(239,68,68,0.3)',
+                                    background: 'rgba(239,68,68,0.05)',
+                                }}>
+                                    <Typography sx={{ fontSize: '0.875rem', color: 'rgb(239,68,68)', fontFamily: 'var(--font-sans, var(--font-ui))' }}>
+                                        {errorConfig.title}
+                                    </Typography>
+                                </Box>
+                            );
+                        }
+
+                        return (
+                            <Box sx={{
+                                mt: 3, p: 3, borderRadius: '12px',
+                                border: '1px solid var(--border-default)',
+                                background: 'var(--bg-secondary)', textAlign: 'center',
+                            }}>
+                                <Typography sx={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', mb: 1, fontFamily: 'var(--font-sans, var(--font-ui))' }}>
+                                    {errorConfig.title}
+                                </Typography>
+                                {errorConfig.showUrl && (rejectedUrl || url) && (
+                                    <Typography component="a" href={rejectedUrl || url} target="_blank" rel="noopener noreferrer" sx={{ display: 'block', fontSize: '0.8rem', color: 'var(--accent-primary)', mb: 1.5, fontFamily: 'var(--font-mono)', wordBreak: 'break-all', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
+                                        {rejectedUrl || url}
+                                    </Typography>
+                                )}
+                                {errorConfig.description && (
+                                    <Typography sx={{ fontSize: '0.875rem', color: 'var(--text-secondary)', fontFamily: 'var(--font-sans, var(--font-ui))', lineHeight: 1.6, mb: errorConfig.actionLabel ? 2.5 : 0 }}>
+                                        {errorConfig.description}
+                                    </Typography>
+                                )}
+                                {errorConfig.actionLabel && (
+                                    <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'center', flexWrap: 'wrap' }}>
+                                        <button
+                                            onClick={() => {
+                                                if (errorConfig.actionType === 'retry') {
+                                                    handleAnalyze();
+                                                } else {
+                                                    setAnalysisState({ status: 'idle', progressMessages: [] });
+                                                    setRejectedUrl(null);
+                                                    setUrl('');
+                                                    setCurrentSessionId(null);
+                                                    setTimeout(() => { document.querySelector<HTMLInputElement>('input[placeholder*="URL"]')?.focus(); }, 100);
+                                                }
+                                            }}
+                                            style={{
+                                                fontSize: '0.875rem',
+                                                fontWeight: 600,
+                                                color: '#fff',
+                                                background: 'var(--accent-primary, #6366f1)',
+                                                border: 'none',
+                                                borderRadius: '8px',
+                                                padding: '0.625rem 1.5rem',
+                                                cursor: 'pointer',
+                                                fontFamily: 'var(--font-sans, var(--font-ui))',
+                                            }}
+                                        >
+                                            {errorConfig.actionLabel}
+                                        </button>
+                                        <a
+                                            href="/contact?ref=feedback"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            style={{
+                                                fontSize: '0.875rem',
+                                                fontWeight: 600,
+                                                color: 'var(--text-secondary)',
+                                                background: 'var(--bg-tertiary)',
+                                                border: '1px solid var(--border-default)',
+                                                borderRadius: '8px',
+                                                padding: '0.625rem 1.5rem',
+                                                textDecoration: 'none',
+                                                fontFamily: 'var(--font-sans, var(--font-ui))',
+                                            }}
+                                        >
+                                            Report an issue
+                                        </a>
+                                    </Box>
+                                )}
+                            </Box>
+                        );
+                    })()}
+
+                    {(analysisState.status as string) === 'rate-limited' && (
+                        <Box sx={{
+                            mt: 3,
+                            p: 3,
+                            borderRadius: '12px',
+                            border: '1px solid rgba(239,68,68,0.2)',
+                            background: 'var(--bg-secondary)',
+                            textAlign: 'center',
+                        }}>
+                            <Typography sx={{
+                                fontSize: '1.25rem',
+                                fontWeight: 700,
+                                color: 'var(--text-primary)',
+                                mb: 0.5,
+                                fontFamily: 'var(--font-sans, var(--font-ui))',
+                            }}>
+                                You've used all your free audits for today
+                            </Typography>
+                            <Typography sx={{
+                                fontSize: '0.9375rem',
+                                color: 'var(--text-secondary)',
+                                mb: 2.5,
+                                fontFamily: 'var(--font-sans, var(--font-ui))',
+                                lineHeight: 1.6,
+                            }}>
+                                Free tier includes 3 audits per day. Want more? Join the waitlist for early access to higher limits.
+                            </Typography>
+                            <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'center', flexWrap: 'wrap' }}>
+                                <a
+                                    href="/contact?waitlist"
+                                    style={{
+                                        display: 'inline-block',
+                                        fontSize: '0.875rem',
+                                        fontWeight: 600,
+                                        color: '#fff',
+                                        background: 'var(--accent-primary, #6366f1)',
+                                        border: 'none',
+                                        borderRadius: '8px',
+                                        padding: '0.625rem 1.5rem',
+                                        textDecoration: 'none',
+                                        fontFamily: 'var(--font-sans, var(--font-ui))',
+                                    }}
+                                >
+                                    Join Waitlist
+                                </a>
+                                <button
+                                    onClick={() => setAnalysisState({ status: 'idle', progressMessages: [] })}
+                                    style={{
+                                        fontSize: '0.875rem',
+                                        fontWeight: 600,
+                                        color: 'var(--text-secondary)',
+                                        background: 'var(--bg-tertiary)',
+                                        border: '1px solid var(--border-default)',
+                                        borderRadius: '8px',
+                                        padding: '0.625rem 1.5rem',
+                                        cursor: 'pointer',
+                                        fontFamily: 'var(--font-sans, var(--font-ui))',
+                                    }}
+                                >
+                                    Come back tomorrow
+                                </button>
+                            </Box>
+                        </Box>
                     )}
                 </Paper>
 
-                {/* Progress Messages — only visible while analyzing, hidden after results show */}
+                {/* How It Works + Video section moved to bottom — always visible */}
+
+                {/* Progress Messages — only visible while actively analyzing, hidden on all error states */}
                 {analysisState.status === 'analyzing' && analysisState.progressMessages.length > 0 && selectedMode !== 'github-issues' && analysisState.sourceMode !== 'github-issues' && (
                     <Paper elevation={3} sx={{ p: 3, mb: 4 }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
@@ -5174,7 +5569,7 @@ function LensyApp() {
                             let chPassed = 0, chTotal = 0;
                             if (asyncCards.discoverability) {
                                 const d = asyncCards.discoverability;
-                                const checks = [d.llmsTxt.found, d.llmsFullTxt.found, d.sitemapXml.found, d.openGraph.found, d.canonical.found, !d.metaRobots.blocksIndexing];
+                                const checks = [d.llmsTxt.found, d.llmsFullTxt.found, d.sitemapXml.found, d.canonical.found, !d.metaRobots.blocksIndexing];
                                 chTotal += checks.length; chPassed += checks.filter(Boolean).length;
                             }
                             if (asyncCards.consumability) {
@@ -5197,13 +5592,30 @@ function LensyApp() {
                             const getImpactLabel = (rec: any) => rec.priority === 'high' ? 'High impact' : rec.priority === 'medium' ? 'Medium impact' : 'Low impact';
                             const getEffortLabel = (rec: any) => rec.codeSnippet ? 'Medium effort' : 'Low effort';
 
+                            const getLetterGrade = (score: number): string => {
+                                if (score >= 95) return 'A+';
+                                if (score >= 90) return 'A';
+                                if (score >= 85) return 'B+';
+                                if (score >= 75) return 'B';
+                                if (score >= 60) return 'C';
+                                if (score >= 40) return 'D';
+                                return 'F';
+                            };
+
+                            const getGradeLabel = (score: number, recCount: number): string => {
+                                if (recCount === 0) return 'Great \u2014 no issues found';
+                                if (score >= 90) return `Great \u2014 ${recCount} minor improvement${recCount > 1 ? 's' : ''}`;
+                                if (score >= 75) return `Good \u2014 ${recCount} opportunit${recCount > 1 ? 'ies' : 'y'} to improve`;
+                                if (score >= 60) return `Fair \u2014 ${recCount} thing${recCount > 1 ? 's' : ''} to fix`;
+                                return `Needs work \u2014 ${recCount} issue${recCount > 1 ? 's' : ''} found`;
+                            };
+
                             // AI Discoverability helpers for card
                             const aiDisc = asyncCards.aiDiscoverability;
                             const aiTotalQueries = aiDisc?.queries.length || 0;
                             const aiPerplexityFound = aiDisc?.engines.perplexity?.results?.filter(r => r.cited).length || 0;
-                            const aiBraveFound = aiDisc?.engines.brave?.results?.filter(r => r.cited).length || 0;
-                            const aiBestFound = Math.max(aiPerplexityFound, aiBraveFound);
-                            const aiHasEngines = aiDisc?.engines.perplexity?.available || aiDisc?.engines.brave?.available;
+                            const aiBestFound = aiPerplexityFound;
+                            const aiHasEngines = aiDisc?.engines.perplexity?.available;
 
                             const renderRec = (rec: any, i: number) => (
                                 <Box key={i} sx={{
@@ -5223,11 +5635,21 @@ function LensyApp() {
                                             bgcolor: 'rgba(148,163,184,0.1)', color: 'var(--text-muted)',
                                         }} />
                                         <Chip label={rec.category} size="small" sx={{
-                                            height: 20, fontSize: '0.6rem', fontWeight: 500,
-                                            bgcolor: 'rgba(148,163,184,0.06)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)',
+                                            height: 20, fontSize: '0.6rem', fontWeight: 600,
+                                            bgcolor: 'rgba(59,130,246,0.12)', color: 'var(--accent-hover)', border: '1px solid rgba(59,130,246,0.2)',
                                         }} />
                                     </Box>
                                     <Typography variant="body2" sx={{ color: 'var(--text-secondary)', fontSize: '0.8rem', lineHeight: 1.5 }}>{rec.fix}</Typography>
+                                    {rec.issue?.toLowerCase().includes('llms.txt') && (
+                                        <Typography variant="caption" component="a" href="/contact?ref=llmstxt" target="_blank" rel="noopener noreferrer" sx={{ display: 'inline-block', mt: 0.5, fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent-primary)', textDecoration: 'underline', '&:hover': { opacity: 0.8 } }}>
+                                            We can help you generate one →
+                                        </Typography>
+                                    )}
+                                    {rec.issue?.toLowerCase().includes('markdown') && !rec.issue?.toLowerCase().includes('llms.txt') && (
+                                        <Typography variant="caption" component="a" href="/contact?ref=markdown" target="_blank" rel="noopener noreferrer" sx={{ display: 'inline-block', mt: 0.5, fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent-primary)', textDecoration: 'underline', '&:hover': { opacity: 0.8 } }}>
+                                            We can help you generate markdown →
+                                        </Typography>
+                                    )}
                                     {rec.codeSnippet && (
                                         <Box sx={{ mt: 1.5, p: 1.5, bgcolor: 'var(--bg-code-block)', color: 'var(--text-code-block)', borderRadius: 1, fontFamily: 'var(--font-mono)', fontSize: '0.75rem', whiteSpace: 'pre-wrap', overflowX: 'auto', border: '1px solid var(--border-subtle)' }}>
                                             {rec.codeSnippet}
@@ -5238,807 +5660,855 @@ function LensyApp() {
 
                             return (
                                 <>
-                                    {/* ═══ ROW 1: Hero Area — Top Actions (left) + 2×2 Cards (right) ═══ */}
-                                    <Grid container spacing={3} sx={{ mb: 3, alignItems: 'flex-start' }}>
-                                        {/* ── Left Column: Top Actions ── */}
-                                        <Grid item xs={12} md={7}>
-                                            <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                                                <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5, fontSize: '1rem' }}>
-                                                    Top Actions
-                                                </Typography>
-                                                {topRecs.length > 0 ? (
-                                                    <>
-                                                        {topRecs.map((rec: any, i: number) => (
-                                                            <Box key={i} sx={{
-                                                                display: 'flex', alignItems: 'flex-start', gap: 1.5, mb: 1.5, p: 1.5,
-                                                                borderRadius: 1, bgcolor: 'var(--bg-tertiary)',
-                                                                borderLeft: '3px solid var(--text-primary)',
-                                                            }}>
-                                                                <Box sx={{
-                                                                    width: 22, height: 22, borderRadius: '50%', flexShrink: 0, mt: 0.1,
-                                                                    bgcolor: 'var(--bg-secondary)', color: 'var(--text-secondary)',
-                                                                    border: '1px solid var(--border-default)',
-                                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                                    fontSize: '0.7rem', fontWeight: 700,
-                                                                }}>
-                                                                    {i + 1}
-                                                                </Box>
-                                                                <Box sx={{ flex: 1, minWidth: 0 }}>
-                                                                    <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--text-primary)', lineHeight: 1.4 }}>
-                                                                        {rec.issue}
+                                    {/* ═══ HERO BOXES: AI Readiness (left) + AI Citations (right) ═══ */}
+                                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 2, mb: 2 }}>
+                                        {/* ── Left Hero: AI Readiness ── */}
+                                        <Card
+                                            onClick={() => setHeroTab('readiness')}
+                                            sx={{
+                                                cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                                height: { xs: 'auto', md: 150 },
+                                                border: (heroTab === 'readiness' || heroTab === 'recommendations') ? '2px solid var(--accent-primary)' : '1px solid var(--border-default)',
+                                                boxShadow: (heroTab === 'readiness' || heroTab === 'recommendations') ? '0 0 0 1px var(--accent-primary), 0 4px 12px rgba(59,130,246,0.15)' : 'none',
+                                                '&:hover': {
+                                                    borderColor: (heroTab === 'readiness' || heroTab === 'recommendations') ? 'var(--accent-primary)' : 'var(--border-strong)',
+                                                    transform: 'translateY(-2px)',
+                                                    boxShadow: (heroTab === 'readiness' || heroTab === 'recommendations') ? '0 0 0 1px var(--accent-primary), 0 8px 24px rgba(59,130,246,0.2)' : '0 8px 24px rgba(0,0,0,0.1)',
+                                                },
+                                            }}
+                                        >
+                                            <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', py: 3, px: 3, '&:last-child': { pb: 3 } }}>
+                                                {asyncCards.overallScore ? (
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                                                        <Typography sx={{ fontSize: '3rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
+                                                            {getLetterGrade(asyncCards.overallScore.overallScore)}
+                                                        </Typography>
+                                                        <Box>
+                                                            <Typography variant="h6" sx={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '1.1rem', lineHeight: 1.2 }}>
+                                                                AI Readiness
+                                                            </Typography>
+                                                            <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontSize: '0.85rem', mt: 0.25 }}>
+                                                                {asyncCards.overallScore.overallScore}/100
+                                                            </Typography>
+                                                            <Typography variant="caption" sx={{ color: 'var(--text-secondary)', fontSize: '0.75rem', display: 'block', mt: 0.5 }}>
+                                                                {getGradeLabel(asyncCards.overallScore.overallScore, recs.length)}
+                                                            </Typography>
+                                                        </Box>
+                                                    </Box>
+                                                ) : (
+                                                    <Box sx={{ textAlign: 'center' }}>
+                                                        <CircularProgress size={32} sx={{ opacity: 0.3, mb: 1 }} />
+                                                        <Typography variant="body2" sx={{
+                                                            color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 500,
+                                                            '@keyframes pulse': { '0%, 100%': { opacity: 0.4 }, '50%': { opacity: 1 } },
+                                                            animation: 'pulse 1.5s ease-in-out infinite',
+                                                        }}>
+                                                            Calculating score...
+                                                        </Typography>
+                                                    </Box>
+                                                )}
+                                            </CardContent>
+                                        </Card>
+
+                                        {/* ── Right Hero: AI Citations (disabled until readiness completes) ── */}
+                                        {(() => {
+                                            const citationsReady = analysisState.status === 'completed' || !!asyncCards.overallScore;
+                                            const citationsDisabled = !citationsReady && !aiDisc;
+                                            return (
+                                                <Card
+                                                    onClick={() => {
+                                                        if (citationsDisabled) return;
+                                                        setHeroTab('citations');
+                                                        // Auto-trigger citation check on first click
+                                                        if (!aiDisc && !citationsLoading) handleRunCitations();
+                                                    }}
+                                                    sx={{
+                                                        cursor: citationsDisabled ? 'not-allowed' : 'pointer',
+                                                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                                        height: { xs: 'auto', md: 150 },
+                                                        opacity: citationsDisabled ? 0.5 : 1,
+                                                        border: heroTab === 'citations' ? '2px solid var(--accent-primary)' : '1px solid var(--border-default)',
+                                                        boxShadow: heroTab === 'citations' ? '0 0 0 1px var(--accent-primary), 0 4px 12px rgba(59,130,246,0.15)' : 'none',
+                                                        '&:hover': citationsDisabled ? {} : {
+                                                            borderColor: heroTab === 'citations' ? 'var(--accent-primary)' : 'var(--border-strong)',
+                                                            transform: 'translateY(-2px)',
+                                                            boxShadow: heroTab === 'citations' ? '0 0 0 1px var(--accent-primary), 0 8px 24px rgba(59,130,246,0.2)' : '0 8px 24px rgba(0,0,0,0.1)',
+                                                        },
+                                                    }}
+                                                >
+                                                    <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', py: 3, px: 3, '&:last-child': { pb: 3 } }}>
+                                                        {aiDisc ? (
+                                                            /* ── Citations complete: show score ── */
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                                                                <Typography sx={{ fontSize: '3rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
+                                                                    {aiBestFound}/{aiTotalQueries}
+                                                                </Typography>
+                                                                <Box>
+                                                                    <Typography variant="h6" sx={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '1.1rem', lineHeight: 1.2 }}>
+                                                                        AI Citations
                                                                     </Typography>
-                                                                    <Chip label={rec.category} size="small" sx={{
-                                                                        height: 18, fontSize: '0.6rem', fontWeight: 500, mt: 0.5,
-                                                                        bgcolor: 'rgba(148,163,184,0.06)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)',
-                                                                    }} />
+                                                                    <Typography variant="caption" sx={{ color: 'var(--text-secondary)', fontSize: '0.75rem', display: 'block', mt: 0.5 }}>
+                                                                        Cited in {aiBestFound} of {aiTotalQueries} synthetic queries
+                                                                    </Typography>
                                                                 </Box>
                                                             </Box>
-                                                        ))}
-                                                        {recs.length > 3 && (
-                                                            <Typography
-                                                                variant="body2"
-                                                                onClick={() => setShowAllRecs(!showAllRecs)}
-                                                                sx={{ color: 'var(--accent-primary)', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem', mt: 0.5, '&:hover': { textDecoration: 'underline' } }}
-                                                            >
-                                                                {showAllRecs ? 'Show less' : `View all ${recs.length} recommendations →`}
-                                                            </Typography>
+                                                        ) : citationsLoading ? (
+                                                            /* ── Citations running: show spinner ── */
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2.5 }}>
+                                                                <CircularProgress size={40} thickness={3} sx={{ color: 'var(--accent-primary)' }} />
+                                                                <Box>
+                                                                    <Typography variant="h6" sx={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '1rem', lineHeight: 1.2 }}>
+                                                                        AI Citations
+                                                                    </Typography>
+                                                                    <Typography variant="caption" sx={{ color: 'var(--text-secondary)', fontSize: '0.75rem', display: 'block', mt: 0.5 }}>
+                                                                        Testing synthetic queries...
+                                                                    </Typography>
+                                                                </Box>
+                                                            </Box>
+                                                        ) : (
+                                                            /* ── Citations idle: show play icon ── */
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2.5 }}>
+                                                                <Box sx={{
+                                                                    width: 44, height: 44, borderRadius: '50%',
+                                                                    border: `2px solid ${citationsDisabled ? 'var(--border-default)' : 'var(--accent-primary)'}`,
+                                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                    opacity: citationsDisabled ? 0.4 : 1,
+                                                                    transition: 'all 0.2s',
+                                                                }}>
+                                                                    <Typography sx={{ fontSize: '1.2rem', lineHeight: 1, ml: '3px', color: citationsDisabled ? 'var(--text-muted)' : 'var(--accent-primary)' }}>&#9654;</Typography>
+                                                                </Box>
+                                                                <Box>
+                                                                    <Typography variant="h6" sx={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '1rem', lineHeight: 1.2 }}>
+                                                                        AI Citations
+                                                                    </Typography>
+                                                                    <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'block', mt: 0.5 }}>
+                                                                        {citationsDisabled ? 'Available after readiness check' : 'Run citation check'}
+                                                                    </Typography>
+                                                                </Box>
+                                                            </Box>
                                                         )}
-                                                    </>
-                                                ) : (
-                                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                                                        {[1, 2, 3].map(i => (
-                                                            <Skeleton key={i} animation="wave" variant="rectangular" height={60} sx={{ borderRadius: 1, bgcolor: 'var(--border-default)' }} />
-                                                        ))}
+                                                    </CardContent>
+                                                </Card>
+                                            );
+                                        })()}
+                                    </Box>
+
+                                    {/* ── Doc Confidence + View Recommendations (between hero and detail) ── */}
+                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+                                        {asyncCards.overallScore?.docConfidence ? (() => {
+                                            const conf = asyncCards.overallScore.docConfidence;
+                                            const pct = Math.round(conf.score * 100);
+                                            const label = pct >= 80 ? 'Likely a doc page' : pct >= 60 ? 'May be a doc page' : 'Might not be a doc page';
+                                            return (
+                                                <>
+                                                    <Tooltip title="How confident we are that this is a documentation page vs. a marketing page, blog, or homepage" arrow enterTouchDelay={0} leaveTouchDelay={3000}>
+                                                        <Chip label={`${label} (${pct}%)`} size="small" sx={{
+                                                            fontWeight: 600, fontSize: '0.7rem', height: 22,
+                                                            bgcolor: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
+                                                            border: '1px solid var(--border-default)', cursor: 'help',
+                                                        }} />
+                                                    </Tooltip>
+                                                    <Tooltip title={<Box component="ul" sx={{ m: 0, pl: 2, py: 0.5, listStyle: 'disc' }}>{conf.signals.map((s: string, i: number) => <li key={i} style={{ fontSize: '0.75rem', lineHeight: 1.5 }}>{s}</li>)}</Box>} arrow enterTouchDelay={0} leaveTouchDelay={3000}>
+                                                        <Typography variant="caption" sx={{ color: 'var(--text-muted)', cursor: 'help', textDecoration: 'underline dotted', fontSize: '0.7rem' }}>
+                                                            {conf.signals.length} signal{conf.signals.length !== 1 ? 's' : ''}
+                                                        </Typography>
+                                                    </Tooltip>
+                                                </>
+                                            );
+                                        })() : null}
+                                        {recs.length > 0 && (
+                                            <>
+                                                <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>·</Typography>
+                                                <Typography
+                                                    variant="caption"
+                                                    onClick={() => setHeroTab(heroTab === 'recommendations' ? 'readiness' : 'recommendations')}
+                                                    sx={{
+                                                        color: 'var(--accent-primary)',
+                                                        cursor: 'pointer', fontWeight: 600, fontSize: '0.7rem',
+                                                        '&:hover': { textDecoration: 'underline' },
+                                                    }}
+                                                >
+                                                    {heroTab === 'recommendations' ? '← Back to details' : `View all ${recs.length} recommendations →`}
+                                                </Typography>
+                                            </>
+                                        )}
+                                    </Box>
+
+                                    {/* ═══ DETAIL AREA: Tab-driven content ═══ */}
+                                    <Box sx={{ mb: 3, mt: 1 }}>
+                                        {/* ── Readiness Tab: 2x2 Grid ── */}
+                                        {heroTab === 'readiness' && (
+                                            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 2 }}>
+                                                {/* ── Cell 1: Bot Access (condensed) ── */}
+                                                <Box sx={{ p: 2, border: '1px solid var(--border-default)', borderRadius: 2, bgcolor: 'var(--bg-secondary)' }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                                                        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.7rem' }}>
+                                                            Bot Access
+                                                        </Typography>
+                                                        {asyncCards.overallScore && (
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-primary)' }}>
+                                                                    {asyncCards.botAccess ? `${asyncCards.botAccess.allowedCount}/${asyncCards.botAccess.bots.length}` : `${asyncCards.overallScore.scoreBreakdown.botAccess}/15`}
+                                                                </Typography>
+                                                                {(asyncCards.botAccess ? asyncCards.botAccess.blockedCount === 0 : asyncCards.overallScore.scoreBreakdown.botAccess >= 13) ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} /> : <WarningIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} />}
+                                                            </Box>
+                                                        )}
+                                                    </Box>
+                                                    {asyncCards.botAccess ? (
+                                                        <>
+                                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                                                            {asyncCards.botAccess.bots.map((bot, i) => {
+                                                                const isAllowed = bot.status === 'allowed' || bot.status === 'not-mentioned';
+                                                                return (
+                                                                    <Tooltip key={i} title={`${bot.name} (${bot.userAgent}) — ${isAllowed ? 'Allowed' : 'Blocked'}`} arrow placement="top" enterTouchDelay={0} leaveTouchDelay={3000}>
+                                                                        <Chip
+                                                                            icon={isAllowed ? <CheckCircleIcon sx={{ fontSize: '14px !important' }} /> : <ErrorIcon sx={{ fontSize: '14px !important' }} />}
+                                                                            label={bot.name.replace(/\s*\(.*\)/, '')}
+                                                                            size="small"
+                                                                            sx={{
+                                                                                height: 24, fontSize: '0.65rem', fontWeight: 600, cursor: 'help',
+                                                                                bgcolor: isAllowed ? 'var(--bg-tertiary)' : 'rgba(239,68,68,0.08)',
+                                                                                color: isAllowed ? 'var(--text-secondary)' : '#ef4444',
+                                                                                border: `1px solid ${isAllowed ? 'var(--border-default)' : 'rgba(239,68,68,0.2)'}`,
+                                                                                '& .MuiChip-icon': { color: isAllowed ? 'var(--text-muted)' : '#ef4444' },
+                                                                            }}
+                                                                        />
+                                                                    </Tooltip>
+                                                                );
+                                                            })}
+                                                        </Box>
+                                                        {/* Source link to robots.txt */}
+                                                        {(() => {
+                                                            try {
+                                                                const parsedUrl = new URL(url || (analysisState.report as any)?.url || '');
+                                                                const robotsUrl = `${parsedUrl.origin}/robots.txt`;
+                                                                return (
+                                                                    <Typography variant="caption" sx={{ mt: 1, display: 'block', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                                                                        Source: <a href={robotsUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)', textDecoration: 'none' }}>
+                                                                            robots.txt
+                                                                        </a>
+                                                                        {asyncCards.botAccess && !asyncCards.botAccess.robotsTxtFound && (
+                                                                            <span> (not found — bots allowed by default)</span>
+                                                                        )}
+                                                                    </Typography>
+                                                                );
+                                                            } catch (e) { return null; }
+                                                        })()}
+                                                        </>
+                                                    ) : (
+                                                        <Box sx={{ textAlign: 'center', py: 2 }}><CircularProgress size={20} sx={{ opacity: 0.3 }} /></Box>
+                                                    )}
+                                                </Box>
+
+                                                {/* ── Cell 2: Structured Data ── */}
+                                                <Box sx={{ p: 2, border: '1px solid var(--border-default)', borderRadius: 2, bgcolor: 'var(--bg-secondary)' }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                                                        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.7rem' }}>
+                                                            Structured Data
+                                                        </Typography>
+                                                        {asyncCards.overallScore && (
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-primary)' }}>
+                                                                    {asyncCards.overallScore.scoreBreakdown.structuredData}/15
+                                                                </Typography>
+                                                                {asyncCards.overallScore.scoreBreakdown.structuredData >= 12 ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} /> : <WarningIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} />}
+                                                            </Box>
+                                                        )}
+                                                    </Box>
+                                                    {asyncCards.structuredData ? (() => {
+                                                        const s = asyncCards.structuredData!;
+                                                        const items = [
+                                                            { label: 'JSON-LD', pass: s.jsonLd.found || s.schemaCompleteness.status !== 'missing', detail: s.jsonLd.found ? `Found ${s.jsonLd.types.join(', ')} markup${s.schemaCompleteness.status === 'complete' ? '. Schema is complete.' : '.'}` : 'Not found. JSON-LD tells AI exactly what type of content this is.', info: 'Gives AI explicit type signals so it can accurately categorize your page.', pts: 5 },
+                                                            { label: 'Schema Completeness', pass: s.schemaCompleteness.status === 'complete', detail: s.schemaCompleteness.status === 'complete' ? 'Schema is complete.' : 'Schema is incomplete or missing.', info: 'Complete schemas help AI understand your content structure.', pts: 3 },
+                                                            { label: 'OpenGraph', pass: s.openGraphCompleteness.score !== 'missing', detail: s.openGraphCompleteness.score === 'complete' ? 'All required tags present.' : s.openGraphCompleteness.score === 'partial' ? `Missing ${s.openGraphCompleteness.missingTags.slice(0, 2).join(', ')}.` : 'Not found.', info: 'Controls the preview card when your link is shared on social channels.', pts: 4 },
+                                                            { label: 'Breadcrumbs', pass: s.breadcrumbs.found, detail: s.breadcrumbs.found ? 'BreadcrumbList schema found.' : 'No BreadcrumbList schema found.', info: 'BreadcrumbList schema tells AI where this page sits in your site hierarchy.', pts: 3 },
+                                                        ];
+                                                        return items.map((item, i) => (
+                                                            <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>
+                                                                {item.pass ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} /> : <ErrorIcon sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} />}
+                                                                <Box sx={{ flex: 1 }}>
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                        <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', lineHeight: 1.3, color: 'var(--text-primary)' }}>{item.label}</Typography>
+                                                                        {!item.pass && <Typography component="span" sx={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--accent-primary)' }}>+{item.pts} pts</Typography>}
+                                                                        <Tooltip title={item.info} arrow placement="top" enterTouchDelay={0} leaveTouchDelay={3000}>
+                                                                            <InfoIcon sx={{ fontSize: 12, color: 'var(--text-muted)', cursor: 'help', opacity: 0.5, '&:hover': { opacity: 1 } }} />
+                                                                        </Tooltip>
+                                                                    </Box>
+                                                                    <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.7rem', lineHeight: 1.2, wordBreak: 'break-word' }}>{item.detail}</Typography>
+                                                                </Box>
+                                                            </Box>
+                                                        ));
+                                                    })() : <CircularProgress size={20} sx={{ opacity: 0.3 }} />}
+                                                </Box>
+
+                                                {/* ── Cell 3: Discoverability ── */}
+                                                <Box sx={{ p: 2, border: '1px solid var(--border-default)', borderRadius: 2, bgcolor: 'var(--bg-secondary)' }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                                                        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.7rem' }}>
+                                                            Discoverability
+                                                        </Typography>
+                                                        {asyncCards.overallScore && (
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-primary)' }}>
+                                                                    {asyncCards.overallScore.scoreBreakdown.discoverability}/35
+                                                                </Typography>
+                                                                {asyncCards.overallScore.scoreBreakdown.discoverability >= 28 ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} /> : <WarningIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} />}
+                                                            </Box>
+                                                        )}
+                                                    </Box>
+                                                    {asyncCards.discoverability ? (() => {
+                                                        const d = asyncCards.discoverability!;
+                                                        const items: Array<{ label: string; status: 'pass' | 'fail' | 'neutral'; detail: string; info?: string; waitlist?: boolean; waitlistLabel?: string; pts: number }> = [
+                                                            { label: 'llms.txt', status: d.llmsTxt.found ? 'pass' : 'fail', detail: d.llmsTxt.found ? `Found. AI coding tools can consume your docs directly.` : `Not found. llms.txt helps AI coding tools consume your docs faster.`, info: 'A markdown table of contents for your docs. Helps AI coding tools find and consume your content at inference time.', waitlist: !d.llmsTxt.found, pts: 17 },
+                                                            { label: 'Sitemap', status: d.sitemapXml.found ? 'pass' : 'fail', detail: d.sitemapXml.found ? `Found. Crawlers can discover all your pages.` : 'Not found. Crawlers may miss deeper pages.', info: 'Lists every page on your site so crawlers don\'t have to guess.', pts: 10 },
+                                                            { label: 'Canonical URL', status: d.canonical.found ? 'pass' : 'fail', detail: d.canonical.found ? `Set. Prevents duplicate indexing.` : 'Not set. Search engines may index duplicate versions.', info: 'Tells search engines which URL is the authoritative version of this page.', pts: 8 },
+                                                            ...(d.metaRobots.blocksIndexing ? [{ label: 'Meta Robots', status: 'fail' as const, detail: `Set to "${d.metaRobots.content}". Blocks indexing.`, info: 'Your meta robots tag is preventing indexing.', pts: 7 }] : []),
+                                                        ];
+                                                        return items.map((item, i) => (
+                                                            <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>
+                                                                {item.status === 'pass' ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} /> : item.status === 'neutral' ? <InfoIcon sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} /> : <ErrorIcon sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} />}
+                                                                <Box sx={{ flex: 1 }}>
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                        <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', lineHeight: 1.3, color: 'var(--text-primary)' }}>{item.label}</Typography>
+                                                                        {item.status === 'fail' && <Typography component="span" sx={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--accent-primary)' }}>+{item.pts} pts</Typography>}
+                                                                        {item.info && (
+                                                                            <Tooltip title={item.info} arrow placement="top" enterTouchDelay={0} leaveTouchDelay={3000}>
+                                                                                <InfoIcon sx={{ fontSize: 12, color: 'var(--text-muted)', cursor: 'help', opacity: 0.5, '&:hover': { opacity: 1 } }} />
+                                                                            </Tooltip>
+                                                                        )}
+                                                                    </Box>
+                                                                    <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.7rem', lineHeight: 1.2, wordBreak: 'break-word' }}>{item.detail}</Typography>
+                                                                    {item.waitlist && (
+                                                                        <Typography variant="caption" component="a" href="/contact?ref=llmstxt" sx={{ display: 'block', color: 'var(--accent-primary)', fontSize: '0.7rem', fontWeight: 600, mt: 0.3, textDecoration: 'underline', '&:hover': { opacity: 0.8 } }}>
+                                                                            {item.waitlistLabel || 'We can help you generate one →'}
+                                                                        </Typography>
+                                                                    )}
+                                                                </Box>
+                                                            </Box>
+                                                        ));
+                                                    })() : <CircularProgress size={20} sx={{ opacity: 0.3 }} />}
+                                                </Box>
+
+                                                {/* ── Cell 4: Content Quality ── */}
+                                                <Box sx={{ p: 2, border: '1px solid var(--border-default)', borderRadius: 2, bgcolor: 'var(--bg-secondary)' }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                                                        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.7rem' }}>
+                                                            Content Quality
+                                                        </Typography>
+                                                        {asyncCards.overallScore && (
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-primary)' }}>
+                                                                    {asyncCards.overallScore.scoreBreakdown.consumability}/35
+                                                                </Typography>
+                                                                {asyncCards.overallScore.scoreBreakdown.consumability >= 28 ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} /> : <WarningIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} />}
+                                                            </Box>
+                                                        )}
+                                                    </Box>
+                                                    {asyncCards.consumability ? (() => {
+                                                        const c = asyncCards.consumability!;
+                                                        const h2Count = c.headingHierarchy.h2Count || 0;
+                                                        const h3Count = c.headingHierarchy.h3Count || 0;
+                                                        const wordCount = c.wordCount || 0;
+                                                        const items: { label: string; pass: boolean; detail: string; fix?: string; neutral?: boolean; info?: string; waitlist?: boolean; waitlistLabel?: string; pts: number }[] = [
+                                                            ...(!c.jsRendered ? [] : [{
+                                                                label: 'Client-Side Rendered',
+                                                                pass: false,
+                                                                detail: 'Page relies on JavaScript to render. AI crawlers see a blank page.',
+                                                                info: 'Most AI bots don\'t run JavaScript. Client-side rendered pages appear empty to them.',
+                                                                pts: 8,
+                                                            }]),
+                                                            {
+                                                                label: `Headings: ${c.headingHierarchy.h1Count} H1, ${h2Count} H2, ${h3Count} H3`,
+                                                                pass: c.headingHierarchy.h1Count === 1 && h2Count >= 1,
+                                                                detail: c.headingHierarchy.hasProperNesting
+                                                                    ? `Well-structured. AI can split into ${h2Count} chunks.`
+                                                                    : (() => {
+                                                                        if (c.headingHierarchy.h1Count === 0) return 'No H1 found.';
+                                                                        if (c.headingHierarchy.h1Count > 1) return `${c.headingHierarchy.h1Count} H1 tags. Use exactly one.`;
+                                                                        if (h2Count === 0) return 'No H2s. Content is one big block.';
+                                                                        return 'Heading nesting inconsistent.';
+                                                                    })(),
+                                                                fix: h2Count === 0 ? 'Add sections like ## Getting Started' : (!c.headingHierarchy.hasProperNesting ? 'Restructure: H1 > H2 > H3.' : undefined),
+                                                                info: 'AI splits pages at heading boundaries. Each H2 becomes a separately retrievable unit.',
+                                                                pts: c.headingHierarchy.h1Count === 1 ? 6 : 7,
+                                                            },
+                                                            ...(wordCount > 0 ? [{
+                                                                label: `Word count: ${wordCount.toLocaleString()}`,
+                                                                pass: wordCount >= 500 && wordCount <= 2000,
+                                                                detail: wordCount < 500
+                                                                    ? `Only ${wordCount} words. Pages under 500 often lack context for AI.`
+                                                                    : (wordCount > 2000
+                                                                        ? `${wordCount.toLocaleString()} words. Consider splitting.`
+                                                                        : `${wordCount.toLocaleString()} words. Good depth.`),
+                                                                info: 'Sweet spot is 500-2,000 words.',
+                                                                pts: 5,
+                                                            }] : []),
+                                                            {
+                                                                label: 'Markdown',
+                                                                pass: c.markdownAvailable.found,
+                                                                detail: c.markdownAvailable.found
+                                                                    ? (c.markdownAvailable.discoverable ? 'Available and discoverable by coding agents.' : 'Available but not easily discoverable.')
+                                                                    : 'No markdown version found.',
+                                                                fix: !c.markdownAvailable.found ? 'Serve a .md version alongside HTML.' : undefined,
+                                                                waitlist: !c.markdownAvailable.found,
+                                                                waitlistLabel: 'Join the waitlist for markdown generation →',
+                                                                info: 'AI coding agents work better with markdown (up to 80% fewer tokens).',
+                                                                pts: c.markdownAvailable.discoverable ? 6 : 3,
+                                                            },
+                                                            {
+                                                                label: `Links: ${c.internalLinkDensity.count}`,
+                                                                pass: c.internalLinkDensity.status === 'good',
+                                                                detail: c.internalLinkDensity.status === 'good'
+                                                                    ? `${c.internalLinkDensity.count} internal links. Good cross-referencing.`
+                                                                    : `Only ${c.internalLinkDensity.count} internal links.`,
+                                                                fix: c.internalLinkDensity.status === 'sparse' ? 'Add "See also" links to related pages.' : undefined,
+                                                                info: 'Internal links help AI understand how your pages relate.',
+                                                                pts: 3,
+                                                            },
+                                                        ];
+
+                                                        return items.map((item, i) => (
+                                                            <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>
+                                                                {(item as any).neutral ? <InfoIcon sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} /> : item.pass ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} /> : <WarningIcon sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} />}
+                                                                <Box sx={{ flex: 1 }}>
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                        <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', lineHeight: 1.3, color: 'var(--text-primary)' }}>{item.label}</Typography>
+                                                                        {!item.pass && !(item as any).neutral && <Typography component="span" sx={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--accent-primary)' }}>+{item.pts} pts</Typography>}
+                                                                        {item.info && (
+                                                                            <Tooltip title={item.info} arrow placement="top" enterTouchDelay={0} leaveTouchDelay={3000}>
+                                                                                <InfoIcon sx={{ fontSize: 12, color: 'var(--text-muted)', cursor: 'help', opacity: 0.5, '&:hover': { opacity: 1 } }} />
+                                                                            </Tooltip>
+                                                                        )}
+                                                                    </Box>
+                                                                    <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.7rem', lineHeight: 1.2, wordBreak: 'break-word' }}>{item.detail}</Typography>
+                                                                    {item.fix && (
+                                                                        <Typography variant="caption" sx={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.65rem', lineHeight: 1.3, mt: 0.25, fontWeight: 500 }}>
+                                                                            → {item.fix}
+                                                                        </Typography>
+                                                                    )}
+                                                                    {item.waitlist && (
+                                                                        <Typography variant="caption" component="a" href="/contact?ref=markdown" sx={{ display: 'block', color: 'var(--accent-primary)', fontSize: '0.7rem', fontWeight: 600, mt: 0.3, textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
+                                                                            {item.waitlistLabel || 'We can help →'}
+                                                                        </Typography>
+                                                                    )}
+                                                                </Box>
+                                                            </Box>
+                                                        ));
+                                                    })() : <CircularProgress size={20} sx={{ opacity: 0.3 }} />}
+                                                </Box>
+                                            </Box>
+                                        )}
+
+                                        {/* ── Citations Tab: Queries Table ── */}
+                                        {heroTab === 'citations' && (
+                                            <Box>
+                                                <Typography variant="h6" sx={{ fontWeight: 700, mb: 0.5, fontSize: '1rem' }}>
+                                                    Where Am I Invisible?
+                                                </Typography>
+                                                <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontSize: '0.8rem', mb: 2 }}>
+                                                    AI-generated synthetic queries tested against Perplexity — is your content being cited?
+                                                </Typography>
+                                                {asyncCards.aiDiscoverability ? (() => {
+                                                    const disc = asyncCards.aiDiscoverability!;
+                                                    const totalQueries = disc.queries.length;
+                                                    const queryTypes: string[] = disc.queryTypes || disc.queries.map(() => 'low');
+                                                    const hasPerplexity = disc.engines.perplexity?.available;
+                                                    const hasEngines = hasPerplexity;
+                                                    const perplexityResults = disc.engines.perplexity?.results || [];
+
+                                                    const highIndices = queryTypes.map((t: string, i: number) => t === 'high' ? i : -1).filter(i => i >= 0);
+                                                    const midIndices = queryTypes.map((t: string, i: number) => t === 'mid' ? i : -1).filter(i => i >= 0);
+                                                    const lowIndices = queryTypes.map((t: string, i: number) => (t === 'low' || t === 'context-free') ? i : -1).filter(i => i >= 0);
+                                                    const totalCited = perplexityResults.filter((r: any) => r?.cited).length;
+
+                                                    return (
+                                                        <>
+                                                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mb: 2.5 }}>
+                                                                {hasEngines ? (
+                                                                    <Chip label={`Cited: ${totalCited}/${totalQueries} synthetic queries`} size="small" sx={{
+                                                                        fontWeight: 700, fontSize: '0.75rem',
+                                                                        bgcolor: 'var(--bg-tertiary)',
+                                                                        color: 'var(--text-secondary)',
+                                                                        border: '1px solid var(--border-default)',
+                                                                    }} />
+                                                                ) : (
+                                                                    <Chip label="Engines not configured" size="small" sx={{ bgcolor: 'var(--bg-secondary)', border: '1px solid var(--border-default)', color: 'var(--text-muted)', fontSize: '0.7rem' }} />
+                                                                )}
+                                                            </Box>
+
+                                                            {(() => {
+                                                                const renderEngineRow = (query: string, qi: number, intentLabel: string) => {
+                                                                    const pResult = perplexityResults[qi];
+                                                                    const isCited = pResult?.cited;
+                                                                    const competing = new Set<string>();
+                                                                    if (!isCited) {
+                                                                        pResult?.competingDomains?.forEach((d: string) => competing.add(d));
+                                                                    }
+                                                                    return (
+                                                                        <tr key={qi}>
+                                                                            <td style={{ padding: '10px 14px', fontSize: '0.8rem', borderBottom: '1px solid var(--border-subtle)', verticalAlign: 'top' }}>
+                                                                                <span style={{
+                                                                                    display: 'inline-block',
+                                                                                    fontSize: '0.65rem',
+                                                                                    fontWeight: 700,
+                                                                                    textTransform: 'uppercase',
+                                                                                    letterSpacing: '0.04em',
+                                                                                    color: 'var(--text-muted)',
+                                                                                    marginBottom: 3,
+                                                                                }}>
+                                                                                    {intentLabel} intent
+                                                                                </span>
+                                                                                <div style={{ color: 'var(--text-primary)', lineHeight: 1.5 }}>"{query}"</div>
+                                                                                {competing.size > 0 && (
+                                                                                    <div style={{ marginTop: 4, fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                                                                        Cited instead: {Array.from(competing).map((d, i) => (
+                                                                                            <span key={i} style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{i > 0 ? ', ' : ''}{d}</span>
+                                                                                        ))}
+                                                                                    </div>
+                                                                                )}
+                                                                            </td>
+                                                                            <td style={{ padding: '10px 14px', textAlign: 'center', borderBottom: '1px solid var(--border-subtle)', verticalAlign: 'middle', width: '120px' }}>
+                                                                                <Chip label={isCited ? 'Cited' : 'Not Cited'} size="small" sx={{
+                                                                                    bgcolor: isCited ? 'rgba(34,197,94,0.1)' : 'var(--bg-tertiary)',
+                                                                                    color: isCited ? '#16a34a' : 'var(--text-muted)',
+                                                                                    fontWeight: 700,
+                                                                                    fontSize: '0.7rem',
+                                                                                    border: `1px solid ${isCited ? 'rgba(34,197,94,0.2)' : 'var(--border-default)'}`,
+                                                                                }} />
+                                                                            </td>
+                                                                        </tr>
+                                                                    );
+                                                                };
+
+                                                                return (
+                                                                    <Box sx={{
+                                                                        overflowX: 'auto',
+                                                                        border: '1px solid var(--border-default)',
+                                                                        borderRadius: '10px',
+                                                                        bgcolor: 'var(--bg-secondary)',
+                                                                    }}>
+                                                                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                                                            <thead>
+                                                                                <tr style={{ borderBottom: '2px solid var(--border-default)' }}>
+                                                                                    <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Query</th>
+                                                                                    <th style={{ textAlign: 'center', padding: '10px 14px', color: 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', width: '120px' }}>Perplexity</th>
+                                                                                </tr>
+                                                                            </thead>
+                                                                            <tbody>
+                                                                                {highIndices.map((i: number) => renderEngineRow(disc.queries[i], i, 'High'))}
+                                                                                {midIndices.map((i: number) => renderEngineRow(disc.queries[i], i, 'Mid'))}
+                                                                                {lowIndices.map((i: number) => renderEngineRow(disc.queries[i], i, 'Low'))}
+                                                                            </tbody>
+                                                                        </table>
+                                                                    </Box>
+                                                                );
+                                                            })()}
+                                                        </>
+                                                    );
+                                                })() : (
+                                                    <Box sx={{ textAlign: 'center', py: 4 }}>
+                                                        {citationsLoading ? (
+                                                            <>
+                                                                <CircularProgress size={32} sx={{ opacity: 0.3, mb: 1 }} />
+                                                                <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontWeight: 500 }}>
+                                                                    Testing synthetic queries on Perplexity...
+                                                                </Typography>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontWeight: 500, mb: 1 }}>
+                                                                    Click the AI Citations card above to start
+                                                                </Typography>
+                                                                <Button
+                                                                    variant="outlined"
+                                                                    size="small"
+                                                                    onClick={handleRunCitations}
+                                                                    sx={{ fontSize: '0.75rem', textTransform: 'none', borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}
+                                                                >
+                                                                    Run citation check
+                                                                </Button>
+                                                            </>
+                                                        )}
                                                     </Box>
                                                 )}
                                             </Box>
-                                        </Grid>
+                                        )}
 
-                                        {/* ── Right Column: 2×2 Card Grid ── */}
-                                        <Grid item xs={12} md={5}>
-                                            <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                                                <Typography variant="h6" aria-hidden="true" sx={{ fontWeight: 700, mb: 1.5, fontSize: '1rem', visibility: 'hidden' }}>
-                                                    Placeholder
+                                        {/* ── Recommendations Tab ── */}
+                                        {heroTab === 'recommendations' && recs.length > 0 && (
+                                            <Box>
+                                                <Typography variant="h6" sx={{ fontWeight: 700, mb: 0.5, fontSize: '1rem' }}>
+                                                    All Recommendations ({recs.length})
                                                 </Typography>
-                                                <Grid container spacing={1.5}>
-                                                    {/* Card: Bots Allowed */}
-                                                    <Grid item xs={6}>
-                                                        <Card
-                                                            onClick={() => setActiveDetailCard(activeDetailCard === 'bots' ? null : 'bots')}
-                                                            sx={{
-                                                                cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', height: 110,
-                                                                border: activeDetailCard === 'bots' ? '2px solid var(--accent-primary)' : '1px solid var(--border-default)',
-                                                                boxShadow: activeDetailCard === 'bots' ? '0 0 0 1px var(--accent-primary), 0 2px 8px rgba(59,130,246,0.2)' : 'none',
-                                                                '&:hover': {
-                                                                    borderColor: activeDetailCard === 'bots' ? 'var(--accent-primary)' : 'var(--border-strong)',
-                                                                    transform: 'translateY(-2px)',
-                                                                    boxShadow: activeDetailCard === 'bots' ? '0 0 0 1px var(--accent-primary), 0 8px 24px rgba(59,130,246,0.2)' : '0 8px 24px rgba(0,0,0,0.1)'
-                                                                },
-                                                            }}
-                                                        >
-                                                            <CardContent sx={{ textAlign: 'center', py: 2, px: 1.5, '&:last-child': { pb: 2 }, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                                                                {asyncCards.botAccess ? (
-                                                                    <>
-                                                                        <Typography variant="h5" sx={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                                                                            {asyncCards.botAccess.allowedCount}<Typography component="span" variant="body2" sx={{ color: 'var(--text-muted)' }}>/10</Typography>
-                                                                        </Typography>
-                                                                        <Typography variant="caption" sx={{ display: 'block', mt: 0.5, fontWeight: 600, color: 'var(--text-muted)', fontSize: '0.7rem' }}>
-                                                                            Bots Allowed
-                                                                        </Typography>
-                                                                    </>
-                                                                ) : (
-                                                                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%' }}>
-                                                                        <Skeleton animation="wave" variant="rectangular" width={40} height={30} sx={{ bgcolor: 'var(--border-default)', mb: 0.5, borderRadius: 1 }} />
-                                                                        <Skeleton animation="wave" variant="text" width={70} sx={{ bgcolor: 'var(--border-default)' }} />
-                                                                    </Box>
-                                                                )}
-                                                            </CardContent>
-                                                        </Card>
+                                                <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontSize: '0.8rem', mb: 2 }}>
+                                                    Prioritized fixes to improve your AI Readiness score
+                                                </Typography>
+                                                <Grid container spacing={2}>
+                                                    <Grid item xs={12} md={6}>
+                                                        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1.5, fontSize: '0.7rem' }}>
+                                                            Quick Wins
+                                                        </Typography>
+                                                        {recs.filter((r: any) => r.priority === 'high').map(renderRec)}
+                                                        {recs.filter((r: any) => r.priority === 'high').length === 0 && (
+                                                            <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>No high-priority issues ✅</Typography>
+                                                        )}
                                                     </Grid>
-
-                                                    {/* Card: Content Health */}
-                                                    <Grid item xs={6}>
-                                                        <Card
-                                                            onClick={() => setActiveDetailCard(activeDetailCard === 'content' ? null : 'content')}
-                                                            sx={{
-                                                                cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', height: 110,
-                                                                border: activeDetailCard === 'content' ? '2px solid var(--accent-primary)' : '1px solid var(--border-default)',
-                                                                boxShadow: activeDetailCard === 'content' ? '0 0 0 1px var(--accent-primary), 0 2px 8px rgba(59,130,246,0.2)' : 'none',
-                                                                '&:hover': {
-                                                                    borderColor: activeDetailCard === 'content' ? 'var(--accent-primary)' : 'var(--border-strong)',
-                                                                    transform: 'translateY(-2px)',
-                                                                    boxShadow: activeDetailCard === 'content' ? '0 0 0 1px var(--accent-primary), 0 8px 24px rgba(59,130,246,0.2)' : '0 8px 24px rgba(0,0,0,0.1)'
-                                                                },
-                                                            }}
-                                                        >
-                                                            <CardContent sx={{ textAlign: 'center', py: 2, px: 1.5, '&:last-child': { pb: 2 }, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                                                                {chHasData ? (
-                                                                    <>
-                                                                        <Typography variant="h5" sx={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                                                                            {chPassed}<Typography component="span" variant="body2" sx={{ color: 'var(--text-muted)' }}>/{chTotal}</Typography>
-                                                                        </Typography>
-                                                                        <Typography variant="caption" sx={{ display: 'block', mt: 0.5, fontWeight: 600, color: 'var(--text-muted)', fontSize: '0.7rem' }}>
-                                                                            Content Health
-                                                                        </Typography>
-                                                                        {chTotal < 16 && (
-                                                                            <Typography variant="caption" sx={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.6rem' }}>
-                                                                                Checking more...
-                                                                            </Typography>
-                                                                        )}
-                                                                    </>
-                                                                ) : (
-                                                                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%' }}>
-                                                                        <Skeleton animation="wave" variant="rectangular" width={40} height={30} sx={{ bgcolor: 'var(--border-default)', mb: 0.5, borderRadius: 1 }} />
-                                                                        <Skeleton animation="wave" variant="text" width={70} sx={{ bgcolor: 'var(--border-default)' }} />
-                                                                    </Box>
-                                                                )}
-                                                            </CardContent>
-                                                        </Card>
-                                                    </Grid>
-
-                                                    {/* Card: Queries Visible */}
-                                                    <Grid item xs={6}>
-                                                        <Card
-                                                            onClick={() => setActiveDetailCard(activeDetailCard === 'queries' ? null : 'queries')}
-                                                            sx={{
-                                                                cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', height: 110,
-                                                                border: activeDetailCard === 'queries' ? '2px solid var(--accent-primary)' : '1px solid var(--border-default)',
-                                                                boxShadow: activeDetailCard === 'queries' ? '0 0 0 1px var(--accent-primary), 0 2px 8px rgba(59,130,246,0.2)' : 'none',
-                                                                '&:hover': {
-                                                                    borderColor: activeDetailCard === 'queries' ? 'var(--accent-primary)' : 'var(--border-strong)',
-                                                                    transform: 'translateY(-2px)',
-                                                                    boxShadow: activeDetailCard === 'queries' ? '0 0 0 1px var(--accent-primary), 0 8px 24px rgba(59,130,246,0.2)' : '0 8px 24px rgba(0,0,0,0.1)'
-                                                                },
-                                                            }}
-                                                        >
-                                                            <CardContent sx={{ textAlign: 'center', py: 2, px: 1.5, '&:last-child': { pb: 2 }, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                                                                {aiDisc ? (
-                                                                    <>
-                                                                        {aiHasEngines ? (
-                                                                            <Typography variant="h5" sx={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                                                                                {aiBestFound}<Typography component="span" variant="body2" sx={{ color: 'var(--text-muted)' }}>/{aiTotalQueries}</Typography>
-                                                                            </Typography>
-                                                                        ) : (
-                                                                            <Chip
-                                                                                label={aiDisc.overallDiscoverability.toUpperCase().replace('-', ' ')}
-                                                                                sx={{
-                                                                                    fontWeight: 700, fontSize: '0.7rem', height: 26,
-                                                                                    bgcolor: 'var(--bg-tertiary)',
-                                                                                    color: 'var(--text-primary)',
-                                                                                    border: '1px solid var(--border-default)',
-                                                                                }}
-                                                                            />
-                                                                        )}
-                                                                        <Typography variant="caption" sx={{ display: 'block', mt: 0.5, fontWeight: 600, color: 'var(--text-muted)', fontSize: '0.7rem' }}>
-                                                                            {aiHasEngines ? 'Queries Visible' : 'AI Discoverability'}
-                                                                        </Typography>
-                                                                    </>
-                                                                ) : (
-                                                                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%' }}>
-                                                                        <Skeleton animation="wave" variant="rectangular" width={40} height={30} sx={{ bgcolor: 'var(--border-default)', mb: 0.5, borderRadius: 1 }} />
-                                                                        <Skeleton animation="wave" variant="text" width={70} sx={{ bgcolor: 'var(--border-default)' }} />
-                                                                    </Box>
-                                                                )}
-                                                            </CardContent>
-                                                        </Card>
-                                                    </Grid>
-
-                                                    {/* Card: AI Readiness Score */}
-                                                    <Grid item xs={6}>
-                                                        <Card
-                                                            onClick={() => setActiveDetailCard(activeDetailCard === 'score' ? null : 'score')}
-                                                            sx={{
-                                                                cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', height: 110,
-                                                                border: activeDetailCard === 'score' ? '2px solid var(--accent-primary)' : '1px solid var(--border-default)',
-                                                                boxShadow: activeDetailCard === 'score' ? '0 0 0 1px var(--accent-primary), 0 2px 8px rgba(59,130,246,0.2)' : 'none',
-                                                                '&:hover': {
-                                                                    borderColor: activeDetailCard === 'score' ? 'var(--accent-primary)' : 'var(--border-strong)',
-                                                                    transform: 'translateY(-2px)',
-                                                                    boxShadow: activeDetailCard === 'score' ? '0 0 0 1px var(--accent-primary), 0 8px 24px rgba(59,130,246,0.2)' : '0 8px 24px rgba(0,0,0,0.1)'
-                                                                },
-                                                            }}
-                                                        >
-                                                            <CardContent sx={{ textAlign: 'center', py: 2, px: 1.5, '&:last-child': { pb: 2 }, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                                                                {asyncCards.overallScore ? (
-                                                                    <>
-                                                                        <Box sx={{ position: 'relative', display: 'inline-flex' }}>
-                                                                            <CircularProgress
-                                                                                variant="determinate"
-                                                                                value={asyncCards.overallScore.overallScore}
-                                                                                size={48}
-                                                                                thickness={4}
-                                                                                sx={{
-                                                                                    color: 'var(--text-primary)',
-                                                                                    '& .MuiCircularProgress-circle': { strokeLinecap: 'round' }
-                                                                                }}
-                                                                            />
-                                                                            <Box sx={{ position: 'absolute', top: 0, left: 0, bottom: 0, right: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                                                <Typography variant="body1" sx={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
-                                                                                    {asyncCards.overallScore.overallScore}
-                                                                                </Typography>
-                                                                            </Box>
-                                                                        </Box>
-                                                                        <Typography variant="caption" sx={{ display: 'block', mt: 0.5, fontWeight: 600, color: 'var(--text-muted)', fontSize: '0.7rem' }}>
-                                                                            AI Readiness
-                                                                        </Typography>
-                                                                    </>
-                                                                ) : (
-                                                                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%' }}>
-                                                                        <Skeleton animation="wave" variant="circular" width={48} height={48} sx={{ bgcolor: 'var(--border-default)', mb: 1 }} />
-                                                                        <Skeleton animation="wave" variant="text" width={70} sx={{ bgcolor: 'var(--border-default)' }} />
-                                                                    </Box>
-                                                                )}
-                                                            </CardContent>
-                                                        </Card>
+                                                    <Grid item xs={12} md={6}>
+                                                        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1.5, fontSize: '0.7rem' }}>
+                                                            Deeper Improvements
+                                                        </Typography>
+                                                        {recs.filter((r: any) => r.priority !== 'high').map(renderRec)}
                                                     </Grid>
                                                 </Grid>
                                             </Box>
-                                        </Grid>
-                                    </Grid>
+                                        )}
+                                    </Box>
 
-                                    {/* ── Expanded Recommendations (when "View all" clicked) ── */}
-                                    {showAllRecs && recs.length > 0 && (
-                                        <Box sx={{ mb: 3 }}>
-                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                                                <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1rem' }}>
-                                                    All Recommendations ({recs.length})
-                                                </Typography>
-                                                <Typography
-                                                    variant="body2"
-                                                    onClick={() => setShowAllRecs(false)}
-                                                    sx={{ color: 'var(--accent-primary)', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem', '&:hover': { textDecoration: 'underline' } }}
-                                                >
-                                                    Collapse ↑
-                                                </Typography>
-                                            </Box>
-                                            {quickWins.length > 0 && (
-                                                <>
-                                                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1.5, fontSize: '0.75rem' }}>
-                                                        Quick Wins
-                                                    </Typography>
-                                                    {quickWins.map(renderRec)}
-                                                </>
-                                            )}
-                                            {deeperImprovements.length > 0 && (
-                                                <>
-                                                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1.5, mt: quickWins.length > 0 ? 3 : 0, fontSize: '0.75rem' }}>
-                                                        Deeper Improvements
-                                                    </Typography>
-                                                    {deeperImprovements.map(renderRec)}
-                                                </>
-                                            )}
-                                        </Box>
-                                    )}
-
-
-                                    {/* ═══ ROW 2: Click-Driven Detail Area ═══ */}
-                                    {activeDetailCard && (
-                                        <Box sx={{ mb: 3, mt: 1 }}>
-                                            {/* ── Score Breakdown ── */}
-                                            {activeDetailCard === 'score' && asyncCards.overallScore && (
-                                                <Box>
-                                                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 2, fontSize: '1rem' }}>
-                                                        Score Breakdown
-                                                    </Typography>
-                                                    {[
-                                                        { label: 'Bot Access', score: asyncCards.overallScore.scoreBreakdown.botAccess, max: 15 },
-                                                        { label: 'Discoverability', score: asyncCards.overallScore.scoreBreakdown.discoverability, max: 15 },
-                                                        { label: 'Consumability', score: asyncCards.overallScore.scoreBreakdown.consumability, max: 15 },
-                                                        { label: 'Structured Data', score: asyncCards.overallScore.scoreBreakdown.structuredData, max: 15 },
-                                                        { label: 'AI Discoverability', score: asyncCards.overallScore.scoreBreakdown.aiDiscoverability, max: 40 },
-                                                    ].map((cat, i) => (
-                                                        <Box key={i} sx={{ mb: 1.5, display: 'flex', alignItems: 'center', gap: 2 }}>
-                                                            <Typography variant="body2" sx={{ width: 140, fontWeight: 600, fontSize: '0.82rem', color: 'var(--text-primary)', flexShrink: 0 }}>
-                                                                {cat.label}
-                                                            </Typography>
-                                                            <Box sx={{ flex: 1, bgcolor: 'var(--bg-tertiary)', borderRadius: 1, height: 8, overflow: 'hidden' }}>
-                                                                <Box sx={{ width: `${(cat.score / cat.max) * 100}%`, bgcolor: 'var(--text-primary)', height: '100%', borderRadius: 1, transition: 'width 0.5s ease', opacity: 0.7 }} />
-                                                            </Box>
-                                                            <Typography variant="body2" sx={{ width: 50, textAlign: 'right', fontWeight: 700, fontSize: '0.82rem', color: 'var(--text-primary)' }}>
-                                                                {cat.score}/{cat.max}
-                                                            </Typography>
-                                                        </Box>
-                                                    ))}
-                                                    <Box sx={{ mt: 2, p: 1.5, bgcolor: 'var(--bg-tertiary)', borderRadius: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                        <Typography variant="body2" sx={{ fontWeight: 700, color: 'var(--text-primary)' }}>Overall Score</Typography>
-                                                        <Typography variant="h6" sx={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                                                            {asyncCards.overallScore.overallScore}/100
-                                                        </Typography>
-                                                    </Box>
-                                                </Box>
-                                            )}
-
-                                            {/* ── Bot Access Detail ── */}
-                                            {activeDetailCard === 'bots' && (
-                                                <Box>
-                                                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 2, fontSize: '1rem' }}>
-                                                        Bot Access
-                                                    </Typography>
-                                                    {asyncCards.botAccess ? (
-                                                        <Box>
-                                                            {/* Summary row */}
-                                                            <Box sx={{
-                                                                display: 'flex', alignItems: 'center', gap: 1.5, mb: 2, p: 1.5,
-                                                                bgcolor: asyncCards.botAccess.blockedCount === 0 ? 'rgba(34,197,94,0.06)' : 'rgba(239,68,68,0.06)',
-                                                                borderRadius: 1, border: `1px solid ${asyncCards.botAccess.blockedCount === 0 ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)'}`,
-                                                            }}>
-                                                                {asyncCards.botAccess.blockedCount === 0 ? (
-                                                                    <CheckCircleIcon sx={{ color: '#22c55e', fontSize: 20 }} />
-                                                                ) : (
-                                                                    <WarningIcon sx={{ color: '#ef4444', fontSize: 20 }} />
-                                                                )}
-                                                                <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.85rem' }}>
-                                                                    {asyncCards.botAccess.blockedCount === 0
-                                                                        ? `All ${asyncCards.botAccess.allowedCount} bots allowed — no action needed`
-                                                                        : `${asyncCards.botAccess.blockedCount} bot${asyncCards.botAccess.blockedCount > 1 ? 's' : ''} blocked — may reduce AI visibility`}
-                                                                </Typography>
-                                                            </Box>
-                                                            <Box sx={{ overflowX: 'auto' }}>
-                                                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                                                    <thead>
-                                                                        <tr>
-                                                                            <th style={{ textAlign: 'left', padding: '8px 12px', borderBottom: '1px solid var(--border-default)', color: 'var(--text-secondary)', fontSize: '0.8rem', fontWeight: 600 }}>Bot</th>
-                                                                            <th style={{ textAlign: 'left', padding: '8px 12px', borderBottom: '1px solid var(--border-default)', color: 'var(--text-secondary)', fontSize: '0.8rem', fontWeight: 600 }}>User Agent</th>
-                                                                            <th style={{ textAlign: 'center', padding: '8px 12px', borderBottom: '1px solid var(--border-default)', color: 'var(--text-secondary)', fontSize: '0.8rem', fontWeight: 600 }}>Status</th>
-                                                                        </tr>
-                                                                    </thead>
-                                                                    <tbody>
-                                                                        {asyncCards.botAccess.bots.map((bot, i) => (
-                                                                            <tr key={i} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                                                                                <td style={{ padding: '8px 12px', fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-primary)' }}>{bot.name}</td>
-                                                                                <td style={{ padding: '8px 12px', color: 'var(--text-muted)', fontSize: '0.8rem', fontFamily: 'monospace' }}>{bot.userAgent}</td>
-                                                                                <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                                                                                    {(bot.status === 'allowed' || bot.status === 'not-mentioned') && <Chip label="Allowed" size="small" sx={{ bgcolor: 'rgba(34,197,94,0.15)', color: '#22c55e', fontWeight: 600, fontSize: '0.7rem' }} />}
-                                                                                    {bot.status === 'blocked' && <Chip label="Blocked" size="small" sx={{ bgcolor: 'rgba(239,68,68,0.15)', color: '#ef4444', fontWeight: 600, fontSize: '0.7rem' }} />}
-                                                                                </td>
-                                                                            </tr>
-                                                                        ))}
-                                                                    </tbody>
-                                                                </table>
-                                                            </Box>
-                                                        </Box>
-                                                    ) : (
-                                                        <Box sx={{ textAlign: 'center', py: 3 }}><CircularProgress size={24} sx={{ opacity: 0.3 }} /></Box>
-                                                    )}
-                                                </Box>
-                                            )}
-
-                                            {/* ── Content Health Detail (3-column) ── */}
-                                            {activeDetailCard === 'content' && (
-                                                <Box>
-                                                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 2, fontSize: '1rem' }}>
-                                                        Content Health
-                                                    </Typography>
-                                                    <Grid container spacing={2}>
-                                                        {/* Column 1: Discoverability */}
-                                                        <Grid item xs={12} md={4}>
-                                                            <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1.5, fontSize: '0.7rem' }}>
-                                                                Discoverability
-                                                            </Typography>
-                                                            {asyncCards.discoverability ? (() => {
-                                                                const items = [
-                                                                    { label: 'llms.txt', pass: asyncCards.discoverability!.llmsTxt.found, detail: asyncCards.discoverability!.llmsTxt.found ? 'AI assistants can discover docs' : 'Add llms.txt for AI discovery' },
-                                                                    { label: 'llms-full.txt', pass: asyncCards.discoverability!.llmsFullTxt.found, detail: asyncCards.discoverability!.llmsFullTxt.found ? 'Full content available' : 'Add full docs for AI' },
-                                                                    { label: 'Sitemap', pass: asyncCards.discoverability!.sitemapXml.found, detail: asyncCards.discoverability!.sitemapXml.found ? 'All pages discoverable' : 'Add sitemap.xml' },
-                                                                    { label: 'OpenGraph', pass: asyncCards.discoverability!.openGraph.found, detail: asyncCards.discoverability!.openGraph.found ? 'Rich previews work' : 'Add og: tags' },
-                                                                    { label: 'Canonical URL', pass: asyncCards.discoverability!.canonical.found, detail: asyncCards.discoverability!.canonical.found ? 'No duplicate issues' : 'Add canonical URL' },
-                                                                    { label: 'Meta Robots', pass: !asyncCards.discoverability!.metaRobots.blocksIndexing, detail: !asyncCards.discoverability!.metaRobots.blocksIndexing ? 'Indexing allowed' : 'Blocks indexing!' },
-                                                                ];
-                                                                return items.map((item, i) => (
-                                                                    <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>
-                                                                        {item.pass ? <CheckCircleIcon sx={{ color: '#22c55e', fontSize: 16, mt: 0.2 }} /> : <ErrorIcon sx={{ color: '#ef4444', fontSize: 16, mt: 0.2 }} />}
-                                                                        <Box>
-                                                                            <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', lineHeight: 1.3, color: 'var(--text-primary)' }}>{item.label}</Typography>
-                                                                            <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.68rem', lineHeight: 1.2 }}>{item.detail}</Typography>
-                                                                        </Box>
-                                                                    </Box>
-                                                                ));
-                                                            })() : <CircularProgress size={20} sx={{ opacity: 0.3 }} />}
-                                                        </Grid>
-
-                                                        {/* Column 2: Consumability */}
-                                                        <Grid item xs={12} md={4}>
-                                                            <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1.5, fontSize: '0.7rem' }}>
-                                                                Consumability
-                                                            </Typography>
-                                                            {asyncCards.consumability ? (() => {
-                                                                const c = asyncCards.consumability!;
-                                                                const h2Count = c.headingHierarchy.h2Count || 0;
-                                                                const h3Count = c.headingHierarchy.h3Count || 0;
-                                                                const wordCount = c.wordCount || 0;
-                                                                const items: { label: string; pass: boolean; detail: string; fix?: string }[] = [
-                                                                    {
-                                                                        label: `Text/HTML: ${(c.textToHtmlRatio.ratio * 100).toFixed(1)}%`,
-                                                                        pass: c.textToHtmlRatio.status === 'good',
-                                                                        detail: c.textToHtmlRatio.status === 'good' ? 'Clean content' : 'Too much markup',
-                                                                        fix: c.textToHtmlRatio.status !== 'good' ? 'Move inline scripts/styles to external files to increase text ratio above 20%.' : undefined,
-                                                                    },
-                                                                    {
-                                                                        label: 'Server-Side Rendered',
-                                                                        pass: !c.jsRendered,
-                                                                        detail: !c.jsRendered ? 'Content visible without JS' : 'JS-rendered — bots may miss',
-                                                                        fix: c.jsRendered ? 'Use SSR or SSG so AI crawlers see content in the initial HTML.' : undefined,
-                                                                    },
-                                                                    {
-                                                                        label: `Headings: ${c.headingHierarchy.h1Count} H1, ${h2Count} H2, ${h3Count} H3`,
-                                                                        pass: c.headingHierarchy.h1Count === 1 && h2Count >= 1,
-                                                                        detail: c.headingHierarchy.hasProperNesting ? 'Proper nesting' : 'Check nesting',
-                                                                        fix: h2Count === 0 ? 'Add at least one H2 per major task so AI can chunk sections into focused answers.' : (!c.headingHierarchy.hasProperNesting ? 'Fix heading nesting (H1→H2→H3) — skipped levels confuse AI chunking.' : undefined),
-                                                                    },
-                                                                    ...(wordCount > 0 ? [{
-                                                                        label: `Word count: ${wordCount.toLocaleString()}`,
-                                                                        pass: wordCount >= 300,
-                                                                        detail: wordCount >= 300 ? (wordCount > 3000 ? 'Long page — consider splitting' : 'Sufficient content') : 'Thin content',
-                                                                        fix: wordCount < 300 ? 'Add explanatory text — pages under 300 words lack depth for AI retrieval.' : (wordCount > 3000 ? 'Consider splitting into focused sub-pages so AI can produce precise, single-topic answers.' : undefined),
-                                                                    }] : []),
-                                                                    {
-                                                                        label: 'Markdown',
-                                                                        pass: c.markdownAvailable.found,
-                                                                        detail: c.markdownAvailable.found ? (c.markdownAvailable.discoverable ? 'Found & discoverable' : 'Found, not discoverable') : 'Not detected',
-                                                                        fix: !c.markdownAvailable.found ? 'Serve a .md version and add <link rel="alternate" type="text/markdown"> for cleaner AI ingestion.' : undefined,
-                                                                    },
-                                                                    ...(c.codeBlocks.hasCode ? [{
-                                                                        label: `Code: ${c.codeBlocks.withLanguageHints}/${c.codeBlocks.count} hinted`,
-                                                                        pass: c.codeBlocks.withLanguageHints > 0,
-                                                                        detail: c.codeBlocks.withLanguageHints > 0 ? 'Has language hints' : 'Add language hints',
-                                                                        fix: c.codeBlocks.withLanguageHints === 0 ? 'Add language class to code blocks (e.g., class="language-python") so AI knows the language.' : undefined,
-                                                                    }] : []),
-                                                                    {
-                                                                        label: `Links: ${c.internalLinkDensity.count}`,
-                                                                        pass: c.internalLinkDensity.status === 'good',
-                                                                        detail: `${c.internalLinkDensity.perKWords.toFixed(1)} per 1k words`,
-                                                                        fix: c.internalLinkDensity.status === 'sparse' ? 'Add links to related pages — AI uses cross-references to understand content relationships.' : undefined,
-                                                                    },
-                                                                ];
-
-                                                                // Generate research-backed chunking insight
-                                                                // Ref: LlamaIndex, Pinecone, Weaviate chunking research — optimal chunks 200-500 tokens (~200-400 words per section)
-                                                                const avgWordsPerH2 = h2Count > 0 ? Math.round(wordCount / h2Count) : wordCount;
-                                                                const chunkingInsights: { severity: 'error' | 'warning' | 'info'; message: string }[] = [];
-
-                                                                // Rule 1: Missing H1 = no primary topic signal (hard fail)
-                                                                if (c.headingHierarchy.h1Count === 0) {
-                                                                    chunkingInsights.push({ severity: 'error', message: 'No H1 found. AI can\'t determine this page\'s primary topic — retrieval accuracy drops significantly.' });
-                                                                }
-                                                                // Rule 2: Long sections (avg words per H2 > 500) — mixed chunking
-                                                                if (h2Count > 0 && avgWordsPerH2 > 500) {
-                                                                    chunkingInsights.push({ severity: 'warning', message: `Long sections detected (~${avgWordsPerH2} words per heading). AI retrieves sections as chunks — consider adding H2s to break into focused tasks.` });
-                                                                }
-                                                                // Rule 3: Long page + few H2s = 1-2 giant mixed chunks
-                                                                if (wordCount > 1500 && h2Count < 3) {
-                                                                    chunkingInsights.push({ severity: 'warning', message: `This page is ${wordCount.toLocaleString()} words with only ${h2Count} H2 heading${h2Count === 1 ? '' : 's'}. AI will produce ${h2Count < 1 ? '1 large' : '1–2'} mixed chunk${h2Count < 1 ? '' : 's'}. Split into separate task sections or add more H2 structure.` });
-                                                                }
-                                                                // Rule 4: Very short page — not enough context
-                                                                if (wordCount > 0 && wordCount < 100) {
-                                                                    chunkingInsights.push({ severity: 'warning', message: `Very short page (~${wordCount} words). May lack enough context for AI to answer questions from it alone.` });
-                                                                }
-                                                                // Rule 5: Too many headings on short page — thin chunks
-                                                                if (h2Count > 8 && wordCount < 600) {
-                                                                    chunkingInsights.push({ severity: 'warning', message: `${h2Count} headings with only ${wordCount} words — AI chunks will be too thin to be useful. Expand each section.` });
-                                                                }
-                                                                // Rule 6: Very low text/HTML ratio — noise injection
-                                                                if (c.textToHtmlRatio.status === 'very-low') {
-                                                                    chunkingInsights.push({ severity: 'error', message: `Page is mostly markup/scripts (${(c.textToHtmlRatio.ratio * 100).toFixed(1)}% usable text). AI bots extract very little content.` });
-                                                                } else if (c.textToHtmlRatio.status === 'low') {
-                                                                    chunkingInsights.push({ severity: 'warning', message: `Low text ratio (~${(c.textToHtmlRatio.ratio * 100).toFixed(1)}%). AI will extract limited content from this page.` });
-                                                                }
-                                                                // Rule 7: No H2 on medium+ pages — no chunk boundaries
-                                                                if (h2Count === 0 && wordCount > 200) {
-                                                                    chunkingInsights.push({ severity: 'warning', message: 'No H2 headings — AI has no section boundaries to create focused chunks. Add H2s for each major task.' });
-                                                                }
-
-                                                                const chunkingSummary = chunkingInsights.length > 0
-                                                                    ? null // will render individual insights below
-                                                                    : `Page structure is well-suited for AI chunking and retrieval (~${h2Count} sections, ~${avgWordsPerH2} words each).`;
-
+                                    {/* Grade Mapping Reference */}
+                                    {(heroTab === 'readiness' || heroTab === 'recommendations') && asyncCards.overallScore && (
+                                        <Box sx={{ mt: 3, p: 2, borderRadius: 2, bgcolor: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}>
+                                            <Typography variant="caption" sx={{ fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.65rem', display: 'block', mb: 1.5 }}>
+                                                Score Grading Scale
+                                            </Typography>
+                                            {(() => {
+                                                const currentScore = asyncCards.overallScore!.overallScore;
+                                                const grades = [
+                                                    { grade: 'F', start: 0, end: 39 },
+                                                    { grade: 'D', start: 40, end: 59 },
+                                                    { grade: 'C', start: 60, end: 74 },
+                                                    { grade: 'B', start: 75, end: 84 },
+                                                    { grade: 'B+', start: 85, end: 89 },
+                                                    { grade: 'A', start: 90, end: 94 },
+                                                    { grade: 'A+', start: 95, end: 100 },
+                                                ];
+                                                return (
+                                                    <Box>
+                                                        {/* Bar with grade labels */}
+                                                        <Box sx={{ display: 'flex', height: 28, borderRadius: 1, overflow: 'hidden', border: '1px solid var(--border-default)' }}>
+                                                            {grades.map((g, i) => {
+                                                                const width = g.end - g.start + 1;
+                                                                const isActive = currentScore >= g.start && currentScore <= g.end;
                                                                 return (
-                                                                    <>
-                                                                        {/* AI Chunking Insights */}
-                                                                        {chunkingInsights.length > 0 ? (
-                                                                            <Box sx={{ mb: 1.5 }}>
-                                                                                <Typography variant="caption" sx={{ fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.6rem', mb: 0.5, display: 'block' }}>
-                                                                                    AI Chunking Analysis
-                                                                                </Typography>
-                                                                                {chunkingInsights.map((insight, idx) => (
-                                                                                    <Box key={idx} sx={{
-                                                                                        fontSize: '0.72rem', lineHeight: 1.4, mb: 0.5, px: 1, py: 0.5, borderRadius: 1,
-                                                                                        bgcolor: insight.severity === 'error' ? 'rgba(239,68,68,0.06)' : 'rgba(245,158,11,0.06)',
-                                                                                        border: `1px solid ${insight.severity === 'error' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)'}`,
-                                                                                        color: 'var(--text-secondary)', fontWeight: 500,
-                                                                                        display: 'flex', alignItems: 'flex-start', gap: 0.5,
-                                                                                    }}>
-                                                                                        <span style={{ flexShrink: 0 }}>{insight.severity === 'error' ? '🔴' : '🟡'}</span>
-                                                                                        <span>{insight.message}</span>
-                                                                                    </Box>
-                                                                                ))}
-                                                                            </Box>
-                                                                        ) : (
-                                                                            <Typography variant="body2" sx={{
-                                                                                fontSize: '0.75rem', lineHeight: 1.5, mb: 1.5, p: 1, borderRadius: 1,
-                                                                                bgcolor: 'rgba(34,197,94,0.06)',
-                                                                                border: '1px solid rgba(34,197,94,0.15)',
-                                                                                color: 'var(--text-secondary)', fontWeight: 500,
-                                                                            }}>
-                                                                                ✅ {chunkingSummary}
-                                                                            </Typography>
-                                                                        )}
-                                                                        {items.map((item, i) => (
-                                                                            <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>
-                                                                                {item.pass ? <CheckCircleIcon sx={{ color: '#22c55e', fontSize: 16, mt: 0.2 }} /> : <WarningIcon sx={{ color: '#f59e0b', fontSize: 16, mt: 0.2 }} />}
-                                                                                <Box>
-                                                                                    <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', lineHeight: 1.3, color: 'var(--text-primary)' }}>{item.label}</Typography>
-                                                                                    <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.68rem', lineHeight: 1.2 }}>{item.detail}</Typography>
-                                                                                    {item.fix && (
-                                                                                        <Typography variant="caption" sx={{ display: 'block', color: '#f59e0b', fontSize: '0.65rem', lineHeight: 1.3, mt: 0.25, fontWeight: 500 }}>
-                                                                                            → {item.fix}
-                                                                                        </Typography>
-                                                                                    )}
-                                                                                </Box>
-                                                                            </Box>
-                                                                        ))}
-                                                                    </>
-                                                                );
-                                                            })() : <CircularProgress size={20} sx={{ opacity: 0.3 }} />}
-                                                        </Grid>
-
-                                                        {/* Column 3: Structured Data */}
-                                                        <Grid item xs={12} md={4}>
-                                                            <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1.5, fontSize: '0.7rem' }}>
-                                                                Structured Data
-                                                            </Typography>
-                                                            {asyncCards.structuredData ? (() => {
-                                                                const s = asyncCards.structuredData!;
-                                                                const items = [
-                                                                    { label: 'JSON-LD', pass: s.jsonLd.found, detail: s.jsonLd.found ? `Types: ${s.jsonLd.types.join(', ')}` : 'Missing — add JSON-LD' },
-                                                                    { label: 'Schema', pass: s.schemaCompleteness.status !== 'missing', detail: s.schemaCompleteness.status === 'complete' ? 'Complete' : s.schemaCompleteness.status === 'partial' ? `Missing: ${s.schemaCompleteness.missingFields.slice(0, 2).join(', ')}` : 'No schema detected' },
-                                                                    { label: 'OpenGraph', pass: s.openGraphCompleteness.score !== 'missing', detail: s.openGraphCompleteness.score === 'complete' ? 'Complete' : s.openGraphCompleteness.score === 'partial' ? `Missing: ${s.openGraphCompleteness.missingTags.slice(0, 2).join(', ')}` : 'Missing OG tags' },
-                                                                    { label: 'Breadcrumbs', pass: s.breadcrumbs.found, detail: s.breadcrumbs.found ? 'Helps AI nav context' : 'Consider adding' },
-                                                                ];
-                                                                return items.map((item, i) => (
-                                                                    <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>
-                                                                        {item.pass ? <CheckCircleIcon sx={{ color: '#22c55e', fontSize: 16, mt: 0.2 }} /> : <ErrorIcon sx={{ color: '#ef4444', fontSize: 16, mt: 0.2 }} />}
-                                                                        <Box>
-                                                                            <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', lineHeight: 1.3, color: 'var(--text-primary)' }}>{item.label}</Typography>
-                                                                            <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.68rem', lineHeight: 1.2 }}>{item.detail}</Typography>
-                                                                        </Box>
+                                                                    <Box key={g.grade} sx={{
+                                                                        flex: width,
+                                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                        bgcolor: isActive ? '#fff' : 'var(--bg-secondary)',
+                                                                        borderRight: i < grades.length - 1 ? '1px solid var(--border-default)' : 'none',
+                                                                        transition: 'all 0.3s',
+                                                                        position: 'relative',
+                                                                    }}>
+                                                                        <Typography sx={{
+                                                                            fontSize: '0.75rem', fontWeight: 900, letterSpacing: '0.02em',
+                                                                            color: isActive ? '#000000 !important' : 'var(--text-muted)',
+                                                                            opacity: 1,
+                                                                        }}>
+                                                                            {g.grade}
+                                                                        </Typography>
                                                                     </Box>
-                                                                ));
-                                                            })() : <CircularProgress size={20} sx={{ opacity: 0.3 }} />}
-                                                        </Grid>
-                                                    </Grid>
-                                                </Box>
-                                            )}
-
-                                            {/* ── Queries Detail ── */}
-                                            {activeDetailCard === 'queries' && (
-                                                <Box>
-                                                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 0.5, fontSize: '1rem' }}>
-                                                        Where Am I Invisible?
-                                                    </Typography>
-                                                    <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontSize: '0.8rem', mb: 2 }}>
-                                                        AI-generated queries tested against search engines — are you being cited?
-                                                    </Typography>
-                                                    {asyncCards.aiDiscoverability ? (() => {
-                                                        const disc = asyncCards.aiDiscoverability!;
-                                                        const totalQueries = disc.queries.length;
-                                                        const queryTypes: string[] = disc.queryTypes || disc.queries.map(() => 'context-free');
-                                                        const hasPerplexity = disc.engines.perplexity?.available;
-                                                        const hasBrave = disc.engines.brave?.available;
-                                                        const hasEngines = hasPerplexity || hasBrave;
-                                                        const perplexityResults = disc.engines.perplexity?.results || [];
-                                                        const braveResults = disc.engines.brave?.results || [];
-
-                                                        // Per-category stats
-                                                        const awareIndices = queryTypes.map((t: string, i: number) => t === 'context-aware' ? i : -1).filter((i: number) => i >= 0);
-                                                        const freeIndices = queryTypes.map((t: string, i: number) => t === 'context-free' ? i : -1).filter((i: number) => i >= 0);
-                                                        const awareFound = awareIndices.filter((i: number) => perplexityResults[i]?.cited || braveResults[i]?.cited).length;
-                                                        const freeFound = freeIndices.filter((i: number) => perplexityResults[i]?.cited || braveResults[i]?.cited).length;
-                                                        const visibleCount = awareFound + freeFound;
-
-                                                        const renderQueryRow = (query: string, qi: number) => {
-                                                            const pResult = perplexityResults[qi];
-                                                            const bResult = braveResults[qi];
-                                                            const isCited = pResult?.cited || bResult?.cited;
-                                                            return (
-                                                                <tr key={qi} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                                                                    <td style={{ padding: '8px 12px', fontSize: '0.83rem' }}>
-                                                                        <span style={{ color: 'var(--text-primary)' }}>"{query}"</span>
-                                                                    </td>
-                                                                    <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                                                                        {hasEngines ? (
-                                                                            isCited ? (
-                                                                                <Chip label="Cited" size="small" sx={{
-                                                                                    bgcolor: 'rgba(34,197,94,0.1)', color: '#16a34a',
-                                                                                    fontWeight: 700, fontSize: '0.7rem',
-                                                                                }} />
-                                                                            ) : (
-                                                                                <Chip label="Not Cited" size="small" sx={{ bgcolor: 'rgba(239,68,68,0.08)', color: '#dc2626', fontSize: '0.7rem' }} />
-                                                                            )
-                                                                        ) : (
-                                                                            <Typography variant="caption" sx={{ color: 'var(--text-muted)' }}>—</Typography>
-                                                                        )}
-                                                                    </td>
-                                                                </tr>
-                                                            );
-                                                        };
-
-                                                        return (
-                                                            <>
-                                                                {/* Summary chips */}
-                                                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mb: 2.5 }}>
-                                                                    {hasEngines ? (
-                                                                        <>
-                                                                            <Chip label={`With context: ${awareFound}/${awareIndices.length}`} size="small" sx={{
-                                                                                fontWeight: 700, fontSize: '0.75rem',
-                                                                                bgcolor: awareFound > 0 ? 'rgba(34,197,94,0.08)' : 'var(--bg-secondary)',
-                                                                                color: awareFound > 0 ? '#16a34a' : 'var(--text-secondary)',
-                                                                                border: '1px solid var(--border-default)',
-                                                                            }} />
-                                                                            <Chip label={`Without context: ${freeFound}/${freeIndices.length}`} size="small" sx={{
-                                                                                fontWeight: 700, fontSize: '0.75rem',
-                                                                                bgcolor: freeFound > 0 ? 'rgba(34,197,94,0.08)' : 'var(--bg-secondary)',
-                                                                                color: freeFound > 0 ? '#16a34a' : 'var(--text-secondary)',
-                                                                                border: '1px solid var(--border-default)',
-                                                                            }} />
-                                                                            <Chip label={`Total: ${visibleCount}/${totalQueries}`} size="small" sx={{
-                                                                                fontWeight: 600, fontSize: '0.7rem',
-                                                                                bgcolor: 'var(--bg-secondary)', color: 'var(--text-muted)',
-                                                                                border: '1px solid var(--border-default)',
-                                                                            }} />
-                                                                        </>
-                                                                    ) : (
-                                                                        <Chip label="Engines not configured" size="small" sx={{ bgcolor: 'var(--bg-secondary)', border: '1px solid var(--border-default)', color: 'var(--text-muted)', fontSize: '0.7rem' }} />
-                                                                    )}
-                                                                </Box>
-
-                                                                {/* Engine names for column headers */}
-                                                                {(() => {
-                                                                    const engineNames: string[] = [];
-                                                                    if (hasPerplexity) engineNames.push('Perplexity');
-                                                                    if (hasBrave) engineNames.push('Brave');
-                                                                    const engineColSpan = 1 + engineNames.length;
-
-                                                                    const renderSectionHeader = (label: string, isFirst: boolean) => (
-                                                                        <thead>
-                                                                            <tr>
-                                                                                <th colSpan={engineColSpan} style={{ textAlign: 'left', padding: `${isFirst ? '10px' : '16px'} 12px 6px`, color: 'var(--text-secondary)', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border-default)' }}>
-                                                                                    {label}
-                                                                                </th>
-                                                                            </tr>
-                                                                            {isFirst && engineNames.length > 0 && (
-                                                                                <tr>
-                                                                                    <th style={{ textAlign: 'left', padding: '6px 12px', color: 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 600, borderBottom: '1px solid var(--border-subtle)' }}>Query</th>
-                                                                                    {engineNames.map(name => (
-                                                                                        <th key={name} style={{ textAlign: 'center', padding: '6px 12px', color: 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 600, borderBottom: '1px solid var(--border-subtle)', width: '100px' }}>{name}</th>
-                                                                                    ))}
-                                                                                </tr>
-                                                                            )}
-                                                                        </thead>
-                                                                    );
-
-                                                                    const renderEngineRow = (query: string, qi: number) => {
-                                                                        const pResult = perplexityResults[qi];
-                                                                        const bResult = braveResults[qi];
-                                                                        const isCited = pResult?.cited || bResult?.cited;
-                                                                        // Collect competing domains from all engines for this query
-                                                                        const competing = new Set<string>();
-                                                                        if (!isCited) {
-                                                                            pResult?.competingDomains?.forEach((d: string) => competing.add(d));
-                                                                            bResult?.competingDomains?.forEach((d: string) => competing.add(d));
-                                                                        }
-                                                                        const renderCell = (result: any) => result?.cited ? (
-                                                                            <Chip label="Cited" size="small" sx={{ bgcolor: 'rgba(34,197,94,0.1)', color: '#16a34a', fontWeight: 700, fontSize: '0.7rem' }} />
-                                                                        ) : (
-                                                                            <Chip label="Not Cited" size="small" sx={{ bgcolor: 'rgba(239,68,68,0.08)', color: '#dc2626', fontSize: '0.7rem' }} />
-                                                                        );
-                                                                        return (
-                                                                            <tr key={qi} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                                                                                <td style={{ padding: '8px 12px', fontSize: '0.83rem' }}>
-                                                                                    <span style={{ color: 'var(--text-primary)' }}>"{query}"</span>
-                                                                                    {competing.size > 0 && (
-                                                                                        <div style={{ marginTop: 4, fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                                                                                            Cited instead: {Array.from(competing).map((d, i) => (
-                                                                                                <span key={i} style={{ color: '#dc2626', fontWeight: 600 }}>{i > 0 ? ', ' : ''}{d}</span>
-                                                                                            ))}
-                                                                                        </div>
-                                                                                    )}
-                                                                                </td>
-                                                                                {hasPerplexity && <td style={{ padding: '8px 12px', textAlign: 'center' }}>{renderCell(pResult)}</td>}
-                                                                                {hasBrave && <td style={{ padding: '8px 12px', textAlign: 'center' }}>{renderCell(bResult)}</td>}
-                                                                            </tr>
-                                                                        );
-                                                                    };
-
-                                                                    return (
-                                                                        <Box sx={{ overflowX: 'auto' }}>
-                                                                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                                                                {awareIndices.length > 0 && (
-                                                                                    <>
-                                                                                        {renderSectionHeader('Context-Aware — IDE / Brand Search', true)}
-                                                                                        <tbody>
-                                                                                            {awareIndices.map((i: number) => renderEngineRow(disc.queries[i], i))}
-                                                                                        </tbody>
-                                                                                    </>
-                                                                                )}
-                                                                                {freeIndices.length > 0 && (
-                                                                                    <>
-                                                                                        {renderSectionHeader('Context-Free — Organic / Generic Search', awareIndices.length === 0)}
-                                                                                        <tbody>
-                                                                                            {freeIndices.map((i: number) => renderEngineRow(disc.queries[i], i))}
-                                                                                        </tbody>
-                                                                                    </>
-                                                                                )}
-                                                                            </table>
-                                                                        </Box>
-                                                                    );
-                                                                })()}
-                                                                <Typography variant="caption" sx={{ display: 'block', mt: 2, color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                                                                    Context-aware = developer knows your product. Context-free = discovering organically via AI search.
-                                                                </Typography>
-                                                            </>
-                                                        );
-                                                    })() : (
-                                                        <Box sx={{ textAlign: 'center', py: 4 }}>
-                                                            <CircularProgress size={32} sx={{ opacity: 0.3, mb: 1 }} />
-                                                            <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontWeight: 500 }}>
-                                                                Probing AI search...
-                                                            </Typography>
+                                                                );
+                                                            })}
                                                         </Box>
-                                                    )}
-                                                </Box>
-                                            )}
-                                        </Box>
-                                    )}
-
-                                    {/* ═══ AI-Powered Suggestions (always visible at bottom) ═══ */}
-                                    {analysisState.report?.contextualSuggestions && analysisState.report.contextualSuggestions.length > 0 && (
-                                        <Box sx={{ mb: 2 }}>
-                                            <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5, fontSize: '1rem' }}>
-                                                AI-Powered Suggestions
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ mb: 2, color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
-                                                Personalized content improvements for this page:
-                                            </Typography>
-                                            {analysisState.report.contextualSuggestions.map((suggestion: string, i: number) => (
-                                                <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', mb: 1.5 }}>
-                                                    <Box sx={{
-                                                        width: 24, height: 24, borderRadius: '50%',
-                                                        bgcolor: 'var(--bg-secondary)', color: 'var(--text-secondary)',
-                                                        border: '1px solid var(--border-default)',
-                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                        fontSize: '0.75rem', fontWeight: 700, flexShrink: 0, mt: 0.25,
-                                                    }}>
-                                                        {i + 1}
+                                                        {/* Range labels below each segment */}
+                                                        <Box sx={{ display: 'flex', mt: 0.5 }}>
+                                                            {grades.map((g) => {
+                                                                const width = g.end - g.start + 1;
+                                                                const isActive = currentScore >= g.start && currentScore <= g.end;
+                                                                return (
+                                                                    <Box key={g.grade} sx={{ flex: width, textAlign: 'center' }}>
+                                                                        <Typography sx={{
+                                                                            fontSize: '0.55rem',
+                                                                            color: isActive ? 'var(--text-primary)' : 'var(--text-muted)',
+                                                                            fontWeight: isActive ? 700 : 400,
+                                                                            opacity: isActive ? 1 : 0.6,
+                                                                        }}>
+                                                                            {isActive ? `▲ ${currentScore}` : `${g.start}–${g.end}`}
+                                                                        </Typography>
+                                                                    </Box>
+                                                                );
+                                                            })}
+                                                        </Box>
                                                     </Box>
-                                                    <Typography variant="body2" sx={{ ml: 1.5, color: 'var(--text-secondary)', fontSize: '0.82rem', lineHeight: 1.5 }}>{suggestion}</Typography>
-                                                </Box>
-                                            ))}
+                                                );
+                                            })()}
                                         </Box>
                                     )}
 
-                                    {/* ── Methodology Footer ── */}
+                                    {/* Disclaimer */}
+                                    <Box sx={{ mt: 2, p: 1.5, borderRadius: 1, bgcolor: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.15)' }}>
+                                        <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.7rem', lineHeight: 1.5 }}>
+                                            This analysis is AI-generated and may not be 100% accurate. Results are directional and intended to guide improvements, not serve as a definitive audit. Lensy is currently in Beta — please verify recommendations before implementing. <a href="/contact?ref=feedback" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)', textDecoration: 'underline' }}>Share feedback</a>
+                                        </Typography>
+                                    </Box>
+
+                                    {/* Analysis time */}
                                     {analysisState.report && (
-                                        <Box sx={{ mt: 4, pt: 3, borderTop: '1px solid var(--border-subtle)' }}>
-                                            <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: '0.75rem', mb: 1, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                                Methodology
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontSize: '0.75rem', lineHeight: 1.6, mb: 1 }}>
-                                                Lensy generates developer-intent queries (context-aware with your brand name, and context-free generic queries) using AI, then checks if your page is cited in AI search engine responses. "Cited" means your URL appeared in the response citations. Competing domains are extracted when your page is not cited.
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontSize: '0.75rem', lineHeight: 1.6, mb: 1 }}>
-                                                Bot access checks 10 major AI crawlers against your robots.txt. Content health analyzes text-to-HTML ratio, heading structure, markdown availability, code blocks, and internal linking. Structured data checks JSON-LD, OpenGraph, and breadcrumbs. AI readiness score is a weighted composite of all dimensions.
-                                            </Typography>
-                                            <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                                                Analysis completed in {(analysisState.report.analysisTime / 1000).toFixed(1)}s — Results approximate; AI search engines may vary in real-time.
-                                            </Typography>
-                                        </Box>
+                                        <Typography variant="caption" sx={{ display: 'block', mt: 1.5, color: 'var(--text-muted)', textAlign: 'right', fontSize: '0.65rem' }}>
+                                            {heroTab === 'citations' && aiDisc
+                                                ? `${aiTotalQueries} synthetic queries tested in ${(analysisState.report.analysisTime / 1000).toFixed(1)}s`
+                                                : `Readiness analysis completed in ${(analysisState.report.analysisTime / 1000).toFixed(1)}s`
+                                            }
+                                        </Typography>
                                     )}
                                 </>
                             );
                         })()}
                     </Paper>
                 )}
+
+                {/* ═══ How It Works + Video — always visible, sticky across all states ═══ */}
+                {analysisState.status !== 'analyzing' && selectedMode !== 'github-issues' && (
+                    <Box sx={{ mt: 5, mb: 4 }}>
+                        <Grid container spacing={4} sx={{ alignItems: 'center' }}>
+                            {/* Left: Steps */}
+                            <Grid item xs={12} md={5}>
+                                <Typography variant="h5" sx={{
+                                    fontWeight: 700, mb: 3, fontSize: '1.35rem',
+                                    fontFamily: 'var(--font-sans, var(--font-ui))',
+                                    color: 'var(--text-primary)',
+                                }}>
+                                    How It Works
+                                </Typography>
+                                {[
+                                    { step: '1', title: 'Enter your documentation URL', desc: 'Paste any public documentation page, API reference, or developer portal URL.' },
+                                    { step: '2', title: 'AI analyzes your page', desc: 'We check bot access, content health, structured data, and test visibility on Perplexity.' },
+                                    { step: '3', title: 'Get your readiness report', desc: 'Actionable scores and recommendations to make your docs discoverable by AI search.' },
+                                ].map((item) => (
+                                    <Box key={item.step} sx={{ display: 'flex', gap: 2, mb: 2.5 }}>
+                                        <Box sx={{
+                                            width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+                                            bgcolor: 'var(--bg-tertiary)', border: '1px solid var(--border-default)',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-secondary)',
+                                            fontFamily: 'var(--font-mono)',
+                                        }}>
+                                            {item.step}
+                                        </Box>
+                                        <Box>
+                                            <Typography sx={{
+                                                fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)',
+                                                fontFamily: 'var(--font-sans, var(--font-ui))', lineHeight: 1.3,
+                                            }}>
+                                                {item.title}
+                                            </Typography>
+                                            <Typography sx={{
+                                                fontSize: '0.8rem', color: 'var(--text-muted)', mt: 0.3,
+                                                fontFamily: 'var(--font-sans, var(--font-ui))', lineHeight: 1.4,
+                                            }}>
+                                                {item.desc}
+                                            </Typography>
+                                        </Box>
+                                    </Box>
+                                ))}
+                            </Grid>
+
+                            {/* Right: Analysis & Scoring Process */}
+                            <Grid item xs={12} md={7}>
+                                <Box sx={{
+                                    borderRadius: '12px', overflow: 'hidden',
+                                    border: '1px solid var(--border-default)',
+                                    bgcolor: 'var(--bg-secondary)',
+                                }}>
+                                    <Box sx={{ p: 2.5, borderBottom: '1px solid var(--border-subtle)' }}>
+                                        <Typography sx={{
+                                            fontWeight: 700, fontSize: '1rem',
+                                            fontFamily: 'var(--font-sans, var(--font-ui))',
+                                            color: 'var(--text-primary)', mb: 0.5,
+                                        }}>
+                                            Analysis & Scoring
+                                        </Typography>
+                                        <Typography sx={{
+                                            fontSize: '0.75rem', color: 'var(--text-muted)',
+                                            fontFamily: 'var(--font-sans, var(--font-ui))', lineHeight: 1.5,
+                                        }}>
+                                            Each page is scored out of 100 across four dimensions. AI Citations is evaluated separately.
+                                        </Typography>
+                                    </Box>
+                                    {[
+                                        { label: 'Bot Access', weight: 15, what: 'robots.txt rules for 10 AI crawlers', how: 'Per-bot allow/block from robots.txt' },
+                                        { label: 'Discoverability', weight: 35, what: 'llms.txt, sitemap, canonical URL, meta robots', how: 'Presence and validity checks' },
+                                        { label: 'Content Health', weight: 35, what: 'Heading hierarchy, word count, code blocks, internal links', how: 'Structure-aware HTML analysis' },
+                                        { label: 'Structured Data', weight: 15, what: 'JSON-LD, Schema.org type, OpenGraph tags', how: 'Schema validation and type matching' },
+                                    ].map((dim, i) => (
+                                        <Box key={dim.label} sx={{
+                                            p: 2, px: 2.5,
+                                            borderBottom: i < 3 ? '1px solid var(--border-subtle)' : 'none',
+                                            display: 'flex', gap: 2, alignItems: 'flex-start',
+                                        }}>
+                                            <Box sx={{
+                                                minWidth: 36, height: 22, borderRadius: '4px',
+                                                bgcolor: 'var(--bg-tertiary)', border: '1px solid var(--border-default)',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                fontWeight: 700, fontSize: '0.7rem', color: 'var(--text-secondary)',
+                                                fontFamily: 'var(--font-mono)', flexShrink: 0, mt: 0.2,
+                                            }}>
+                                                /{dim.weight}
+                                            </Box>
+                                            <Box sx={{ flex: 1 }}>
+                                                <Typography sx={{
+                                                    fontWeight: 600, fontSize: '0.825rem', color: 'var(--text-primary)',
+                                                    fontFamily: 'var(--font-sans, var(--font-ui))', lineHeight: 1.3,
+                                                }}>
+                                                    {dim.label}
+                                                </Typography>
+                                                <Typography sx={{
+                                                    fontSize: '0.725rem', color: 'var(--text-muted)', mt: 0.3,
+                                                    fontFamily: 'var(--font-sans, var(--font-ui))', lineHeight: 1.4,
+                                                }}>
+                                                    {dim.what}
+                                                </Typography>
+                                            </Box>
+                                            <Typography sx={{
+                                                fontSize: '0.675rem', color: 'var(--text-muted)',
+                                                fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap',
+                                                mt: 0.3,
+                                            }}>
+                                                {dim.how}
+                                            </Typography>
+                                        </Box>
+                                    ))}
+                                    <Box sx={{
+                                        p: 2, px: 2.5, borderTop: '1px solid var(--border-subtle)',
+                                        display: 'flex', gap: 2, alignItems: 'flex-start',
+                                        bgcolor: 'var(--bg-tertiary)',
+                                    }}>
+                                        <Box sx={{
+                                            minWidth: 36, height: 22, borderRadius: '4px',
+                                            border: '1px dashed var(--border-default)',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            fontWeight: 700, fontSize: '0.65rem', color: 'var(--text-muted)',
+                                            fontFamily: 'var(--font-mono)', flexShrink: 0, mt: 0.2,
+                                        }}>
+                                            +
+                                        </Box>
+                                        <Box sx={{ flex: 1 }}>
+                                            <Typography sx={{
+                                                fontWeight: 600, fontSize: '0.825rem', color: 'var(--text-secondary)',
+                                                fontFamily: 'var(--font-sans, var(--font-ui))', lineHeight: 1.3,
+                                            }}>
+                                                AI Citations
+                                            </Typography>
+                                            <Typography sx={{
+                                                fontSize: '0.725rem', color: 'var(--text-muted)', mt: 0.3,
+                                                fontFamily: 'var(--font-sans, var(--font-ui))', lineHeight: 1.4,
+                                            }}>
+                                                Cited or not cited across AI search engines via synthetic queries
+                                            </Typography>
+                                        </Box>
+                                        <Typography sx={{
+                                            fontSize: '0.675rem', color: 'var(--text-muted)',
+                                            fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap',
+                                            mt: 0.3,
+                                        }}>
+                                            Evaluated separately
+                                        </Typography>
+                                    </Box>
+                                </Box>
+                            </Grid>
+                        </Grid>
+                    </Box>
+                )}
             </Container>
+
         </div >
     );
 }

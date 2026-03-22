@@ -4,12 +4,38 @@ import FeedbackWidget from './components/FeedbackWidget';
 
 type ThemeMode = 'dark' | 'light' | 'system';
 
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com';
+
 function ConsoleLayout() {
     const navigate = useNavigate();
     const location = useLocation();
 
-    // Determine breadcrumb based on current path
-    const isLensy = location.pathname.startsWith('/console/lensy');
+    // Mobile menu state
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+    // Usage tracking (skip when REACT_APP_SKIP_RATE_LIMIT=true)
+    const skipRateLimit = process.env.REACT_APP_SKIP_RATE_LIMIT === 'true';
+    const [usage, setUsage] = useState<{ used: number; limit: number; remaining: number } | null>(null);
+
+    const fetchUsage = useCallback(async () => {
+        if (skipRateLimit) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/usage`);
+            if (res.ok) {
+                const data = await res.json();
+                setUsage(data);
+            }
+        } catch { /* silent */ }
+    }, [skipRateLimit]);
+
+    // Fetch usage on mount and listen for refresh events (after each scan)
+    useEffect(() => {
+        if (skipRateLimit) return;
+        fetchUsage();
+        const handler = () => fetchUsage();
+        window.addEventListener('lensy:usage-changed', handler);
+        return () => window.removeEventListener('lensy:usage-changed', handler);
+    }, [fetchUsage, skipRateLimit]);
 
     // Theme dropdown state
     const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
@@ -38,12 +64,28 @@ function ConsoleLayout() {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    // Close mobile menu on navigation
+    useEffect(() => {
+        setMobileMenuOpen(false);
+    }, [location.pathname]);
+
     const themeOptions: { mode: ThemeMode; icon: string; label: string }[] = [
         { mode: 'system', icon: '\u{1F4BB}', label: 'System' },
         { mode: 'light', icon: '\u2600\uFE0F', label: 'Light' },
         { mode: 'dark', icon: '\u{1F319}', label: 'Dark' },
     ];
     const currentTheme = themeOptions.find(t => t.mode === themeMode) || themeOptions[0];
+
+    const navLinks: Array<{ path: string; label: string; beta?: boolean }> = [
+        { path: '/', label: 'Lensy', beta: true },
+        { path: '/education', label: 'Education' },
+        { path: '/contact', label: 'Contact' },
+    ];
+
+    const isActive = (path: string) => {
+        if (path === '/') return location.pathname === '/';
+        return location.pathname.startsWith(path);
+    };
 
     return (
         <div style={{
@@ -52,7 +94,7 @@ function ConsoleLayout() {
             flexDirection: 'column',
             backgroundColor: 'var(--bg-primary)',
         }}>
-            {/* Console Header — frosted glass, matches perseveranceai.com nav */}
+            {/* Header */}
             <header style={{
                 background: 'var(--header-bg)',
                 backdropFilter: 'blur(12px)',
@@ -73,10 +115,10 @@ function ConsoleLayout() {
                     alignItems: 'center',
                     height: '56px',
                 }}>
-                    {/* Left: Logo + Context */}
+                    {/* Left: Logo */}
                     <a
-                        href="/console"
-                        onClick={(e) => { e.preventDefault(); navigate('/console'); }}
+                        href="/"
+                        onClick={(e) => { e.preventDefault(); navigate('/'); }}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -114,34 +156,69 @@ function ConsoleLayout() {
                             marginLeft: '0.5rem',
                             whiteSpace: 'nowrap',
                         }}>
-                            {isLensy ? 'Lensy' : 'Console'}
+                            Perseverance AI
                         </span>
                     </a>
 
-                    {/* Environment Badge — only shown in non-prod */}
-                    {process.env.REACT_APP_ENV && process.env.REACT_APP_ENV !== 'prod' && (
-                        <span style={{
-                            fontFamily: 'var(--font-mono)',
-                            fontSize: '0.6875rem',
-                            fontWeight: 700,
-                            color: '#fff',
-                            background: process.env.REACT_APP_ENV === 'gamma' ? '#d97706' : '#6366f1',
-                            padding: '0.2rem 0.5rem',
-                            borderRadius: '4px',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.05em',
-                        }}>
-                            {process.env.REACT_APP_ENV}
-                        </span>
-                    )}
+                    {/* Center: Nav Links (desktop) */}
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                    }} className="nav-links-desktop">
+                        {navLinks.map((link) => (
+                            <a
+                                key={link.path}
+                                href={link.path}
+                                onClick={(e) => { e.preventDefault(); navigate(link.path); }}
+                                style={{
+                                    fontSize: '0.8125rem',
+                                    fontWeight: isActive(link.path) ? 600 : 500,
+                                    color: isActive(link.path) ? 'var(--text-primary)' : 'var(--text-secondary)',
+                                    textDecoration: 'none',
+                                    padding: '0.375rem 0.75rem',
+                                    borderRadius: '6px',
+                                    transition: 'all 0.15s ease',
+                                    background: isActive(link.path) ? 'var(--bg-tertiary)' : 'transparent',
+                                    fontFamily: 'var(--font-sans, var(--font-ui))',
+                                }}
+                                onMouseEnter={(e) => {
+                                    if (!isActive(link.path)) e.currentTarget.style.color = 'var(--text-primary)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    if (!isActive(link.path)) e.currentTarget.style.color = 'var(--text-secondary)';
+                                }}
+                            >
+                                {link.label}{link.beta && <sup style={{ fontSize: '0.5rem', fontWeight: 700, color: '#6366f1', marginLeft: '2px', verticalAlign: 'super', letterSpacing: '0.03em' }}>BETA</sup>}
+                            </a>
+                        ))}
+                    </div>
 
-                    {/* Right: Theme toggle + Free tier badge */}
+                    {/* Right: Env badge + Theme + Free tier + Hamburger */}
                     <div style={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: '0.5rem',
                         minWidth: 0,
                     }}>
+                        {/* Environment Badge */}
+                        {process.env.REACT_APP_ENV && process.env.REACT_APP_ENV !== 'prod' && (
+                            <span style={{
+                                fontFamily: 'var(--font-mono)',
+                                fontSize: '0.6875rem',
+                                fontWeight: 700,
+                                color: '#fff',
+                                background: process.env.REACT_APP_ENV === 'gamma' ? '#d97706' : '#6366f1',
+                                padding: '0.2rem 0.5rem',
+                                borderRadius: '4px',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                            }}>
+                                {process.env.REACT_APP_ENV}
+                            </span>
+                        )}
+
+                        {/* Theme toggle */}
                         <div ref={themeDropdownRef} style={{ position: 'relative' }}>
                             <button
                                 onClick={() => setThemeDropdownOpen(prev => !prev)}
@@ -211,78 +288,164 @@ function ConsoleLayout() {
                                 </div>
                             )}
                         </div>
-                        <span style={{
-                            fontFamily: 'var(--font-sans, var(--font-ui))',
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            color: 'var(--text-secondary)',
-                            background: 'var(--bg-tertiary)',
-                            border: '1px solid var(--border-default)',
-                            borderRadius: '12px',
-                            padding: '0.25rem 0.75rem',
-                            whiteSpace: 'nowrap',
-                        }}>
-                            Free Tier — 3 audits/day
-                        </span>
+
+                        {/* Free tier badge (desktop only, hidden when rate limit skipped) */}
+                        {!skipRateLimit && (
+                            <span style={{
+                                fontFamily: 'var(--font-sans, var(--font-ui))',
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                color: usage && usage.remaining === 0 ? '#ef4444' : 'var(--text-secondary)',
+                                background: 'var(--bg-tertiary)',
+                                border: `1px solid ${usage && usage.remaining === 0 ? 'rgba(239,68,68,0.3)' : 'var(--border-default)'}`,
+                                borderRadius: '12px',
+                                padding: '0.25rem 0.75rem',
+                                whiteSpace: 'nowrap',
+                            }} className="free-tier-badge">
+                                {usage
+                                    ? `Free Tier \u2014 ${usage.remaining} audit${usage.remaining !== 1 ? 's' : ''} left`
+                                    : 'Free Tier'}
+                            </span>
+                        )}
+
+                        {/* Hamburger (mobile) */}
+                        <button
+                            onClick={() => setMobileMenuOpen(prev => !prev)}
+                            className="hamburger-btn"
+                            aria-label="Toggle menu"
+                            style={{
+                                display: 'none', // shown via CSS media query
+                                background: 'none',
+                                border: 'none',
+                                cursor: 'pointer',
+                                padding: '0.5rem',
+                                flexDirection: 'column',
+                                gap: '4px',
+                            }}
+                        >
+                            <span style={{ display: 'block', width: '20px', height: '2px', background: 'var(--text-secondary)', borderRadius: '1px', transition: 'all 0.2s' }} />
+                            <span style={{ display: 'block', width: '20px', height: '2px', background: 'var(--text-secondary)', borderRadius: '1px', transition: 'all 0.2s' }} />
+                            <span style={{ display: 'block', width: '20px', height: '2px', background: 'var(--text-secondary)', borderRadius: '1px', transition: 'all 0.2s' }} />
+                        </button>
                     </div>
                 </nav>
+
+                {/* Mobile Menu */}
+                {mobileMenuOpen && (
+                    <div style={{
+                        borderTop: '1px solid var(--border-subtle)',
+                        padding: '0.75rem 0',
+                    }}>
+                        {navLinks.map((link) => (
+                            <a
+                                key={link.path}
+                                href={link.path}
+                                onClick={(e) => { e.preventDefault(); navigate(link.path); setMobileMenuOpen(false); }}
+                                style={{
+                                    display: 'block',
+                                    fontSize: '0.875rem',
+                                    fontWeight: isActive(link.path) ? 600 : 500,
+                                    color: isActive(link.path) ? 'var(--text-primary)' : 'var(--text-secondary)',
+                                    textDecoration: 'none',
+                                    padding: '0.625rem 0.75rem',
+                                    borderRadius: '6px',
+                                    fontFamily: 'var(--font-sans, var(--font-ui))',
+                                }}
+                            >
+                                {link.label}{link.beta && <sup style={{ fontSize: '0.5rem', fontWeight: 700, color: '#6366f1', marginLeft: '2px', verticalAlign: 'super', letterSpacing: '0.03em' }}>BETA</sup>}
+                            </a>
+                        ))}
+                    </div>
+                )}
             </header>
 
-            {/* Main Content — below fixed header */}
             <main style={{
                 flex: 1,
-                paddingTop: '72px',  /* Header height + buffer for mobile wrapping */
+                paddingTop: '72px',
+                paddingBottom: '100px',
             }}>
                 <Outlet />
             </main>
 
-            {/* Console Footer */}
+            {/* Feedback Widget — visible on all pages */}
+            <FeedbackWidget />
+
+            {/* Footer */}
             <footer style={{
                 borderTop: '1px solid var(--border-subtle)',
-                padding: '1.5rem',
-                textAlign: 'center',
+                padding: '2rem 1.5rem',
             }}>
-                <p style={{
-                    fontFamily: 'var(--font-sans, var(--font-ui))',
-                    fontSize: '0.8125rem',
-                    color: 'var(--text-secondary)',
-                    margin: '0 0 0.5rem 0',
-                }}>
-                    &copy; {new Date().getFullYear()} Perseverance AI. All rights reserved.
-                </p>
-                <p style={{
-                    fontFamily: 'var(--font-sans, var(--font-ui))',
-                    fontSize: '0.75rem',
-                    color: 'var(--text-secondary)',
-                    margin: 0,
+                <div style={{
+                    maxWidth: '1400px',
+                    margin: '0 auto',
                     display: 'flex',
-                    justifyContent: 'center',
+                    flexDirection: 'column',
+                    alignItems: 'center',
                     gap: '1rem',
                 }}>
+                    {/* Logo */}
                     <a
-                        href="/terms"
-                        onClick={(e) => { e.preventDefault(); navigate('/terms'); }}
-                        style={{ color: 'var(--text-secondary)', textDecoration: 'none', transition: 'color 0.2s' }}
-                        onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
-                        onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-secondary)')}
+                        href="/"
+                        onClick={(e) => { e.preventDefault(); navigate('/'); }}
+                        style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.125rem' }}
                     >
-                        Terms of Use
+                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '1rem', fontWeight: 300, color: 'var(--text-code)' }}>{'{'}</span>
+                        <span style={{ fontFamily: 'var(--font-sans)', fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>P</span>
+                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '1rem', fontWeight: 300, color: 'var(--text-code)' }}>{'}'}</span>
                     </a>
-                    <span style={{ color: 'var(--border-default)' }}>|</span>
-                    <a
-                        href="/privacy"
-                        onClick={(e) => { e.preventDefault(); navigate('/privacy'); }}
-                        style={{ color: 'var(--text-secondary)', textDecoration: 'none', transition: 'color 0.2s' }}
-                        onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
-                        onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-secondary)')}
-                    >
-                        Privacy Policy
-                    </a>
-                </p>
+
+                    {/* Social Links */}
+                    <div style={{
+                        display: 'flex',
+                        gap: '1.5rem',
+                        flexWrap: 'wrap',
+                        justifyContent: 'center',
+                    }}>
+                        <a href="https://www.linkedin.com/in/pasupdr/" target="_blank" rel="noopener noreferrer"
+                            style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)', fontWeight: 500 }}>
+                            LinkedIn
+                        </a>
+                        <a href="https://x.com/getperseverance" target="_blank" rel="noopener noreferrer"
+                            style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)', fontWeight: 500 }}>
+                            X
+                        </a>
+                        <a href="https://calendly.com/getperseverance" target="_blank" rel="noopener noreferrer"
+                            style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)', fontWeight: 500 }}>
+                            Schedule a conversation
+                        </a>
+                    </div>
+
+                    {/* Legal + Copyright */}
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '1rem',
+                        flexWrap: 'wrap',
+                        justifyContent: 'center',
+                    }}>
+                        <span style={{ fontFamily: 'var(--font-sans)', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                            &copy; {new Date().getFullYear()} Perseverance AI. All rights reserved.
+                        </span>
+                        <a href="/terms" onClick={(e) => { e.preventDefault(); navigate('/terms'); }}
+                            style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)' }}>
+                            Terms
+                        </a>
+                        <a href="/privacy" onClick={(e) => { e.preventDefault(); navigate('/privacy'); }}
+                            style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)' }}>
+                            Privacy
+                        </a>
+                    </div>
+                </div>
             </footer>
 
-            {/* Feedback Widget — floating bottom-right */}
-            <FeedbackWidget />
+            {/* CSS for responsive nav */}
+            <style>{`
+                @media (max-width: 768px) {
+                    .nav-links-desktop { display: none !important; }
+                    .hamburger-btn { display: flex !important; }
+                    .free-tier-badge { font-size: 0.65rem !important; padding: 0.2rem 0.5rem !important; }
+                }
+            `}</style>
         </div>
     );
 }

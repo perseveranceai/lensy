@@ -44,6 +44,12 @@ const theme = createTheme({
         h6: {
             fontWeight: 600,
         },
+        body1: {
+            fontWeight: 400,
+        },
+        body2: {
+            fontWeight: 400,
+        },
     },
     components: {
         MuiAppBar: {
@@ -61,6 +67,16 @@ const theme = createTheme({
                     backgroundColor: 'var(--bg-secondary)',
                     borderRadius: 12,
                     border: '1px solid var(--border-subtle)',
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.04)',
+                },
+            },
+        },
+        MuiCard: {
+            styleOverrides: {
+                root: {
+                    borderRadius: 12,
+                    border: '1px solid var(--border-subtle)',
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.04)',
                 },
             },
         },
@@ -69,7 +85,7 @@ const theme = createTheme({
                 root: {
                     borderRadius: 6,
                     textTransform: 'none',
-                    fontWeight: 600,
+                    fontWeight: 500,
                 },
             },
         },

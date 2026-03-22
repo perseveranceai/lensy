@@ -4,7 +4,20 @@ const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://5gg6ce9y9e.execut
 
 type FeedbackState = 'idle' | 'open' | 'sending' | 'sent' | 'error';
 
-export default function FeedbackWidget() {
+interface ScanMetrics {
+    botsAllowed?: string;
+    contentHealth?: string;
+    queriesVisible?: string;
+    aiReadiness?: number;
+    overallScore?: number;
+}
+
+interface FeedbackWidgetProps {
+    auditUrl?: string;
+    scanMetrics?: ScanMetrics;
+}
+
+export default function FeedbackWidget({ auditUrl, scanMetrics }: FeedbackWidgetProps) {
     const [state, setState] = useState<FeedbackState>('idle');
     const [message, setMessage] = useState('');
     const [email, setEmail] = useState('');
@@ -21,6 +34,8 @@ export default function FeedbackWidget() {
                     message: message.trim(),
                     email: email.trim() || undefined,
                     pageUrl: window.location.href,
+                    auditUrl: auditUrl || undefined,
+                    scanMetrics: scanMetrics || undefined,
                 }),
             });
             if (!res.ok) throw new Error('Failed');
@@ -156,6 +171,21 @@ export default function FeedbackWidget() {
                         boxSizing: 'border-box',
                     }}
                 />
+
+                {/* Show which audit this feedback is about */}
+                {auditUrl && (
+                    <p style={{
+                        fontSize: '0.6875rem',
+                        color: 'var(--text-muted, #888)',
+                        margin: '0.5rem 0 0',
+                        fontFamily: 'var(--font-sans, sans-serif)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                    }}>
+                        📎 Attached: {auditUrl}
+                    </p>
+                )}
 
                 {state === 'error' && (
                     <p style={{
