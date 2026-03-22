@@ -103,7 +103,12 @@ temp/
 
 # Debug and analysis files
 *.html
+!frontend/public/
 !frontend/public/*.html
+!frontend/public/*.png
+!frontend/public/*.ico
+!frontend/public/*.json
+!frontend/public/robots.txt
 updated-policy.json
 *-IMPLEMENTATION.md
 *_ANALYSIS.md
