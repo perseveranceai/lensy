@@ -53,6 +53,7 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import FixReviewPanel, { Fix } from './components/FixReviewPanel';
 import jsPDF from 'jspdf';
 import { JAKARTA_REGULAR, JAKARTA_BOLD } from './jakartaFonts';
+const logoImg = `${process.env.PUBLIC_URL}/logo.png`;
 
 // [NEW] Collapsible Component Helper
 const CollapsibleCard = ({ title, subtitle, children, defaultExpanded = true, count = 0, color = "default" }: any) => {
@@ -2472,26 +2473,11 @@ function LensyApp() {
         doc.rect(0, 0, pw, 2, 'F');
 
         // Logo
-        gy = 45;
-        doc.setFont(fn, 'normal');
-        doc.setFontSize(18);
-        const gLogoText = '{  P  }';
-        doc.setFont(fn, 'bold');
-        const gLogoW = doc.getTextWidth(gLogoText);
-        const gLogoX = pw / 2 - gLogoW / 2;
-        doc.setFont(fn, 'normal');
-        doc.setTextColor(...gColor.light);
-        doc.text('{', gLogoX, gy);
-        doc.setFont(fn, 'bold');
-        doc.setFontSize(20);
-        doc.setTextColor(...gColor.dark);
-        doc.text('P', pw / 2 - doc.getTextWidth('P') / 2, gy);
-        doc.setFont(fn, 'normal');
-        doc.setFontSize(18);
-        doc.setTextColor(...gColor.light);
-        doc.text('}', gLogoX + gLogoW - doc.getTextWidth('}'), gy);
+        gy = 30;
+        const gLogoSize = 24;
+        doc.addImage(logoImg, 'PNG', pw / 2 - gLogoSize / 2, gy, gLogoSize, gLogoSize);
 
-        gy += 10;
+        gy += gLogoSize + 6;
         doc.setFontSize(9);
         doc.setTextColor(...gColor.muted);
         doc.setFont(fn, 'normal');
@@ -2744,28 +2730,12 @@ function LensyApp() {
         doc.setFillColor(...c.blue);
         doc.rect(0, 0, pageWidth, 2, 'F');
 
-        // Logo: { P }
-        y = 55;
-        doc.setFont(fn, 'normal');
-        doc.setFontSize(18);
-        const logoText = '{  P  }';
-        doc.setFont(fn, 'bold');
-        const logoW = doc.getTextWidth(logoText);
-        const logoX = pageWidth / 2 - logoW / 2;
-        doc.setFont(fn, 'normal');
-        doc.setTextColor(...c.textLight);
-        doc.text('{', logoX, y);
-        doc.setFont(fn, 'bold');
-        doc.setFontSize(20);
-        doc.setTextColor(...c.textDark);
-        const pX = pageWidth / 2 - doc.getTextWidth('P') / 2;
-        doc.text('P', pX, y);
-        doc.setFont(fn, 'normal');
-        doc.setFontSize(18);
-        doc.setTextColor(...c.textLight);
-        doc.text('}', logoX + logoW - doc.getTextWidth('}'), y);
+        // Logo
+        y = 40;
+        const logoSize = 24;
+        doc.addImage(logoImg, 'PNG', pageWidth / 2 - logoSize / 2, y, logoSize, logoSize);
 
-        y += 12;
+        y += logoSize + 6;
         doc.setFontSize(10);
         doc.setTextColor(...c.textMuted);
         doc.setFont(fn, 'normal');
@@ -3377,9 +3347,9 @@ function LensyApp() {
 
     return (
         <div className="App">
-            <Container maxWidth={selectedMode === 'github-issues' && (analysisState.status === 'analyzing' || githubAnalysisResults) ? 'xl' : 'lg'} sx={{ py: 4, transition: 'max-width 0.3s ease' }}>
+            <Container maxWidth={selectedMode === 'github-issues' && (analysisState.status === 'analyzing' || githubAnalysisResults) ? 'xl' : 'lg'} sx={{ py: { xs: 2, sm: 4 }, px: { xs: 1, sm: 3 }, transition: 'max-width 0.3s ease' }}>
 
-                <Paper sx={{ p: 4, mb: 4 }}>
+                <Paper sx={{ p: { xs: 2, sm: 4 }, mb: { xs: 2, sm: 4 } }}>
                     <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3, alignItems: 'center' }}>
                         <Box sx={{ textAlign: 'center' }}>
                             <Typography variant="h4" component="h1" sx={{ fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.03em', fontSize: { xs: '1.5rem', sm: '1.75rem' } }}>
@@ -5909,19 +5879,19 @@ function LensyApp() {
                                                         {asyncCards.overallScore && (
                                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                                                 <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-primary)' }}>
-                                                                    {asyncCards.overallScore.scoreBreakdown.structuredData}/15
+                                                                    {asyncCards.overallScore.scoreBreakdown.structuredData}/20
                                                                 </Typography>
-                                                                {asyncCards.overallScore.scoreBreakdown.structuredData >= 12 ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} /> : <WarningIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} />}
+                                                                {asyncCards.overallScore.scoreBreakdown.structuredData >= 16 ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} /> : <WarningIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} />}
                                                             </Box>
                                                         )}
                                                     </Box>
                                                     {asyncCards.structuredData ? (() => {
                                                         const s = asyncCards.structuredData!;
                                                         const items = [
-                                                            { label: 'JSON-LD', pass: s.jsonLd.found || s.schemaCompleteness.status !== 'missing', detail: s.jsonLd.found ? `Found ${s.jsonLd.types.join(', ')} markup${s.schemaCompleteness.status === 'complete' ? '. Schema is complete.' : '.'}` : 'Not found. JSON-LD tells AI exactly what type of content this is.', info: 'Gives AI explicit type signals so it can accurately categorize your page.', pts: 5 },
-                                                            { label: 'Schema Completeness', pass: s.schemaCompleteness.status === 'complete', detail: s.schemaCompleteness.status === 'complete' ? 'Schema is complete.' : 'Schema is incomplete or missing.', info: 'Complete schemas help AI understand your content structure.', pts: 3 },
-                                                            { label: 'OpenGraph', pass: s.openGraphCompleteness.score !== 'missing', detail: s.openGraphCompleteness.score === 'complete' ? 'All required tags present.' : s.openGraphCompleteness.score === 'partial' ? `Missing ${s.openGraphCompleteness.missingTags.slice(0, 2).join(', ')}.` : 'Not found.', info: 'Controls the preview card when your link is shared on social channels.', pts: 4 },
-                                                            { label: 'Breadcrumbs', pass: s.breadcrumbs.found, detail: s.breadcrumbs.found ? 'BreadcrumbList schema found.' : 'No BreadcrumbList schema found.', info: 'BreadcrumbList schema tells AI where this page sits in your site hierarchy.', pts: 3 },
+                                                            { label: 'JSON-LD', pass: s.jsonLd.found || s.schemaCompleteness.status !== 'missing', detail: s.jsonLd.found ? `Found ${s.jsonLd.types.join(', ')} markup${s.schemaCompleteness.status === 'complete' ? '. Schema is complete.' : '.'}` : 'Not found. JSON-LD tells AI exactly what type of content this is.', info: 'Gives AI explicit type signals so it can accurately categorize your page.', pts: 7 },
+                                                            { label: 'Schema Completeness', pass: s.schemaCompleteness.status === 'complete', detail: s.schemaCompleteness.status === 'complete' ? 'Schema is complete.' : 'Schema is incomplete or missing.', info: 'Complete schemas help AI understand your content structure.', pts: 4 },
+                                                            { label: 'OpenGraph', pass: s.openGraphCompleteness.score !== 'missing', detail: s.openGraphCompleteness.score === 'complete' ? 'All required tags present.' : s.openGraphCompleteness.score === 'partial' ? `Missing ${s.openGraphCompleteness.missingTags.slice(0, 2).join(', ')}.` : 'Not found.', info: 'Controls the preview card when your link is shared on social channels.', pts: 5 },
+                                                            { label: 'Breadcrumbs', pass: s.breadcrumbs.found, detail: s.breadcrumbs.found ? 'BreadcrumbList schema found.' : 'No BreadcrumbList schema found.', info: 'BreadcrumbList schema tells AI where this page sits in your site hierarchy.', pts: 4 },
                                                         ];
                                                         return items.map((item, i) => (
                                                             <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>
@@ -5950,19 +5920,19 @@ function LensyApp() {
                                                         {asyncCards.overallScore && (
                                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                                                 <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-primary)' }}>
-                                                                    {asyncCards.overallScore.scoreBreakdown.discoverability}/35
+                                                                    {asyncCards.overallScore.scoreBreakdown.discoverability}/20
                                                                 </Typography>
-                                                                {asyncCards.overallScore.scoreBreakdown.discoverability >= 28 ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} /> : <WarningIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} />}
+                                                                {asyncCards.overallScore.scoreBreakdown.discoverability >= 16 ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} /> : <WarningIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} />}
                                                             </Box>
                                                         )}
                                                     </Box>
                                                     {asyncCards.discoverability ? (() => {
                                                         const d = asyncCards.discoverability!;
                                                         const items: Array<{ label: string; status: 'pass' | 'fail' | 'neutral'; detail: string; info?: string; waitlist?: boolean; waitlistLabel?: string; pts: number }> = [
-                                                            { label: 'llms.txt', status: d.llmsTxt.found ? 'pass' : 'fail', detail: d.llmsTxt.found ? `Found. AI coding tools can consume your docs directly.` : `Not found. llms.txt helps AI coding tools consume your docs faster.`, info: 'A markdown table of contents for your docs. Helps AI coding tools find and consume your content at inference time.', waitlist: !d.llmsTxt.found, pts: 17 },
-                                                            { label: 'Sitemap', status: d.sitemapXml.found ? 'pass' : 'fail', detail: d.sitemapXml.found ? `Found. Crawlers can discover all your pages.` : 'Not found. Crawlers may miss deeper pages.', info: 'Lists every page on your site so crawlers don\'t have to guess.', pts: 10 },
-                                                            { label: 'Canonical URL', status: d.canonical.found ? 'pass' : 'fail', detail: d.canonical.found ? `Set. Prevents duplicate indexing.` : 'Not set. Search engines may index duplicate versions.', info: 'Tells search engines which URL is the authoritative version of this page.', pts: 8 },
-                                                            ...(d.metaRobots.blocksIndexing ? [{ label: 'Meta Robots', status: 'fail' as const, detail: `Set to "${d.metaRobots.content}". Blocks indexing.`, info: 'Your meta robots tag is preventing indexing.', pts: 7 }] : []),
+                                                            { label: 'llms.txt', status: d.llmsTxt.found ? 'pass' : 'fail', detail: d.llmsTxt.found ? `Found. AI coding tools can consume your docs directly.` : `Not found. llms.txt helps AI coding tools consume your docs faster.`, info: 'A markdown table of contents for your docs. Helps AI coding tools find and consume your content at inference time.', waitlist: !d.llmsTxt.found, pts: 10 },
+                                                            { label: 'Sitemap', status: d.sitemapXml.found ? 'pass' : 'fail', detail: d.sitemapXml.found ? `Found. Crawlers can discover all your pages.` : 'Not found. Crawlers may miss deeper pages.', info: 'Lists every page on your site so crawlers don\'t have to guess.', pts: 5 },
+                                                            { label: 'Canonical URL', status: d.canonical.found ? 'pass' : 'fail', detail: d.canonical.found ? `Set. Prevents duplicate indexing.` : 'Not set. Search engines may index duplicate versions.', info: 'Tells search engines which URL is the authoritative version of this page.', pts: 5 },
+                                                            ...(d.metaRobots.blocksIndexing ? [{ label: 'Meta Robots', status: 'fail' as const, detail: `Set to "${d.metaRobots.content}". Blocks indexing.`, info: 'Your meta robots tag is preventing indexing.', pts: 5 }] : []),
                                                         ];
                                                         return items.map((item, i) => (
                                                             <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>
@@ -5998,9 +5968,9 @@ function LensyApp() {
                                                         {asyncCards.overallScore && (
                                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                                                 <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-primary)' }}>
-                                                                    {asyncCards.overallScore.scoreBreakdown.consumability}/35
+                                                                    {asyncCards.overallScore.scoreBreakdown.consumability}/45
                                                                 </Typography>
-                                                                {asyncCards.overallScore.scoreBreakdown.consumability >= 28 ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} /> : <WarningIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} />}
+                                                                {asyncCards.overallScore.scoreBreakdown.consumability >= 36 ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} /> : <WarningIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} />}
                                                             </Box>
                                                         )}
                                                     </Box>
@@ -6015,7 +5985,7 @@ function LensyApp() {
                                                                 pass: false,
                                                                 detail: 'Page relies on JavaScript to render. AI crawlers see a blank page.',
                                                                 info: 'Most AI bots don\'t run JavaScript. Client-side rendered pages appear empty to them.',
-                                                                pts: 8,
+                                                                pts: 10,
                                                             }]),
                                                             {
                                                                 label: `Headings: ${c.headingHierarchy.h1Count} H1, ${h2Count} H2, ${h3Count} H3`,
@@ -6030,7 +6000,7 @@ function LensyApp() {
                                                                     })(),
                                                                 fix: h2Count === 0 ? 'Add sections like ## Getting Started' : (!c.headingHierarchy.hasProperNesting ? 'Restructure: H1 > H2 > H3.' : undefined),
                                                                 info: 'AI splits pages at heading boundaries. Each H2 becomes a separately retrievable unit.',
-                                                                pts: c.headingHierarchy.h1Count === 1 ? 6 : 7,
+                                                                pts: c.headingHierarchy.h1Count === 1 ? 8 : 10,
                                                             },
                                                             ...(wordCount > 0 ? [{
                                                                 label: `Word count: ${wordCount.toLocaleString()}`,
@@ -6053,7 +6023,7 @@ function LensyApp() {
                                                                 waitlist: !c.markdownAvailable.found,
                                                                 waitlistLabel: 'Join the waitlist for markdown generation →',
                                                                 info: 'AI coding agents work better with markdown (up to 80% fewer tokens).',
-                                                                pts: c.markdownAvailable.discoverable ? 6 : 3,
+                                                                pts: c.markdownAvailable.discoverable ? 8 : 4,
                                                             },
                                                             {
                                                                 label: `Links: ${c.internalLinkDensity.count}`,
@@ -6063,7 +6033,7 @@ function LensyApp() {
                                                                     : `Only ${c.internalLinkDensity.count} internal links.`,
                                                                 fix: c.internalLinkDensity.status === 'sparse' ? 'Add "See also" links to related pages.' : undefined,
                                                                 info: 'Internal links help AI understand how your pages relate.',
-                                                                pts: 3,
+                                                                pts: 4,
                                                             },
                                                         ];
 
@@ -6355,158 +6325,6 @@ function LensyApp() {
                     </Paper>
                 )}
 
-                {/* ═══ How It Works + Video — always visible, sticky across all states ═══ */}
-                {analysisState.status !== 'analyzing' && selectedMode !== 'github-issues' && (
-                    <Box sx={{ mt: 5, mb: 4 }}>
-                        <Grid container spacing={4} sx={{ alignItems: 'center' }}>
-                            {/* Left: Steps */}
-                            <Grid item xs={12} md={5}>
-                                <Typography variant="h5" sx={{
-                                    fontWeight: 700, mb: 3, fontSize: '1.35rem',
-                                    fontFamily: 'var(--font-sans, var(--font-ui))',
-                                    color: 'var(--text-primary)',
-                                }}>
-                                    How It Works
-                                </Typography>
-                                {[
-                                    { step: '1', title: 'Enter your documentation URL', desc: 'Paste any public documentation page, API reference, or developer portal URL.' },
-                                    { step: '2', title: 'AI analyzes your page', desc: 'We check bot access, content health, structured data, and test visibility on Perplexity.' },
-                                    { step: '3', title: 'Get your readiness report', desc: 'Actionable scores and recommendations to make your docs discoverable by AI search.' },
-                                ].map((item) => (
-                                    <Box key={item.step} sx={{ display: 'flex', gap: 2, mb: 2.5 }}>
-                                        <Box sx={{
-                                            width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-                                            bgcolor: 'var(--bg-tertiary)', border: '1px solid var(--border-default)',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-secondary)',
-                                            fontFamily: 'var(--font-mono)',
-                                        }}>
-                                            {item.step}
-                                        </Box>
-                                        <Box>
-                                            <Typography sx={{
-                                                fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)',
-                                                fontFamily: 'var(--font-sans, var(--font-ui))', lineHeight: 1.3,
-                                            }}>
-                                                {item.title}
-                                            </Typography>
-                                            <Typography sx={{
-                                                fontSize: '0.8rem', color: 'var(--text-muted)', mt: 0.3,
-                                                fontFamily: 'var(--font-sans, var(--font-ui))', lineHeight: 1.4,
-                                            }}>
-                                                {item.desc}
-                                            </Typography>
-                                        </Box>
-                                    </Box>
-                                ))}
-                            </Grid>
-
-                            {/* Right: Analysis & Scoring Process */}
-                            <Grid item xs={12} md={7}>
-                                <Box sx={{
-                                    borderRadius: '12px', overflow: 'hidden',
-                                    border: '1px solid var(--border-default)',
-                                    bgcolor: 'var(--bg-secondary)',
-                                }}>
-                                    <Box sx={{ p: 2.5, borderBottom: '1px solid var(--border-subtle)' }}>
-                                        <Typography sx={{
-                                            fontWeight: 700, fontSize: '1rem',
-                                            fontFamily: 'var(--font-sans, var(--font-ui))',
-                                            color: 'var(--text-primary)', mb: 0.5,
-                                        }}>
-                                            Analysis & Scoring
-                                        </Typography>
-                                        <Typography sx={{
-                                            fontSize: '0.75rem', color: 'var(--text-muted)',
-                                            fontFamily: 'var(--font-sans, var(--font-ui))', lineHeight: 1.5,
-                                        }}>
-                                            Each page is scored out of 100 across four dimensions. AI Citations is evaluated separately.
-                                        </Typography>
-                                    </Box>
-                                    {[
-                                        { label: 'Bot Access', weight: 15, what: 'robots.txt rules for 10 AI crawlers', how: 'Per-bot allow/block from robots.txt' },
-                                        { label: 'Discoverability', weight: 35, what: 'llms.txt, sitemap, canonical URL, meta robots', how: 'Presence and validity checks' },
-                                        { label: 'Content Health', weight: 35, what: 'Heading hierarchy, word count, code blocks, internal links', how: 'Structure-aware HTML analysis' },
-                                        { label: 'Structured Data', weight: 15, what: 'JSON-LD, Schema.org type, OpenGraph tags', how: 'Schema validation and type matching' },
-                                    ].map((dim, i) => (
-                                        <Box key={dim.label} sx={{
-                                            p: 2, px: 2.5,
-                                            borderBottom: i < 3 ? '1px solid var(--border-subtle)' : 'none',
-                                            display: 'flex', gap: 2, alignItems: 'flex-start',
-                                        }}>
-                                            <Box sx={{
-                                                minWidth: 36, height: 22, borderRadius: '4px',
-                                                bgcolor: 'var(--bg-tertiary)', border: '1px solid var(--border-default)',
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                fontWeight: 700, fontSize: '0.7rem', color: 'var(--text-secondary)',
-                                                fontFamily: 'var(--font-mono)', flexShrink: 0, mt: 0.2,
-                                            }}>
-                                                /{dim.weight}
-                                            </Box>
-                                            <Box sx={{ flex: 1 }}>
-                                                <Typography sx={{
-                                                    fontWeight: 600, fontSize: '0.825rem', color: 'var(--text-primary)',
-                                                    fontFamily: 'var(--font-sans, var(--font-ui))', lineHeight: 1.3,
-                                                }}>
-                                                    {dim.label}
-                                                </Typography>
-                                                <Typography sx={{
-                                                    fontSize: '0.725rem', color: 'var(--text-muted)', mt: 0.3,
-                                                    fontFamily: 'var(--font-sans, var(--font-ui))', lineHeight: 1.4,
-                                                }}>
-                                                    {dim.what}
-                                                </Typography>
-                                            </Box>
-                                            <Typography sx={{
-                                                fontSize: '0.675rem', color: 'var(--text-muted)',
-                                                fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap',
-                                                mt: 0.3,
-                                            }}>
-                                                {dim.how}
-                                            </Typography>
-                                        </Box>
-                                    ))}
-                                    <Box sx={{
-                                        p: 2, px: 2.5, borderTop: '1px solid var(--border-subtle)',
-                                        display: 'flex', gap: 2, alignItems: 'flex-start',
-                                        bgcolor: 'var(--bg-tertiary)',
-                                    }}>
-                                        <Box sx={{
-                                            minWidth: 36, height: 22, borderRadius: '4px',
-                                            border: '1px dashed var(--border-default)',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            fontWeight: 700, fontSize: '0.65rem', color: 'var(--text-muted)',
-                                            fontFamily: 'var(--font-mono)', flexShrink: 0, mt: 0.2,
-                                        }}>
-                                            +
-                                        </Box>
-                                        <Box sx={{ flex: 1 }}>
-                                            <Typography sx={{
-                                                fontWeight: 600, fontSize: '0.825rem', color: 'var(--text-secondary)',
-                                                fontFamily: 'var(--font-sans, var(--font-ui))', lineHeight: 1.3,
-                                            }}>
-                                                AI Citations
-                                            </Typography>
-                                            <Typography sx={{
-                                                fontSize: '0.725rem', color: 'var(--text-muted)', mt: 0.3,
-                                                fontFamily: 'var(--font-sans, var(--font-ui))', lineHeight: 1.4,
-                                            }}>
-                                                Cited or not cited across AI search engines via synthetic queries
-                                            </Typography>
-                                        </Box>
-                                        <Typography sx={{
-                                            fontSize: '0.675rem', color: 'var(--text-muted)',
-                                            fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap',
-                                            mt: 0.3,
-                                        }}>
-                                            Evaluated separately
-                                        </Typography>
-                                    </Box>
-                                </Box>
-                            </Grid>
-                        </Grid>
-                    </Box>
-                )}
             </Container>
 
         </div >

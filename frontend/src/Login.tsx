@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+const logoImg = `${process.env.PUBLIC_URL}/logo.png`;
 
 /**
  * Password validation happens ONLY in the CloudFront Function (server-side).
@@ -114,27 +115,9 @@ function Login() {
                     <div style={{
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: '0.125rem',
                         marginBottom: '1rem',
                     }}>
-                        <span style={{
-                            fontFamily: 'var(--font-mono)',
-                            fontSize: '2rem',
-                            fontWeight: 300,
-                            color: 'var(--text-code)',
-                        }}>{'{'}</span>
-                        <span style={{
-                            fontFamily: 'var(--font-sans, var(--font-ui))',
-                            fontSize: '2.25rem',
-                            fontWeight: 700,
-                            color: 'var(--text-primary)',
-                        }}>P</span>
-                        <span style={{
-                            fontFamily: 'var(--font-mono)',
-                            fontSize: '2rem',
-                            fontWeight: 300,
-                            color: 'var(--text-code)',
-                        }}>{'}'}</span>
+                        <img src={logoImg} alt="Perseverance AI" style={{ height: '64px', width: '64px', objectFit: 'contain' }} />
                     </div>
                     <h1 style={{
                         fontFamily: 'var(--font-sans, var(--font-ui))',

@@ -30,9 +30,9 @@ const SUGGESTION_MODEL = 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
 
 const WEIGHTS = {
     botAccess: 15,          // Out of 15 — are AI crawlers allowed?
-    discoverability: 35,    // Out of 35 — llms.txt, sitemap, canonical, meta robots
-    consumability: 35,      // Out of 35 — headings, word count, markdown, code, links
-    structuredData: 15,     // Out of 15 — JSON-LD, schema, OpenGraph, breadcrumbs
+    discoverability: 20,    // Out of 20 — llms.txt, sitemap, canonical, meta robots
+    consumability: 45,      // Out of 45 — headings, word count, markdown, code, links
+    structuredData: 20,     // Out of 20 — JSON-LD, schema, OpenGraph, breadcrumbs
     // Total readiness = 100 points
 };
 
@@ -302,14 +302,14 @@ function calculateDiscoverabilityScore(r: AIReadinessResult | null): number {
     let points = 0;
     const maxPoints = WEIGHTS.discoverability;
 
-    // llms.txt: 17 points (helps AI coding tools consume docs at inference time)
-    if (d.llmsTxt.found) points += 17;
-    // sitemap.xml: 10 points
-    if (d.sitemapXml.found) points += 10;
-    // Canonical: 8 points
-    if (d.canonical.found) points += 8;
+    // llms.txt: 10 points (helps AI coding tools consume docs at inference time)
+    if (d.llmsTxt.found) points += 10;
+    // sitemap.xml: 5 points
+    if (d.sitemapXml.found) points += 5;
+    // Canonical: 5 points
+    if (d.canonical.found) points += 5;
     // Meta robots: only penalize if actively blocking (not scoring the default)
-    if (d.metaRobots.blocksIndexing) points -= 7;
+    if (d.metaRobots.blocksIndexing) points -= 5;
 
     return Math.min(Math.round(points), maxPoints);
 }
@@ -320,24 +320,24 @@ function calculateConsumabilityScore(r: AIReadinessResult | null): number {
     let points = 0;
     const maxPoints = WEIGHTS.consumability;
 
-    // Heading hierarchy: 13 points (primary signal per DeepRead/GraphSkill research — agents use headings 87-98% of the time)
-    if (c.headingHierarchy.h1Count === 1) points += 7;
-    else if (c.headingHierarchy.h1Count > 0) points += 3;
-    if (c.headingHierarchy.hasProperNesting) points += 6;
+    // Heading hierarchy: 18 points (primary signal per DeepRead/GraphSkill research — agents use headings 87-98% of the time)
+    if (c.headingHierarchy.h1Count === 1) points += 10;
+    else if (c.headingHierarchy.h1Count > 0) points += 4;
+    if (c.headingHierarchy.hasProperNesting) points += 8;
 
-    // Not JS-rendered: 8 points
-    if (!c.jsRendered) points += 8;
+    // Not JS-rendered: 10 points
+    if (!c.jsRendered) points += 10;
 
-    // Markdown available & discoverable: 6 points
-    if (c.markdownAvailable.found && c.markdownAvailable.discoverable) points += 6;
-    else if (c.markdownAvailable.found) points += 3;
+    // Markdown available & discoverable: 8 points
+    if (c.markdownAvailable.found && c.markdownAvailable.discoverable) points += 8;
+    else if (c.markdownAvailable.found) points += 4;
 
     // Word count: 5 points (research: 500-2000 words = 2-3x more AI citations)
     if (c.wordCount >= 500 && c.wordCount <= 2000) points += 5;
     else if (c.wordCount >= 300) points += 3;
 
-    // Internal link density: 3 points
-    if (c.internalLinkDensity.status === 'good') points += 3;
+    // Internal link density: 4 points
+    if (c.internalLinkDensity.status === 'good') points += 4;
 
     return Math.min(Math.round(points), maxPoints);
 }
@@ -348,20 +348,20 @@ function calculateStructuredDataScore(r: AIReadinessResult | null): number {
     let points = 0;
     const maxPoints = WEIGHTS.structuredData;
 
-    // JSON-LD with valid type: 5 points
-    if (s.jsonLd.found && s.jsonLd.isValidSchemaType) points += 5;
-    else if (s.jsonLd.found) points += 3;
+    // JSON-LD with valid type: 7 points
+    if (s.jsonLd.found && s.jsonLd.isValidSchemaType) points += 7;
+    else if (s.jsonLd.found) points += 4;
 
-    // Schema completeness: 3 points
-    if (s.schemaCompleteness.status === 'complete') points += 3;
-    else if (s.schemaCompleteness.status === 'partial') points += 1;
+    // Schema completeness: 4 points
+    if (s.schemaCompleteness.status === 'complete') points += 4;
+    else if (s.schemaCompleteness.status === 'partial') points += 2;
 
-    // OpenGraph completeness: 4 points
-    if (s.openGraphCompleteness.score === 'complete') points += 4;
-    else if (s.openGraphCompleteness.score === 'partial') points += 2;
+    // OpenGraph completeness: 5 points
+    if (s.openGraphCompleteness.score === 'complete') points += 5;
+    else if (s.openGraphCompleteness.score === 'partial') points += 3;
 
-    // Breadcrumbs: 3 points
-    if (s.breadcrumbs.found) points += 3;
+    // Breadcrumbs: 4 points
+    if (s.breadcrumbs.found) points += 4;
 
     return Math.min(Math.round(points), maxPoints);
 }

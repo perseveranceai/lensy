@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import FeedbackWidget from './components/FeedbackWidget';
+const logoImg = `${process.env.PUBLIC_URL}/logo.png`;
 
 type ThemeMode = 'dark' | 'light' | 'system';
 
@@ -122,7 +123,7 @@ function ConsoleLayout() {
                         style={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '0.125rem',
+                            gap: '0.5rem',
                             textDecoration: 'none',
                             transition: 'opacity 0.2s ease',
                             flexShrink: 0,
@@ -130,30 +131,12 @@ function ConsoleLayout() {
                         onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.8')}
                         onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
                     >
-                        <span style={{
-                            fontFamily: 'var(--font-mono)',
-                            fontSize: '1.25rem',
-                            fontWeight: 300,
-                            color: 'var(--text-code)',
-                        }}>{'{'}</span>
-                        <span style={{
-                            fontFamily: 'var(--font-sans, var(--font-ui))',
-                            fontSize: '1.5rem',
-                            fontWeight: 700,
-                            color: 'var(--text-primary)',
-                        }}>P</span>
-                        <span style={{
-                            fontFamily: 'var(--font-mono)',
-                            fontSize: '1.25rem',
-                            fontWeight: 300,
-                            color: 'var(--text-code)',
-                        }}>{'}'}</span>
-                        <span style={{
+                        <img src={logoImg} alt="Perseverance AI" style={{ height: '32px', width: '32px', objectFit: 'contain' }} />
+                        <span className="perseverance-text" style={{
                             fontFamily: 'var(--font-sans, var(--font-ui))',
                             fontSize: '1rem',
                             fontWeight: 600,
                             color: 'var(--text-primary)',
-                            marginLeft: '0.5rem',
                             whiteSpace: 'nowrap',
                         }}>
                             Perseverance AI
@@ -241,8 +224,8 @@ function ConsoleLayout() {
                                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
                             >
                                 <span style={{ fontSize: '0.85rem' }}>{currentTheme.icon}</span>
-                                <span>{currentTheme.label}</span>
-                                <span style={{ fontSize: '0.6rem', marginLeft: '0.15rem', opacity: 0.6 }}>{themeDropdownOpen ? '\u25B2' : '\u25BC'}</span>
+                                <span className="theme-toggle-label">{currentTheme.label}</span>
+                                <span className="theme-toggle-arrow" style={{ fontSize: '0.6rem', marginLeft: '0.15rem', opacity: 0.6 }}>{themeDropdownOpen ? '\u25B2' : '\u25BC'}</span>
                             </button>
                             {themeDropdownOpen && (
                                 <div style={{
@@ -355,14 +338,30 @@ function ConsoleLayout() {
                                 {link.label}{link.beta && <sup style={{ fontSize: '0.5rem', fontWeight: 700, color: '#6366f1', marginLeft: '2px', verticalAlign: 'super', letterSpacing: '0.03em' }}>BETA</sup>}
                             </a>
                         ))}
+                        {!skipRateLimit && usage && (
+                            <div style={{
+                                padding: '0.5rem 0.75rem',
+                                marginTop: '0.25rem',
+                                borderTop: '1px solid var(--border-subtle)',
+                            }}>
+                                <span style={{
+                                    fontFamily: 'var(--font-sans, var(--font-ui))',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
+                                    color: usage.remaining === 0 ? '#ef4444' : 'var(--text-muted)',
+                                }}>
+                                    Free Tier &mdash; {usage.remaining} audit{usage.remaining !== 1 ? 's' : ''} left
+                                </span>
+                            </div>
+                        )}
                     </div>
                 )}
             </header>
 
             <main style={{
                 flex: 1,
-                paddingTop: '72px',
-                paddingBottom: '100px',
+                paddingTop: '64px',
+                paddingBottom: '60px',
             }}>
                 <Outlet />
             </main>
@@ -373,7 +372,7 @@ function ConsoleLayout() {
             {/* Footer */}
             <footer style={{
                 borderTop: '1px solid var(--border-subtle)',
-                padding: '2rem 1.5rem',
+                padding: '1.5rem 1rem',
             }}>
                 <div style={{
                     maxWidth: '1400px',
@@ -387,11 +386,9 @@ function ConsoleLayout() {
                     <a
                         href="/"
                         onClick={(e) => { e.preventDefault(); navigate('/'); }}
-                        style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.125rem' }}
+                        style={{ textDecoration: 'none', display: 'flex', alignItems: 'center' }}
                     >
-                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '1rem', fontWeight: 300, color: 'var(--text-code)' }}>{'{'}</span>
-                        <span style={{ fontFamily: 'var(--font-sans)', fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>P</span>
-                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '1rem', fontWeight: 300, color: 'var(--text-code)' }}>{'}'}</span>
+                        <img src={logoImg} alt="Perseverance AI" style={{ height: '28px', width: '28px', objectFit: 'contain' }} />
                     </a>
 
                     {/* Social Links */}
@@ -443,7 +440,10 @@ function ConsoleLayout() {
                 @media (max-width: 768px) {
                     .nav-links-desktop { display: none !important; }
                     .hamburger-btn { display: flex !important; }
-                    .free-tier-badge { font-size: 0.65rem !important; padding: 0.2rem 0.5rem !important; }
+                    .free-tier-badge { display: none !important; }
+                    .theme-toggle-label { display: none !important; }
+                    .theme-toggle-arrow { display: none !important; }
+                    .perseverance-text { display: none !important; }
                 }
             `}</style>
         </div>
