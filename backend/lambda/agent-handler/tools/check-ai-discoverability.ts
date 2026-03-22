@@ -12,22 +12,28 @@ import { createProgressHelper } from './publish-progress';
  *
  * 1. Fetches page content (MD-first: llms.txt → .md alternate → HTML fallback)
  * 2. Generates 6 search queries via Haiku LLM (with template fallback)
- * 3. Sends queries to Perplexity Sonar and Brave Web Search in parallel
- * 4. Checks if the target URL appears in citations/results
- * 5. Returns per-engine, per-query results with rank
+ * 3. Sends queries to Perplexity Sonar
+ * 4. Checks if the target URL appears in citations
+ * 5. Returns per-query results with citation status
  */
 
 const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY || '';
-const BRAVE_API_KEY = process.env.BRAVE_API_KEY || '';
 const HAIKU_MODEL_ID = 'us.anthropic.claude-3-5-haiku-20241022-v1:0';
+
+// ── Browser User-Agent for page fetching (hybrid Chrome UA — avoids JS shell responses from CDNs) ──
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 (+https://perseveranceai.com/bot)';
+const FETCH_HEADERS = {
+    'User-Agent': BROWSER_UA,
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+};
 
 export interface AIDiscoverabilityResult {
     queries: string[];
-    /** Which queries are context-aware (include product/domain name) vs context-free (generic) */
-    queryTypes: Array<'context-aware' | 'context-free'>;
+    /** Intent tier for each query: high (tech-stack specific), mid (technology + problem), low (generic problem) */
+    queryTypes: Array<'high' | 'mid' | 'low'>;
     engines: {
         perplexity?: EngineResult;
-        brave?: EngineResult;
     };
     overallDiscoverability: 'high' | 'partial' | 'low' | 'not-found';
     recommendations: Array<{ priority: string; issue: string; fix: string }>;
@@ -54,7 +60,7 @@ export const checkAIDiscoverabilityTool = tool(
             const progress = createProgressHelper(input.sessionId);
             await progress.info('Generating search queries to test AI discoverability...');
 
-            const results = await checkAIDiscoverability(input.url, input.sessionId, progress);
+            const results = await checkAIDiscoverability(input.url, input.sessionId, progress, input.prefetchedHtml);
 
             // Store results in S3
             await writeSessionArtifact(input.sessionId, 'ai-discoverability-results.json', results);
@@ -75,9 +81,7 @@ export const checkAIDiscoverabilityTool = tool(
                 queriesGenerated: results.queries.length,
                 overallDiscoverability: results.overallDiscoverability,
                 perplexityAvailable: results.engines.perplexity?.available || false,
-                braveAvailable: results.engines.brave?.available || false,
                 perplexityFoundRate: results.engines.perplexity?.foundRate,
-                braveFoundRate: results.engines.brave?.foundRate,
                 recommendationCount: results.recommendations.length,
                 message: `AI discoverability: ${results.overallDiscoverability}`
             });
@@ -96,6 +100,7 @@ export const checkAIDiscoverabilityTool = tool(
         schema: z.object({
             url: z.string().describe('The URL to test discoverability for'),
             sessionId: z.string().describe('The analysis session ID'),
+            prefetchedHtml: z.string().optional().describe('Pre-fetched HTML content of the target URL. If provided, skips the initial page fetch.'),
         })
     }
 );
@@ -105,13 +110,14 @@ export const checkAIDiscoverabilityTool = tool(
 async function checkAIDiscoverability(
     targetUrl: string,
     sessionId: string,
-    progress: any
+    progress: any,
+    prefetchedHtml?: string
 ): Promise<AIDiscoverabilityResult> {
     const domain = new URL(targetUrl).hostname;
     const recommendations: AIDiscoverabilityResult['recommendations'] = [];
 
     // Step 1: Get page content (MD-first: markdown alternate → .md URL → HTML fallback)
-    const pageInfo = await fetchPageInfo(targetUrl);
+    const pageInfo = await fetchPageInfo(targetUrl, prefetchedHtml);
     if (!pageInfo.title && !pageInfo.h1 && !pageInfo.metaDescription) {
         return {
             queries: [],
@@ -149,18 +155,14 @@ async function checkAIDiscoverability(
     const { queries, queryTypes } = generated;
 
     // Step 3: Query search engines in parallel
-    const awareCount = queryTypes.filter(t => t === 'context-aware').length;
-    const freeCount = queryTypes.filter(t => t === 'context-free').length;
-    await progress.info(`Testing ${queries.length} queries (${awareCount} with context, ${freeCount} generic) across AI search engines...`);
+    await progress.info(`Testing ${queries.length} queries (high→low intent) across AI search engines...`);
 
-    const [perplexityResult, braveResult] = await Promise.all([
-        PERPLEXITY_API_KEY ? queryPerplexity(queries, targetUrl, domain) : null,
-        BRAVE_API_KEY ? queryBrave(queries, targetUrl, domain) : null,
-    ]);
+    const perplexityResult = PERPLEXITY_API_KEY
+        ? await queryPerplexity(queries, targetUrl, domain)
+        : null;
 
     const engines: AIDiscoverabilityResult['engines'] = {};
     if (perplexityResult) engines.perplexity = perplexityResult;
-    if (braveResult) engines.brave = braveResult;
 
     // Step 4: Calculate overall discoverability
     const availableEngines = Object.values(engines).filter(e => e?.available);
@@ -171,7 +173,7 @@ async function checkAIDiscoverability(
         recommendations.push({
             priority: 'medium',
             issue: 'No AI search engine API keys configured — cannot test discoverability.',
-            fix: 'Configure PERPLEXITY_API_KEY and/or BRAVE_API_KEY environment variables.',
+            fix: 'Configure PERPLEXITY_API_KEY environment variable.',
         });
     } else {
         const avgFoundRate = availableEngines.reduce((sum, e) => sum + (e?.foundRate || 0), 0) / availableEngines.length;
@@ -181,40 +183,22 @@ async function checkAIDiscoverability(
         else if (avgFoundRate > 0) overallDiscoverability = 'low';
         else overallDiscoverability = 'not-found';
 
-        // Compute per-category found rates for smarter recommendations
-        const perplexityResults = engines.perplexity?.results || [];
-        const braveResults = engines.brave?.results || [];
-        const awareIndices = queryTypes.map((t, i) => t === 'context-aware' ? i : -1).filter(i => i >= 0);
-        const freeIndices = queryTypes.map((t, i) => t === 'context-free' ? i : -1).filter(i => i >= 0);
-
-        const awareFound = awareIndices.filter(i => perplexityResults[i]?.cited || braveResults[i]?.cited).length;
-        const freeFound = freeIndices.filter(i => perplexityResults[i]?.cited || braveResults[i]?.cited).length;
-        const awareRate = awareIndices.length > 0 ? awareFound / awareIndices.length : 0;
-        const freeRate = freeIndices.length > 0 ? freeFound / freeIndices.length : 0;
-
         if (overallDiscoverability === 'not-found') {
             recommendations.push({
                 priority: 'high',
-                issue: 'Your page was not cited by any AI search engine for any of the generated queries.',
+                issue: 'Your page was not cited by Perplexity for any of the organic queries tested.',
                 fix: 'Improve your page\'s AI readiness: add llms.txt, structured data, and ensure content is indexable. Check the Bot Access and Discoverability categories for specific actions.',
-            });
-        } else if (awareRate > 0 && freeRate === 0) {
-            // Found with brand name but not generically — common pattern
-            recommendations.push({
-                priority: 'high',
-                issue: `Your page is cited when users mention your product (${Math.round(awareRate * 100)}% cited), but is invisible for generic searches (0% cited).`,
-                fix: 'To win generic search traffic, add common framework names, use cases, and comparison terms to your content. Compete on generic developer queries.',
             });
         } else if (overallDiscoverability === 'low') {
             recommendations.push({
                 priority: 'high',
-                issue: 'Your page was rarely cited by AI search engines — it may not be well-indexed.',
+                issue: 'Your page was rarely cited by Perplexity — it may not be well-indexed for AI search.',
                 fix: 'Ensure AI bots are allowed in robots.txt, add structured data, and submit your sitemap to search engines.',
             });
         } else if (overallDiscoverability === 'partial') {
             recommendations.push({
                 priority: 'medium',
-                issue: 'Your page is partially discoverable — cited in some queries but not all.',
+                issue: 'Your page is partially discoverable — cited by Perplexity in some queries but not all.',
                 fix: 'Improve content specificity, add more structured data, and ensure comprehensive headings.',
             });
         }
@@ -235,16 +219,23 @@ interface PageInfo {
     fromMarkdown: boolean;
 }
 
-async function fetchPageInfo(url: string): Promise<PageInfo> {
+async function fetchPageInfo(url: string, prefetchedHtml?: string): Promise<PageInfo> {
     try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
-        const res = await fetch(url, { signal: controller.signal });
-        clearTimeout(timeoutId);
+        let html: string;
+        if (prefetchedHtml) {
+            console.log(`[PageInfo] Using prefetched HTML (${prefetchedHtml.length} bytes)`);
+            html = prefetchedHtml;
+        } else {
+            console.log(`[PageInfo] No prefetched HTML, fetching ${url} directly`);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
+            const res = await fetch(url, { signal: controller.signal, headers: FETCH_HEADERS });
+            clearTimeout(timeoutId);
 
-        if (!res.ok) return { title: '', h1: '', metaDescription: '', contentExcerpt: '', fromMarkdown: false };
+            if (!res.ok) return { title: '', h1: '', metaDescription: '', contentExcerpt: '', fromMarkdown: false };
 
-        const html = await res.text();
+            html = await res.text();
+        }
 
         const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
         const h1Match = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
@@ -331,7 +322,7 @@ async function tryFetchMarkdown(url: string, html: string): Promise<string | nul
     try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 1500);
-        const res = await fetch(mdUrl, { signal: controller.signal });
+        const res = await fetch(mdUrl, { signal: controller.signal, headers: { 'User-Agent': BROWSER_UA } });
         clearTimeout(timeoutId);
         if (res.ok) {
             const contentType = res.headers.get('content-type') || '';
@@ -371,17 +362,15 @@ function trimMarkdownForLLM(md: string): string {
 
 interface GeneratedQueries {
     queries: string[];
-    queryTypes: Array<'context-aware' | 'context-free'>;
+    queryTypes: Array<'high' | 'mid' | 'low'>;
 }
 
 const QUERY_GEN_SYSTEM = `You generate realistic search queries that developers type into AI assistants (Perplexity, ChatGPT, Claude). Return JSON only, no explanation.`;
 
 function buildQueryGenPrompt(pageInfo: PageInfo, product: string, domain: string): string {
-    return `Generate 6 search queries for this documentation page.
+    return `Generate 5 search queries for this documentation page across 3 intent tiers. Research shows developers evolve from generic problem queries to technology-specific ones.
 
 ## Page metadata
-- URL: ${domain}
-- Product: ${product} (${domain})
 - Topic: ${pageInfo.h1 || pageInfo.title}
 - Description: ${pageInfo.metaDescription}
 
@@ -390,13 +379,18 @@ ${pageInfo.contentExcerpt}
 
 ## Output format
 Return exactly this JSON structure:
-{"context_aware":["q1","q2","q3"],"context_free":["q1","q2","q3"]}
+{"high":["q1"],"mid":["q2","q3"],"low":["q4","q5"]}
 
-Rules:
-- context_aware (3): Include "${product}" in the query. Simulate a developer who knows the product.
-- context_free (3): Do NOT mention "${product}", "${domain}", or any brand name. Simulate a developer discovering this organically.
-- Sound like real questions: "how do I...", "why is X not working", "best way to..."
-- Vary intent: how-to, troubleshooting, comparison
+## Intent tiers
+- **high** (1 query): MUST include the product/brand name "${product || domain}" + specific task from the page. Example: "how to configure CDN in Solodev CMS". This simulates a developer who already knows the product and is searching for a specific task.
+- **mid** (2 queries): Include the technology category (e.g., "javascript", "REST API", "database") + the problem, but NO product/brand name. Use tech stack names from the content (e.g., "React", "PostgreSQL").
+- **low** (2 queries): Pure generic problem statement — no technology or product names at all. A developer who doesn't even know what stack to use.
+
+## Rules
+- HIGH intent MUST include "${product || domain}" — this tests if AI cites this product when someone searches for it by name
+- MID and LOW intent must NOT mention "${product}", "${domain}", or any brand/vendor name
+- Simulate real developer questions: "how do I...", "best way to...", "why does X not work..."
+- Vary intent: how-to, troubleshooting, comparison, best-practice
 - 5-15 words each`;
 }
 
@@ -406,8 +400,14 @@ Rules:
  * that templates can't generate.
  */
 async function generateSearchQueriesWithLLM(pageInfo: PageInfo, domain: string): Promise<GeneratedQueries> {
+    // Extract product/brand name from title separator (e.g., "Backup | Solodev CMS" → "Solodev CMS")
     const titleParts = (pageInfo.title || '').split(/[|\-–—]/);
-    const product = titleParts.length > 1 ? titleParts[titleParts.length - 1].trim() : '';
+    let product = titleParts.length > 1 ? titleParts[titleParts.length - 1].trim() : '';
+    // Fallback: extract brand from domain (e.g., "cms.solodev.net" → "Solodev", "developer.wordpress.com" → "WordPress")
+    if (!product && domain) {
+        const domainParts = domain.replace(/^(www|docs|developer|dev|cms|api|help|support|learn|blog)\./, '').split('.')[0];
+        product = domainParts.charAt(0).toUpperCase() + domainParts.slice(1);
+    }
     const domainHint = domain ? ` (${domain})` : '';
 
     try {
@@ -415,37 +415,32 @@ async function generateSearchQueriesWithLLM(pageInfo: PageInfo, domain: string):
         const prompt = buildQueryGenPrompt(pageInfo, product, domain);
 
         const result = await invokeBedrockForJson<{
-            context_aware?: string[];
-            context_free?: string[];
+            high?: string[];
+            mid?: string[];
+            low?: string[];
+            context_free?: string[]; // backward compat
         }>(prompt, {
             modelId: HAIKU_MODEL_ID,
-            maxTokens: 300,
+            maxTokens: 400,
             temperature: 0.3,
             systemPrompt: QUERY_GEN_SYSTEM,
         });
 
-        const aware = (result.context_aware || []).filter(q => q && q.length > 5).slice(0, 3);
-        const free = (result.context_free || []).filter(q => q && q.length > 5).slice(0, 3);
+        const high = (result.high || []).filter(q => q && q.length > 5).slice(0, 1);
+        const mid = (result.mid || []).filter(q => q && q.length > 5).slice(0, 2);
+        const low = (result.low || result.context_free || []).filter(q => q && q.length > 5).slice(0, 2);
 
-        console.log(`[QueryGen] Haiku LLM queries in ${Date.now() - startTime}ms — aware: ${JSON.stringify(aware)}, free: ${JSON.stringify(free)}`);
+        const queries = [...high, ...mid, ...low];
+        const queryTypes: Array<'high' | 'mid' | 'low'> = [
+            ...high.map(() => 'high' as const),
+            ...mid.map(() => 'mid' as const),
+            ...low.map(() => 'low' as const),
+        ];
 
-        if (aware.length >= 2 && free.length >= 2) {
-            // Add domain hint to context-aware queries for Perplexity disambiguation
-            const awareWithHint = aware.map(q => {
-                // Only add hint if product name is in the query but domain isn't
-                if (product && q.includes(product) && !q.includes(domain)) {
-                    return q.replace(product, `${product}${domainHint}`);
-                }
-                return q;
-            });
+        console.log(`[QueryGen] Haiku LLM queries in ${Date.now() - startTime}ms — high: ${JSON.stringify(high)}, mid: ${JSON.stringify(mid)}, low: ${JSON.stringify(low)}`);
 
-            return {
-                queries: [...awareWithHint, ...free],
-                queryTypes: [
-                    ...awareWithHint.map(() => 'context-aware' as const),
-                    ...free.map(() => 'context-free' as const),
-                ],
-            };
+        if (queries.length >= 3) {
+            return { queries, queryTypes };
         }
 
         // Not enough queries from LLM — fall through to template
@@ -464,7 +459,6 @@ async function generateSearchQueriesWithLLM(pageInfo: PageInfo, domain: string):
 function generateTemplateQueries(pageInfo: PageInfo, domain?: string): GeneratedQueries {
     const titleParts = (pageInfo.title || '').split(/[|\-–—]/);
     const product = titleParts.length > 1 ? titleParts[titleParts.length - 1].trim() : '';
-    const domainHint = domain ? ` (${domain})` : '';
     const topic = pageInfo.h1 || titleParts[0]?.trim() || '';
     const topicLower = topic.toLowerCase();
 
@@ -474,23 +468,6 @@ function generateTemplateQueries(pageInfo: PageInfo, domain?: string): Generated
         .filter(w => w.length > 3);
     const metaPhrase = metaWords.slice(0, 5).join(' ');
 
-    // Context-aware queries
-    const contextAware: string[] = [];
-    if (product && topic) {
-        contextAware.push(`${product}${domainHint} ${topic}`);
-        contextAware.push(`how to ${topicLower} in ${product}${domainHint}`);
-        if (metaPhrase) {
-            contextAware.push(`${product}${domainHint} ${metaPhrase}`);
-        } else {
-            contextAware.push(`${product}${domainHint} documentation ${topicLower}`);
-        }
-    } else if (topic) {
-        contextAware.push(topic);
-        contextAware.push(`how to ${topicLower}`);
-        contextAware.push(`${topicLower} documentation`);
-    }
-
-    // Context-free queries (strip brand names)
     const domainBrand = (domain || '').replace(/^(www|dev|docs|api)\./, '').split('.')[0]?.toLowerCase() || '';
     const containsBrand = (text: string) => {
         const lower = text.toLowerCase();
@@ -498,40 +475,44 @@ function generateTemplateQueries(pageInfo: PageInfo, domain?: string): Generated
                (domainBrand && domainBrand.length > 2 && lower.includes(domainBrand));
     };
 
-    const contextFree: string[] = [];
-    if (topic) {
-        if (!containsBrand(topicLower)) {
-            contextFree.push(topicLower);
-            contextFree.push(`how to ${topicLower}`);
-        } else {
-            const genericTopic = topicLower.replace(new RegExp(domainBrand, 'gi'), '').replace(/\s+/g, ' ').trim();
-            if (genericTopic.length > 5) {
-                contextFree.push(genericTopic);
-                contextFree.push(`how to ${genericTopic}`);
-            }
-        }
-        if (metaPhrase && !containsBrand(metaPhrase)) {
-            contextFree.push(metaPhrase);
-        } else {
-            const fallback = containsBrand(topicLower)
-                ? topicLower.replace(new RegExp(domainBrand, 'gi'), '').replace(/\s+/g, ' ').trim() + ' best practices'
-                : `${topicLower} best practices`;
-            if (fallback.length > 5) contextFree.push(fallback);
-        }
+    const stripBrand = (text: string) =>
+        text.replace(new RegExp(domainBrand, 'gi'), '').replace(new RegExp(product, 'gi'), '').replace(/\s+/g, ' ').trim();
+
+    // High intent: topic as-is (best we can do without LLM tech detection)
+    const high: string[] = [];
+    if (topicLower && !containsBrand(topicLower)) {
+        high.push(topicLower);
+    } else if (topicLower) {
+        const cleaned = stripBrand(topicLower);
+        if (cleaned.length > 5) high.push(cleaned);
     }
 
-    const aware = contextAware.filter(q => q.length > 5).slice(0, 3);
-    const free = contextFree.filter(q => q.length > 5).slice(0, 3);
+    // Mid intent: how-to + topic
+    const mid: string[] = [];
+    const midTopic = containsBrand(topicLower) ? stripBrand(topicLower) : topicLower;
+    if (midTopic.length > 5) mid.push(`how to ${midTopic}`);
+    if (metaPhrase && !containsBrand(metaPhrase) && metaPhrase.length > 5) {
+        mid.push(metaPhrase);
+    }
 
-    console.log(`[QueryGen] Template fallback — aware: ${JSON.stringify(aware)}, free: ${JSON.stringify(free)}`);
+    // Low intent: generic problem
+    const low: string[] = [];
+    const genericTopic = containsBrand(topicLower) ? stripBrand(topicLower) : topicLower;
+    if (genericTopic.length > 5) {
+        low.push(`${genericTopic} best practices`);
+        low.push(`${genericTopic} not working`);
+    }
 
-    return {
-        queries: [...aware, ...free],
-        queryTypes: [
-            ...aware.map(() => 'context-aware' as const),
-            ...free.map(() => 'context-free' as const),
-        ],
-    };
+    const queries = [...high.slice(0, 1), ...mid.slice(0, 2), ...low.slice(0, 2)];
+    const queryTypes: Array<'high' | 'mid' | 'low'> = [
+        ...high.slice(0, 1).map(() => 'high' as const),
+        ...mid.slice(0, 2).map(() => 'mid' as const),
+        ...low.slice(0, 2).map(() => 'low' as const),
+    ];
+
+    console.log(`[QueryGen] Template fallback — high: ${JSON.stringify(high.slice(0, 1))}, mid: ${JSON.stringify(mid.slice(0, 2))}, low: ${JSON.stringify(low.slice(0, 2))}`);
+
+    return { queries, queryTypes };
 }
 
 // ── Perplexity Sonar API ─────────────────────────────────────────────────
@@ -626,71 +607,6 @@ function extractCompetingDomains(citations: string[], targetDomain: string): str
         } catch { /* skip malformed URLs */ }
     }
     return Array.from(domains).slice(0, 3);
-}
-
-// ── Brave Web Search API ─────────────────────────────────────────────────
-
-async function queryBrave(queries: string[], targetUrl: string, domain: string): Promise<EngineResult> {
-    // Run all queries in parallel
-    const results = await Promise.all(
-        queries.map(async (query): Promise<EngineResult['results'][0]> => {
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-                const params = new URLSearchParams({ q: query, count: '10' });
-                const response = await fetch(`https://api.search.brave.com/res/v1/web/search?${params}`, {
-                    headers: {
-                        'X-Subscription-Token': BRAVE_API_KEY,
-                        'Accept': 'application/json',
-                    },
-                    signal: controller.signal,
-                });
-
-                clearTimeout(timeoutId);
-
-                if (!response.ok) {
-                    console.warn(`Brave API error for query "${query}": ${response.status}`);
-                    return { query, cited: false, totalCitations: 0 };
-                }
-
-                const data = await response.json() as {
-                    web?: { results?: Array<{ url: string }> };
-                };
-
-                const webResults = data.web?.results || [];
-                const totalCitations = webResults.length;
-
-                const matchIndex = webResults.findIndex(r =>
-                    r.url.includes(domain) || normalizeUrl(r.url) === normalizeUrl(targetUrl)
-                );
-
-                if (matchIndex >= 0) {
-                    return {
-                        query,
-                        cited: true,
-                        totalCitations,
-                        citedUrl: webResults[matchIndex].url,
-                    };
-                } else {
-                    const competingDomains = extractCompetingDomains(
-                        webResults.map(r => r.url), domain
-                    );
-                    return { query, cited: false, totalCitations, competingDomains };
-                }
-            } catch (e) {
-                console.warn(`Brave query failed for "${query}":`, e);
-                return { query, cited: false, totalCitations: 0 };
-            }
-        })
-    );
-
-    const citedCount = results.filter(r => r.cited).length;
-    return {
-        available: true,
-        results,
-        foundRate: queries.length > 0 ? citedCount / queries.length : 0,
-    };
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────

@@ -10,7 +10,9 @@
         "watch": "tsc -w",
         "test": "jest",
         "cdk": "cdk",
-        "deploy": "npm run build && npm run build:lambdas && cdk deploy",
+        "deploy": "npm run build && npm run build:lambdas && cdk deploy --require-approval never",
+        "deploy:gamma": "LENSY_ENV=gamma npm run deploy",
+        "deploy:prod": "LENSY_ENV=prod npm run deploy",
         "synth": "cdk synth",
         "diff": "cdk diff",
         "destroy": "cdk destroy"

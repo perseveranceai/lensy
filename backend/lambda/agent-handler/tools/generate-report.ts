@@ -25,27 +25,31 @@ import type { AIDiscoverabilityResult } from './check-ai-discoverability';
 const SUGGESTION_MODEL = 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
 
 // ── Score Weights ─────────────────────────────────────────────────────────
-// Total = 100 points. AI Discoverability gets the most weight because
-// "can AI search engines actually find you?" is the ultimate question.
+// AI Readiness = what doc owners control (70 raw points, rescaled to 0-100).
+// AI Citations (discoverability) is shown separately — it's an observation, not a readiness signal.
 
 const WEIGHTS = {
-    botAccess: 15,          // Out of 15
-    discoverability: 15,    // Out of 15
-    consumability: 15,      // Out of 15
-    structuredData: 15,     // Out of 15
-    aiDiscoverability: 40,  // Out of 40 — the "killer" metric
+    botAccess: 15,          // Out of 15 — are AI crawlers allowed?
+    discoverability: 35,    // Out of 35 — llms.txt, sitemap, canonical, meta robots
+    consumability: 35,      // Out of 35 — headings, word count, markdown, code, links
+    structuredData: 15,     // Out of 15 — JSON-LD, schema, OpenGraph, breadcrumbs
+    // Total readiness = 100 points
 };
+
+// AI Citations weight (separate from readiness score)
+const AI_CITATION_WEIGHT = 30;
 
 // ── Report Types ──────────────────────────────────────────────────────────
 
 interface AIReadinessReport {
     overallScore: number;
+    letterGrade: string;  // A+, A, B+, B, C, D, F
     scoreBreakdown: {
         botAccess: number;
         discoverability: number;
         consumability: number;
         structuredData: number;
-        aiDiscoverability: number;
+        aiDiscoverability: number;  // kept for backward compat, separate from readiness
     };
     categories: AIReadinessResult['categories'];
     aiDiscoverability: AIDiscoverabilityResult | null;
@@ -97,15 +101,16 @@ export const generateReportTool = tool(
 
             // ── 2. Calculate score breakdown ─────────────────────────
             const scoreBreakdown = calculateScores(readinessResults, discoverabilityResults);
+            // AI Readiness = only what doc owners control (excludes citations)
             const overallScore = Math.round(
                 scoreBreakdown.botAccess +
                 scoreBreakdown.discoverability +
                 scoreBreakdown.consumability +
-                scoreBreakdown.structuredData +
-                scoreBreakdown.aiDiscoverability
+                scoreBreakdown.structuredData
             );
+            const letterGrade = getLetterGrade(overallScore);
 
-            console.log(`[generate_report] Score breakdown:`, scoreBreakdown, `Overall: ${overallScore}`);
+            console.log(`[generate_report] Score breakdown:`, scoreBreakdown, `Overall: ${overallScore} (${letterGrade}), Citations: ${scoreBreakdown.aiDiscoverability}`);
 
             // ── 3. Merge recommendations ─────────────────────────────
             const recommendations = [
@@ -136,6 +141,7 @@ export const generateReportTool = tool(
 
             const finalReport: AIReadinessReport = {
                 overallScore,
+                letterGrade,
                 scoreBreakdown,
                 categories: readinessResults?.categories || {
                     botAccess: { robotsTxtFound: false, bots: [], allowedCount: 0, blockedCount: 0 },
@@ -149,11 +155,13 @@ export const generateReportTool = tool(
                     },
                     consumability: {
                         markdownAvailable: { found: false, urls: [], discoverable: false },
-                        textToHtmlRatio: { ratio: 0, textBytes: 0, htmlBytes: 0, status: 'very-low' },
+                        textToHtmlRatio: { ratio: 0, textBytes: 0, htmlBytes: 0, status: 'very-low' as const },
                         jsRendered: false,
-                        headingHierarchy: { h1Count: 0, hasProperNesting: false, headings: [] },
+                        headingHierarchy: { h1Count: 0, h2Count: 0, h3Count: 0, hasProperNesting: false, headings: [] },
                         codeBlocks: { count: 0, withLanguageHints: 0, hasCode: false },
-                        internalLinkDensity: { count: 0, perKWords: 0, status: 'sparse' },
+                        internalLinkDensity: { count: 0, perKWords: 0, status: 'sparse' as const },
+                        wordCount: 0,
+                        pageType: 'general' as const,
                     },
                     structuredData: {
                         jsonLd: { found: false, types: [], isValidSchemaType: false },
@@ -188,10 +196,11 @@ export const generateReportTool = tool(
             // ── 7. Publish final score to frontend ───────────────────
             await progress.categoryResult('overallScore', {
                 overallScore,
+                letterGrade,
                 scoreBreakdown,
                 recommendationCount: recommendations.length,
                 contextualSuggestionCount: contextualSuggestions.length,
-            }, `AI Readiness Score: ${overallScore}/100`);
+            }, `AI Readiness: ${letterGrade} (${overallScore}/100)`);
 
             await progress.success(
                 `Analysis complete! AI Readiness: ${overallScore}/100 (${(totalTime / 1000).toFixed(1)}s)`,
@@ -267,6 +276,16 @@ function calculateScores(
     };
 }
 
+function getLetterGrade(score: number): string {
+    if (score >= 95) return 'A+';
+    if (score >= 90) return 'A';
+    if (score >= 85) return 'B+';
+    if (score >= 75) return 'B';
+    if (score >= 60) return 'C';
+    if (score >= 40) return 'D';
+    return 'F';
+}
+
 function calculateBotAccessScore(r: AIReadinessResult | null): number {
     if (!r) return 0;
     const { allowedCount, blockedCount } = r.categories.botAccess;
@@ -283,18 +302,14 @@ function calculateDiscoverabilityScore(r: AIReadinessResult | null): number {
     let points = 0;
     const maxPoints = WEIGHTS.discoverability;
 
-    // llms.txt: 4 points (most important for AI)
-    if (d.llmsTxt.found) points += 4;
-    // llms-full.txt: 2 points
-    if (d.llmsFullTxt.found) points += 2;
-    // sitemap.xml: 3 points
-    if (d.sitemapXml.found) points += 3;
-    // OpenGraph: 2 points
-    if (d.openGraph.found) points += 2;
-    // Canonical: 2 points
-    if (d.canonical.found) points += 2;
-    // Meta robots not blocking: 2 points
-    if (!d.metaRobots.blocksIndexing) points += 2;
+    // llms.txt: 17 points (helps AI coding tools consume docs at inference time)
+    if (d.llmsTxt.found) points += 17;
+    // sitemap.xml: 10 points
+    if (d.sitemapXml.found) points += 10;
+    // Canonical: 8 points
+    if (d.canonical.found) points += 8;
+    // Meta robots: only penalize if actively blocking (not scoring the default)
+    if (d.metaRobots.blocksIndexing) points -= 7;
 
     return Math.min(Math.round(points), maxPoints);
 }
@@ -305,26 +320,24 @@ function calculateConsumabilityScore(r: AIReadinessResult | null): number {
     let points = 0;
     const maxPoints = WEIGHTS.consumability;
 
-    // Text-to-HTML ratio: 4 points
-    if (c.textToHtmlRatio.status === 'good') points += 4;
-    else if (c.textToHtmlRatio.status === 'low') points += 2;
+    // Heading hierarchy: 13 points (primary signal per DeepRead/GraphSkill research — agents use headings 87-98% of the time)
+    if (c.headingHierarchy.h1Count === 1) points += 7;
+    else if (c.headingHierarchy.h1Count > 0) points += 3;
+    if (c.headingHierarchy.hasProperNesting) points += 6;
 
-    // Not JS-rendered: 4 points
-    if (!c.jsRendered) points += 4;
+    // Not JS-rendered: 8 points
+    if (!c.jsRendered) points += 8;
 
-    // Heading hierarchy: 3 points
-    if (c.headingHierarchy.h1Count === 1) points += 2;
-    if (c.headingHierarchy.hasProperNesting) points += 1;
+    // Markdown available & discoverable: 6 points
+    if (c.markdownAvailable.found && c.markdownAvailable.discoverable) points += 6;
+    else if (c.markdownAvailable.found) points += 3;
 
-    // Markdown available & discoverable: 2 points
-    if (c.markdownAvailable.found && c.markdownAvailable.discoverable) points += 2;
-    else if (c.markdownAvailable.found) points += 1;
+    // Word count: 5 points (research: 500-2000 words = 2-3x more AI citations)
+    if (c.wordCount >= 500 && c.wordCount <= 2000) points += 5;
+    else if (c.wordCount >= 300) points += 3;
 
-    // Code blocks with language hints (conditional): 1 point
-    if (!c.codeBlocks.hasCode || c.codeBlocks.withLanguageHints > 0) points += 1;
-
-    // Internal link density: 1 point
-    if (c.internalLinkDensity.status === 'good') points += 1;
+    // Internal link density: 3 points
+    if (c.internalLinkDensity.status === 'good') points += 3;
 
     return Math.min(Math.round(points), maxPoints);
 }
@@ -355,7 +368,7 @@ function calculateStructuredDataScore(r: AIReadinessResult | null): number {
 
 function calculateAIDiscoverabilityScore(d: AIDiscoverabilityResult | null): number {
     if (!d) return 0;
-    const maxPoints = WEIGHTS.aiDiscoverability;
+    const maxPoints = AI_CITATION_WEIGHT;  // Separate from readiness score
 
     const availableEngines = Object.values(d.engines).filter(e => e?.available);
     if (availableEngines.length === 0) return 0;
@@ -363,8 +376,8 @@ function calculateAIDiscoverabilityScore(d: AIDiscoverabilityResult | null): num
     // Average found rate across engines
     const avgFoundRate = availableEngines.reduce((sum, e) => sum + (e?.foundRate || 0), 0) / availableEngines.length;
 
-    // Scale: 60%+ found = full score, linear below that
-    return Math.round(Math.min(avgFoundRate / 0.6, 1) * maxPoints);
+    // Proportional: score = foundRate * maxPoints (100% cited = full score)
+    return Math.round(avgFoundRate * maxPoints);
 }
 
 // ── Contextual Suggestions (LLM-generated) ────────────────────────────────

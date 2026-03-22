@@ -107,13 +107,25 @@ async function incrementUsage(event) {
     }
 }
 const handler = async (event) => {
-    console.log("Lensy Production API - Deploy v1.1.0 Ready");
-    console.log('API Handler received request:', JSON.stringify(event, null, 2));
+    console.log("Lensy Production API - Deploy v1.2.0 Ready");
     // Handle both API Gateway V1 and V2 event formats
     const httpMethod = event.httpMethod || event.requestContext?.http?.method;
     const path = event.path || event.rawPath || event.requestContext?.http?.path;
     const body = event.body;
-    console.log('Extracted method:', httpMethod, 'path:', path);
+    const clientIp = getClientIp(event);
+    const userAgent = event.headers?.['user-agent'] || 'unknown';
+    const requestId = event.requestContext?.requestId || 'unknown';
+    // Structured request log
+    console.log(JSON.stringify({
+        level: 'INFO',
+        event: 'REQUEST',
+        requestId,
+        method: httpMethod,
+        path,
+        clientIp,
+        userAgent,
+        origin: event.headers?.origin || event.headers?.referer || 'unknown',
+    }));
     // CORS headers
     const corsHeaders = {
         'Access-Control-Allow-Origin': '*',
@@ -134,7 +146,19 @@ const handler = async (event) => {
             // Rate limit: free tier allows 3 audits/day per IP
             const rateLimit = await checkRateLimit(event);
             if (!rateLimit.allowed) {
-                console.log(`Rate limit exceeded: ${rateLimit.used}/${rateLimit.limit} for today`);
+                const parsedBody = JSON.parse(body || '{}');
+                console.log(JSON.stringify({
+                    level: 'WARN',
+                    event: 'RATE_LIMIT_EXCEEDED',
+                    requestId,
+                    clientIp,
+                    userAgent,
+                    url: parsedBody.url || 'unknown',
+                    sessionId: parsedBody.sessionId || 'unknown',
+                    used: rateLimit.used,
+                    limit: rateLimit.limit,
+                    date: getTodayDate(),
+                }));
                 return {
                     statusCode: 429,
                     headers: corsHeaders,
@@ -147,10 +171,40 @@ const handler = async (event) => {
                     })
                 };
             }
-            const result = await handleAnalyzeRequest(body, corsHeaders);
+            const parsedBody = JSON.parse(body || '{}');
+            const result = await handleAnalyzeRequest(body, corsHeaders, event);
             // Only count successful analysis starts (not validation errors)
-            if (result.statusCode === 200) {
+            if (result.statusCode >= 200 && result.statusCode < 300) {
                 await incrementUsage(event);
+                console.log(JSON.stringify({
+                    level: 'INFO',
+                    event: 'SCAN_STARTED',
+                    requestId,
+                    clientIp,
+                    url: parsedBody.url || 'unknown',
+                    sessionId: parsedBody.sessionId || 'unknown',
+                    useAgent: parsedBody.useAgent ?? true,
+                    statusCode: result.statusCode,
+                    usageAfter: (rateLimit.used || 0) + 1,
+                    limit: rateLimit.limit,
+                }));
+            }
+            else {
+                console.log(JSON.stringify({
+                    level: 'WARN',
+                    event: 'SCAN_REJECTED',
+                    requestId,
+                    clientIp,
+                    url: parsedBody.url || 'unknown',
+                    sessionId: parsedBody.sessionId || 'unknown',
+                    statusCode: result.statusCode,
+                    reason: (() => { try {
+                        return JSON.parse(result.body).error;
+                    }
+                    catch {
+                        return 'unknown';
+                    } })(),
+                }));
             }
             return result;
         }
@@ -185,6 +239,35 @@ const handler = async (event) => {
         if (httpMethod === 'POST' && path === '/apply-fixes') {
             return await handleApplyFixesRequest(body, corsHeaders);
         }
+        // Run AI Citations check on-demand (no rate limit — readiness already counted)
+        if (httpMethod === 'POST' && path === '/run-citations') {
+            const parsedBody = JSON.parse(body || '{}');
+            const { url: citationUrl, sessionId: citationSessionId } = parsedBody;
+            if (!citationUrl || !citationSessionId) {
+                return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'url and sessionId required' }) };
+            }
+            const agentFunctionName = process.env.AGENT_FUNCTION_NAME;
+            if (!agentFunctionName) {
+                return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: 'Agent function not configured' }) };
+            }
+            // Invoke agent Lambda in async mode with citationsOnly flag
+            const invokeCommand = new client_lambda_1.InvokeCommand({
+                FunctionName: agentFunctionName,
+                InvocationType: 'Event',
+                Payload: Buffer.from(JSON.stringify({
+                    url: citationUrl,
+                    sessionId: citationSessionId,
+                    citationsOnly: true,
+                    analysisStartTime: Date.now(),
+                }))
+            });
+            await lambdaClient.send(invokeCommand);
+            return {
+                statusCode: 200,
+                headers: corsHeaders,
+                body: JSON.stringify({ message: 'Citation check started', sessionId: citationSessionId })
+            };
+        }
         if (httpMethod === 'GET' && path?.startsWith('/status/')) {
             return await handleStatusRequest(path, corsHeaders);
         }
@@ -193,6 +276,19 @@ const handler = async (event) => {
         }
         if (httpMethod === 'GET' && path?.startsWith('/get-fixes/')) {
             return await handleGetFixesRequest(path, corsHeaders);
+        }
+        if (httpMethod === 'GET' && path === '/usage') {
+            const rateLimit = await checkRateLimit(event);
+            return {
+                statusCode: 200,
+                headers: corsHeaders,
+                body: JSON.stringify({
+                    used: rateLimit.used,
+                    limit: rateLimit.limit,
+                    remaining: Math.max(0, rateLimit.limit - rateLimit.used),
+                    resetsAt: `${getTodayDate()}T23:59:59Z`,
+                })
+            };
         }
         if (httpMethod === 'POST' && path === '/console/feedback') {
             return await handleFeedbackRequest(body, corsHeaders);
@@ -216,7 +312,25 @@ const handler = async (event) => {
         };
     }
     catch (error) {
-        console.error('API Handler error:', error);
+        const parsedBody = (() => { try {
+            return JSON.parse(body || '{}');
+        }
+        catch {
+            return {};
+        } })();
+        console.error(JSON.stringify({
+            level: 'ERROR',
+            event: 'UNHANDLED_ERROR',
+            requestId,
+            clientIp,
+            userAgent,
+            method: httpMethod,
+            path,
+            url: parsedBody.url || 'unknown',
+            sessionId: parsedBody.sessionId || 'unknown',
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+        }));
         return {
             statusCode: 500,
             headers: corsHeaders,
@@ -228,7 +342,7 @@ const handler = async (event) => {
     }
 };
 exports.handler = handler;
-async function handleAnalyzeRequest(body, corsHeaders) {
+async function handleAnalyzeRequest(body, corsHeaders, event) {
     if (!body) {
         return {
             statusCode: 400,
@@ -276,9 +390,12 @@ async function handleAnalyzeRequest(body, corsHeaders) {
     const useAgent = analysisRequest.useAgent !== undefined
         ? analysisRequest.useAgent
         : process.env.USE_AGENT === 'true';
+    const ip = getClientIp(event);
+    const ipHash = hashIp(ip);
     const analysisPayload = {
         ...analysisRequest,
-        analysisStartTime: Date.now()
+        analysisStartTime: Date.now(),
+        ipHash, // Pass IP hash so agent can refund usage on content gate rejection
     };
     if (useAgent) {
         // Route to LangGraph Agent Lambda
@@ -619,14 +736,14 @@ async function handleStatusRequest(path, corsHeaders) {
                 }));
                 const statusContent = await statusResponse.Body.transformToString();
                 const sessionStatus = JSON.parse(statusContent);
-                if (sessionStatus.status === 'failed') {
+                if (sessionStatus.status === 'failed' || sessionStatus.status === 'rejected') {
                     return {
                         statusCode: 200,
                         headers: corsHeaders,
                         body: JSON.stringify({
                             sessionId,
                             status: 'failed',
-                            error: sessionStatus.error || sessionStatus.message || 'Analysis failed'
+                            error: sessionStatus.error || sessionStatus.reason || sessionStatus.message || 'Analysis failed'
                         })
                     };
                 }
@@ -1115,19 +1232,98 @@ async function handleFeedbackRequest(body, corsHeaders) {
     }
     try {
         const data = JSON.parse(body);
-        const { message, email, auditUrl, pageUrl } = data;
+        const { message, email, auditUrl, pageUrl, scanMetrics } = data;
         if (!message || typeof message !== 'string' || message.trim().length === 0) {
             return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Feedback message is required' }) };
         }
-        // Log feedback to CloudWatch (searchable, no extra infra cost)
+        const feedbackId = crypto.randomUUID();
+        const submittedAt = new Date().toISOString();
+        // Log to CloudWatch (always — searchable, no extra infra cost)
         console.log(JSON.stringify({
             event: 'USER_FEEDBACK',
-            timestamp: new Date().toISOString(),
+            feedbackId,
+            timestamp: submittedAt,
             message: message.trim().substring(0, 2000),
             email: email ? String(email).trim().substring(0, 200) : undefined,
             auditUrl: auditUrl ? String(auditUrl).substring(0, 500) : undefined,
             pageUrl: pageUrl ? String(pageUrl).substring(0, 500) : undefined,
+            scanMetrics: scanMetrics || undefined,
         }));
+        // Store in DynamoDB
+        const feedbackTableName = process.env.FEEDBACK_TABLE;
+        if (feedbackTableName) {
+            try {
+                const item = {
+                    feedbackId: { S: feedbackId },
+                    submittedAt: { S: submittedAt },
+                    message: { S: message.trim().substring(0, 2000) },
+                };
+                if (email)
+                    item.email = { S: String(email).trim().substring(0, 200) };
+                if (auditUrl)
+                    item.auditUrl = { S: String(auditUrl).substring(0, 500) };
+                if (pageUrl)
+                    item.pageUrl = { S: String(pageUrl).substring(0, 500) };
+                if (scanMetrics)
+                    item.scanMetrics = { S: JSON.stringify(scanMetrics) };
+                const { PutItemCommand } = require('@aws-sdk/client-dynamodb');
+                await dynamoClient.send(new PutItemCommand({
+                    TableName: feedbackTableName,
+                    Item: item,
+                }));
+                console.log(`Feedback stored in DynamoDB: ${feedbackId}`);
+            }
+            catch (dbError) {
+                console.error('Failed to store feedback in DynamoDB:', dbError);
+                // Continue — don't fail the request if DynamoDB write fails
+            }
+        }
+        // Send email via SES
+        const feedbackEmail = process.env.FEEDBACK_EMAIL;
+        if (feedbackEmail) {
+            try {
+                const { SESClient, SendEmailCommand } = require('@aws-sdk/client-ses');
+                const sesClient = new SESClient({ region: process.env.AWS_REGION || 'us-east-1' });
+                const metricsLines = scanMetrics
+                    ? [
+                        `\n📊 Scan Metrics:`,
+                        scanMetrics.overallScore != null ? `  • Overall Score: ${scanMetrics.overallScore}/100` : null,
+                        scanMetrics.aiReadiness != null ? `  • AI Readiness: ${scanMetrics.aiReadiness}/100` : null,
+                        scanMetrics.botsAllowed ? `  • Bots Allowed: ${scanMetrics.botsAllowed}` : null,
+                        scanMetrics.contentHealth ? `  • Content Health: ${scanMetrics.contentHealth}` : null,
+                        scanMetrics.queriesVisible ? `  • Queries Visible: ${scanMetrics.queriesVisible}` : null,
+                    ].filter(Boolean).join('\n')
+                    : '';
+                const emailBody = [
+                    `New feedback from Lensy user`,
+                    ``,
+                    `💬 Message:`,
+                    message.trim(),
+                    ``,
+                    email ? `📧 Reply to: ${email}` : '📧 No email provided',
+                    auditUrl ? `🔗 Audited URL: ${auditUrl}` : '',
+                    pageUrl ? `📄 Page: ${pageUrl}` : '',
+                    metricsLines,
+                    ``,
+                    `---`,
+                    `Feedback ID: ${feedbackId}`,
+                    `Submitted: ${submittedAt}`,
+                ].filter(line => line !== undefined).join('\n');
+                await sesClient.send(new SendEmailCommand({
+                    Source: feedbackEmail,
+                    Destination: { ToAddresses: [feedbackEmail] },
+                    Message: {
+                        Subject: { Data: `[Lensy Feedback] [${(process.env.LENSY_ENV || 'unknown').toUpperCase()}] ${message.trim().substring(0, 60)}${message.trim().length > 60 ? '...' : ''}` },
+                        Body: { Text: { Data: emailBody } },
+                    },
+                }));
+                console.log(`Feedback email sent to ${feedbackEmail}`);
+            }
+            catch (sesError) {
+                console.error('Failed to send feedback email via SES:', sesError);
+                // Continue — don't fail the request if SES fails
+            }
+        }
         return {
             statusCode: 200,
             headers: corsHeaders,

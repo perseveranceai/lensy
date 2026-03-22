@@ -7,7 +7,7 @@ const s3_helpers_1 = require("./shared/s3-helpers");
 const handler = async (event) => {
     console.log('[Handler] Received event:', JSON.stringify(event, null, 2));
     console.log('[Handler] Lensy Pipeline v2.0.0 — Direct Orchestration');
-    const { url, sessionId, selectedModel = 'claude', analysisStartTime = Date.now(), contextAnalysis, cacheControl, sitemapUrl, llmsTxtUrl, } = event;
+    const { url, sessionId, selectedModel = 'claude', analysisStartTime = Date.now(), contextAnalysis, cacheControl, sitemapUrl, llmsTxtUrl, ipHash, skipCitations, citationsOnly, } = event;
     // Validate required fields
     if (!url || !sessionId) {
         console.error('[Handler] Missing required fields: url and sessionId');
@@ -39,6 +39,15 @@ const handler = async (event) => {
         });
     }, 12 * 60 * 1000);
     try {
+        // ── Citations-only mode: just run Perplexity discoverability check ──
+        if (citationsOnly) {
+            await progress.info('Running AI citation check...');
+            const { checkAIDiscoverabilityTool } = await import('./tools/check-ai-discoverability.js');
+            const citationResult = await checkAIDiscoverabilityTool.invoke({ url, sessionId });
+            clearTimeout(watchdogTimeout);
+            console.log(`[Handler] Citations-only complete for session: ${sessionId}`);
+            return;
+        }
         await progress.info('Starting AI readiness analysis...', {
             toolName: 'pipeline',
         });
@@ -51,6 +60,8 @@ const handler = async (event) => {
             cacheControl,
             sitemapUrl,
             llmsTxtUrl,
+            ipHash,
+            skipCitations,
         };
         // Run the direct analysis pipeline
         const result = await (0, agent_1.runAgent)(agentInput);
@@ -73,16 +84,25 @@ const handler = async (event) => {
             });
         }
         else {
-            console.log('[Handler] Pipeline completed but no report.json found — marking as failed');
-            await (0, s3_helpers_1.writeSessionArtifact)(sessionId, 'status.json', {
-                status: 'failed',
-                sessionId,
-                url,
-                startTime: analysisStartTime,
-                endTime: Date.now(),
-                engine: 'pipeline',
-                error: 'Analysis was stopped before report generation. Check progress messages for details.'
-            });
+            // Check if status was already set to 'rejected' by the content gate
+            const existingStatus = await (0, s3_helpers_1.readSessionArtifact)(sessionId, 'status.json');
+            // readSessionArtifact already returns a parsed object — no need for JSON.parse
+            const alreadyRejected = existingStatus && existingStatus.status === 'rejected';
+            if (!alreadyRejected) {
+                console.log('[Handler] Pipeline completed but no report.json found — marking as failed');
+                await (0, s3_helpers_1.writeSessionArtifact)(sessionId, 'status.json', {
+                    status: 'failed',
+                    sessionId,
+                    url,
+                    startTime: analysisStartTime,
+                    endTime: Date.now(),
+                    engine: 'pipeline',
+                    error: 'Analysis was stopped before report generation. Check progress messages for details.'
+                });
+            }
+            else {
+                console.log('[Handler] Pipeline completed with rejection — preserving existing rejected status');
+            }
         }
     }
     catch (error) {

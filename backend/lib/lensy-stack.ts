@@ -98,6 +98,29 @@ export class LensyStack extends cdk.Stack {
             removalPolicy: cdk.RemovalPolicy.DESTROY,
         });
 
+        // 2e. Feedback Table — stores user feedback from the Feedback widget
+        // RETAIN: product insights should survive stack deletion
+        const feedbackTable = new dynamodb.Table(this, 'FeedbackTable', {
+            partitionKey: { name: 'feedbackId', type: dynamodb.AttributeType.STRING },
+            sortKey: { name: 'submittedAt', type: dynamodb.AttributeType.STRING },
+            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+            removalPolicy: cdk.RemovalPolicy.RETAIN,
+        });
+
+        // 2f. Audit Log Table — every scan request with metadata for analytics
+        // RETAIN: business-critical analytics data
+        const auditLogTable = new dynamodb.Table(this, 'AuditLogTable', {
+            partitionKey: { name: 'sessionId', type: dynamodb.AttributeType.STRING },
+            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+            removalPolicy: cdk.RemovalPolicy.RETAIN,
+        });
+
+        auditLogTable.addGlobalSecondaryIndex({
+            indexName: 'AuditUrlIndex',
+            partitionKey: { name: 'auditUrl', type: dynamodb.AttributeType.STRING },
+            sortKey: { name: 'submittedAt', type: dynamodb.AttributeType.STRING },
+        });
+
         // 2d. Page Knowledge Base — shared context store for Doc Audit + GitHub Issues modes
         // Each page URL is its own item, enabling concurrent writes from both modes without conflicts
         const pageKnowledgeBaseTable = new dynamodb.Table(this, 'PageKnowledgeBaseTable', {
@@ -240,7 +263,7 @@ export class LensyStack extends cdk.Stack {
                 LENSY_ENV: lensyEnv,
                 LANGSMITH_API_KEY: process.env.LANGSMITH_API_KEY || '',
                 PERPLEXITY_API_KEY: process.env.PERPLEXITY_API_KEY || '',
-                BRAVE_API_KEY: process.env.BRAVE_API_KEY || '',
+                DEPLOY_VERSION: '2026-03-21-v10-ui-restructure',
             }
         });
         analysisBucket.grantReadWrite(agentHandler);
@@ -248,6 +271,10 @@ export class LensyStack extends cdk.Stack {
         processedContentTable.grantReadWriteData(agentHandler);
         pageKnowledgeBaseTable.grantReadWriteData(agentHandler);
         agentHandler.addEnvironment('PAGE_KB_TABLE', pageKnowledgeBaseTable.tableName);
+        auditLogTable.grantReadWriteData(agentHandler);
+        agentHandler.addEnvironment('AUDIT_LOG_TABLE', auditLogTable.tableName);
+        usageTrackingTable.grantReadWriteData(agentHandler);
+        agentHandler.addEnvironment('USAGE_TRACKING_TABLE', usageTrackingTable.tableName);
         agentHandler.addToRolePolicy(new iam.PolicyStatement({
             actions: ['execute-api:ManageConnections'],
             resources: [`arn:aws:execute-api:${this.region}:${this.account}:${webSocketApi.apiId}/${wsStageName}/*`],
@@ -297,11 +324,19 @@ export class LensyStack extends cdk.Stack {
             USE_AGENT: useAgent,
             AGENT_FUNCTION_NAME: agentHandler.functionName,
             USAGE_TRACKING_TABLE: usageTrackingTable.tableName,
-            FREE_TIER_DAILY_LIMIT: '3',
+            FREE_TIER_DAILY_LIMIT: lensyEnv === 'prod' ? '3' : '100',
+            FEEDBACK_TABLE: feedbackTable.tableName,
+            FEEDBACK_EMAIL: 'hello@perseveranceai.com',
+            API_DEPLOY_VERSION: '2026-03-22-v3-citations-route',
         });
 
         stateMachine.grantStartExecution(apiHandler);
         usageTrackingTable.grantReadWriteData(apiHandler);
+        feedbackTable.grantReadWriteData(apiHandler);
+        apiHandler.addToRolePolicy(new iam.PolicyStatement({
+            actions: ['ses:SendEmail'],
+            resources: ['*'],
+        }));
         agentHandler.grantInvoke(apiHandler);
         issueDiscoverer.grantInvoke(apiHandler);
         issueValidator.grantInvoke(apiHandler);
@@ -328,6 +363,7 @@ export class LensyStack extends cdk.Stack {
         httpApi.addRoutes({ path: '/validate-issues', methods: [apigwv2.HttpMethod.POST], integration: apiIntegration });
         httpApi.addRoutes({ path: '/generate-fixes', methods: [apigwv2.HttpMethod.POST], integration: apiIntegration });
         httpApi.addRoutes({ path: '/apply-fixes', methods: [apigwv2.HttpMethod.POST], integration: apiIntegration });
+        httpApi.addRoutes({ path: '/run-citations', methods: [apigwv2.HttpMethod.POST], integration: apiIntegration });
         httpApi.addRoutes({ path: '/sessions/{sessionId}/fixes', methods: [apigwv2.HttpMethod.GET], integration: apiIntegration });
         httpApi.addRoutes({ path: '/get-fixes/{sessionId}', methods: [apigwv2.HttpMethod.GET], integration: apiIntegration });
         httpApi.addRoutes({ path: '/github-issues', methods: [apigwv2.HttpMethod.POST], integration: apiIntegration });
@@ -337,6 +373,7 @@ export class LensyStack extends cdk.Stack {
         httpApi.addRoutes({ path: '/github-issues/results/{sessionId}', methods: [apigwv2.HttpMethod.GET], integration: apiIntegration });
         httpApi.addRoutes({ path: '/github-issues/preview-docs', methods: [apigwv2.HttpMethod.GET], integration: apiIntegration });
         httpApi.addRoutes({ path: '/console/feedback', methods: [apigwv2.HttpMethod.POST], integration: apiIntegration });
+        httpApi.addRoutes({ path: '/usage', methods: [apigwv2.HttpMethod.GET], integration: apiIntegration });
 
         // 6b. Console Login Logger — records login events for audit trail
         const consoleLoginLogger = new lambda.Function(this, 'ConsoleLoginLoggerFunction', {

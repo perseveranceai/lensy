@@ -27,6 +27,9 @@ interface AgentHandlerEvent {
     };
     sitemapUrl?: string;
     llmsTxtUrl?: string;
+    ipHash?: string; // For refunding usage on content gate rejection
+    skipCitations?: boolean;
+    citationsOnly?: boolean; // Only run Perplexity citation check (on-demand from frontend)
 }
 
 export const handler: Handler<AgentHandlerEvent, void> = async (event) => {
@@ -42,6 +45,9 @@ export const handler: Handler<AgentHandlerEvent, void> = async (event) => {
         cacheControl,
         sitemapUrl,
         llmsTxtUrl,
+        ipHash,
+        skipCitations,
+        citationsOnly,
     } = event;
 
     // Validate required fields
@@ -79,6 +85,16 @@ export const handler: Handler<AgentHandlerEvent, void> = async (event) => {
     }, 12 * 60 * 1000);
 
     try {
+        // ── Citations-only mode: just run Perplexity discoverability check ──
+        if (citationsOnly) {
+            await progress.info('Running AI citation check...');
+            const { checkAIDiscoverabilityTool } = await import('./tools/check-ai-discoverability.js');
+            const citationResult = await checkAIDiscoverabilityTool.invoke({ url, sessionId });
+            clearTimeout(watchdogTimeout);
+            console.log(`[Handler] Citations-only complete for session: ${sessionId}`);
+            return;
+        }
+
         await progress.info('Starting AI readiness analysis...', {
             toolName: 'pipeline',
         });
@@ -92,6 +108,8 @@ export const handler: Handler<AgentHandlerEvent, void> = async (event) => {
             cacheControl,
             sitemapUrl,
             llmsTxtUrl,
+            ipHash,
+            skipCitations,
         };
 
         // Run the direct analysis pipeline
@@ -118,16 +136,25 @@ export const handler: Handler<AgentHandlerEvent, void> = async (event) => {
                 message: 'Analysis completed successfully'
             });
         } else {
-            console.log('[Handler] Pipeline completed but no report.json found — marking as failed');
-            await writeSessionArtifact(sessionId, 'status.json', {
-                status: 'failed',
-                sessionId,
-                url,
-                startTime: analysisStartTime,
-                endTime: Date.now(),
-                engine: 'pipeline',
-                error: 'Analysis was stopped before report generation. Check progress messages for details.'
-            });
+            // Check if status was already set to 'rejected' by the content gate
+            const existingStatus = await readSessionArtifact(sessionId, 'status.json');
+            // readSessionArtifact already returns a parsed object — no need for JSON.parse
+            const alreadyRejected = existingStatus && (existingStatus as any).status === 'rejected';
+
+            if (!alreadyRejected) {
+                console.log('[Handler] Pipeline completed but no report.json found — marking as failed');
+                await writeSessionArtifact(sessionId, 'status.json', {
+                    status: 'failed',
+                    sessionId,
+                    url,
+                    startTime: analysisStartTime,
+                    endTime: Date.now(),
+                    engine: 'pipeline',
+                    error: 'Analysis was stopped before report generation. Check progress messages for details.'
+                });
+            } else {
+                console.log('[Handler] Pipeline completed with rejection — preserving existing rejected status');
+            }
         }
 
     } catch (error) {

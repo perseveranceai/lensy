@@ -4,6 +4,14 @@ import { writeSessionArtifact } from '../shared/s3-helpers';
 import { URL } from 'url';
 import { createProgressHelper } from './publish-progress';
 
+// ── Browser User-Agent for page fetching (hybrid Chrome UA — avoids JS shell responses from CDNs) ──
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 (+https://perseveranceai.com/bot)';
+const FETCH_HEADERS = {
+    'User-Agent': BROWSER_UA,
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+};
+
 // ── AI Bot Registry ─────────────────────────────────────────────────────
 const AI_BOTS = [
     { name: 'GPTBot (OpenAI)',        userAgent: 'GPTBot' },
@@ -61,8 +69,8 @@ export interface AIReadinessResult {
             blockedCount: number;
         };
         discoverability: {
-            llmsTxt: { found: boolean; url: string; fullContent?: string };
-            llmsFullTxt: { found: boolean; url: string };
+            llmsTxt: { found: boolean; url: string; fullContent?: string; checkedUrls?: string[] };
+            llmsFullTxt: { found: boolean; url: string; checkedUrls?: string[] };
             sitemapXml: { found: boolean; url?: string; referencedInRobotsTxt: boolean };
             openGraph: { found: boolean; tags: Record<string, string> };
             canonical: { found: boolean; url?: string };
@@ -80,6 +88,7 @@ export interface AIReadinessResult {
             headingHierarchy: { h1Count: number; h2Count: number; h3Count: number; hasProperNesting: boolean; headings: string[] };
             wordCount: number;
             codeBlocks: { count: number; withLanguageHints: number; hasCode: boolean };
+            pageType: 'api-reference' | 'guide' | 'general';
             internalLinkDensity: { count: number; perKWords: number; status: 'good' | 'sparse' | 'excessive' };
         };
         structuredData: {
@@ -105,7 +114,7 @@ export const checkAIReadinessTool = tool(
             const progress = createProgressHelper(input.sessionId);
             await progress.info('Analyzing AI readiness across 4 categories...');
 
-            const results = await checkAIReadiness(domain, input.url, input.sessionId, input.llmsTxtUrl);
+            const results = await checkAIReadiness(domain, input.url, input.sessionId, input.llmsTxtUrl, input.prefetchedHtml);
 
             // Store results in S3
             await writeSessionArtifact(input.sessionId, 'ai-readiness-results.json', results);
@@ -144,33 +153,40 @@ export const checkAIReadinessTool = tool(
         schema: z.object({
             url: z.string().describe('The URL to check AI readiness for'),
             sessionId: z.string().describe('The analysis session ID'),
-            llmsTxtUrl: z.string().optional().describe('User-provided llms.txt URL. If provided, check this URL directly instead of auto-discovering.')
+            llmsTxtUrl: z.string().optional().describe('User-provided llms.txt URL. If provided, check this URL directly instead of auto-discovering.'),
+            prefetchedHtml: z.string().optional().describe('Pre-fetched HTML content of the target URL. If provided, skips the initial page fetch.')
         })
     }
 );
 
 // ── Main Analysis Function ───────────────────────────────────────────────
 
-async function checkAIReadiness(domain: string, targetUrl: string, sessionId: string, explicitLlmsTxtUrl?: string): Promise<AIReadinessResult> {
+async function checkAIReadiness(domain: string, targetUrl: string, sessionId: string, explicitLlmsTxtUrl?: string, prefetchedHtml?: string): Promise<AIReadinessResult> {
     const baseUrl = `https://${domain}`;
     const recommendations: Recommendation[] = [];
     const docsSubpath = deriveDocsSubpath(explicitLlmsTxtUrl, targetUrl, baseUrl);
     const progress = createProgressHelper(sessionId);
 
-    // ── Fetch target page HTML once (reused across multiple checks) ──
+    // ── Use prefetched HTML if available, otherwise fetch target page ──
     let targetHtml = '';
     let targetHeaders: Headers | null = null;
-    try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
-        const res = await fetch(targetUrl, { signal: controller.signal });
-        clearTimeout(timeoutId);
-        if (res.ok) {
-            targetHtml = await res.text();
-            targetHeaders = res.headers;
+    if (prefetchedHtml) {
+        console.log(`[AIReadiness] Using prefetched HTML (${prefetchedHtml.length} bytes)`);
+        targetHtml = prefetchedHtml;
+    } else {
+        console.log(`[AIReadiness] No prefetched HTML, fetching ${targetUrl} directly`);
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
+            const res = await fetch(targetUrl, { signal: controller.signal, headers: FETCH_HEADERS });
+            clearTimeout(timeoutId);
+            if (res.ok) {
+                targetHtml = await res.text();
+                targetHeaders = res.headers;
+            }
+        } catch (e) {
+            console.warn(`Failed to fetch target page ${targetUrl}:`, e);
         }
-    } catch (e) {
-        console.warn(`Failed to fetch target page ${targetUrl}:`, e);
     }
 
     // ── Fetch robots.txt once (reused for bot access + sitemap ref) ──
@@ -283,7 +299,11 @@ function parseBotStatus(robotsTxt: string, userAgent: string): 'allowed' | 'bloc
                 hasAllow = true;
             } else if (trimmed.toLowerCase().startsWith('disallow:')) {
                 const path = trimmed.substring('disallow:'.length).trim();
-                if (path === '/' || path === '') {
+                if (path === '') {
+                    // "Disallow:" with empty path = allow everything (explicit allow-all)
+                    hasAllow = true;
+                } else if (path === '/') {
+                    // "Disallow: /" = block everything
                     hasDisallow = true;
                 }
             }
@@ -313,7 +333,10 @@ function parseBotStatus(robotsTxt: string, userAgent: string): 'allowed' | 'bloc
                     specificAllow = true;
                 } else if (trimmed.toLowerCase().startsWith('disallow:')) {
                     const path = trimmed.substring('disallow:'.length).trim();
-                    if (path === '/' || path !== '') {
+                    if (path === '') {
+                        // "Disallow:" with empty path = allow everything
+                        specificAllow = true;
+                    } else if (path.length > 0) {
                         specificDisallow = true;
                     }
                 }
@@ -327,6 +350,7 @@ function parseBotStatus(robotsTxt: string, userAgent: string): 'allowed' | 'bloc
     // Check wildcard block
     if (!mentionsBot) {
         if (hasDisallow && !hasAllow) return 'blocked';
+        if (hasAllow) return 'allowed';
         return 'not-mentioned';
     }
 
@@ -346,13 +370,30 @@ async function analyzeDiscoverability(
 ): Promise<AIReadinessResult['categories']['discoverability']> {
 
     // ── llms.txt ──
-    const llmsTxtUrl = explicitLlmsTxtUrl || `${baseUrl}/llms.txt`;
-    const llmsTxt = await checkUrl(llmsTxtUrl, true);
+    const llmsTxtCandidates: string[] = [];
+    if (explicitLlmsTxtUrl) {
+        llmsTxtCandidates.push(explicitLlmsTxtUrl);
+    } else {
+        llmsTxtCandidates.push(`${baseUrl}/llms.txt`);
+    }
+
+    let llmsTxt: { found: boolean; content?: string } = { found: false };
+    let llmsTxtUrl = llmsTxtCandidates[0];
+    const llmsTxtCheckedUrls: string[] = [];
+    for (const candidateUrl of llmsTxtCandidates) {
+        llmsTxtCheckedUrls.push(candidateUrl);
+        const result = await checkUrl(candidateUrl, true);
+        if (result.found) {
+            llmsTxt = result;
+            llmsTxtUrl = candidateUrl;
+            break;
+        }
+    }
     if (!llmsTxt.found) {
         recommendations.push({
             category: 'Discoverability',
             priority: 'high',
-            issue: 'No llms.txt found — AI agents cannot discover your documentation structure.',
+            issue: `No llms.txt found — checked: ${llmsTxtCheckedUrls.join(', ')}`,
             fix: 'Create an llms.txt file at your domain root listing your documentation pages.',
             codeSnippet: `# ${new URL(baseUrl).hostname}\n\n> Documentation for [Your Product]\n\n- [Getting Started](${baseUrl}/docs/getting-started): Quick start guide\n- [API Reference](${baseUrl}/docs/api): Full API documentation`,
         });
@@ -369,7 +410,9 @@ async function analyzeDiscoverability(
 
     let llmsFullTxt: { found: boolean } = { found: false };
     let llmsFullTxtUrl = `${baseUrl}/llms-full.txt`;
+    const llmsFullCheckedUrls: string[] = [];
     for (const candidateUrl of llmsFullCandidates) {
+        llmsFullCheckedUrls.push(candidateUrl);
         const result = await checkUrl(candidateUrl);
         if (result.found) {
             llmsFullTxt = result;
@@ -377,14 +420,7 @@ async function analyzeDiscoverability(
             break;
         }
     }
-    if (!llmsFullTxt.found) {
-        recommendations.push({
-            category: 'Discoverability',
-            priority: 'medium',
-            issue: 'No llms-full.txt found — AI training and RAG pipelines cannot easily ingest your full docs.',
-            fix: 'Create llms-full.txt with a concatenated export of all your documentation pages.',
-        });
-    }
+    // llms-full.txt: still check but don't recommend — only useful for very large doc sites
 
     // ── sitemap.xml ──
     const sitemapResult = await checkSitemap(baseUrl, robotsCheck);
@@ -433,8 +469,8 @@ async function analyzeDiscoverability(
     }
 
     return {
-        llmsTxt: { found: llmsTxt.found, url: llmsTxtUrl, fullContent: llmsTxt.content },
-        llmsFullTxt: { found: llmsFullTxt.found, url: llmsFullTxtUrl },
+        llmsTxt: { found: llmsTxt.found, url: llmsTxtUrl, fullContent: llmsTxt.content, checkedUrls: llmsTxtCheckedUrls },
+        llmsFullTxt: { found: llmsFullTxt.found, url: llmsFullTxtUrl, checkedUrls: llmsFullCheckedUrls },
         sitemapXml: sitemapResult,
         openGraph: { found: ogFound, tags: ogTags },
         canonical,
@@ -497,14 +533,14 @@ function analyzeConsumability(
         recommendations.push({
             category: 'Consumability',
             priority: 'high',
-            issue: `Very low text-to-HTML ratio (${(textToHtmlRatio.ratio * 100).toFixed(1)}%) — AI bots will see mostly noise (scripts, CSS, nav).`,
+            issue: `Very low text-to-HTML ratio (${(textToHtmlRatio.ratio * 100).toFixed(1)}%). AI search crawlers such as PerplexityBot and GPTBot may process mostly noise (scripts, CSS, nav) when extracting your content.`,
             fix: 'Reduce inline scripts/styles, minimize navigation markup, and ensure main content is prominent in the HTML.',
         });
     } else if (textToHtmlRatio.status === 'low') {
         recommendations.push({
             category: 'Consumability',
             priority: 'medium',
-            issue: `Low text-to-HTML ratio (${(textToHtmlRatio.ratio * 100).toFixed(1)}%) — consider reducing non-content markup.`,
+            issue: `Low text-to-HTML ratio (${(textToHtmlRatio.ratio * 100).toFixed(1)}%). AI search crawlers may need to strip more noise to extract your content.`,
             fix: 'Move scripts to external files, minimize inline CSS, and use semantic HTML for content.',
         });
     }
@@ -552,8 +588,8 @@ function analyzeConsumability(
         recommendations.push({
             category: 'Consumability',
             priority: 'medium',
-            issue: 'No markdown version of this page detected — LLMs consume markdown more cleanly than HTML.',
-            fix: `Serve a .md version of pages (e.g., ${new URL(targetUrl).pathname}.md) and signal it to AI bots.`,
+            issue: 'No markdown version detected — AI coding assistants (Cursor, Copilot, Claude Code) prefer markdown for cleaner code generation.',
+            fix: `Serve a .md version and add a <link rel="alternate"> tag so AI agents can discover and fetch it instead of HTML.`,
             codeSnippet: `<!-- Add to <head> -->\n<link rel="alternate" type="text/markdown" href="${new URL(targetUrl).pathname}.md" />`,
         });
     } else if (!markdown.discoverable) {
@@ -589,10 +625,14 @@ function analyzeConsumability(
         });
     }
 
-    // Word count from clean text
+    // Word count from clean text — strip non-content elements (nav, header, footer, sidebar)
     const cleanText = html
         .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
         .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+        .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
+        .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
+        .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
+        .replace(/<aside[^>]*>[\s\S]*?<\/aside>/gi, '')
         .replace(/<[^>]+>/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
@@ -633,7 +673,59 @@ function analyzeConsumability(
         });
     }
 
-    return { markdownAvailable: markdown, textToHtmlRatio, jsRendered, headingHierarchy, codeBlocks, internalLinkDensity, wordCount };
+    // ── Page type detection (API/SDK reference vs guide/general) ──
+    const pageType = detectPageType(html, targetUrl);
+
+    // If API/SDK reference page has no code examples, flag it
+    if (pageType === 'api-reference' && !codeBlocks.hasCode) {
+        recommendations.push({
+            category: 'Consumability',
+            priority: 'high',
+            issue: 'API/SDK reference page with no code examples — research shows this reduces LLM accuracy by 3–4× (HKUST RAG study).',
+            fix: 'Add working code examples for each endpoint/method. Include request/response samples, error handling, and common use cases.',
+        });
+    }
+
+    return { markdownAvailable: markdown, textToHtmlRatio, jsRendered, headingHierarchy, codeBlocks, pageType, internalLinkDensity, wordCount };
+}
+
+function detectPageType(html: string, url: string): 'api-reference' | 'guide' | 'general' {
+    const urlLower = url.toLowerCase();
+    const htmlLower = html.toLowerCase();
+
+    // URL-based signals
+    const apiUrlPatterns = ['/api/', '/reference/', '/sdk/', '/endpoint', '/rest/', '/graphql/'];
+    const hasApiUrl = apiUrlPatterns.some(p => urlLower.includes(p));
+
+    // Content-based signals: parameter tables with technical headers
+    const paramTableHeaders = /(parameter|param|argument|field|property)\s*<\/t[hd]>/gi;
+    const typeHeaders = /<t[hd][^>]*>\s*(type|returns?|response|request|method|required)\s*<\/t[hd]>/gi;
+    const paramTableMatches = (html.match(paramTableHeaders) || []).length;
+    const typeHeaderMatches = (html.match(typeHeaders) || []).length;
+
+    // Code inside table cells (common in API reference: parameter tables with code-formatted names)
+    const codeInTd = /<td[^>]*>\s*<code/gi;
+    const codeInTdCount = (html.match(codeInTd) || []).length;
+
+    // HTTP method indicators
+    const httpMethods = /\b(GET|POST|PUT|DELETE|PATCH)\s+\//g;
+    const httpMethodCount = (html.match(httpMethods) || []).length;
+
+    // Score it
+    let apiScore = 0;
+    if (hasApiUrl) apiScore += 3;
+    if (paramTableMatches >= 2) apiScore += 2;
+    if (typeHeaderMatches >= 2) apiScore += 2;
+    if (codeInTdCount >= 3) apiScore += 2;
+    if (httpMethodCount >= 1) apiScore += 2;
+
+    if (apiScore >= 3) return 'api-reference';
+
+    // Guide detection: URL signals
+    const guideUrlPatterns = ['/guide', '/tutorial', '/getting-started', '/quickstart', '/how-to', '/walkthrough'];
+    if (guideUrlPatterns.some(p => urlLower.includes(p))) return 'guide';
+
+    return 'general';
 }
 
 function calculateTextToHtmlRatio(html: string): AIReadinessResult['categories']['consumability']['textToHtmlRatio'] {
@@ -782,15 +874,18 @@ function analyzeMarkdownAvailability(
 }
 
 function analyzeCodeBlocks(html: string): AIReadinessResult['categories']['consumability']['codeBlocks'] {
-    // Match <pre><code>, <pre>, and <code> blocks
-    const codeBlockRegex = /<(?:pre|code)[^>]*>/gi;
-    const matches = html.match(codeBlockRegex) || [];
-    const count = matches.length;
+    // Only count <pre> blocks (real code blocks), not standalone <code> (inline formatting)
+    const preBlockRegex = /<pre[^>]*>/gi;
+    const preMatches = html.match(preBlockRegex) || [];
+    // Also count <code> that are inside <pre> (but not standalone inline <code>)
+    const preCodeRegex = /<pre[^>]*>[\s\S]*?<code[^>]*>/gi;
+    const preCodeMatches = html.match(preCodeRegex) || [];
+    const count = Math.max(preMatches.length, preCodeMatches.length);
 
     if (count === 0) return { count: 0, withLanguageHints: 0, hasCode: false };
 
-    // Check for language hints
-    const withLangRegex = /class=["'][^"']*(?:language-|lang-|highlight-)[^"']*["']/gi;
+    // Check for language hints on <pre> or <code> within <pre>
+    const withLangRegex = /<(?:pre|code)[^>]*class=["'][^"']*(?:language-|lang-|highlight-)[^"']*["'][^>]*>/gi;
     const langMatches = html.match(withLangRegex) || [];
 
     return { count, withLanguageHints: langMatches.length, hasCode: count > 0 };
@@ -798,11 +893,17 @@ function analyzeCodeBlocks(html: string): AIReadinessResult['categories']['consu
 
 function analyzeInternalLinks(html: string, baseUrl: string): AIReadinessResult['categories']['consumability']['internalLinkDensity'] {
     const domain = new URL(baseUrl).hostname;
+    // Strip non-content elements before counting links
+    const contentHtml = html
+        .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
+        .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
+        .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
+        .replace(/<aside[^>]*>[\s\S]*?<\/aside>/gi, '');
     const linkRegex = /href=["']([^"']+)["']/gi;
     let match;
     let internalCount = 0;
 
-    while ((match = linkRegex.exec(html)) !== null) {
+    while ((match = linkRegex.exec(contentHtml)) !== null) {
         const href = match[1];
         try {
             if (href.startsWith('/') && !href.startsWith('//')) {
@@ -816,8 +917,8 @@ function analyzeInternalLinks(html: string, baseUrl: string): AIReadinessResult[
         } catch {}
     }
 
-    // Calculate text word count for density
-    const textOnly = html
+    // Calculate text word count for density (from content only)
+    const textOnly = contentHtml
         .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
         .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
         .replace(/<[^>]+>/g, ' ')
@@ -827,7 +928,7 @@ function analyzeInternalLinks(html: string, baseUrl: string): AIReadinessResult[
     const perKWords = internalCount / kWords;
 
     let status: 'good' | 'sparse' | 'excessive' = 'good';
-    if (perKWords < 2) status = 'sparse';
+    if (internalCount < 5 || perKWords < 5) status = 'sparse';
     else if (perKWords > 50) status = 'excessive';
 
     return { count: internalCount, perKWords: Math.round(perKWords * 10) / 10, status };
@@ -965,7 +1066,7 @@ async function checkUrl(url: string, returnContent = false): Promise<{ found: bo
     try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
-        const res = await fetch(url, { signal: controller.signal });
+        const res = await fetch(url, { signal: controller.signal, headers: FETCH_HEADERS });
         clearTimeout(timeoutId);
         if (res.ok) {
             const content = returnContent ? await res.text() : undefined;
