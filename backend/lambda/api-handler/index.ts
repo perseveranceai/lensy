@@ -2,7 +2,7 @@ import { Handler, APIGatewayProxyResult } from 'aws-lambda';
 import { SFNClient, StartExecutionCommand, DescribeExecutionCommand } from '@aws-sdk/client-sfn';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
-import { DynamoDBClient, GetItemCommand, UpdateItemCommand } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, GetItemCommand, UpdateItemCommand, PutItemCommand } from '@aws-sdk/client-dynamodb';
 import * as crypto from 'crypto';
 import * as https from 'https';
 import { URL } from 'url';
@@ -17,7 +17,9 @@ const dynamoClient = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-
 // ---------------------------------------------------------------------------
 
 const USAGE_TABLE = process.env.USAGE_TRACKING_TABLE || '';
+const WAITLIST_TABLE = process.env.WAITLIST_TABLE || '';
 const DAILY_LIMIT = parseInt(process.env.FREE_TIER_DAILY_LIMIT || '3', 10);
+const WAITLIST_BONUS = parseInt(process.env.WAITLIST_BONUS_CREDITS || '7', 10);
 
 function getClientIp(event: any): string {
     // API Gateway V2 (HTTP API)
@@ -36,10 +38,24 @@ function getTodayDate(): string {
     return new Date().toISOString().split('T')[0]; // e.g. "2026-03-07"
 }
 
-async function checkRateLimit(event: any): Promise<{ allowed: boolean; used: number; limit: number }> {
+async function checkWaitlistStatus(ipHash: string): Promise<boolean> {
+    if (!WAITLIST_TABLE) return false;
+    try {
+        const result = await dynamoClient.send(new GetItemCommand({
+            TableName: WAITLIST_TABLE,
+            Key: { ipHash: { S: ipHash } },
+        }));
+        return !!result.Item;
+    } catch (error) {
+        console.error('Waitlist check failed:', error);
+        return false;
+    }
+}
+
+async function checkRateLimit(event: any): Promise<{ allowed: boolean; used: number; limit: number; waitlisted: boolean }> {
     if (!USAGE_TABLE) {
         console.log('No usage tracking table configured, skipping rate limit');
-        return { allowed: true, used: 0, limit: DAILY_LIMIT };
+        return { allowed: true, used: 0, limit: DAILY_LIMIT, waitlisted: false };
     }
 
     const ip = getClientIp(event);
@@ -47,19 +63,24 @@ async function checkRateLimit(event: any): Promise<{ allowed: boolean; used: num
     const today = getTodayDate();
 
     try {
-        const result = await dynamoClient.send(new GetItemCommand({
-            TableName: USAGE_TABLE,
-            Key: {
-                ipHash: { S: ipHash },
-                date: { S: today },
-            },
-        }));
+        // Check usage and waitlist status in parallel
+        const [usageResult, isWaitlisted] = await Promise.all([
+            dynamoClient.send(new GetItemCommand({
+                TableName: USAGE_TABLE,
+                Key: {
+                    ipHash: { S: ipHash },
+                    date: { S: today },
+                },
+            })),
+            checkWaitlistStatus(ipHash),
+        ]);
 
-        const used = result.Item?.usageCount?.N ? parseInt(result.Item.usageCount.N, 10) : 0;
-        return { allowed: used < DAILY_LIMIT, used, limit: DAILY_LIMIT };
+        const used = usageResult.Item?.usageCount?.N ? parseInt(usageResult.Item.usageCount.N, 10) : 0;
+        const effectiveLimit = isWaitlisted ? DAILY_LIMIT + WAITLIST_BONUS : DAILY_LIMIT;
+        return { allowed: used < effectiveLimit, used, limit: effectiveLimit, waitlisted: isWaitlisted };
     } catch (error) {
         console.error('Rate limit check failed, allowing request:', error);
-        return { allowed: true, used: 0, limit: DAILY_LIMIT };
+        return { allowed: true, used: 0, limit: DAILY_LIMIT, waitlisted: false };
     }
 }
 
@@ -311,8 +332,13 @@ export const handler: Handler<any, any> = async (event: any) => {
                     limit: rateLimit.limit,
                     remaining: Math.max(0, rateLimit.limit - rateLimit.used),
                     resetsAt: `${getTodayDate()}T23:59:59Z`,
+                    waitlisted: rateLimit.waitlisted,
                 })
             };
+        }
+
+        if (httpMethod === 'POST' && path === '/waitlist') {
+            return await handleWaitlistRequest(body, corsHeaders, event);
         }
 
         if (httpMethod === 'POST' && path === '/console/feedback') {
@@ -1286,6 +1312,98 @@ async function handleGetFixesRequest(path: string, corsHeaders: Record<string, s
                 error: 'Failed to retrieve fixes',
                 message: error instanceof Error ? error.message : 'Unknown error'
             })
+        };
+    }
+}
+
+// ─── Waitlist ────────────────────────────────────────────────────────────────
+
+async function handleWaitlistRequest(body: string | null, corsHeaders: Record<string, string>, event: any) {
+    if (!body) {
+        return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Request body is required' }) };
+    }
+
+    let parsed: { email: string; name?: string; organization?: string; doc_url?: string };
+    try {
+        parsed = JSON.parse(body);
+    } catch {
+        return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Invalid JSON' }) };
+    }
+
+    if (!parsed.email || !parsed.email.includes('@')) {
+        return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Valid email is required' }) };
+    }
+
+    const ip = getClientIp(event);
+    const ipHash = hashIp(ip);
+
+    try {
+        // Check if already on waitlist
+        const existing = await dynamoClient.send(new GetItemCommand({
+            TableName: WAITLIST_TABLE,
+            Key: { ipHash: { S: ipHash } },
+        }));
+
+        if (existing.Item) {
+            // Already waitlisted — still return success (don't reveal duplicate)
+            const effectiveLimit = DAILY_LIMIT + WAITLIST_BONUS;
+            const rateLimit = await checkRateLimit(event);
+            return {
+                statusCode: 200,
+                headers: corsHeaders,
+                body: JSON.stringify({
+                    message: 'Welcome back! You already have bonus credits.',
+                    bonusCredits: WAITLIST_BONUS,
+                    totalDailyLimit: effectiveLimit,
+                    used: rateLimit.used,
+                    remaining: Math.max(0, effectiveLimit - rateLimit.used),
+                }),
+            };
+        }
+
+        // Store waitlist entry
+        await dynamoClient.send(new PutItemCommand({
+            TableName: WAITLIST_TABLE,
+            Item: {
+                ipHash: { S: ipHash },
+                email: { S: parsed.email },
+                name: { S: parsed.name || '' },
+                organization: { S: parsed.organization || '' },
+                docUrl: { S: parsed.doc_url || '' },
+                joinedAt: { S: new Date().toISOString() },
+                bonusCredits: { N: String(WAITLIST_BONUS) },
+            },
+        }));
+
+        console.log(JSON.stringify({
+            level: 'INFO',
+            event: 'WAITLIST_SIGNUP',
+            ipHash,
+            email: parsed.email,
+            organization: parsed.organization || '',
+            bonusCredits: WAITLIST_BONUS,
+        }));
+
+        const effectiveLimit = DAILY_LIMIT + WAITLIST_BONUS;
+        const rateLimit = await checkRateLimit(event);
+
+        return {
+            statusCode: 200,
+            headers: corsHeaders,
+            body: JSON.stringify({
+                message: `You're on the list! ${WAITLIST_BONUS} bonus audits unlocked.`,
+                bonusCredits: WAITLIST_BONUS,
+                totalDailyLimit: effectiveLimit,
+                used: rateLimit.used,
+                remaining: Math.max(0, effectiveLimit - rateLimit.used),
+            }),
+        };
+    } catch (error) {
+        console.error('Waitlist signup failed:', error);
+        return {
+            statusCode: 500,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: 'Failed to join waitlist. Please try again.' }),
         };
     }
 }

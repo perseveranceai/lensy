@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { trackEvent } from './analytics';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -48,13 +49,11 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import LinkIcon from '@mui/icons-material/Link';
 import CheckIcon from '@mui/icons-material/Check';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import FixReviewPanel, { Fix } from './components/FixReviewPanel';
 import jsPDF from 'jspdf';
 import { JAKARTA_REGULAR, JAKARTA_BOLD } from './jakartaFonts';
-import { trackEvent } from './hooks/useAnalytics';
 const logoImg = `${process.env.PUBLIC_URL}/logo.png`;
 
 // [NEW] Collapsible Component Helper
@@ -657,10 +656,14 @@ function LensyApp() {
         return () => { el.removeEventListener('scroll', checkScroll); observer.disconnect(); };
     }, [githubIssues, analysisState.status, githubAnalysisResults]);
 
-    // Auto-collapse progress when analysis completes
+    // Auto-collapse progress when analysis completes + GA tracking
     useEffect(() => {
-        if (analysisState.status === 'completed' || analysisState.status === 'error') {
+        if (analysisState.status === 'completed') {
             setProgressExpanded(false);
+            trackEvent('generate_report_completed', { url: urlRef.current });
+        } else if (analysisState.status === 'error') {
+            setProgressExpanded(false);
+            trackEvent('generate_report_failed', { error: analysisState.error, url: urlRef.current });
         } else if (analysisState.status === 'analyzing') {
             setProgressExpanded(true);
         }
@@ -796,7 +799,6 @@ function LensyApp() {
                             }));
                             // Refresh usage counter — rejected scans get refunded
                             window.dispatchEvent(new Event('lensy:usage-changed'));
-                            trackEvent('analysis_failed', { url: urlRef.current, error: message.message, reason: 'terminal_error' });
                             return;
                         }
                     }
@@ -828,7 +830,6 @@ function LensyApp() {
                     if (message.type === 'success' && (message.phase === 'fix-generation' || message.metadata?.fixCount !== undefined) && (message.metadata?.fixCount || 0) > 0) {
                         console.log('Fix generation complete via WebSocket, fetching fixes...');
                         fetchFixesForSession(sessionId);
-                        trackEvent('fix_generation_completed', { sessionId, fixCount: message.metadata?.fixCount });
                     }
                 } catch (error) {
                     console.error('Error parsing WebSocket message:', error);
@@ -889,7 +890,7 @@ function LensyApp() {
                     if (statusData.status === 'failed' || statusData.status === 'rejected') {
                         console.log('Analysis failed/rejected (detected via polling):', statusData.error);
                         const errorMsg = statusData.error || statusData.reason || 'Analysis failed. Check the progress messages for details.';
-                        const isDocRejection = errorMsg.includes('does not appear to be') || errorMsg.includes('not a documentation page');
+                        const isDocRejection = errorMsg.includes('does not appear to be') || errorMsg.includes('not a documentation page') || errorMsg.includes('non-documentation-page');
                         if (isDocRejection && !rejectedUrl) {
                             setRejectedUrl(urlRef.current);
                             setUrl('');
@@ -897,12 +898,12 @@ function LensyApp() {
                             setTimeout(() => { document.querySelector<HTMLInputElement>('input[placeholder*="URL"]')?.focus(); }, 100);
                         }
                         setAnalysisState(prev => {
-                            if (prev.status === 'error' && prev.error?.includes('does not appear to be')) {
+                            // Don't overwrite if already showing doc-rejection error or user already reset
+                            if (prev.status === 'idle' || (prev.status === 'error' && prev.error?.includes('does not appear to be'))) {
                                 return prev;
                             }
                             return { ...prev, status: 'error', error: errorMsg };
                         });
-                        trackEvent('analysis_failed', { url: urlRef.current, error: errorMsg, reason: 'polling_status' });
                         return;
                     }
 
@@ -914,7 +915,6 @@ function LensyApp() {
                             ...prev,
                             progressMessages: [...prev.progressMessages, { type: 'success', message: 'Analysis complete! Generating results...', timestamp: Date.now() }]
                         }));
-                        trackEvent('analysis_completed', { url: urlRef.current, sessionId, is_cached: statusData.report.cacheStatus === 'hit' });
 
                         setAnalysisState(prev => ({
                             ...prev,
@@ -943,14 +943,12 @@ function LensyApp() {
                         status: 'error',
                         error: 'Analysis timed out'
                     }));
-                    trackEvent('analysis_failed', { url: urlRef.current, error: 'Analysis timed out', reason: 'polling_timeout' });
                     return;
                 }
 
                 setTimeout(poll, 5000);
             } catch (error) {
                 console.error('Polling error:', error);
-                trackEvent('analysis_failed', { url: urlRef.current, error: error instanceof Error ? error.message : 'Unknown polling error', reason: 'polling_exception' });
             }
         };
 
@@ -962,7 +960,6 @@ function LensyApp() {
         const urlStr = githubRepoUrl.trim();
         if (!urlStr) {
             setAnalysisState({ status: 'error', error: 'Please enter a GitHub repository URL', progressMessages: [] });
-            trackEvent('fetch_github_issues_failed', { error: 'No GitHub URL provided' });
             return;
         }
 
@@ -976,7 +973,6 @@ function LensyApp() {
                 error: 'Please enter a valid GitHub repository URL (e.g. https://github.com/owner/repo) or owner/repo format.',
                 progressMessages: []
             });
-            trackEvent('fetch_github_issues_failed', { error: 'Invalid GitHub URL format', url: urlStr });
             return;
         }
 
@@ -992,13 +988,11 @@ function LensyApp() {
             }
         } catch {
             setAnalysisState({ status: 'error', error: 'Invalid GitHub URL. Use format: https://github.com/owner/repo', progressMessages: [] });
-            trackEvent('fetch_github_issues_failed', { error: 'Failed to parse owner/repo from URL', url: urlStr });
             return;
         }
 
         if (!owner || !repo) {
             setAnalysisState({ status: 'error', error: 'Could not parse owner/repo from URL. Use format: https://github.com/owner/repo', progressMessages: [] });
-            trackEvent('fetch_github_issues_failed', { error: 'Owner or repo missing after parsing', url: urlStr });
             return;
         }
 
@@ -1015,7 +1009,6 @@ function LensyApp() {
         setKbInfo(null);
         setCrawlUrl('');
         setPreviewDocs(null);
-        trackEvent('fetch_github_issues_started', { owner, repo, docsUrl: githubDocsUrl });
 
         try {
             console.log(`Fetching GitHub issues for ${owner}/${repo}...`);
@@ -1029,21 +1022,20 @@ function LensyApp() {
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                let errorMessage = errorData.message || errorData.error || `Something went wrong (HTTP ${response.status}). Please try again.`;
                 if (response.status === 429) {
-                    errorMessage = errorData.message || 'GitHub API rate limit exceeded. Unauthenticated requests are limited to 60 per hour. Please wait and try again.';
-                } else if (response.status === 404) {
-                    errorMessage = errorData.message || `Repository not found. Please check the URL and make sure it exists and is public.`;
-                } else if (response.status === 403) {
-                    errorMessage = errorData.message || `Cannot access this repository. It may be private. Only public repositories are supported.`;
+                    throw new Error(errorData.message || 'GitHub API rate limit exceeded. Unauthenticated requests are limited to 60 per hour. Please wait and try again.');
                 }
-                trackEvent('fetch_github_issues_failed', { owner, repo, error: errorMessage, status: response.status });
-                throw new Error(errorMessage);
+                if (response.status === 404) {
+                    throw new Error(errorData.message || `Repository not found. Please check the URL and make sure it exists and is public.`);
+                }
+                if (response.status === 403) {
+                    throw new Error(errorData.message || `Cannot access this repository. It may be private. Only public repositories are supported.`);
+                }
+                throw new Error(errorData.message || errorData.error || `Something went wrong (HTTP ${response.status}). Please try again.`);
             }
 
             const result = await response.json();
             console.log(`Fetched ${result.totalFetched || result.issues?.length || 0} issues (${result.dateRange}), ${result.docsRelatedCount || 0} docs-related via ${result.classificationMethod}`);
-            trackEvent('fetch_github_issues_completed', { owner, repo, totalFetched: result.totalFetched, docsRelatedCount: result.docsRelatedCount, classificationMethod: result.classificationMethod });
 
             setGithubIssues(result.issues || []);
             setGithubFetchMeta({
@@ -1067,20 +1059,17 @@ function LensyApp() {
                     setGithubDocsUrl(reposWithDocs[0].fullName);
                     setDocsAsCodeConfirmation(null);
                     setDocsContextReady(true); // docs source confirmed automatically
-                    trackEvent('github_docs_repo_auto_selected', { repo: reposWithDocs[0].fullName });
                 } else if (reposWithoutDocs.length > 0) {
                     // Found repos matching docs patterns but NO actual docs content
                     // → trigger human-in-the-loop: "Do you store docs as code?"
                     setDocsAsCodeConfirmation('pending');
                     setGithubDocsUrl(''); // don't auto-select
-                    trackEvent('github_docs_as_code_prompted', { repos: reposWithoutDocs.map((r: any) => r.fullName) });
                 }
                 setDocsContextHint(null);
             } else if (result.docsContext?.hint && !githubDocsUrl) {
                 setDocsContextHint(result.docsContext.hint);
                 setSuggestedDocsRepos([]);
                 setDocsAsCodeConfirmation(null);
-                trackEvent('github_docs_context_hint_shown', { hint: result.docsContext.hint });
             } else {
                 setDocsContextHint(null);
                 setSuggestedDocsRepos([]);
@@ -1097,7 +1086,6 @@ function LensyApp() {
                 error: `Failed to fetch GitHub issues: ${error instanceof Error ? error.message : 'Unknown error'}`,
                 progressMessages: []
             });
-            trackEvent('fetch_github_issues_failed', { error: error instanceof Error ? error.message : 'Unknown error' });
         } finally {
             setIsFetchingGithubIssues(false);
         }
@@ -1115,7 +1103,6 @@ function LensyApp() {
                     { type: 'info', message: results.message, timestamp: Date.now() }
                 ]
             });
-            trackEvent('github_analysis_completed', { status: 'no_docs_as_code', message: results.message });
             return;
         }
 
@@ -1131,13 +1118,11 @@ function LensyApp() {
                 { type: 'success', message: `Analysis complete: ${results.analyses?.length || 0} issues analyzed`, timestamp: Date.now() }
             ]
         }));
-        trackEvent('github_analysis_completed', { status: 'success', analyzedIssuesCount: results.analyses?.length || 0 });
     };
 
     const handleAnalyzeGithubIssues = async () => {
         if (selectedGithubIssues.length === 0) {
             setAnalysisState({ status: 'error', error: 'Please select at least one issue to analyze', progressMessages: [] });
-            trackEvent('analyze_github_issues_failed', { error: 'No issues selected' });
             return;
         }
 
@@ -1154,7 +1139,6 @@ function LensyApp() {
             sourceMode: 'github-issues',
             progressMessages: [{ type: 'info', message: isAsyncCrawl ? 'Starting docs crawl and analysis (this may take 1-2 minutes)...' : 'Analyzing selected issues against documentation...', timestamp: Date.now() }]
         });
-        trackEvent('analyze_github_issues_started', { owner, repo, selectedIssuesCount: selectedGithubIssues.length, docsUrl: githubDocsUrl, crawlUrl, isAsyncCrawl });
 
         try {
             const issuesToAnalyze = githubIssues.filter(i => selectedGithubIssues.includes(i.number));
@@ -1191,10 +1175,8 @@ function LensyApp() {
             if (!response.ok) {
                 if (response.status === 429) {
                     const errorData = await response.json().catch(() => ({}));
-                    trackEvent('analyze_github_issues_failed', { owner, repo, error: errorData.message || 'Rate limit exceeded', status: response.status });
                     throw new Error(errorData.message || 'GitHub API rate limit exceeded. Please wait and try again.');
                 }
-                trackEvent('analyze_github_issues_failed', { owner, repo, error: `HTTP ${response.status}`, status: response.status });
                 throw new Error(`HTTP ${response.status}`);
             }
 
@@ -1222,7 +1204,6 @@ function LensyApp() {
                                 if (results.analyses) {
                                     console.log('Got results via polling:', results);
                                     handleGithubAnalysisResults(results);
-                                    trackEvent('analyze_github_issues_completed', { status: 'success_polling', owner, repo, analyzedIssuesCount: results.analyses?.length || 0 });
                                     return;
                                 }
                             }
@@ -1238,7 +1219,6 @@ function LensyApp() {
                         error: 'Analysis timed out after 5 minutes. The results may still be processing — try refreshing.',
                         progressMessages: prev.progressMessages
                     }));
-                    trackEvent('analyze_github_issues_failed', { owner, repo, error: 'Analysis timed out', reason: 'polling_timeout' });
                 };
 
                 pollForResults();
@@ -1248,7 +1228,6 @@ function LensyApp() {
             // Synchronous response — handle directly
             const results = await response.json();
             handleGithubAnalysisResults(results);
-            trackEvent('analyze_github_issues_completed', { status: 'success_sync', owner, repo, analyzedIssuesCount: results.analyses?.length || 0 });
 
         } catch (error) {
             console.error('Error analyzing GitHub issues:', error);
@@ -1258,7 +1237,6 @@ function LensyApp() {
                 error: `Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
                 progressMessages: []
             });
-            trackEvent('analyze_github_issues_failed', { owner, repo, error: error instanceof Error ? error.message : 'Unknown error' });
         }
     };
 
@@ -1267,7 +1245,6 @@ function LensyApp() {
         const rawInput = crawlUrl.trim();
         if (!rawInput) {
             setAnalysisState({ status: 'error', error: 'Please enter your docs website URL first.', progressMessages: [] });
-            trackEvent('preview_docs_failed', { error: 'No URL provided' });
             return;
         }
 
@@ -1281,7 +1258,6 @@ function LensyApp() {
         setIsPreviewingDocs(true);
         setPreviewDocs(null);
         setManualLlmsUrl('');
-        trackEvent('preview_docs_started', { domain });
 
         try {
             const res = await fetch(`${API_BASE_URL}/github-issues/preview-docs?domain=${encodeURIComponent(domain)}`);
@@ -1293,23 +1269,19 @@ function LensyApp() {
                     setKbBuildState('ready');
                     setKbInfo({ domain, pageCount: data.cachedPageCount });
                     setDocsContextReady(true);
-                    trackEvent('preview_docs_completed', { domain, found: true, cached: true, pageCount: data.cachedPageCount });
                 } else {
                     // No cache — show "Build Knowledge Base" button
                     setKbBuildState('idle');
                     setKbBuildProgress([]);
                     setKbInfo(null);
-                    trackEvent('preview_docs_completed', { domain, found: true, cached: false });
                 }
             } else {
                 // Auto-populate manual URL field with the domain for user to correct
                 setManualLlmsUrl(`https://${domain}/llms.txt`);
-                trackEvent('preview_docs_completed', { domain, found: false, message: data.message });
             }
         } catch (err) {
             setPreviewDocs({ found: false, source: null, domain, message: 'Failed to check the domain. Please verify the URL and try again.' });
             setManualLlmsUrl(`https://${domain}/llms.txt`);
-            trackEvent('preview_docs_failed', { domain, error: err instanceof Error ? err.message : 'Unknown error' });
         } finally {
             setIsPreviewingDocs(false);
         }
@@ -1320,7 +1292,6 @@ function LensyApp() {
         const url = manualLlmsUrl.trim();
         if (!url.startsWith('http')) {
             setAnalysisState({ status: 'error', error: 'Please enter a full URL starting with https://', progressMessages: [] });
-            trackEvent('confirm_manual_llms_url_failed', { url, error: 'Invalid URL format' });
             return;
         }
         // Set crawlUrl to the manual URL and treat as confirmed
@@ -1331,7 +1302,6 @@ function LensyApp() {
         setKbBuildState('idle');
         setKbBuildProgress([]);
         setKbInfo(null);
-        trackEvent('confirm_manual_llms_url_completed', { url, domain });
     };
 
     // Build Knowledge Base — crawl + summarize + S3 cache (separate from issue analysis)
@@ -1348,7 +1318,6 @@ function LensyApp() {
         setKbBuildProgress([
             { type: 'info', message: `Building knowledge base for ${domain}...`, timestamp: Date.now() }
         ]);
-        trackEvent('build_kb_started', { domain, crawlUrl });
 
         try {
             // Connect WebSocket for real-time progress
@@ -1372,7 +1341,6 @@ function LensyApp() {
                             setKbInfo({ domain, pageCount: message.metadata.contextPages });
                             setKbBuildState('ready');
                             setDocsContextReady(true);
-                            trackEvent('build_kb_completed', { domain, pageCount: message.metadata.contextPages, status: 'success_websocket' });
                         }
                     } catch (error) {
                         console.error('Error parsing KB progress WebSocket message:', error);
@@ -1393,7 +1361,6 @@ function LensyApp() {
             });
 
             if (!response.ok) {
-                trackEvent('build_kb_failed', { domain, crawlUrl, error: `HTTP ${response.status}`, status: response.status });
                 throw new Error(`HTTP ${response.status}`);
             }
 
@@ -1413,7 +1380,6 @@ function LensyApp() {
                                 setKbInfo({ domain: result.domain, pageCount: result.pageCount });
                                 setKbBuildState('ready');
                                 setDocsContextReady(true);
-                                trackEvent('build_kb_completed', { domain, pageCount: result.pageCount, status: 'success_polling' });
                                 return;
                             }
                         }
@@ -1427,7 +1393,6 @@ function LensyApp() {
                     ...prev,
                     { type: 'error', message: 'Knowledge base build timed out after 5 minutes.', timestamp: Date.now() }
                 ]);
-                trackEvent('build_kb_failed', { domain, crawlUrl, error: 'Build timed out', reason: 'polling_timeout' });
             }
         } catch (error) {
             console.error('KB build failed:', error);
@@ -1436,14 +1401,12 @@ function LensyApp() {
                 ...prev,
                 { type: 'error', message: `Failed to build knowledge base: ${error instanceof Error ? error.message : 'Unknown error'}`, timestamp: Date.now() }
             ]);
-            trackEvent('build_kb_failed', { domain, crawlUrl, error: error instanceof Error ? error.message : 'Unknown error' });
         }
     };
 
     const searchForDeveloperIssues = async (domain: string) => {
         setIsSearchingIssues(true);
         setDiscoveredIssues([]);
-        trackEvent('search_developer_issues_started', { domain });
 
         try {
             console.log(`Searching for developer issues for domain: ${domain}`);
@@ -1463,7 +1426,6 @@ function LensyApp() {
             });
 
             if (!response.ok) {
-                trackEvent('search_developer_issues_failed', { domain, error: `HTTP ${response.status}`, status: response.status });
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
 
@@ -1494,7 +1456,6 @@ function LensyApp() {
 
             console.log(`Found ${transformedIssues.length} issues from ${result.searchSources?.length || 0} sources`);
             setDiscoveredIssues(transformedIssues);
-            trackEvent('search_developer_issues_completed', { domain, foundIssuesCount: transformedIssues.length });
 
         } catch (error) {
             console.error('Error searching for developer issues:', error);
@@ -1505,7 +1466,6 @@ function LensyApp() {
 
             // Show error message to user
             setDiscoveredIssues([]);
-            trackEvent('search_developer_issues_failed', { domain, error: error instanceof Error ? error.message : 'Unknown error' });
 
         } finally {
             setIsSearchingIssues(false);
@@ -1523,7 +1483,6 @@ function LensyApp() {
                 status: 'completed',
                 error: 'No active session found. Please run analysis first.'
             }));
-            trackEvent('generate_fixes_failed', { error: 'No active session ID' });
             return;
         }
 
@@ -1540,7 +1499,6 @@ function LensyApp() {
                 { type: 'info', message: 'Starting AI fix generation...', timestamp: Date.now() }
             ]
         }));
-        trackEvent('generate_fixes_started', { sessionId: currentSessionId, selectedRecommendationsCount: selectedRecommendations.length });
 
         try {
             // Map selected IDs back to recommendation actions
@@ -1572,7 +1530,6 @@ function LensyApp() {
 
             if (!response.ok) {
                 const errorText = await response.text();
-                trackEvent('generate_fixes_failed', { sessionId: currentSessionId, error: `Server Error: ${response.status}`, status: response.status });
                 throw new Error(`Fix generation failed: ${errorText}`);
             }
 
@@ -1590,7 +1547,6 @@ function LensyApp() {
                         timestamp: Date.now()
                     }]
                 }));
-                trackEvent('generate_fixes_accepted_async', { sessionId: currentSessionId });
             } else {
                 // Handle legacy sync response if any
                 setAnalysisState(prev => ({
@@ -1605,7 +1561,6 @@ function LensyApp() {
 
                 if (result.success && result.fixCount > 0 && currentSessionId) {
                     fetchFixesForSession(currentSessionId);
-                    trackEvent('generate_fixes_completed_sync', { sessionId: currentSessionId, fixCount: result.fixCount });
                 }
             }
         } catch (error) {
@@ -1616,7 +1571,6 @@ function LensyApp() {
                 error: error instanceof Error ? error.message : 'Failed to generate fixes'
             }));
             setIsGeneratingFixes(false);
-            trackEvent('generate_fixes_failed', { sessionId: currentSessionId, error: error instanceof Error ? error.message : 'Unknown error' });
         }
     };
 
@@ -1632,7 +1586,6 @@ function LensyApp() {
             ]
         }));
         setIsApplyingFixes(true);
-        trackEvent('apply_fixes_started', { sessionId: currentSessionId, selectedFixIdsCount: selectedFixIds.length });
         try {
             const response = await fetch(`${API_BASE_URL}/apply-fixes`, {
                 method: 'POST',
@@ -1668,10 +1621,8 @@ function LensyApp() {
 
                 // Show a temporary success alert or scroll to progress
                 window.scrollTo({ top: 0, behavior: 'smooth' });
-                trackEvent('apply_fixes_completed', { sessionId: currentSessionId, filename: result.filename });
             } else {
                 const errorData = await response.json();
-                trackEvent('apply_fixes_failed', { sessionId: currentSessionId, error: errorData.error || 'Failed to apply fixes', status: response.status });
                 throw new Error(errorData.error || 'Failed to apply fixes');
             }
         } catch (e: any) {
@@ -1687,7 +1638,6 @@ function LensyApp() {
                 }]
             }));
             window.scrollTo({ top: 0, behavior: 'smooth' });
-            trackEvent('apply_fixes_failed', { sessionId: currentSessionId, error: e.message || 'Unknown error' });
         } finally {
             setIsApplyingFixes(false);
         }
@@ -1696,12 +1646,18 @@ function LensyApp() {
     // ── Run AI Citations check on-demand ──
     const [citationsLoading, setCitationsLoading] = useState(false);
     const handleRunCitations = async () => {
-        const targetUrl = urlRef.current || url || (analysisState.report as any)?.url;
-        if (!currentSessionId || citationsLoading || !targetUrl) {
-            console.warn('[Citations] Skipped: sessionId=', currentSessionId, 'loading=', citationsLoading, 'url=', targetUrl);
+        if (!currentSessionId || citationsLoading) {
+            console.warn('[Citations] Skipped: sessionId=', currentSessionId, 'loading=', citationsLoading);
             return;
         }
-        trackEvent('run_citations_clicked', { url: targetUrl });
+        const citationUrl = urlRef.current || url || (analysisState.report as any)?.url;
+        if (!citationUrl) {
+            console.warn('[Citations] Skipped: no URL available');
+            return;
+        }
+
+        console.log('[Citations] Starting citation check for:', citationUrl, 'session:', currentSessionId);
+        trackEvent('run_citations_clicked', { url: citationUrl });
         setCitationsLoading(true);
         setHeroTab('citations');
 
@@ -1717,17 +1673,15 @@ function LensyApp() {
             const resp = await fetch(`${API_BASE_URL}/run-citations`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: targetUrl, sessionId: currentSessionId }),
+                body: JSON.stringify({ url: citationUrl, sessionId: currentSessionId }),
             });
             console.log('[Citations] API response:', resp.status);
 
             // Timeout fallback — WebSocket should deliver results, but stop loading after 90s
             setTimeout(() => setCitationsLoading(false), 90000);
-            trackEvent('run_citations_started_api_call', { url: targetUrl, sessionId: currentSessionId, status: resp.status });
         } catch (e) {
             console.error('[Citations] Citation check failed:', e);
             setCitationsLoading(false);
-            trackEvent('run_citations_failed', { url: targetUrl, sessionId: currentSessionId, error: e instanceof Error ? e.message : 'Unknown error' });
         }
     };
 
@@ -1741,8 +1695,6 @@ function LensyApp() {
         setRejectedUrl(null); // Clear any previous rejection
         const currentMode = manualModeOverride || selectedMode;
 
-        let targetUrl = ''; // Define targetUrl here
-
         // Handle GitHub Issues mode
         if (currentMode === 'github-issues') {
             if (githubIssues.length === 0) {
@@ -1753,7 +1705,6 @@ function LensyApp() {
                 handleAnalyzeGithubIssues();
             } else {
                 setAnalysisState({ status: 'error', error: 'Please select at least one issue to analyze', progressMessages: [] });
-                trackEvent('analyze_failed', { mode: currentMode, error: 'No issues selected' });
             }
             return;
         }
@@ -1762,19 +1713,15 @@ function LensyApp() {
         if (currentMode === 'issue-discovery') {
             if (!companyDomain.trim()) {
                 setAnalysisState({ status: 'error', error: 'Please enter a company domain', progressMessages: [] });
-                trackEvent('analyze_failed', { mode: currentMode, error: 'No company domain provided' });
                 return;
             }
             if (selectedIssues.length === 0) {
                 setAnalysisState({ status: 'error', error: 'Please select at least one issue to analyze', progressMessages: [] });
-                trackEvent('analyze_failed', { mode: currentMode, error: 'No issues selected for discovery' });
                 return;
             }
-            targetUrl = companyDomain; // For tracking purposes
         } else {
             if (!url.trim()) {
                 setAnalysisState({ status: 'error', error: 'Please enter a URL', progressMessages: [] });
-                trackEvent('analyze_failed', { mode: currentMode, error: 'No URL provided' });
                 return;
             }
 
@@ -1788,7 +1735,6 @@ function LensyApp() {
                 new URL(normalizedUrl);
             } catch {
                 setAnalysisState({ status: 'error', error: 'Please enter a valid URL', progressMessages: [] });
-                trackEvent('analyze_failed', { mode: currentMode, error: 'Invalid URL format', url: normalizedUrl });
                 return;
             }
 
@@ -1798,10 +1744,9 @@ function LensyApp() {
             }
             // Also update the ref used by WebSocket callbacks
             urlRef.current = normalizedUrl;
-            targetUrl = normalizedUrl;
         }
 
-        trackEvent('generate_report_started', { url: targetUrl, mode: currentMode });
+        trackEvent('generate_report_started', { url: urlRef.current || url, mode: currentMode });
 
         setAnalysisState({
             status: 'analyzing',
@@ -1822,7 +1767,6 @@ function LensyApp() {
                 const issuesToValidate = discoveredIssues.filter(issue => selectedIssues.includes(issue.id));
 
                 console.log(`Validating ${issuesToValidate.length} selected issues`);
-                trackEvent('validate_issues_started', { domain: companyDomain, selectedIssuesCount: issuesToValidate.length });
 
                 // Call validate-issues endpoint
                 const response = await fetch(`${API_BASE_URL}/validate-issues`, {
@@ -1852,7 +1796,6 @@ function LensyApp() {
                 });
 
                 if (!response.ok) {
-                    trackEvent('validate_issues_failed', { domain: companyDomain, error: `HTTP ${response.status}`, status: response.status });
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
 
@@ -1871,7 +1814,6 @@ function LensyApp() {
                         { type: 'info', message: `Found ${validationResults.summary.resolved} resolved, ${validationResults.summary.potentialGaps} potential gaps, ${validationResults.summary.criticalGaps} critical gaps`, timestamp: Date.now() }
                     ]
                 });
-                trackEvent('validate_issues_completed', { domain: companyDomain, resolved: validationResults.summary.resolved, potentialGaps: validationResults.summary.potentialGaps, criticalGaps: validationResults.summary.criticalGaps });
 
                 // TODO: Display validation results in UI
                 // For now, log to console
@@ -1907,7 +1849,6 @@ function LensyApp() {
                     }));
                 } catch (wsError) {
                     console.warn('WebSocket failed, using polling only:', wsError);
-                    trackEvent('websocket_connection_failed', { url: targetUrl, error: wsError instanceof Error ? wsError.message : 'Unknown error' });
                     // Silently fall back to polling - no need to alarm users
                 }
 
@@ -1932,16 +1873,12 @@ function LensyApp() {
                             error: errorData.message || "You've used all your free audits for today.",
                             progressMessages: [],
                         });
-                        trackEvent('generate_report_failed', { url: targetUrl, error: errorData.message || 'Rate limit exceeded', status: response.status });
                         return;
                     }
-                    trackEvent('generate_report_failed', { url: targetUrl, error: `Server Error: ${response.status}`, status: response.status });
                     throw new Error(`HTTP ${response.status}`);
                 }
 
                 const result = await response.json();
-                
-                trackEvent('generate_report_completed', { url: targetUrl, is_cached: result.meta?.cached });
 
                 // Refresh usage count in header
                 window.dispatchEvent(new Event('lensy:usage-changed'));
@@ -1966,7 +1903,6 @@ function LensyApp() {
                 error: error instanceof Error ? error.message : 'Analysis failed',
                 progressMessages: []
             });
-            trackEvent('analyze_failed', { url: targetUrl, error: error instanceof Error ? error.message : 'Unknown error' });
         }
     };
 
@@ -2007,7 +1943,6 @@ function LensyApp() {
 
     const exportValidationReport = (validationResults: any) => {
         const analysisDate = new Date().toLocaleDateString();
-        trackEvent('export_validation_report', { format: 'markdown', domain: companyDomain });
 
         let markdown = `# DOCUMENTATION QUALITY VALIDATION REPORT\n\n`;
         markdown += `**Company Domain:** ${companyDomain}\n`;
@@ -2225,7 +2160,6 @@ function LensyApp() {
 
     const exportMarkdownReport = (report: FinalReport) => {
         const analysisDate = new Date().toLocaleDateString();
-        trackEvent('export_report', { format: 'markdown', url: url, mode: (manualModeOverride || selectedMode) });
 
         let markdown = `# DOCUMENTATION QUALITY REPORT\n\n`;
         markdown += `**URL:** ${url}\n`;
@@ -2509,7 +2443,6 @@ function LensyApp() {
 
     /** Quick-start user guide PDF */
     const exportUserGuidePdf = () => {
-        trackEvent('export_user_guide', { format: 'pdf' });
         const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
         const fn = 'PlusJakartaSans';
         doc.addFileToVFS('PlusJakartaSans-Regular.ttf', JAKARTA_REGULAR);
@@ -2701,7 +2634,6 @@ function LensyApp() {
 
     /** Export report as branded Perseverance AI PDF — Amazon narrative style */
     const exportPdfReport = (report: FinalReport) => {
-        trackEvent('export_report', { format: 'pdf', url: url, mode: (manualModeOverride || selectedMode) });
         const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
         // Register Plus Jakarta Sans font
@@ -3433,7 +3365,7 @@ function LensyApp() {
                                 Is your documentation visible to AI search?
                             </Typography>
                             <Typography variant="body1" sx={{ color: 'var(--text-secondary)', mt: 1, fontSize: '1rem', lineHeight: 1.6 }}>
-                                Developers are finding documentation through ChatGPT, Perplexity, Claude, and other AI tools. Paste your doc URL below to see if they can find yours.
+                                Developers are finding documentation through ChatGPT, Perplexity, Claude, and other AI tools. Lensy checks if they can find yours.
                             </Typography>
                         </Box>
                     </Box>
@@ -3564,7 +3496,6 @@ function LensyApp() {
                                                             setNoDocsAsCode(false);
                                                             setCrawlUrl('');
                                                             setDocsContextReady(true);
-                                                            trackEvent('github_docs_repo_selected', { repo: repoSuggestion.fullName });
                                                         }}
                                                     >
                                                         <Box sx={{
@@ -3589,10 +3520,7 @@ function LensyApp() {
                                                 ))}
                                                 <Typography
                                                     variant="caption"
-                                                    onClick={() => {
-                                                        setShowManualDocsEntry(!showManualDocsEntry);
-                                                        trackEvent('toggle_manual_docs_entry', { state: !showManualDocsEntry });
-                                                    }}
+                                                    onClick={() => setShowManualDocsEntry(!showManualDocsEntry)}
                                                     sx={{
                                                         mt: 0.5,
                                                         display: 'inline-block',
@@ -3660,7 +3588,6 @@ function LensyApp() {
                                                         onClick={() => {
                                                             // User says YES docs are in code → pushback, but let them try
                                                             setDocsAsCodeConfirmation('yes');
-                                                            trackEvent('github_docs_as_code_confirmed', { choice: 'yes' });
                                                         }}
                                                         sx={{
                                                             borderColor: 'rgba(245, 158, 11, 0.4)',
@@ -3680,7 +3607,6 @@ function LensyApp() {
                                                             setDocsAsCodeConfirmation('no');
                                                             setNoDocsAsCode(true);
                                                             setGithubDocsUrl('');
-                                                            trackEvent('github_docs_as_code_confirmed', { choice: 'no' });
                                                         }}
                                                         sx={{
                                                             bgcolor: '#f59e0b',
@@ -3732,10 +3658,7 @@ function LensyApp() {
                                                             cursor: 'pointer',
                                                             '&:hover': { bgcolor: 'rgba(59, 130, 246, 0.08)' }
                                                         }}
-                                                        onClick={() => {
-                                                            setGithubDocsUrl(repoSuggestion.fullName);
-                                                            trackEvent('github_docs_repo_selected_no_content', { repo: repoSuggestion.fullName });
-                                                        }}
+                                                        onClick={() => setGithubDocsUrl(repoSuggestion.fullName)}
                                                     >
                                                         <Box sx={{
                                                             width: 16, height: 16, borderRadius: '50%',
@@ -3794,7 +3717,6 @@ function LensyApp() {
                                                                     error: `Only ${repo?.contentFileCount || 0} documentation file${(repo?.contentFileCount || 0) !== 1 ? 's' : ''} found in ${selectedRepo}. Minimum 5 needed for analysis.`,
                                                                     progressMessages: []
                                                                 });
-                                                                trackEvent('github_docs_repo_search_failed', { repo: selectedRepo, error: 'Insufficient docs files' });
                                                                 // Reset back to CASE B after a short delay
                                                                 setTimeout(() => {
                                                                     setDocsAsCodeConfirmation('pending');
@@ -3805,7 +3727,6 @@ function LensyApp() {
                                                                 // Manually typed repo — accept optimistically
                                                                 setGithubDocsUrl(selectedRepo);
                                                                 setDocsContextReady(true);
-                                                                trackEvent('github_docs_repo_search_confirmed', { repo: selectedRepo });
                                                             }
                                                         }}
                                                         sx={{
@@ -3826,7 +3747,6 @@ function LensyApp() {
                                                         onClick={() => {
                                                             setDocsAsCodeConfirmation('pending');
                                                             setGithubDocsUrl('');
-                                                            trackEvent('github_docs_repo_search_back_clicked');
                                                         }}
                                                         sx={{ color: 'var(--text-muted)', textTransform: 'none', fontSize: '0.7rem' }}
                                                     >
@@ -5004,7 +4924,7 @@ function LensyApp() {
                     {analysisState.status === 'error' && analysisState.sourceMode !== 'github-issues' && (() => {
                         const error = analysisState.error || '';
                         // Classify error into branded messaging
-                        const errorConfig = error.includes('does not appear to be') || error.includes('not a documentation page')
+                        const errorConfig = error.includes('does not appear to be') || error.includes('not a documentation page') || error.includes('non-documentation-page')
                             ? {
                                 title: "This page doesn't look like technical documentation",
                                 description: 'Lensy is designed for developer docs, API references, SDK guides, and technical tutorials. Try entering a specific documentation page URL instead.',
@@ -5090,10 +5010,10 @@ function LensyApp() {
                                     <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'center', flexWrap: 'wrap' }}>
                                         <button
                                             onClick={() => {
+                                                trackEvent('try_another_url_clicked', { action: errorConfig.actionType, error: errorConfig.title });
                                                 if (errorConfig.actionType === 'retry') {
                                                     handleAnalyze();
                                                 } else {
-                                                    trackEvent('try_another_url_clicked', { previous_url: url, error_type: errorConfig.title });
                                                     setAnalysisState({ status: 'idle', progressMessages: [] });
                                                     setRejectedUrl(null);
                                                     setUrl('');
@@ -5204,8 +5124,6 @@ function LensyApp() {
                         </Box>
                     )}
                 </Paper>
-
-                {/* How It Works + Video section moved to bottom — always visible */}
 
                 {/* Progress Messages — only visible while actively analyzing, hidden on all error states */}
                 {analysisState.status === 'analyzing' && analysisState.progressMessages.length > 0 && selectedMode !== 'github-issues' && analysisState.sourceMode !== 'github-issues' && (
@@ -5751,7 +5669,7 @@ function LensyApp() {
                                                                 {asyncCards.overallScore.overallScore}/100
                                                             </Typography>
                                                             <Typography variant="caption" sx={{ color: 'var(--text-secondary)', fontSize: '0.75rem', display: 'block', mt: 0.5 }}>
-                                                                {getGradeLabel(asyncCards.overallScore.overallScore, recs.length || asyncCards.overallScore.recommendationCount || 0)}
+                                                                {getGradeLabel(asyncCards.overallScore.overallScore, recs.length)}
                                                             </Typography>
                                                         </Box>
                                                     </Box>
@@ -5881,11 +5799,7 @@ function LensyApp() {
                                                 <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>·</Typography>
                                                 <Typography
                                                     variant="caption"
-                                                    onClick={() => {
-                                                        const newTab = heroTab === 'recommendations' ? 'readiness' : 'recommendations';
-                                                        trackEvent('recommendations_viewed', { tab: newTab });
-                                                        setHeroTab(newTab);
-                                                    }}
+                                                    onClick={() => { const next = heroTab === 'recommendations' ? 'readiness' : 'recommendations'; if (next === 'recommendations') trackEvent('recommendations_viewed'); setHeroTab(next); }}
                                                     sx={{
                                                         color: 'var(--accent-primary)',
                                                         cursor: 'pointer', fontWeight: 600, fontSize: '0.7rem',
@@ -6418,6 +6332,188 @@ function LensyApp() {
                         })()}
                     </Paper>
                 )}
+
+                {/* ──── HOW IT WORKS SECTION ──── */}
+                <Paper id="how-it-works" elevation={0} sx={{
+                    p: { xs: 3, sm: 5 },
+                    mb: { xs: 2, sm: 4 },
+                    background: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '16px',
+                    scrollMarginTop: '96px',
+                }}>
+                    <Typography variant="h5" sx={{
+                        fontWeight: 700,
+                        textAlign: 'center',
+                        mb: 1,
+                        letterSpacing: '-0.02em',
+                        fontFamily: 'var(--font-sans, var(--font-ui))',
+                        color: 'var(--text-primary)',
+                    }}>
+                        How It Works
+                    </Typography>
+                    <Typography sx={{
+                        textAlign: 'center',
+                        mb: 4,
+                        fontSize: '0.9375rem',
+                        color: 'var(--text-secondary)',
+                        fontFamily: 'var(--font-sans, var(--font-ui))',
+                    }}>
+                        Lensy analyzes your documentation page and tells you how visible it is to AI tools
+                    </Typography>
+
+                    <Box sx={{
+                        display: 'flex',
+                        flexDirection: { xs: 'column', md: 'row' },
+                        gap: { xs: 3, md: 5 },
+                        alignItems: { xs: 'stretch', md: 'flex-start' },
+                    }}>
+                        {/* Left: Steps */}
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                            {[
+                                {
+                                    step: '1',
+                                    title: 'Paste your doc URL',
+                                    desc: 'Enter any documentation page — API references, SDK guides, tutorials, or developer portals.',
+                                },
+                                {
+                                    step: '2',
+                                    title: 'AI agent analyzes your page',
+                                    desc: 'Lensy checks bot access rules, structured data, discoverability signals, and content quality in real time.',
+                                },
+                                {
+                                    step: '3',
+                                    title: 'See your AI readiness score',
+                                    desc: 'Get a detailed breakdown across 4 dimensions with a score out of 100 and specific recommendations.',
+                                },
+                                {
+                                    step: '4',
+                                    title: 'Check AI citations',
+                                    desc: 'See if AI search engines like Perplexity are already finding and citing your documentation.',
+                                },
+                            ].map((item) => (
+                                <Box key={item.step} sx={{
+                                    display: 'flex',
+                                    gap: 2,
+                                    mb: 3,
+                                    '&:last-child': { mb: 0 },
+                                }}>
+                                    <Box sx={{
+                                        width: 32,
+                                        height: 32,
+                                        borderRadius: '50%',
+                                        background: 'var(--text-secondary)',
+                                        color: 'var(--bg-primary, #fff)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontWeight: 700,
+                                        fontSize: '0.875rem',
+                                        fontFamily: 'var(--font-sans, var(--font-ui))',
+                                        flexShrink: 0,
+                                        mt: 0.25,
+                                    }}>
+                                        {item.step}
+                                    </Box>
+                                    <Box>
+                                        <Typography sx={{
+                                            fontWeight: 600,
+                                            fontSize: '0.9375rem',
+                                            color: 'var(--text-primary)',
+                                            fontFamily: 'var(--font-sans, var(--font-ui))',
+                                            mb: 0.25,
+                                        }}>
+                                            {item.title}
+                                        </Typography>
+                                        <Typography sx={{
+                                            fontSize: '0.8125rem',
+                                            color: 'var(--text-secondary)',
+                                            fontFamily: 'var(--font-sans, var(--font-ui))',
+                                            lineHeight: 1.5,
+                                        }}>
+                                            {item.desc}
+                                        </Typography>
+                                    </Box>
+                                </Box>
+                            ))}
+                        </Box>
+
+                        {/* Right: Mermaid-style flow diagram as SVG */}
+                        <Box sx={{
+                            flex: 1,
+                            minWidth: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                        }}>
+                            <svg viewBox="0 0 340 420" style={{ width: '100%', maxWidth: 340 }}>
+                                {/* Node styles */}
+                                <defs>
+                                    <linearGradient id="nodeGrad" x1="0" y1="0" x2="1" y2="1">
+                                        <stop offset="0%" stopColor="var(--text-secondary)" stopOpacity="0.12" />
+                                        <stop offset="100%" stopColor="var(--text-secondary)" stopOpacity="0.04" />
+                                    </linearGradient>
+                                    <linearGradient id="scoreGrad" x1="0" y1="0" x2="1" y2="1">
+                                        <stop offset="0%" stopColor="var(--text-secondary)" stopOpacity="0.18" />
+                                        <stop offset="100%" stopColor="var(--text-secondary)" stopOpacity="0.06" />
+                                    </linearGradient>
+                                </defs>
+
+                                {/* Node 1: Paste URL */}
+                                <rect x="70" y="10" width="200" height="48" rx="10" fill="url(#nodeGrad)" stroke="var(--border-default)" strokeWidth="1.5" />
+                                <text x="170" y="30" textAnchor="middle" fill="var(--text-primary)" fontSize="11" fontWeight="600" fontFamily="var(--font-sans, system-ui)">Paste Documentation URL</text>
+                                <text x="170" y="46" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">docs.example.com/api</text>
+
+                                {/* Arrow 1→2 */}
+                                <line x1="170" y1="58" x2="170" y2="85" stroke="var(--text-secondary)" strokeWidth="1.5" strokeDasharray="4,3" />
+                                <polygon points="164,82 170,92 176,82" fill="var(--text-secondary)" />
+
+                                {/* Node 2: Content Gate */}
+                                <rect x="70" y="92" width="200" height="48" rx="10" fill="url(#nodeGrad)" stroke="var(--border-default)" strokeWidth="1.5" />
+                                <text x="170" y="112" textAnchor="middle" fill="var(--text-primary)" fontSize="11" fontWeight="600" fontFamily="var(--font-sans, system-ui)">Content Validation</text>
+                                <text x="170" y="128" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">Is this technical documentation?</text>
+
+                                {/* Arrow 2→3 */}
+                                <line x1="170" y1="140" x2="170" y2="167" stroke="var(--text-secondary)" strokeWidth="1.5" strokeDasharray="4,3" />
+                                <polygon points="164,164 170,174 176,164" fill="var(--text-secondary)" />
+
+                                {/* Node 3: AI Analysis (wider, 4 sub-items) */}
+                                <rect x="30" y="174" width="280" height="90" rx="10" fill="url(#nodeGrad)" stroke="var(--border-default)" strokeWidth="1.5" />
+                                <text x="170" y="194" textAnchor="middle" fill="var(--text-primary)" fontSize="11" fontWeight="600" fontFamily="var(--font-sans, system-ui)">AI Readiness Analysis</text>
+                                {/* Sub-items in 2x2 grid */}
+                                <text x="100" y="216" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">Bot Access</text>
+                                <text x="240" y="216" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">Structured Data</text>
+                                <text x="100" y="236" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">Discoverability</text>
+                                <text x="240" y="236" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">Content Quality</text>
+                                {/* Dots between items */}
+                                <circle cx="100" cy="210" r="2" fill="var(--text-secondary)" opacity="0.5" />
+                                <circle cx="240" cy="210" r="2" fill="var(--text-secondary)" opacity="0.5" />
+                                <circle cx="100" cy="230" r="2" fill="var(--text-secondary)" opacity="0.5" />
+                                <circle cx="240" cy="230" r="2" fill="var(--text-secondary)" opacity="0.5" />
+                                {/* Separator dots */}
+                                <rect x="55" y="247" width="230" height="1" fill="var(--border-subtle)" opacity="0.5" />
+                                <text x="170" y="258" textAnchor="middle" fill="var(--text-secondary)" fontSize="8" fontFamily="var(--font-sans, system-ui)" opacity="0.7">parallel analysis</text>
+
+                                {/* Arrow 3→4 */}
+                                <line x1="170" y1="264" x2="170" y2="291" stroke="var(--text-secondary)" strokeWidth="1.5" strokeDasharray="4,3" />
+                                <polygon points="164,288 170,298 176,288" fill="var(--text-secondary)" />
+
+                                {/* Node 4: Citation Check */}
+                                <rect x="70" y="298" width="200" height="48" rx="10" fill="url(#nodeGrad)" stroke="var(--border-default)" strokeWidth="1.5" />
+                                <text x="170" y="318" textAnchor="middle" fill="var(--text-primary)" fontSize="11" fontWeight="600" fontFamily="var(--font-sans, system-ui)">AI Citation Check</text>
+                                <text x="170" y="334" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">Perplexity AI Search</text>
+
+                                {/* Arrow 4→5 */}
+                                <line x1="170" y1="346" x2="170" y2="373" stroke="var(--text-secondary)" strokeWidth="1.5" strokeDasharray="4,3" />
+                                <polygon points="164,370 170,380 176,370" fill="var(--text-secondary)" />
+
+                                {/* Node 5: Score (green accent) */}
+                                <rect x="70" y="380" width="200" height="36" rx="10" fill="url(#scoreGrad)" stroke="var(--text-primary)" strokeWidth="1.5" />
+                                <text x="170" y="403" textAnchor="middle" fill="var(--text-primary)" fontSize="11" fontWeight="700" fontFamily="var(--font-sans, system-ui)">Score + Recommendations</text>
+                            </svg>
+                        </Box>
+                    </Box>
+                </Paper>
 
             </Container>
 

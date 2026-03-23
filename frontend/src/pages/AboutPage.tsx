@@ -117,7 +117,7 @@ function AboutPage() {
 
                 <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
                     <a
-                        href="https://www.linkedin.com/in/pasupdr/"
+                        href="https://www.linkedin.com/in/getperseverance"
                         target="_blank"
                         rel="noopener noreferrer"
                         style={{

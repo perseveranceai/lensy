@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { trackEvent } from '../analytics';
 
 interface Reference {
     label: string;
@@ -131,6 +132,23 @@ function ArticlePage() {
     const { slug } = useParams<{ slug: string }>();
     const navigate = useNavigate();
     const article = slug ? articleContent[slug] : null;
+    const ctaRef = useRef<HTMLDivElement>(null);
+    const trackedRef = useRef(false);
+
+    // Track article_read_complete when user scrolls to CTA
+    useEffect(() => {
+        trackedRef.current = false;
+        const el = ctaRef.current;
+        if (!el || !slug) return;
+        const observer = new IntersectionObserver(([entry]) => {
+            if (entry.isIntersecting && !trackedRef.current) {
+                trackedRef.current = true;
+                trackEvent('article_read_complete', { article_slug: slug });
+            }
+        }, { threshold: 0.5 });
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, [slug]);
 
     useEffect(() => {
         if (!slug || !article) return;
@@ -363,7 +381,7 @@ function ArticlePage() {
             )}
 
             {/* CTA */}
-            <div style={{
+            <div ref={ctaRef} style={{
                 marginTop: '2.5rem',
                 padding: '1.5rem',
                 background: 'var(--bg-secondary)',

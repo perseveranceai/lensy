@@ -1,5 +1,5 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import ConsoleLayout from './ConsoleLayout';
 import LensyApp from './LensyApp';
 import TermsOfUse from './TermsOfUse';
@@ -7,10 +7,21 @@ import PrivacyPolicy from './PrivacyPolicy';
 import ContactPage from './pages/ContactPage';
 import EducationPage from './pages/EducationPage';
 import ArticlePage from './pages/ArticlePage';
+import { trackPageView } from './analytics';
+
+/** Sends a page_view event to GA4 on every SPA route change */
+function PageTracker() {
+    const location = useLocation();
+    useEffect(() => {
+        trackPageView(location.pathname + location.search);
+    }, [location]);
+    return null;
+}
 
 function App() {
     return (
         <BrowserRouter>
+            <PageTracker />
             <Routes>
                 {/* Website shell with header + footer */}
                 <Route element={<ConsoleLayout />}>

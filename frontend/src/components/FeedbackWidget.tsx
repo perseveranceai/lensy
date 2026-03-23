@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { trackEvent } from '../analytics';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com';
 
@@ -52,12 +53,12 @@ export default function FeedbackWidget({ auditUrl, scanMetrics }: FeedbackWidget
     if (state === 'idle' || state === 'sent') {
         return (
             <button
-                onClick={() => setState('open')}
+                onClick={() => { trackEvent('feedback_widget_opened'); setState('open'); }}
                 aria-label="Send feedback"
                 style={{
                     position: 'fixed',
                     bottom: '1.5rem',
-                    right: '1.5rem',
+                    left: '1.5rem',
                     zIndex: 1000,
                     background: state === 'sent' ? '#22c55e' : 'var(--text-primary, #fff)',
                     color: state === 'sent' ? '#fff' : 'var(--bg-primary, #0a0a0a)',
@@ -88,7 +89,7 @@ export default function FeedbackWidget({ auditUrl, scanMetrics }: FeedbackWidget
         <div style={{
             position: 'fixed',
             bottom: '1.5rem',
-            right: '1.5rem',
+            left: '1.5rem',
             zIndex: 1000,
             width: '340px',
             background: 'var(--bg-secondary, #1a1a1a)',

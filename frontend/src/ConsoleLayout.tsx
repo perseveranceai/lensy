@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import FeedbackWidget from './components/FeedbackWidget';
-import { trackEvent } from './hooks/useAnalytics';
+import { trackEvent } from './analytics';
 const logoImg = `${process.env.PUBLIC_URL}/logo.png`;
 
 type ThemeMode = 'dark' | 'light' | 'system';
@@ -14,6 +14,14 @@ function ConsoleLayout() {
 
     // Mobile menu state
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+    // Back-to-top visibility
+    const [showBackToTop, setShowBackToTop] = useState(false);
+    useEffect(() => {
+        const onScroll = () => setShowBackToTop(window.scrollY > 400);
+        window.addEventListener('scroll', onScroll, { passive: true });
+        return () => window.removeEventListener('scroll', onScroll);
+    }, []);
 
     // Usage tracking (skip when REACT_APP_SKIP_RATE_LIMIT=true)
     const skipRateLimit = process.env.REACT_APP_SKIP_RATE_LIMIT === 'true';
@@ -78,8 +86,9 @@ function ConsoleLayout() {
     ];
     const currentTheme = themeOptions.find(t => t.mode === themeMode) || themeOptions[0];
 
-    const navLinks: Array<{ path: string; label: string; beta?: boolean }> = [
+    const navLinks: Array<{ path: string; label: string; beta?: boolean; anchor?: string; key?: string }> = [
         { path: '/', label: 'Lensy', beta: true },
+        { path: '/', label: 'How It Works', anchor: 'how-it-works', key: 'how-it-works' },
         { path: '/education', label: 'Education' },
         { path: '/contact', label: 'Contact' },
     ];
@@ -115,12 +124,12 @@ function ConsoleLayout() {
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
-                    height: '56px',
+                    height: '80px',
                 }}>
                     {/* Left: Logo */}
                     <a
                         href="/"
-                        onClick={(e) => { e.preventDefault(); navigate('/'); }}
+                        onClick={(e) => { e.preventDefault(); if (location.pathname === '/') { window.scrollTo({ top: 0, behavior: 'smooth' }); } else { navigate('/'); } }}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -132,7 +141,7 @@ function ConsoleLayout() {
                         onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.8')}
                         onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
                     >
-                        <img src={logoImg} alt="Perseverance AI" style={{ height: '32px', width: '32px', objectFit: 'contain' }} />
+                        <img src={logoImg} alt="Perseverance AI" className="header-logo" style={{ height: '70px', width: '70px', objectFit: 'contain' }} />
                         <span className="perseverance-text" style={{
                             fontFamily: 'var(--font-sans, var(--font-ui))',
                             fontSize: '1rem',
@@ -152,25 +161,40 @@ function ConsoleLayout() {
                     }} className="nav-links-desktop">
                         {navLinks.map((link) => (
                             <a
-                                key={link.path}
-                                href={link.path}
-                                onClick={(e) => { e.preventDefault(); trackEvent('contact_link_clicked', { ref: link.path, label: link.label, source: 'navbar' }); navigate(link.path); }}
+                                key={link.key || link.anchor || link.path}
+                                href={link.anchor ? `/#${link.anchor}` : link.path}
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    trackEvent('contact_link_clicked', { ref: link.anchor || link.path, label: link.label });
+                                    if (link.anchor) {
+                                        if (location.pathname !== '/') {
+                                            navigate('/');
+                                            setTimeout(() => document.getElementById(link.anchor!)?.scrollIntoView({ behavior: 'smooth' }), 300);
+                                        } else {
+                                            document.getElementById(link.anchor)?.scrollIntoView({ behavior: 'smooth' });
+                                        }
+                                    } else if (link.path === '/' && location.pathname === '/') {
+                                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                                    } else {
+                                        navigate(link.path);
+                                    }
+                                }}
                                 style={{
                                     fontSize: '0.8125rem',
-                                    fontWeight: isActive(link.path) ? 600 : 500,
-                                    color: isActive(link.path) ? 'var(--text-primary)' : 'var(--text-secondary)',
+                                    fontWeight: (!link.anchor && isActive(link.path)) ? 600 : 500,
+                                    color: (!link.anchor && isActive(link.path)) ? 'var(--text-primary)' : 'var(--text-secondary)',
                                     textDecoration: 'none',
                                     padding: '0.375rem 0.75rem',
                                     borderRadius: '6px',
                                     transition: 'all 0.15s ease',
-                                    background: isActive(link.path) ? 'var(--bg-tertiary)' : 'transparent',
+                                    background: (!link.anchor && isActive(link.path)) ? 'var(--bg-tertiary)' : 'transparent',
                                     fontFamily: 'var(--font-sans, var(--font-ui))',
                                 }}
                                 onMouseEnter={(e) => {
-                                    if (!isActive(link.path)) e.currentTarget.style.color = 'var(--text-primary)';
+                                    if (link.anchor || !isActive(link.path)) e.currentTarget.style.color = 'var(--text-primary)';
                                 }}
                                 onMouseLeave={(e) => {
-                                    if (!isActive(link.path)) e.currentTarget.style.color = 'var(--text-secondary)';
+                                    if (link.anchor || !isActive(link.path)) e.currentTarget.style.color = 'var(--text-secondary)';
                                 }}
                             >
                                 {link.label}{link.beta && <sup style={{ fontSize: '0.5rem', fontWeight: 700, color: '#6366f1', marginLeft: '2px', verticalAlign: 'super', letterSpacing: '0.03em' }}>BETA</sup>}
@@ -322,14 +346,29 @@ function ConsoleLayout() {
                     }}>
                         {navLinks.map((link) => (
                             <a
-                                key={link.path}
-                                href={link.path}
-                                onClick={(e) => { e.preventDefault(); trackEvent('contact_link_clicked', { ref: link.path, label: link.label, source: 'mobile_menu' }); navigate(link.path); setMobileMenuOpen(false); }}
+                                key={link.key || link.anchor || link.path}
+                                href={link.anchor ? `/#${link.anchor}` : link.path}
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    setMobileMenuOpen(false);
+                                    if (link.anchor) {
+                                        if (location.pathname !== '/') {
+                                            navigate('/');
+                                            setTimeout(() => document.getElementById(link.anchor!)?.scrollIntoView({ behavior: 'smooth' }), 300);
+                                        } else {
+                                            document.getElementById(link.anchor)?.scrollIntoView({ behavior: 'smooth' });
+                                        }
+                                    } else if (link.path === '/' && location.pathname === '/') {
+                                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                                    } else {
+                                        navigate(link.path);
+                                    }
+                                }}
                                 style={{
                                     display: 'block',
                                     fontSize: '0.875rem',
-                                    fontWeight: isActive(link.path) ? 600 : 500,
-                                    color: isActive(link.path) ? 'var(--text-primary)' : 'var(--text-secondary)',
+                                    fontWeight: (!link.anchor && isActive(link.path)) ? 600 : 500,
+                                    color: (!link.anchor && isActive(link.path)) ? 'var(--text-primary)' : 'var(--text-secondary)',
                                     textDecoration: 'none',
                                     padding: '0.625rem 0.75rem',
                                     borderRadius: '6px',
@@ -361,14 +400,45 @@ function ConsoleLayout() {
 
             <main style={{
                 flex: 1,
-                paddingTop: '64px',
+                paddingTop: '88px',
                 paddingBottom: '60px',
             }}>
                 <Outlet />
             </main>
 
-            {/* Feedback Widget — visible on all pages */}
+            {/* Feedback Widget — visible on all pages (bottom-left) */}
             <FeedbackWidget />
+
+            {/* Back to Top — bottom-right, appears after scrolling */}
+            {showBackToTop && (
+                <button
+                    onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                    aria-label="Back to top"
+                    style={{
+                        position: 'fixed',
+                        bottom: '1.5rem',
+                        right: '1.5rem',
+                        zIndex: 1000,
+                        background: 'var(--text-primary, #fff)',
+                        color: 'var(--bg-primary, #0a0a0a)',
+                        border: 'none',
+                        borderRadius: '50%',
+                        width: '44px',
+                        height: '44px',
+                        fontFamily: 'var(--font-sans, "Plus Jakarta Sans", sans-serif)',
+                        fontSize: '1.25rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+                        transition: 'opacity 0.2s ease, transform 0.2s ease',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                    }}
+                >
+                    &#8593;
+                </button>
+            )}
 
             {/* Footer */}
             <footer style={{
@@ -389,7 +459,7 @@ function ConsoleLayout() {
                         onClick={(e) => { e.preventDefault(); navigate('/'); }}
                         style={{ textDecoration: 'none', display: 'flex', alignItems: 'center' }}
                     >
-                        <img src={logoImg} alt="Perseverance AI" style={{ height: '28px', width: '28px', objectFit: 'contain' }} />
+                        <img src={logoImg} alt="Perseverance AI" className="footer-logo" style={{ height: '60px', width: '60px', objectFit: 'contain' }} />
                     </a>
 
                     {/* Social Links */}
@@ -399,18 +469,15 @@ function ConsoleLayout() {
                         flexWrap: 'wrap',
                         justifyContent: 'center',
                     }}>
-                        <a href="https://www.linkedin.com/in/pasupdr/" target="_blank" rel="noopener noreferrer"
-                            onClick={() => trackEvent('contact_link_clicked', { ref: 'linkedin', source: 'footer' })}
+                        <a href="https://www.linkedin.com/in/getperseverance" target="_blank" rel="noopener noreferrer"
                             style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)', fontWeight: 500 }}>
                             LinkedIn
                         </a>
                         <a href="https://x.com/getperseverance" target="_blank" rel="noopener noreferrer"
-                            onClick={() => trackEvent('contact_link_clicked', { ref: 'x_twitter', source: 'footer' })}
                             style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)', fontWeight: 500 }}>
                             X
                         </a>
                         <a href="https://calendly.com/getperseverance" target="_blank" rel="noopener noreferrer"
-                            onClick={() => trackEvent('contact_link_clicked', { ref: 'calendly', source: 'footer' })}
                             style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)', fontWeight: 500 }}>
                             Schedule a conversation
                         </a>
@@ -448,6 +515,8 @@ function ConsoleLayout() {
                     .theme-toggle-label { display: none !important; }
                     .theme-toggle-arrow { display: none !important; }
                     .perseverance-text { display: none !important; }
+                    .header-logo { height: 44px !important; width: 44px !important; }
+                    .footer-logo { height: 38px !important; width: 38px !important; }
                 }
             `}</style>
         </div>
