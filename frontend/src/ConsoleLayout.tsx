@@ -77,8 +77,9 @@ function ConsoleLayout() {
     ];
     const currentTheme = themeOptions.find(t => t.mode === themeMode) || themeOptions[0];
 
-    const navLinks: Array<{ path: string; label: string; beta?: boolean }> = [
+    const navLinks: Array<{ path: string; label: string; beta?: boolean; anchor?: string; key?: string }> = [
         { path: '/', label: 'Lensy', beta: true },
+        { path: '/', label: 'How It Works', anchor: 'how-it-works', key: 'how-it-works' },
         { path: '/education', label: 'Education' },
         { path: '/contact', label: 'Contact' },
     ];
@@ -151,25 +152,37 @@ function ConsoleLayout() {
                     }} className="nav-links-desktop">
                         {navLinks.map((link) => (
                             <a
-                                key={link.path}
-                                href={link.path}
-                                onClick={(e) => { e.preventDefault(); navigate(link.path); }}
+                                key={link.key || link.anchor || link.path}
+                                href={link.anchor ? `/#${link.anchor}` : link.path}
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    if (link.anchor) {
+                                        if (location.pathname !== '/') {
+                                            navigate('/');
+                                            setTimeout(() => document.getElementById(link.anchor!)?.scrollIntoView({ behavior: 'smooth' }), 100);
+                                        } else {
+                                            document.getElementById(link.anchor)?.scrollIntoView({ behavior: 'smooth' });
+                                        }
+                                    } else {
+                                        navigate(link.path);
+                                    }
+                                }}
                                 style={{
                                     fontSize: '0.8125rem',
-                                    fontWeight: isActive(link.path) ? 600 : 500,
-                                    color: isActive(link.path) ? 'var(--text-primary)' : 'var(--text-secondary)',
+                                    fontWeight: (!link.anchor && isActive(link.path)) ? 600 : 500,
+                                    color: (!link.anchor && isActive(link.path)) ? 'var(--text-primary)' : 'var(--text-secondary)',
                                     textDecoration: 'none',
                                     padding: '0.375rem 0.75rem',
                                     borderRadius: '6px',
                                     transition: 'all 0.15s ease',
-                                    background: isActive(link.path) ? 'var(--bg-tertiary)' : 'transparent',
+                                    background: (!link.anchor && isActive(link.path)) ? 'var(--bg-tertiary)' : 'transparent',
                                     fontFamily: 'var(--font-sans, var(--font-ui))',
                                 }}
                                 onMouseEnter={(e) => {
-                                    if (!isActive(link.path)) e.currentTarget.style.color = 'var(--text-primary)';
+                                    if (link.anchor || !isActive(link.path)) e.currentTarget.style.color = 'var(--text-primary)';
                                 }}
                                 onMouseLeave={(e) => {
-                                    if (!isActive(link.path)) e.currentTarget.style.color = 'var(--text-secondary)';
+                                    if (link.anchor || !isActive(link.path)) e.currentTarget.style.color = 'var(--text-secondary)';
                                 }}
                             >
                                 {link.label}{link.beta && <sup style={{ fontSize: '0.5rem', fontWeight: 700, color: '#6366f1', marginLeft: '2px', verticalAlign: 'super', letterSpacing: '0.03em' }}>BETA</sup>}
@@ -321,14 +334,27 @@ function ConsoleLayout() {
                     }}>
                         {navLinks.map((link) => (
                             <a
-                                key={link.path}
-                                href={link.path}
-                                onClick={(e) => { e.preventDefault(); navigate(link.path); setMobileMenuOpen(false); }}
+                                key={link.key || link.anchor || link.path}
+                                href={link.anchor ? `/#${link.anchor}` : link.path}
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    setMobileMenuOpen(false);
+                                    if (link.anchor) {
+                                        if (location.pathname !== '/') {
+                                            navigate('/');
+                                            setTimeout(() => document.getElementById(link.anchor!)?.scrollIntoView({ behavior: 'smooth' }), 100);
+                                        } else {
+                                            document.getElementById(link.anchor)?.scrollIntoView({ behavior: 'smooth' });
+                                        }
+                                    } else {
+                                        navigate(link.path);
+                                    }
+                                }}
                                 style={{
                                     display: 'block',
                                     fontSize: '0.875rem',
-                                    fontWeight: isActive(link.path) ? 600 : 500,
-                                    color: isActive(link.path) ? 'var(--text-primary)' : 'var(--text-secondary)',
+                                    fontWeight: (!link.anchor && isActive(link.path)) ? 600 : 500,
+                                    color: (!link.anchor && isActive(link.path)) ? 'var(--text-primary)' : 'var(--text-secondary)',
                                     textDecoration: 'none',
                                     padding: '0.625rem 0.75rem',
                                     borderRadius: '6px',

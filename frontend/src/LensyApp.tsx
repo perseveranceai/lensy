@@ -5116,7 +5116,189 @@ function LensyApp() {
                     )}
                 </Paper>
 
-                {/* How It Works + Video section moved to bottom — always visible */}
+                {/* ──── HOW IT WORKS SECTION ──── */}
+                {analysisState.status === 'idle' && (
+                <Paper id="how-it-works" elevation={0} sx={{
+                    p: { xs: 3, sm: 5 },
+                    mb: { xs: 2, sm: 4 },
+                    background: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '16px',
+                    scrollMarginTop: '96px',
+                }}>
+                    <Typography variant="h5" sx={{
+                        fontWeight: 700,
+                        textAlign: 'center',
+                        mb: 1,
+                        letterSpacing: '-0.02em',
+                        fontFamily: 'var(--font-sans, var(--font-ui))',
+                        color: 'var(--text-primary)',
+                    }}>
+                        How It Works
+                    </Typography>
+                    <Typography sx={{
+                        textAlign: 'center',
+                        mb: 4,
+                        fontSize: '0.9375rem',
+                        color: 'var(--text-secondary)',
+                        fontFamily: 'var(--font-sans, var(--font-ui))',
+                    }}>
+                        Lensy analyzes your documentation page and tells you how visible it is to AI tools
+                    </Typography>
+
+                    <Box sx={{
+                        display: 'flex',
+                        flexDirection: { xs: 'column', md: 'row' },
+                        gap: { xs: 3, md: 5 },
+                        alignItems: { xs: 'stretch', md: 'flex-start' },
+                    }}>
+                        {/* Left: Steps */}
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                            {[
+                                {
+                                    step: '1',
+                                    title: 'Paste your doc URL',
+                                    desc: 'Enter any documentation page — API references, SDK guides, tutorials, or developer portals.',
+                                },
+                                {
+                                    step: '2',
+                                    title: 'AI agent analyzes your page',
+                                    desc: 'Lensy checks bot access rules, structured data, discoverability signals, and content quality in real time.',
+                                },
+                                {
+                                    step: '3',
+                                    title: 'See your AI readiness score',
+                                    desc: 'Get a detailed breakdown across 4 dimensions with a score out of 100 and specific recommendations.',
+                                },
+                                {
+                                    step: '4',
+                                    title: 'Check AI citations',
+                                    desc: 'Discover if ChatGPT, Perplexity, Claude, and other AI tools are already citing your documentation.',
+                                },
+                            ].map((item) => (
+                                <Box key={item.step} sx={{
+                                    display: 'flex',
+                                    gap: 2,
+                                    mb: 3,
+                                    '&:last-child': { mb: 0 },
+                                }}>
+                                    <Box sx={{
+                                        width: 32,
+                                        height: 32,
+                                        borderRadius: '50%',
+                                        background: 'var(--accent-primary, #6366f1)',
+                                        color: '#fff',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontWeight: 700,
+                                        fontSize: '0.875rem',
+                                        fontFamily: 'var(--font-sans, var(--font-ui))',
+                                        flexShrink: 0,
+                                        mt: 0.25,
+                                    }}>
+                                        {item.step}
+                                    </Box>
+                                    <Box>
+                                        <Typography sx={{
+                                            fontWeight: 600,
+                                            fontSize: '0.9375rem',
+                                            color: 'var(--text-primary)',
+                                            fontFamily: 'var(--font-sans, var(--font-ui))',
+                                            mb: 0.25,
+                                        }}>
+                                            {item.title}
+                                        </Typography>
+                                        <Typography sx={{
+                                            fontSize: '0.8125rem',
+                                            color: 'var(--text-secondary)',
+                                            fontFamily: 'var(--font-sans, var(--font-ui))',
+                                            lineHeight: 1.5,
+                                        }}>
+                                            {item.desc}
+                                        </Typography>
+                                    </Box>
+                                </Box>
+                            ))}
+                        </Box>
+
+                        {/* Right: Mermaid-style flow diagram as SVG */}
+                        <Box sx={{
+                            flex: 1,
+                            minWidth: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                        }}>
+                            <svg viewBox="0 0 340 420" style={{ width: '100%', maxWidth: 340 }}>
+                                {/* Node styles */}
+                                <defs>
+                                    <linearGradient id="nodeGrad" x1="0" y1="0" x2="1" y2="1">
+                                        <stop offset="0%" stopColor="var(--accent-primary, #6366f1)" stopOpacity="0.15" />
+                                        <stop offset="100%" stopColor="var(--accent-primary, #6366f1)" stopOpacity="0.05" />
+                                    </linearGradient>
+                                    <linearGradient id="scoreGrad" x1="0" y1="0" x2="1" y2="1">
+                                        <stop offset="0%" stopColor="#22c55e" stopOpacity="0.15" />
+                                        <stop offset="100%" stopColor="#22c55e" stopOpacity="0.05" />
+                                    </linearGradient>
+                                </defs>
+
+                                {/* Node 1: Paste URL */}
+                                <rect x="70" y="10" width="200" height="48" rx="10" fill="url(#nodeGrad)" stroke="var(--accent-primary, #6366f1)" strokeWidth="1.5" />
+                                <text x="170" y="30" textAnchor="middle" fill="var(--text-primary)" fontSize="11" fontWeight="600" fontFamily="var(--font-sans, system-ui)">Paste Documentation URL</text>
+                                <text x="170" y="46" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">docs.example.com/api</text>
+
+                                {/* Arrow 1→2 */}
+                                <line x1="170" y1="58" x2="170" y2="85" stroke="var(--text-secondary)" strokeWidth="1.5" strokeDasharray="4,3" />
+                                <polygon points="164,82 170,92 176,82" fill="var(--text-secondary)" />
+
+                                {/* Node 2: Content Gate */}
+                                <rect x="70" y="92" width="200" height="48" rx="10" fill="url(#nodeGrad)" stroke="var(--accent-primary, #6366f1)" strokeWidth="1.5" />
+                                <text x="170" y="112" textAnchor="middle" fill="var(--text-primary)" fontSize="11" fontWeight="600" fontFamily="var(--font-sans, system-ui)">Content Validation</text>
+                                <text x="170" y="128" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">Is this technical documentation?</text>
+
+                                {/* Arrow 2→3 */}
+                                <line x1="170" y1="140" x2="170" y2="167" stroke="var(--text-secondary)" strokeWidth="1.5" strokeDasharray="4,3" />
+                                <polygon points="164,164 170,174 176,164" fill="var(--text-secondary)" />
+
+                                {/* Node 3: AI Analysis (wider, 4 sub-items) */}
+                                <rect x="30" y="174" width="280" height="90" rx="10" fill="url(#nodeGrad)" stroke="var(--accent-primary, #6366f1)" strokeWidth="1.5" />
+                                <text x="170" y="194" textAnchor="middle" fill="var(--text-primary)" fontSize="11" fontWeight="600" fontFamily="var(--font-sans, system-ui)">AI Readiness Analysis</text>
+                                {/* Sub-items in 2x2 grid */}
+                                <text x="100" y="216" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">Bot Access</text>
+                                <text x="240" y="216" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">Structured Data</text>
+                                <text x="100" y="236" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">Discoverability</text>
+                                <text x="240" y="236" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">Content Quality</text>
+                                {/* Dots between items */}
+                                <circle cx="100" cy="210" r="2" fill="var(--accent-primary, #6366f1)" opacity="0.5" />
+                                <circle cx="240" cy="210" r="2" fill="var(--accent-primary, #6366f1)" opacity="0.5" />
+                                <circle cx="100" cy="230" r="2" fill="var(--accent-primary, #6366f1)" opacity="0.5" />
+                                <circle cx="240" cy="230" r="2" fill="var(--accent-primary, #6366f1)" opacity="0.5" />
+                                {/* Separator dots */}
+                                <rect x="55" y="247" width="230" height="1" fill="var(--border-subtle)" opacity="0.5" />
+                                <text x="170" y="258" textAnchor="middle" fill="var(--text-secondary)" fontSize="8" fontFamily="var(--font-sans, system-ui)" opacity="0.7">parallel analysis</text>
+
+                                {/* Arrow 3→4 */}
+                                <line x1="170" y1="264" x2="170" y2="291" stroke="var(--text-secondary)" strokeWidth="1.5" strokeDasharray="4,3" />
+                                <polygon points="164,288 170,298 176,288" fill="var(--text-secondary)" />
+
+                                {/* Node 4: Citation Check */}
+                                <rect x="70" y="298" width="200" height="48" rx="10" fill="url(#nodeGrad)" stroke="var(--accent-primary, #6366f1)" strokeWidth="1.5" />
+                                <text x="170" y="318" textAnchor="middle" fill="var(--text-primary)" fontSize="11" fontWeight="600" fontFamily="var(--font-sans, system-ui)">AI Citation Check</text>
+                                <text x="170" y="334" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">ChatGPT, Perplexity, Claude...</text>
+
+                                {/* Arrow 4→5 */}
+                                <line x1="170" y1="346" x2="170" y2="373" stroke="var(--text-secondary)" strokeWidth="1.5" strokeDasharray="4,3" />
+                                <polygon points="164,370 170,380 176,370" fill="var(--text-secondary)" />
+
+                                {/* Node 5: Score (green accent) */}
+                                <rect x="70" y="380" width="200" height="36" rx="10" fill="url(#scoreGrad)" stroke="#22c55e" strokeWidth="1.5" />
+                                <text x="170" y="403" textAnchor="middle" fill="var(--text-primary)" fontSize="11" fontWeight="700" fontFamily="var(--font-sans, system-ui)">Score + Recommendations</text>
+                            </svg>
+                        </Box>
+                    </Box>
+                </Paper>
+                )}
 
                 {/* Progress Messages — only visible while actively analyzing, hidden on all error states */}
                 {analysisState.status === 'analyzing' && analysisState.progressMessages.length > 0 && selectedMode !== 'github-issues' && analysisState.sourceMode !== 'github-issues' && (
