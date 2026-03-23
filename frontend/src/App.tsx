@@ -11,11 +11,36 @@ const ContactPage = lazy(() => import('./pages/ContactPage'));
 const EducationPage = lazy(() => import('./pages/EducationPage'));
 const ArticlePage = lazy(() => import('./pages/ArticlePage'));
 
-/** Minimal loading fallback */
+/** Hero shell — renders instantly as LCP element while LensyApp chunk loads */
 const PageLoader = () => (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
-        <div style={{ width: 32, height: 32, border: '3px solid var(--border-default)', borderTopColor: 'var(--accent-primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    <div style={{ maxWidth: '900px', margin: '0 auto', padding: '3rem 1.5rem', textAlign: 'center' }}>
+        <h1 style={{
+            fontSize: 'clamp(1.75rem, 4vw, 2.75rem)',
+            fontWeight: 700,
+            letterSpacing: '-0.03em',
+            lineHeight: 1.15,
+            color: 'var(--text-primary)',
+            fontFamily: 'var(--font-sans, system-ui)',
+            margin: '0 0 1rem',
+        }}>
+            Is your documentation ready for AI search?
+        </h1>
+        <p style={{
+            fontSize: '1.0625rem',
+            lineHeight: 1.6,
+            color: 'var(--text-secondary)',
+            fontFamily: 'var(--font-sans, system-ui)',
+            maxWidth: '640px',
+            margin: '0 auto 2rem',
+        }}>
+            Developers are finding documentation through ChatGPT, Perplexity, Claude, and other AI tools. Lensy checks if they can find yours.
+        </p>
+        <div style={{
+            maxWidth: '640px', margin: '0 auto', height: '56px',
+            background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)',
+            borderRadius: '12px', animation: 'pulse 1.5s ease-in-out infinite',
+        }} />
+        <style>{`@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }`}</style>
     </div>
 );
 
