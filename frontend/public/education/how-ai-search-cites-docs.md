@@ -26,4 +26,4 @@ Lensy reports which of your queries returned citations to your URL and which did
 
 ---
 
-Check your documentation's AI readiness at [https://gamma.perseveranceai.com](https://gamma.perseveranceai.com)
+Check your documentation's AI readiness at [https://perseveranceai.com](https://perseveranceai.com)

@@ -29,4 +29,4 @@ The good news: most of the fixes are straightforward. Unblock AI crawlers, impro
 
 ---
 
-Check your documentation's AI readiness at [https://gamma.perseveranceai.com](https://gamma.perseveranceai.com)
+Check your documentation's AI readiness at [https://perseveranceai.com](https://perseveranceai.com)

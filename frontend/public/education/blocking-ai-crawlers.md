@@ -33,4 +33,4 @@ Lensy checks all 10 crawlers instantly and tells you exactly which ones are bloc
 
 ---
 
-Check your documentation's AI readiness at [https://gamma.perseveranceai.com](https://gamma.perseveranceai.com)
+Check your documentation's AI readiness at [https://perseveranceai.com](https://perseveranceai.com)

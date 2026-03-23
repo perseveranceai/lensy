@@ -20,4 +20,4 @@ This is especially important for documentation sites that serve content at multi
 
 ---
 
-Check your documentation's AI readiness at [https://gamma.perseveranceai.com](https://gamma.perseveranceai.com)
+Check your documentation's AI readiness at [https://perseveranceai.com](https://perseveranceai.com)

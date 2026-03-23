@@ -24,4 +24,4 @@ Beyond raw text-to-HTML ratio, Lensy evaluates content health through:
 
 ---
 
-Check your documentation's AI readiness at [https://gamma.perseveranceai.com](https://gamma.perseveranceai.com)
+Check your documentation's AI readiness at [https://perseveranceai.com](https://perseveranceai.com)
