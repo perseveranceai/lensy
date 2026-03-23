@@ -114,7 +114,7 @@ function ConsoleLayout() {
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
-                    height: '56px',
+                    height: '80px',
                 }}>
                     {/* Left: Logo */}
                     <a
@@ -131,7 +131,7 @@ function ConsoleLayout() {
                         onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.8')}
                         onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
                     >
-                        <img src={logoImg} alt="Perseverance AI" style={{ height: '32px', width: '32px', objectFit: 'contain' }} />
+                        <img src={logoImg} alt="Perseverance AI" className="header-logo" style={{ height: '70px', width: '70px', objectFit: 'contain' }} />
                         <span className="perseverance-text" style={{
                             fontFamily: 'var(--font-sans, var(--font-ui))',
                             fontSize: '1rem',
@@ -360,7 +360,7 @@ function ConsoleLayout() {
 
             <main style={{
                 flex: 1,
-                paddingTop: '64px',
+                paddingTop: '88px',
                 paddingBottom: '60px',
             }}>
                 <Outlet />
@@ -388,7 +388,7 @@ function ConsoleLayout() {
                         onClick={(e) => { e.preventDefault(); navigate('/'); }}
                         style={{ textDecoration: 'none', display: 'flex', alignItems: 'center' }}
                     >
-                        <img src={logoImg} alt="Perseverance AI" style={{ height: '28px', width: '28px', objectFit: 'contain' }} />
+                        <img src={logoImg} alt="Perseverance AI" className="footer-logo" style={{ height: '60px', width: '60px', objectFit: 'contain' }} />
                     </a>
 
                     {/* Social Links */}
@@ -444,6 +444,8 @@ function ConsoleLayout() {
                     .theme-toggle-label { display: none !important; }
                     .theme-toggle-arrow { display: none !important; }
                     .perseverance-text { display: none !important; }
+                    .header-logo { height: 44px !important; width: 44px !important; }
+                    .footer-logo { height: 38px !important; width: 38px !important; }
                 }
             `}</style>
         </div>
