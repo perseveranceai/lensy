@@ -5117,7 +5117,6 @@ function LensyApp() {
                 </Paper>
 
                 {/* ──── HOW IT WORKS SECTION ──── */}
-                {analysisState.status === 'idle' && (
                 <Paper id="how-it-works" elevation={0} sx={{
                     p: { xs: 3, sm: 5 },
                     mb: { xs: 2, sm: 4 },
@@ -5173,7 +5172,7 @@ function LensyApp() {
                                 {
                                     step: '4',
                                     title: 'Check AI citations',
-                                    desc: 'Discover if ChatGPT, Perplexity, Claude, and other AI tools are already citing your documentation.',
+                                    desc: 'See if AI search engines like Perplexity are already finding and citing your documentation.',
                                 },
                             ].map((item) => (
                                 <Box key={item.step} sx={{
@@ -5285,7 +5284,7 @@ function LensyApp() {
                                 {/* Node 4: Citation Check */}
                                 <rect x="70" y="298" width="200" height="48" rx="10" fill="url(#nodeGrad)" stroke="var(--border-default)" strokeWidth="1.5" />
                                 <text x="170" y="318" textAnchor="middle" fill="var(--text-primary)" fontSize="11" fontWeight="600" fontFamily="var(--font-sans, system-ui)">AI Citation Check</text>
-                                <text x="170" y="334" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">ChatGPT, Perplexity, Claude...</text>
+                                <text x="170" y="334" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">Perplexity AI Search</text>
 
                                 {/* Arrow 4→5 */}
                                 <line x1="170" y1="346" x2="170" y2="373" stroke="var(--text-secondary)" strokeWidth="1.5" strokeDasharray="4,3" />
@@ -5298,7 +5297,6 @@ function LensyApp() {
                         </Box>
                     </Box>
                 </Paper>
-                )}
 
                 {/* Progress Messages — only visible while actively analyzing, hidden on all error states */}
                 {analysisState.status === 'analyzing' && analysisState.progressMessages.length > 0 && selectedMode !== 'github-issues' && analysisState.sourceMode !== 'github-issues' && (

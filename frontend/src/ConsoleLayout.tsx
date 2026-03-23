@@ -120,7 +120,7 @@ function ConsoleLayout() {
                     {/* Left: Logo */}
                     <a
                         href="/"
-                        onClick={(e) => { e.preventDefault(); navigate('/'); }}
+                        onClick={(e) => { e.preventDefault(); if (location.pathname === '/') { window.scrollTo({ top: 0, behavior: 'smooth' }); } else { navigate('/'); } }}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -159,10 +159,12 @@ function ConsoleLayout() {
                                     if (link.anchor) {
                                         if (location.pathname !== '/') {
                                             navigate('/');
-                                            setTimeout(() => document.getElementById(link.anchor!)?.scrollIntoView({ behavior: 'smooth' }), 100);
+                                            setTimeout(() => document.getElementById(link.anchor!)?.scrollIntoView({ behavior: 'smooth' }), 300);
                                         } else {
                                             document.getElementById(link.anchor)?.scrollIntoView({ behavior: 'smooth' });
                                         }
+                                    } else if (link.path === '/' && location.pathname === '/') {
+                                        window.scrollTo({ top: 0, behavior: 'smooth' });
                                     } else {
                                         navigate(link.path);
                                     }
@@ -342,10 +344,12 @@ function ConsoleLayout() {
                                     if (link.anchor) {
                                         if (location.pathname !== '/') {
                                             navigate('/');
-                                            setTimeout(() => document.getElementById(link.anchor!)?.scrollIntoView({ behavior: 'smooth' }), 100);
+                                            setTimeout(() => document.getElementById(link.anchor!)?.scrollIntoView({ behavior: 'smooth' }), 300);
                                         } else {
                                             document.getElementById(link.anchor)?.scrollIntoView({ behavior: 'smooth' });
                                         }
+                                    } else if (link.path === '/' && location.pathname === '/') {
+                                        window.scrollTo({ top: 0, behavior: 'smooth' });
                                     } else {
                                         navigate(link.path);
                                     }
