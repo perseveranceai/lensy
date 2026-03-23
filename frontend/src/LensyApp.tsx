@@ -6342,11 +6342,12 @@ function LensyApp() {
                     borderRadius: '16px',
                     scrollMarginTop: '96px',
                 }}>
-                    <Typography variant="h5" sx={{
+                    <Typography variant="h2" sx={{
                         fontWeight: 700,
                         textAlign: 'center',
                         mb: 1,
                         letterSpacing: '-0.02em',
+                        fontSize: '1.5rem',
                         fontFamily: 'var(--font-sans, var(--font-ui))',
                         color: 'var(--text-primary)',
                     }}>

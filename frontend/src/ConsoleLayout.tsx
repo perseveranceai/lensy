@@ -197,7 +197,7 @@ function ConsoleLayout() {
                                     if (link.anchor || !isActive(link.path)) e.currentTarget.style.color = 'var(--text-secondary)';
                                 }}
                             >
-                                {link.label}{link.beta && <sup style={{ fontSize: '0.5rem', fontWeight: 700, color: '#6366f1', marginLeft: '2px', verticalAlign: 'super', letterSpacing: '0.03em' }}>BETA</sup>}
+                                {link.label}{link.beta && <sup style={{ fontSize: '0.5rem', fontWeight: 700, color: '#a5b4fc', marginLeft: '2px', verticalAlign: 'super', letterSpacing: '0.03em' }}>BETA</sup>}
                             </a>
                         ))}
                     </div>
@@ -215,8 +215,8 @@ function ConsoleLayout() {
                                 fontFamily: 'var(--font-mono)',
                                 fontSize: '0.6875rem',
                                 fontWeight: 700,
-                                color: '#fff',
-                                background: process.env.REACT_APP_ENV === 'gamma' ? '#d97706' : '#6366f1',
+                                color: '#000',
+                                background: process.env.REACT_APP_ENV === 'gamma' ? '#f59e0b' : '#818cf8',
                                 padding: '0.2rem 0.5rem',
                                 borderRadius: '4px',
                                 textTransform: 'uppercase',
@@ -375,7 +375,7 @@ function ConsoleLayout() {
                                     fontFamily: 'var(--font-sans, var(--font-ui))',
                                 }}
                             >
-                                {link.label}{link.beta && <sup style={{ fontSize: '0.5rem', fontWeight: 700, color: '#6366f1', marginLeft: '2px', verticalAlign: 'super', letterSpacing: '0.03em' }}>BETA</sup>}
+                                {link.label}{link.beta && <sup style={{ fontSize: '0.5rem', fontWeight: 700, color: '#a5b4fc', marginLeft: '2px', verticalAlign: 'super', letterSpacing: '0.03em' }}>BETA</sup>}
                             </a>
                         ))}
                         {!skipRateLimit && usage && (

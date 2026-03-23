@@ -136,8 +136,9 @@ function ContactPage() {
                 }}>
                     {!showMessageField && (
                         <div style={{ marginBottom: '1rem' }}>
-                            <label style={labelStyle}>Developer Portal or Website URL</label>
+                            <label htmlFor="contact-doc-url" style={labelStyle}>Developer Portal or Website URL</label>
                             <input
+                                id="contact-doc-url"
                                 type="text"
                                 placeholder="e.g., docs.yourcompany.com or yourcompany.com"
                                 value={formData.doc_url}
@@ -148,8 +149,9 @@ function ContactPage() {
                         </div>
                     )}
                     <div style={{ marginBottom: '1rem' }}>
-                        <label style={labelStyle}>Name</label>
+                        <label htmlFor="contact-name" style={labelStyle}>Name</label>
                         <input
+                            id="contact-name"
                             type="text"
                             value={formData.name}
                             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -158,8 +160,9 @@ function ContactPage() {
                         />
                     </div>
                     <div style={{ marginBottom: '1rem' }}>
-                        <label style={labelStyle}>Email</label>
+                        <label htmlFor="contact-email" style={labelStyle}>Email</label>
                         <input
+                            id="contact-email"
                             type="email"
                             value={formData.email}
                             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -169,8 +172,9 @@ function ContactPage() {
                     </div>
                     {!showMessageField && (
                         <div style={{ marginBottom: '1.25rem' }}>
-                            <label style={labelStyle}>Organization / Company</label>
+                            <label htmlFor="contact-org" style={labelStyle}>Organization / Company</label>
                             <input
+                                id="contact-org"
                                 type="text"
                                 value={formData.organization}
                                 onChange={(e) => setFormData({ ...formData, organization: e.target.value })}
@@ -180,8 +184,9 @@ function ContactPage() {
                     )}
                     {showMessageField && (
                         <div style={{ marginBottom: '1.25rem' }}>
-                            <label style={labelStyle}>Your feedback</label>
+                            <label htmlFor="contact-message" style={labelStyle}>Your feedback</label>
                             <textarea
+                                id="contact-message"
                                 placeholder="What worked? What didn't? What would you like to see?"
                                 value={formData.message}
                                 onChange={(e) => setFormData({ ...formData, message: e.target.value })}
@@ -207,7 +212,7 @@ function ContactPage() {
                             fontWeight: 600,
                             fontFamily: 'var(--font-sans, var(--font-ui))',
                             color: '#fff',
-                            background: 'var(--accent-primary, #6366f1)',
+                            background: 'var(--accent-primary, #4f46e5)',
                             border: 'none',
                             borderRadius: '8px',
                             cursor: status === 'sending' ? 'wait' : 'pointer',

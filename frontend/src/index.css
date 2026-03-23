@@ -17,13 +17,13 @@
     --bg-tertiary: #1a1a1a;
     --text-primary: #fafafa;
     --text-secondary: #e5e7eb;
-    --text-muted: #737373;
+    --text-muted: #8b8b8b;
     --text-code: #525252;
     --border-subtle: #1f1f1f;
     --border-default: #2a2a2a;
     --border-strong: #3a3a3a;
-    --accent-primary: #3b82f6;
-    --accent-hover: #60a5fa;
+    --accent-primary: #2563eb;
+    --accent-hover: #3b82f6;
     --accent-success: #22c55e;
     --accent-warning: #f59e0b;
     --accent-error: #ef4444;

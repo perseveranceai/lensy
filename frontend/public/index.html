@@ -17,25 +17,28 @@
     <meta name="theme-color" content="#0a0a0a" />
 
     <!-- Canonical URL -->
-    <link rel="canonical" href="https://www.perseveranceai.com/">
+    <link rel="canonical" href="%REACT_APP_BASE_URL%/">
 
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website">
-    <meta property="og:url" content="https://www.perseveranceai.com/">
+    <meta property="og:url" content="%REACT_APP_BASE_URL%/">
     <meta property="og:title" content="Lensy — AI Readiness & Citation Audit for Developer Docs">
     <meta property="og:description"
         content="Developers search through ChatGPT, Perplexity, and Claude now. Lensy checks if AI tools can find, read, and cite your documentation — and shows you exactly what to fix.">
-    <meta property="og:image" content="https://www.perseveranceai.com/og-image.png">
+    <meta property="og:image" content="%REACT_APP_BASE_URL%/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:type" content="image/png">
     <meta property="og:site_name" content="Perseverance AI">
     <meta property="og:locale" content="en_US">
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:url" content="https://www.perseveranceai.com/">
+    <meta name="twitter:url" content="%REACT_APP_BASE_URL%/">
     <meta name="twitter:title" content="Lensy — AI Readiness & Citation Audit for Developer Docs">
     <meta name="twitter:description"
         content="Developers search through ChatGPT, Perplexity, and Claude now. Lensy checks if AI tools can find, read, and cite your docs.">
-    <meta name="twitter:image" content="https://www.perseveranceai.com/og-image.png">
+    <meta name="twitter:image" content="%REACT_APP_BASE_URL%/og-image.png">
     <meta name="twitter:site" content="@getperseverance">
     <meta name="twitter:creator" content="@getperseverance">
 
@@ -44,12 +47,17 @@
     <link rel="icon" type="image/png" sizes="192x192" href="%PUBLIC_URL%/logo.png">
     <link rel="apple-touch-icon" sizes="180x180" href="%PUBLIC_URL%/logo.png">
 
-    <!-- Google Fonts - Design System -->
+    <!-- Google Fonts - Design System (non-render-blocking) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preload" as="style"
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap">
     <link
-        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=EB+Garamond:wght@400;500;600;700&display=swap"
-        rel="stylesheet">
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+        rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+        rel="stylesheet"></noscript>
 
     <!-- Structured Data: Organization -->
     <script type="application/ld+json">
