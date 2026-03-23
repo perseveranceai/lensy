@@ -121,6 +121,14 @@ export class LensyStack extends cdk.Stack {
             sortKey: { name: 'submittedAt', type: dynamodb.AttributeType.STRING },
         });
 
+        // 2g. Waitlist Table — stores waitlist signups for bonus credits
+        // RETAIN: lead data should survive stack deletion
+        const waitlistTable = new dynamodb.Table(this, 'WaitlistTable', {
+            partitionKey: { name: 'ipHash', type: dynamodb.AttributeType.STRING },
+            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+            removalPolicy: cdk.RemovalPolicy.RETAIN,
+        });
+
         // 2d. Page Knowledge Base — shared context store for Doc Audit + GitHub Issues modes
         // Each page URL is its own item, enabling concurrent writes from both modes without conflicts
         const pageKnowledgeBaseTable = new dynamodb.Table(this, 'PageKnowledgeBaseTable', {
@@ -327,12 +335,15 @@ export class LensyStack extends cdk.Stack {
             FREE_TIER_DAILY_LIMIT: lensyEnv === 'prod' ? '3' : '100',
             FEEDBACK_TABLE: feedbackTable.tableName,
             FEEDBACK_EMAIL: 'hello@perseveranceai.com',
-            API_DEPLOY_VERSION: '2026-03-22-v3-citations-route',
+            WAITLIST_TABLE: waitlistTable.tableName,
+            WAITLIST_BONUS_CREDITS: '7',
+            API_DEPLOY_VERSION: '2026-03-23-v4-waitlist-ga4',
         });
 
         stateMachine.grantStartExecution(apiHandler);
         usageTrackingTable.grantReadWriteData(apiHandler);
         feedbackTable.grantReadWriteData(apiHandler);
+        waitlistTable.grantReadWriteData(apiHandler);
         apiHandler.addToRolePolicy(new iam.PolicyStatement({
             actions: ['ses:SendEmail'],
             resources: ['*'],
@@ -373,6 +384,7 @@ export class LensyStack extends cdk.Stack {
         httpApi.addRoutes({ path: '/github-issues/results/{sessionId}', methods: [apigwv2.HttpMethod.GET], integration: apiIntegration });
         httpApi.addRoutes({ path: '/github-issues/preview-docs', methods: [apigwv2.HttpMethod.GET], integration: apiIntegration });
         httpApi.addRoutes({ path: '/console/feedback', methods: [apigwv2.HttpMethod.POST], integration: apiIntegration });
+        httpApi.addRoutes({ path: '/waitlist', methods: [apigwv2.HttpMethod.POST], integration: apiIntegration });
         httpApi.addRoutes({ path: '/usage', methods: [apigwv2.HttpMethod.GET], integration: apiIntegration });
 
         // 6b. Console Login Logger — records login events for audit trail
