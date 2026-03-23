@@ -5186,8 +5186,8 @@ function LensyApp() {
                                         width: 32,
                                         height: 32,
                                         borderRadius: '50%',
-                                        background: 'var(--accent-primary, #6366f1)',
-                                        color: '#fff',
+                                        background: 'var(--text-secondary)',
+                                        color: 'var(--bg-primary, #fff)',
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
@@ -5234,17 +5234,17 @@ function LensyApp() {
                                 {/* Node styles */}
                                 <defs>
                                     <linearGradient id="nodeGrad" x1="0" y1="0" x2="1" y2="1">
-                                        <stop offset="0%" stopColor="var(--accent-primary, #6366f1)" stopOpacity="0.15" />
-                                        <stop offset="100%" stopColor="var(--accent-primary, #6366f1)" stopOpacity="0.05" />
+                                        <stop offset="0%" stopColor="var(--text-secondary)" stopOpacity="0.12" />
+                                        <stop offset="100%" stopColor="var(--text-secondary)" stopOpacity="0.04" />
                                     </linearGradient>
                                     <linearGradient id="scoreGrad" x1="0" y1="0" x2="1" y2="1">
-                                        <stop offset="0%" stopColor="#22c55e" stopOpacity="0.15" />
-                                        <stop offset="100%" stopColor="#22c55e" stopOpacity="0.05" />
+                                        <stop offset="0%" stopColor="var(--text-secondary)" stopOpacity="0.18" />
+                                        <stop offset="100%" stopColor="var(--text-secondary)" stopOpacity="0.06" />
                                     </linearGradient>
                                 </defs>
 
                                 {/* Node 1: Paste URL */}
-                                <rect x="70" y="10" width="200" height="48" rx="10" fill="url(#nodeGrad)" stroke="var(--accent-primary, #6366f1)" strokeWidth="1.5" />
+                                <rect x="70" y="10" width="200" height="48" rx="10" fill="url(#nodeGrad)" stroke="var(--border-default)" strokeWidth="1.5" />
                                 <text x="170" y="30" textAnchor="middle" fill="var(--text-primary)" fontSize="11" fontWeight="600" fontFamily="var(--font-sans, system-ui)">Paste Documentation URL</text>
                                 <text x="170" y="46" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">docs.example.com/api</text>
 
@@ -5253,7 +5253,7 @@ function LensyApp() {
                                 <polygon points="164,82 170,92 176,82" fill="var(--text-secondary)" />
 
                                 {/* Node 2: Content Gate */}
-                                <rect x="70" y="92" width="200" height="48" rx="10" fill="url(#nodeGrad)" stroke="var(--accent-primary, #6366f1)" strokeWidth="1.5" />
+                                <rect x="70" y="92" width="200" height="48" rx="10" fill="url(#nodeGrad)" stroke="var(--border-default)" strokeWidth="1.5" />
                                 <text x="170" y="112" textAnchor="middle" fill="var(--text-primary)" fontSize="11" fontWeight="600" fontFamily="var(--font-sans, system-ui)">Content Validation</text>
                                 <text x="170" y="128" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">Is this technical documentation?</text>
 
@@ -5262,7 +5262,7 @@ function LensyApp() {
                                 <polygon points="164,164 170,174 176,164" fill="var(--text-secondary)" />
 
                                 {/* Node 3: AI Analysis (wider, 4 sub-items) */}
-                                <rect x="30" y="174" width="280" height="90" rx="10" fill="url(#nodeGrad)" stroke="var(--accent-primary, #6366f1)" strokeWidth="1.5" />
+                                <rect x="30" y="174" width="280" height="90" rx="10" fill="url(#nodeGrad)" stroke="var(--border-default)" strokeWidth="1.5" />
                                 <text x="170" y="194" textAnchor="middle" fill="var(--text-primary)" fontSize="11" fontWeight="600" fontFamily="var(--font-sans, system-ui)">AI Readiness Analysis</text>
                                 {/* Sub-items in 2x2 grid */}
                                 <text x="100" y="216" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">Bot Access</text>
@@ -5270,10 +5270,10 @@ function LensyApp() {
                                 <text x="100" y="236" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">Discoverability</text>
                                 <text x="240" y="236" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">Content Quality</text>
                                 {/* Dots between items */}
-                                <circle cx="100" cy="210" r="2" fill="var(--accent-primary, #6366f1)" opacity="0.5" />
-                                <circle cx="240" cy="210" r="2" fill="var(--accent-primary, #6366f1)" opacity="0.5" />
-                                <circle cx="100" cy="230" r="2" fill="var(--accent-primary, #6366f1)" opacity="0.5" />
-                                <circle cx="240" cy="230" r="2" fill="var(--accent-primary, #6366f1)" opacity="0.5" />
+                                <circle cx="100" cy="210" r="2" fill="var(--text-secondary)" opacity="0.5" />
+                                <circle cx="240" cy="210" r="2" fill="var(--text-secondary)" opacity="0.5" />
+                                <circle cx="100" cy="230" r="2" fill="var(--text-secondary)" opacity="0.5" />
+                                <circle cx="240" cy="230" r="2" fill="var(--text-secondary)" opacity="0.5" />
                                 {/* Separator dots */}
                                 <rect x="55" y="247" width="230" height="1" fill="var(--border-subtle)" opacity="0.5" />
                                 <text x="170" y="258" textAnchor="middle" fill="var(--text-secondary)" fontSize="8" fontFamily="var(--font-sans, system-ui)" opacity="0.7">parallel analysis</text>
@@ -5283,7 +5283,7 @@ function LensyApp() {
                                 <polygon points="164,288 170,298 176,288" fill="var(--text-secondary)" />
 
                                 {/* Node 4: Citation Check */}
-                                <rect x="70" y="298" width="200" height="48" rx="10" fill="url(#nodeGrad)" stroke="var(--accent-primary, #6366f1)" strokeWidth="1.5" />
+                                <rect x="70" y="298" width="200" height="48" rx="10" fill="url(#nodeGrad)" stroke="var(--border-default)" strokeWidth="1.5" />
                                 <text x="170" y="318" textAnchor="middle" fill="var(--text-primary)" fontSize="11" fontWeight="600" fontFamily="var(--font-sans, system-ui)">AI Citation Check</text>
                                 <text x="170" y="334" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">ChatGPT, Perplexity, Claude...</text>
 
@@ -5292,7 +5292,7 @@ function LensyApp() {
                                 <polygon points="164,370 170,380 176,370" fill="var(--text-secondary)" />
 
                                 {/* Node 5: Score (green accent) */}
-                                <rect x="70" y="380" width="200" height="36" rx="10" fill="url(#scoreGrad)" stroke="#22c55e" strokeWidth="1.5" />
+                                <rect x="70" y="380" width="200" height="36" rx="10" fill="url(#scoreGrad)" stroke="var(--text-primary)" strokeWidth="1.5" />
                                 <text x="170" y="403" textAnchor="middle" fill="var(--text-primary)" fontSize="11" fontWeight="700" fontFamily="var(--font-sans, system-ui)">Score + Recommendations</text>
                             </svg>
                         </Box>
