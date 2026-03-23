@@ -23,4 +23,4 @@ Sitemap: https://perseveranceai.com/sitemap.xml
 
 # LLM-readable company information
 # See https://llmstxt.org for specification
-LLMs-Txt: https://perseveranceai.com/llms.txt
+# LLMs-Txt: https://perseveranceai.com/llms.txt
