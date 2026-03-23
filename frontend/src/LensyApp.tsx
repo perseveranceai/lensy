@@ -885,7 +885,7 @@ function LensyApp() {
                     if (statusData.status === 'failed' || statusData.status === 'rejected') {
                         console.log('Analysis failed/rejected (detected via polling):', statusData.error);
                         const errorMsg = statusData.error || statusData.reason || 'Analysis failed. Check the progress messages for details.';
-                        const isDocRejection = errorMsg.includes('does not appear to be') || errorMsg.includes('not a documentation page');
+                        const isDocRejection = errorMsg.includes('does not appear to be') || errorMsg.includes('not a documentation page') || errorMsg.includes('non-documentation-page');
                         if (isDocRejection && !rejectedUrl) {
                             setRejectedUrl(urlRef.current);
                             setUrl('');
@@ -893,7 +893,8 @@ function LensyApp() {
                             setTimeout(() => { document.querySelector<HTMLInputElement>('input[placeholder*="URL"]')?.focus(); }, 100);
                         }
                         setAnalysisState(prev => {
-                            if (prev.status === 'error' && prev.error?.includes('does not appear to be')) {
+                            // Don't overwrite if already showing doc-rejection error or user already reset
+                            if (prev.status === 'idle' || (prev.status === 'error' && prev.error?.includes('does not appear to be'))) {
                                 return prev;
                             }
                             return { ...prev, status: 'error', error: errorMsg };
@@ -4915,7 +4916,7 @@ function LensyApp() {
                     {analysisState.status === 'error' && analysisState.sourceMode !== 'github-issues' && (() => {
                         const error = analysisState.error || '';
                         // Classify error into branded messaging
-                        const errorConfig = error.includes('does not appear to be') || error.includes('not a documentation page')
+                        const errorConfig = error.includes('does not appear to be') || error.includes('not a documentation page') || error.includes('non-documentation-page')
                             ? {
                                 title: "This page doesn't look like technical documentation",
                                 description: 'Lensy is designed for developer docs, API references, SDK guides, and technical tutorials. Try entering a specific documentation page URL instead.',
