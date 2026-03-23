@@ -52,8 +52,8 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import FixReviewPanel, { Fix } from './components/FixReviewPanel';
-import jsPDF from 'jspdf';
-import { JAKARTA_REGULAR, JAKARTA_BOLD } from './jakartaFonts';
+// jsPDF + fonts loaded dynamically on PDF export to reduce initial bundle
+type jsPDFType = import('jspdf').default;
 const logoImg = `${process.env.PUBLIC_URL}/logo.png`;
 
 // [NEW] Collapsible Component Helper
@@ -2442,7 +2442,11 @@ function LensyApp() {
     };
 
     /** Quick-start user guide PDF */
-    const exportUserGuidePdf = () => {
+    const exportUserGuidePdf = async () => {
+        const [{ default: jsPDF }, { JAKARTA_REGULAR, JAKARTA_BOLD }] = await Promise.all([
+            import('jspdf'),
+            import('./jakartaFonts'),
+        ]);
         const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
         const fn = 'PlusJakartaSans';
         doc.addFileToVFS('PlusJakartaSans-Regular.ttf', JAKARTA_REGULAR);
@@ -2633,7 +2637,11 @@ function LensyApp() {
     };
 
     /** Export report as branded Perseverance AI PDF — Amazon narrative style */
-    const exportPdfReport = (report: FinalReport) => {
+    const exportPdfReport = async (report: FinalReport) => {
+        const [{ default: jsPDF }, { JAKARTA_REGULAR, JAKARTA_BOLD }] = await Promise.all([
+            import('jspdf'),
+            import('./jakartaFonts'),
+        ]);
         const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
         // Register Plus Jakarta Sans font
