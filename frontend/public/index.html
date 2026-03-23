@@ -87,13 +87,19 @@
     }
     </script>
 
-    <!-- Google Analytics (GA4) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-65Y3PTRNWP"></script>
+    <!-- Google Analytics (GA4) — Measurement ID injected per environment -->
     <script>
+        var gaId = '%REACT_APP_GA_ID%';
+        // Fallback to production ID if env var wasn't substituted
+        if (!gaId || gaId.indexOf('REACT_APP') !== -1) gaId = 'G-65Y3PTRNWP';
+    </script>
+    <script async id="ga-script"></script>
+    <script>
+        document.getElementById('ga-script').src = 'https://www.googletagmanager.com/gtag/js?id=' + gaId;
         window.dataLayer = window.dataLayer || [];
         function gtag(){dataLayer.push(arguments);}
         gtag('js', new Date());
-        gtag('config', 'G-65Y3PTRNWP');
+        gtag('config', gaId);
     </script>
 
 </head>

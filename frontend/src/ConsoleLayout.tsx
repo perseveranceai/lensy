@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import FeedbackWidget from './components/FeedbackWidget';
+import { trackEvent } from './hooks/useAnalytics';
 const logoImg = `${process.env.PUBLIC_URL}/logo.png`;
 
 type ThemeMode = 'dark' | 'light' | 'system';
@@ -153,7 +154,7 @@ function ConsoleLayout() {
                             <a
                                 key={link.path}
                                 href={link.path}
-                                onClick={(e) => { e.preventDefault(); navigate(link.path); }}
+                                onClick={(e) => { e.preventDefault(); trackEvent('contact_link_clicked', { ref: link.path, label: link.label, source: 'navbar' }); navigate(link.path); }}
                                 style={{
                                     fontSize: '0.8125rem',
                                     fontWeight: isActive(link.path) ? 600 : 500,
@@ -323,7 +324,7 @@ function ConsoleLayout() {
                             <a
                                 key={link.path}
                                 href={link.path}
-                                onClick={(e) => { e.preventDefault(); navigate(link.path); setMobileMenuOpen(false); }}
+                                onClick={(e) => { e.preventDefault(); trackEvent('contact_link_clicked', { ref: link.path, label: link.label, source: 'mobile_menu' }); navigate(link.path); setMobileMenuOpen(false); }}
                                 style={{
                                     display: 'block',
                                     fontSize: '0.875rem',
@@ -399,14 +400,17 @@ function ConsoleLayout() {
                         justifyContent: 'center',
                     }}>
                         <a href="https://www.linkedin.com/in/pasupdr/" target="_blank" rel="noopener noreferrer"
+                            onClick={() => trackEvent('contact_link_clicked', { ref: 'linkedin', source: 'footer' })}
                             style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)', fontWeight: 500 }}>
                             LinkedIn
                         </a>
                         <a href="https://x.com/getperseverance" target="_blank" rel="noopener noreferrer"
+                            onClick={() => trackEvent('contact_link_clicked', { ref: 'x_twitter', source: 'footer' })}
                             style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)', fontWeight: 500 }}>
                             X
                         </a>
                         <a href="https://calendly.com/getperseverance" target="_blank" rel="noopener noreferrer"
+                            onClick={() => trackEvent('contact_link_clicked', { ref: 'calendly', source: 'footer' })}
                             style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)', fontWeight: 500 }}>
                             Schedule a conversation
                         </a>
