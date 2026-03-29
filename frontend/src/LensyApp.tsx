@@ -5578,6 +5578,11 @@ function LensyApp() {
                             const getImpactLabel = (rec: any) => rec.priority === 'high' ? 'High impact' : rec.priority === 'medium' ? 'Medium impact' : 'Low impact';
                             const getEffortLabel = (rec: any) => rec.codeSnippet ? 'Medium effort' : 'Low effort';
 
+                            // Use recommendationCount from the score payload (arrives with the score)
+                            // so the label is stable from the moment the score card appears.
+                            // Fall back to recs.length once the full report has loaded.
+                            const stableRecCount = asyncCards.overallScore?.recommendationCount ?? recs.length;
+
                             const getLetterGrade = (score: number): string => {
                                 if (score >= 95) return 'A+';
                                 if (score >= 90) return 'A';
@@ -5676,9 +5681,11 @@ function LensyApp() {
                                                             <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontSize: '0.85rem', mt: 0.25 }}>
                                                                 {asyncCards.overallScore.overallScore}/100
                                                             </Typography>
+                                                            {analysisState.report && (
                                                             <Typography variant="caption" sx={{ color: 'var(--text-secondary)', fontSize: '0.75rem', display: 'block', mt: 0.5 }}>
                                                                 {getGradeLabel(asyncCards.overallScore.overallScore, recs.length)}
                                                             </Typography>
+                                                            )}
                                                         </Box>
                                                     </Box>
                                                 ) : (
