@@ -559,8 +559,12 @@ async function queryPerplexity(queries: string[], targetUrl: string, domain: str
                 console.log(`[Perplexity] Query: "${query}" → ${totalCitations} citations:`, JSON.stringify(citations));
 
                 // Check if target URL or domain appears in citations
+                // Match root domain (gitbook.com) only when the target has a docs-like subdomain
+                // (docs.gitbook.com, learn.microsoft.com) — not for developer.amazon.com
+                const useRootMatch = hasDocsSubdomain(domain);
+                const rootDomain = useRootMatch ? getRootDomain(domain) : null;
                 const matchIndex = citations.findIndex(url =>
-                    url.includes(domain) || normalizeUrl(url) === normalizeUrl(targetUrl)
+                    url.includes(domain) || (rootDomain && url.includes(rootDomain)) || normalizeUrl(url) === normalizeUrl(targetUrl)
                 );
 
                 if (matchIndex >= 0) {
@@ -596,20 +600,56 @@ async function queryPerplexity(queries: string[], targetUrl: string, domain: str
  */
 function extractCompetingDomains(citations: string[], targetDomain: string): string[] {
     const domains = new Set<string>();
+    const cleanTarget = targetDomain.replace(/^www\./, '');
+    const useRootMatch = hasDocsSubdomain(cleanTarget);
+    const rootTarget = useRootMatch ? getRootDomain(cleanTarget) : null;
     for (const url of citations) {
         try {
             const hostname = new URL(url).hostname.replace(/^www\./, '');
-            // Skip the target domain and generic/non-informative domains
-            if (!hostname.includes(targetDomain.replace(/^www\./, '')) &&
-                !['google.com', 'youtube.com', 'twitter.com', 'x.com', 'facebook.com'].includes(hostname)) {
-                domains.add(hostname);
+            // Skip the target domain (and root domain siblings if docs-like subdomain)
+            if (hostname.includes(cleanTarget) ||
+                (rootTarget && hostname.includes(rootTarget)) ||
+                ['google.com', 'youtube.com', 'twitter.com', 'x.com', 'facebook.com'].includes(hostname)) {
+                continue;
             }
+            domains.add(hostname);
         } catch { /* skip malformed URLs */ }
     }
     return Array.from(domains).slice(0, 3);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
+
+/**
+ * Check if a hostname's subdomain prefix indicates a documentation site.
+ * e.g. docs.gitbook.com → true, learn.microsoft.com → true, developer.amazon.com → false
+ * Only when the subdomain is docs-like should we match citations against the root domain.
+ */
+const DOCS_SUBDOMAINS = ['docs', 'doc', 'learn', 'guide', 'guides', 'reference', 'api', 'wiki', 'help', 'support', 'kb', 'knowledge', 'manual', 'handbook', 'tutorial', 'tutorials', 'getting-started'];
+function hasDocsSubdomain(hostname: string): boolean {
+    const clean = hostname.replace(/^www\./, '');
+    const root = getRootDomain(clean);
+    if (clean === root) return false; // no subdomain
+    const prefix = clean.slice(0, clean.length - root.length - 1); // e.g. "docs" from "docs.gitbook.com"
+    return DOCS_SUBDOMAINS.includes(prefix.toLowerCase());
+}
+
+/**
+ * Extract the root (registrable) domain from a hostname.
+ * e.g. docs.gitbook.com → gitbook.com, learn.microsoft.com → microsoft.com
+ * Handles common multi-part TLDs like .co.uk, .com.au, etc.
+ */
+function getRootDomain(hostname: string): string {
+    const clean = hostname.replace(/^www\./, '');
+    const parts = clean.split('.');
+    // Multi-part TLDs: .co.uk, .com.au, .co.jp, .org.uk, etc.
+    const multiPartTlds = ['co.uk', 'com.au', 'co.jp', 'org.uk', 'com.br', 'co.in', 'co.nz'];
+    const lastTwo = parts.slice(-2).join('.');
+    if (multiPartTlds.includes(lastTwo) && parts.length > 2) {
+        return parts.slice(-3).join('.');
+    }
+    return parts.length > 2 ? parts.slice(-2).join('.') : clean;
+}
 
 function normalizeUrl(url: string): string {
     try {
