@@ -143,10 +143,9 @@ venv/
 .venv/
 __pycache__/
 
-# Claude Code working files (keep skills/)
-.claude/worktrees/
-.claude/plans/
-.claude/launch.json
+# Claude Code and Kiro working files
+.claude/
+.kiro/
 
 # Video assets (8.7MB, not referenced in code)
 frontend/public/video/
