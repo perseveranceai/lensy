@@ -138,6 +138,40 @@ Thumbs.db
 requirements/
 .kiro/
 
+# Python virtual environments
+venv/
+.venv/
+__pycache__/
+
+# Claude Code working files (keep skills/)
+.claude/worktrees/
+.claude/plans/
+.claude/launch.json
+
+# Video assets (8.7MB, not referenced in code)
+frontend/public/video/
+
+# Unused image assets (not referenced in src)
+frontend/PAI - Transparent logo.png
+frontend/lighthouse.json
+
+# Root-level loose assets (not referenced in code)
+lensy_logo_transparent_*.png
+perseverance_banner.png
+Lensy_OnePager_Engineering_Onboarding.docx
+
+# Outreach and sales content (not code)
+Lensy for Mid-Tier/
+Lensy for Startups/
+lensy-demo/
+outreach-template.md
+
+# One-off scripts and artifacts
+generate_letterhead.py
+install_log.txt
+test_plan.md.resolved
+GA_implementation_plan.md
+
 # Generated workflow definitions
 workflow-definition.json
 workflow-definition-minified.json

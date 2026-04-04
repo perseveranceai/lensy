@@ -13,7 +13,7 @@ const handler = async (event) => {
         if (!bucketName)
             throw new Error('ANALYSIS_BUCKET not set');
         console.log(`Checking AI readiness for domain: ${domain}`);
-        const results = await checkAIReadiness(domain);
+        const results = await checkAIReadiness(domain, url);
         // Store results in S3
         const key = `sessions/${sessionId}/ai-readiness-results.json`;
         await s3Client.send(new client_s3_1.PutObjectCommand({
@@ -30,22 +30,60 @@ const handler = async (event) => {
     }
 };
 exports.handler = handler;
-async function checkAIReadiness(domain) {
+const DOCS_PATH_SEGMENTS = new Set([
+    'docs', 'doc', 'documentation', 'guide', 'guides',
+    'learn', 'reference', 'help', 'wiki', 'manual',
+    'knowledge', 'kb', 'api', 'tutorials', 'resources',
+]);
+function deriveDocsSubpath(targetUrl) {
+    try {
+        const segments = new url_1.URL(targetUrl).pathname.split('/').filter(Boolean);
+        if (segments.length > 1 && DOCS_PATH_SEGMENTS.has(segments[0].toLowerCase())) {
+            return `/${segments[0]}`;
+        }
+    }
+    catch { }
+    return null;
+}
+async function checkAIReadiness(domain, targetUrl) {
     const baseUrl = `https://${domain}`;
+    const docsSubpath = deriveDocsSubpath(targetUrl);
     const recommendations = [];
     let score = 0;
-    // 1. Check llms.txt
-    const llmsTxtUrl = `${baseUrl}/llms.txt`;
-    const llmsTxt = await checkUrl(llmsTxtUrl, true);
+    // 1. Check llms.txt (root first, then docs subpath)
+    let llmsTxt = { found: false };
+    let llmsTxtUrl = `${baseUrl}/llms.txt`;
+    const llmsTxtCandidates = [llmsTxtUrl];
+    if (docsSubpath)
+        llmsTxtCandidates.push(`${baseUrl}${docsSubpath}/llms.txt`);
+    for (const candidate of llmsTxtCandidates) {
+        const result = await checkUrl(candidate, true);
+        if (result.found) {
+            llmsTxt = result;
+            llmsTxtUrl = candidate;
+            break;
+        }
+    }
     if (llmsTxt.found) {
         score += 30;
     }
     else {
         recommendations.push('Add /llms.txt to help AI agents discover your documentation.');
     }
-    // 2. Check llms-full.txt
-    const llmsFullTxtUrl = `${baseUrl}/llms-full.txt`;
-    const llmsFullTxt = await checkUrl(llmsFullTxtUrl);
+    // 2. Check llms-full.txt (root first, then docs subpath)
+    let llmsFullTxt = { found: false };
+    let llmsFullTxtUrl = `${baseUrl}/llms-full.txt`;
+    const llmsFullCandidates = [llmsFullTxtUrl];
+    if (docsSubpath)
+        llmsFullCandidates.push(`${baseUrl}${docsSubpath}/llms-full.txt`);
+    for (const candidate of llmsFullCandidates) {
+        const result = await checkUrl(candidate);
+        if (result.found) {
+            llmsFullTxt = result;
+            llmsFullTxtUrl = candidate;
+            break;
+        }
+    }
     if (llmsFullTxt.found) {
         score += 20;
     }
@@ -101,19 +139,34 @@ async function checkAIReadiness(domain) {
             else {
                 recommendations.push('Add JSON-LD structured data to help semantic understanding.');
             }
-            // Markdown Links (heuristic: links ending in .md or mentions of "markdown export")
-            if (html.includes('.md"') || html.toLowerCase().includes('export as markdown')) {
+            // Markdown: check for .md links in HTML
+            const mdLinkMatches = html.match(/href=["']([^"']*\.md)["']/gi);
+            if (mdLinkMatches) {
                 markdownAvailable = true;
                 score += 15;
-                sampleMdUrls.push(`${baseUrl}/example.md`); // Mock for now
-            }
-            else {
-                recommendations.push('Consider offering references to .md versions of your pages.');
+                sampleMdUrls.push(...mdLinkMatches
+                    .map(m => m.match(/href=["']([^"']+)["']/)?.[1] || '')
+                    .filter(Boolean)
+                    .slice(0, 3)
+                    .map(u => u.startsWith('http') ? u : `${baseUrl}${u.startsWith('/') ? '' : '/'}${u}`));
             }
         }
     }
     catch (e) {
         console.warn('Failed to fetch homepage:', e);
+    }
+    // Probe {targetUrl}.md directly (common convention: Mintlify, GitBook, etc.)
+    if (!markdownAvailable) {
+        const mdProbeUrl = targetUrl.replace(/\/$/, '') + '.md';
+        const mdProbe = await checkUrl(mdProbeUrl);
+        if (mdProbe.found) {
+            markdownAvailable = true;
+            score += 15;
+            sampleMdUrls.push(mdProbeUrl);
+        }
+        else {
+            recommendations.push('Consider offering references to .md versions of your pages.');
+        }
     }
     return {
         llmsTxt: { found: llmsTxt.found, url: llmsTxtUrl, content: llmsTxt.content?.slice(0, 200) },

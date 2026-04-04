@@ -205,7 +205,7 @@ async function checkAIReadiness(domain: string, targetUrl: string, sessionId: st
     await progress.categoryResult('discoverability', discoverability, 'Content Discoverability analysis complete');
 
     // ── Category 3: Content Consumability ────────────────────────────
-    const consumability = analyzeConsumability(
+    const consumability = await analyzeConsumability(
         targetUrl, targetHtml, targetHeaders, baseUrl, discoverability.llmsTxt.found, recommendations
     );
     await progress.categoryResult('consumability', consumability, 'Content Consumability analysis complete');
@@ -375,6 +375,7 @@ async function analyzeDiscoverability(
         llmsTxtCandidates.push(explicitLlmsTxtUrl);
     } else {
         llmsTxtCandidates.push(`${baseUrl}/llms.txt`);
+        if (docsSubpath) llmsTxtCandidates.push(`${baseUrl}${docsSubpath}/llms.txt`);
     }
 
     let llmsTxt: { found: boolean; content?: string } = { found: false };
@@ -518,32 +519,17 @@ function parseOpenGraphTags(html: string): Record<string, string> {
 
 // ── Category 3: Content Consumability ────────────────────────────────────
 
-function analyzeConsumability(
+async function analyzeConsumability(
     targetUrl: string,
     html: string,
     headers: Headers | null,
     baseUrl: string,
     llmsTxtFound: boolean,
     recommendations: Recommendation[]
-): AIReadinessResult['categories']['consumability'] {
+): Promise<AIReadinessResult['categories']['consumability']> {
 
-    // ── Text-to-HTML ratio ──
+    // ── Text-to-HTML ratio (recommendation deferred until after markdown detection) ──
     const textToHtmlRatio = calculateTextToHtmlRatio(html);
-    if (textToHtmlRatio.status === 'very-low') {
-        recommendations.push({
-            category: 'Consumability',
-            priority: 'high',
-            issue: `Very low text-to-HTML ratio (${(textToHtmlRatio.ratio * 100).toFixed(1)}%). AI search crawlers such as PerplexityBot and GPTBot may process mostly noise (scripts, CSS, nav) when extracting your content.`,
-            fix: 'Reduce inline scripts/styles, minimize navigation markup, and ensure main content is prominent in the HTML.',
-        });
-    } else if (textToHtmlRatio.status === 'low') {
-        recommendations.push({
-            category: 'Consumability',
-            priority: 'medium',
-            issue: `Low text-to-HTML ratio (${(textToHtmlRatio.ratio * 100).toFixed(1)}%). AI search crawlers may need to strip more noise to extract your content.`,
-            fix: 'Move scripts to external files, minimize inline CSS, and use semantic HTML for content.',
-        });
-    }
 
     // ── JS rendering detection ──
     const jsRendered = detectJSRendering(html);
@@ -583,7 +569,7 @@ function analyzeConsumability(
     }
 
     // ── Markdown availability & discoverability ──
-    const markdown = analyzeMarkdownAvailability(html, headers, targetUrl, baseUrl, llmsTxtFound);
+    const markdown = await analyzeMarkdownAvailability(html, headers, targetUrl, baseUrl, llmsTxtFound);
     if (!markdown.found) {
         recommendations.push({
             category: 'Consumability',
@@ -602,13 +588,40 @@ function analyzeConsumability(
         });
     }
 
+    // ── Text-to-HTML ratio (deferred: downgrade when markdown is available) ──
+    if (textToHtmlRatio.status === 'very-low') {
+        const hasMarkdownAlternative = markdown.found;
+        recommendations.push({
+            category: 'Consumability',
+            priority: hasMarkdownAlternative ? 'low' : 'high',
+            issue: hasMarkdownAlternative
+                ? `Low text-to-HTML ratio (${(textToHtmlRatio.ratio * 100).toFixed(1)}%). Coding assistants can use the markdown version, but AI search engines (Perplexity, ChatGPT) still crawl the HTML.`
+                : `Very low text-to-HTML ratio (${(textToHtmlRatio.ratio * 100).toFixed(1)}%). AI search crawlers such as PerplexityBot and GPTBot may process mostly noise (scripts, CSS, nav) when extracting your content.`,
+            fix: hasMarkdownAlternative
+                ? 'Coding assistants are covered by markdown. To also help AI search crawlers, reduce inline scripts/styles in the HTML.'
+                : 'Reduce inline scripts/styles, minimize navigation markup, and ensure main content is prominent in the HTML.',
+        });
+    } else if (textToHtmlRatio.status === 'low') {
+        if (!markdown.found) {
+            recommendations.push({
+                category: 'Consumability',
+                priority: 'medium',
+                issue: `Low text-to-HTML ratio (${(textToHtmlRatio.ratio * 100).toFixed(1)}%). AI search crawlers may need to strip more noise to extract your content.`,
+                fix: 'Move scripts to external files, minimize inline CSS, and use semantic HTML for content.',
+            });
+        }
+        // Skip recommendation entirely if markdown is available and ratio is only "low"
+    }
+
     // ── Code blocks (conditional) ──
     const codeBlocks = analyzeCodeBlocks(html);
     if (codeBlocks.hasCode && codeBlocks.withLanguageHints === 0) {
         recommendations.push({
             category: 'Consumability',
-            priority: 'low',
-            issue: `${codeBlocks.count} code block(s) found but none have language hints — AI bots can't determine the programming language.`,
+            priority: markdown.found ? 'low' : 'medium',
+            issue: markdown.found
+                ? `${codeBlocks.count} code block(s) in HTML have no language hints. Coding assistants can use the markdown version, but AI search crawlers still parse the HTML.`
+                : `${codeBlocks.count} code block(s) found but none have language hints — AI bots can't determine the programming language.`,
             fix: 'Add language class attributes to code blocks.',
             codeSnippet: `<pre><code class="language-python">print("hello")</code></pre>\n\n<!-- Or in Markdown: -->\n\`\`\`python\nprint("hello")\n\`\`\``,
         });
@@ -662,6 +675,13 @@ function analyzeConsumability(
             priority: 'medium',
             issue: `Very short page (~${wordCount} words). May lack enough context for AI to answer questions from it alone.`,
             fix: 'Expand content with explanatory text, examples, and context so AI has enough material to retrieve.',
+        });
+    } else if (wordCount >= 100 && wordCount < 500) {
+        recommendations.push({
+            category: 'Consumability',
+            priority: 'low',
+            issue: `Short page (~${wordCount} words). AI may not have enough depth to cite this page over more comprehensive alternatives.`,
+            fix: 'Consider adding more detail — examples, edge cases, or context — to make this the definitive resource on the topic.',
         });
     }
     if (h2Count > 8 && wordCount < 600) {
@@ -803,13 +823,13 @@ function analyzeHeadings(html: string): AIReadinessResult['categories']['consuma
     return { h1Count, h2Count, h3Count, hasProperNesting, headings: headings.slice(0, 20) };
 }
 
-function analyzeMarkdownAvailability(
+async function analyzeMarkdownAvailability(
     html: string,
     headers: Headers | null,
     targetUrl: string,
     baseUrl: string,
     llmsTxtFound: boolean
-): AIReadinessResult['categories']['consumability']['markdownAvailable'] {
+): Promise<AIReadinessResult['categories']['consumability']['markdownAvailable']> {
     const urls: string[] = [];
     let discoverable = false;
     let discoveryMethod: 'link-alternate' | 'link-header' | 'llms-txt' | 'none' = 'none';
@@ -850,12 +870,14 @@ function analyzeMarkdownAvailability(
         urls.push(...extractedUrls);
     }
 
-    // Check for markdown export references
-    const htmlLower = html.toLowerCase();
-    const hasMdReferences = htmlLower.includes('export as markdown') ||
-        htmlLower.includes('copy as markdown') ||
-        htmlLower.includes('markdown for llms') ||
-        html.includes('.md"') || html.includes(".md'");
+    // Probe {targetUrl}.md directly (common convention: Mintlify, GitBook, etc.)
+    if (urls.length === 0) {
+        const mdProbeUrl = targetUrl.replace(/\/$/, '') + '.md';
+        const mdProbe = await checkUrl(mdProbeUrl);
+        if (mdProbe.found) {
+            urls.push(mdProbeUrl);
+        }
+    }
 
     // If llms.txt references markdown, it's discoverable through llms.txt
     if (llmsTxtFound && !discoverable) {
@@ -863,7 +885,7 @@ function analyzeMarkdownAvailability(
         discoveryMethod = 'llms-txt';
     }
 
-    const found = urls.length > 0 || hasMdReferences;
+    const found = urls.length > 0;
 
     return {
         found,
@@ -885,7 +907,8 @@ function analyzeCodeBlocks(html: string): AIReadinessResult['categories']['consu
     if (count === 0) return { count: 0, withLanguageHints: 0, hasCode: false };
 
     // Check for language hints on <pre> or <code> within <pre>
-    const withLangRegex = /<(?:pre|code)[^>]*class=["'][^"']*(?:language-|lang-|highlight-)[^"']*["'][^>]*>/gi;
+    // Matches: class="language-*", class="lang-*", class="highlight-*", or language="*" attribute (Mintlify/Shiki)
+    const withLangRegex = /<(?:pre|code)[^>]*(?:class=["'][^"']*(?:language-|lang-|highlight-)[^"']*["']|language=["'][^"']+["'])[^>]*>/gi;
     const langMatches = html.match(withLangRegex) || [];
 
     return { count, withLanguageHints: langMatches.length, hasCode: count > 0 };
@@ -928,8 +951,7 @@ function analyzeInternalLinks(html: string, baseUrl: string): AIReadinessResult[
     const perKWords = internalCount / kWords;
 
     let status: 'good' | 'sparse' | 'excessive' = 'good';
-    if (internalCount < 5 || perKWords < 5) status = 'sparse';
-    else if (perKWords > 50) status = 'excessive';
+    if (internalCount < 5 || (internalCount < 20 && perKWords < 5)) status = 'sparse';
 
     return { count: internalCount, perKWords: Math.round(perKWords * 10) / 10, status };
 }
@@ -997,8 +1019,8 @@ function analyzeStructuredData(
             recommendations.push({
                 category: 'Structured Data',
                 priority: 'low',
-                issue: `JSON-LD schema is incomplete — missing: ${missingFields.join(', ')}`,
-                fix: `Add the missing fields to your JSON-LD for type "${primaryType}".`,
+                issue: `JSON-LD ${primaryType} schema found but could be enhanced — optional fields missing: ${missingFields.join(', ')}`,
+                fix: `Adding these fields to your "${primaryType}" schema can improve how AI search engines display and reference your page.`,
             });
         }
     }
@@ -1033,6 +1055,15 @@ function analyzeStructuredData(
     // ── Breadcrumbs ──
     const hasBreadcrumbs = html.includes('BreadcrumbList') ||
         html.includes('breadcrumb') && html.includes('application/ld+json');
+    if (!hasBreadcrumbs) {
+        recommendations.push({
+            category: 'Structured Data',
+            priority: 'low',
+            issue: 'No BreadcrumbList schema found — AI search engines can\'t determine where this page sits in your site hierarchy.',
+            fix: 'Add BreadcrumbList JSON-LD to help AI understand your site structure and display navigation paths.',
+            codeSnippet: `<script type="application/ld+json">\n{\n  "@context": "https://schema.org",\n  "@type": "BreadcrumbList",\n  "itemListElement": [\n    { "@type": "ListItem", "position": 1, "name": "Docs", "item": "${'https://example.com/docs'}" },\n    { "@type": "ListItem", "position": 2, "name": "Getting Started", "item": "${'https://example.com/docs/getting-started'}" }\n  ]\n}\n</script>`,
+        });
+    }
 
     return {
         jsonLd: { found: jsonLdBlocks.length > 0, types: uniqueTypes, isValidSchemaType },
@@ -1043,6 +1074,12 @@ function analyzeStructuredData(
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
+
+const DOCS_PATH_SEGMENTS = new Set([
+    'docs', 'doc', 'documentation', 'guide', 'guides',
+    'learn', 'reference', 'help', 'wiki', 'manual',
+    'knowledge', 'kb', 'api', 'tutorials', 'resources',
+]);
 
 function deriveDocsSubpath(llmsTxtUrl?: string, targetUrl?: string, baseUrl?: string): string | null {
     if (llmsTxtUrl) {
@@ -1056,7 +1093,9 @@ function deriveDocsSubpath(llmsTxtUrl?: string, targetUrl?: string, baseUrl?: st
         try {
             const path = new URL(targetUrl).pathname;
             const segments = path.split('/').filter(Boolean);
-            if (segments.length > 1) return `/${segments[0]}`;
+            if (segments.length > 1 && DOCS_PATH_SEGMENTS.has(segments[0].toLowerCase())) {
+                return `/${segments[0]}`;
+            }
         } catch {}
     }
     return null;

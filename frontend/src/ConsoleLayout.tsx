@@ -469,7 +469,7 @@ function ConsoleLayout() {
                         flexWrap: 'wrap',
                         justifyContent: 'center',
                     }}>
-                        <a href="https://www.linkedin.com/in/getperseverance" target="_blank" rel="noopener noreferrer"
+                        <a href="https://www.linkedin.com/company/getperseverance/" target="_blank" rel="noopener noreferrer"
                             style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)', fontWeight: 500 }}>
                             LinkedIn
                         </a>

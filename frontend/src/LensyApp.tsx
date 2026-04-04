@@ -5911,9 +5911,8 @@ function LensyApp() {
                                                     {asyncCards.structuredData ? (() => {
                                                         const s = asyncCards.structuredData!;
                                                         const items = [
-                                                            { label: 'JSON-LD', pass: s.jsonLd.found || s.schemaCompleteness.status !== 'missing', detail: s.jsonLd.found ? `Found ${s.jsonLd.types.join(', ')} markup${s.schemaCompleteness.status === 'complete' ? '. Schema is complete.' : '.'}` : 'Not found. JSON-LD tells AI exactly what type of content this is.', info: 'Gives AI explicit type signals so it can accurately categorize your page.', pts: 7 },
-                                                            { label: 'Schema Completeness', pass: s.schemaCompleteness.status === 'complete', detail: s.schemaCompleteness.status === 'complete' ? 'Schema is complete.' : 'Schema is incomplete or missing.', info: 'Complete schemas help AI understand your content structure.', pts: 4 },
-                                                            { label: 'OpenGraph', pass: s.openGraphCompleteness.score !== 'missing', detail: s.openGraphCompleteness.score === 'complete' ? 'All required tags present.' : s.openGraphCompleteness.score === 'partial' ? `Missing ${s.openGraphCompleteness.missingTags.slice(0, 2).join(', ')}.` : 'Not found.', info: 'Controls the preview card when your link is shared on social channels.', pts: 5 },
+                                                            { label: 'JSON-LD', pass: s.jsonLd.found, detail: s.jsonLd.found ? `Found ${s.jsonLd.types.join(', ')} markup${s.schemaCompleteness.status === 'complete' ? '. Schema is complete.' : s.schemaCompleteness.status === 'partial' ? ' — some optional fields could be added.' : '.'}` : 'Not found. JSON-LD tells AI exactly what type of content this is.', info: 'Gives AI explicit type signals so it can accurately categorize your page.', pts: 11 },
+                                                            { label: 'OpenGraph', pass: s.openGraphCompleteness.score === 'complete', detail: s.openGraphCompleteness.score === 'complete' ? 'All required tags present.' : s.openGraphCompleteness.score === 'partial' ? `Found, but missing ${s.openGraphCompleteness.missingTags.slice(0, 2).join(', ')}.` : 'Not found.', info: 'Controls the preview card when your link is shared on social channels.', pts: 5 },
                                                             { label: 'Breadcrumbs', pass: s.breadcrumbs.found, detail: s.breadcrumbs.found ? 'BreadcrumbList schema found.' : 'No BreadcrumbList schema found.', info: 'BreadcrumbList schema tells AI where this page sits in your site hierarchy.', pts: 4 },
                                                         ];
                                                         return items.map((item, i) => (
@@ -6011,6 +6010,17 @@ function LensyApp() {
                                                                 pts: 10,
                                                             }]),
                                                             {
+                                                                label: `Text-to-HTML: ${(c.textToHtmlRatio.ratio * 100).toFixed(1)}%`,
+                                                                pass: c.textToHtmlRatio.status === 'good' || (c.markdownAvailable?.found ?? false),
+                                                                detail: c.textToHtmlRatio.status === 'good'
+                                                                    ? 'Good ratio. AI crawlers can extract content efficiently.'
+                                                                    : c.markdownAvailable?.found
+                                                                        ? `Low ratio. Coding agents use markdown, but AI search engines still crawl the HTML.`
+                                                                        : `AI crawlers may process mostly noise (scripts, CSS, nav).`,
+                                                                info: 'Higher ratio means more content relative to markup. Below 5% is concerning unless a markdown alternative exists.',
+                                                                pts: 5,
+                                                            },
+                                                            {
                                                                 label: `Headings: ${c.headingHierarchy.h1Count} H1, ${h2Count} H2, ${h3Count} H3`,
                                                                 pass: c.headingHierarchy.h1Count === 1 && h2Count >= 1,
                                                                 detail: c.headingHierarchy.hasProperNesting
@@ -6038,22 +6048,37 @@ function LensyApp() {
                                                             }] : []),
                                                             {
                                                                 label: 'Markdown',
-                                                                pass: c.markdownAvailable.found,
+                                                                pass: c.markdownAvailable.found && c.markdownAvailable.discoverable,
                                                                 detail: c.markdownAvailable.found
-                                                                    ? (c.markdownAvailable.discoverable ? 'Available and discoverable by coding agents.' : 'Available but not easily discoverable.')
+                                                                    ? (c.markdownAvailable.discoverable ? 'Available and discoverable by coding agents.' : 'Available but not signaled to AI bots — they won\'t discover it automatically.')
                                                                     : 'No markdown version found.',
-                                                                fix: !c.markdownAvailable.found ? 'Serve a .md version alongside HTML.' : undefined,
+                                                                fix: !c.markdownAvailable.found ? 'Serve a .md version alongside HTML.' : (!c.markdownAvailable.discoverable ? 'Add a <link rel="alternate" type="text/markdown"> tag.' : undefined),
                                                                 waitlist: !c.markdownAvailable.found,
                                                                 waitlistLabel: 'Join the waitlist for markdown generation →',
                                                                 info: 'AI coding agents work better with markdown (up to 80% fewer tokens).',
                                                                 pts: c.markdownAvailable.discoverable ? 8 : 4,
                                                             },
+                                                            ...(c.codeBlocks.hasCode ? [{
+                                                                label: `Code blocks: ${c.codeBlocks.count}`,
+                                                                pass: c.codeBlocks.withLanguageHints > 0,
+                                                                detail: c.codeBlocks.withLanguageHints === c.codeBlocks.count
+                                                                    ? `All ${c.codeBlocks.count} blocks have language hints.`
+                                                                    : c.codeBlocks.withLanguageHints > 0
+                                                                        ? `${c.codeBlocks.withLanguageHints}/${c.codeBlocks.count} have language hints.`
+                                                                        : c.markdownAvailable?.found
+                                                                            ? `No language hints in HTML. Coding agents can use markdown, but AI search crawlers still parse HTML.`
+                                                                            : `${c.codeBlocks.count} blocks found, none have language hints.`,
+                                                                info: 'Language hints help AI search engines and coding assistants understand code examples.',
+                                                                pts: 4,
+                                                            }] : []),
                                                             {
                                                                 label: `Links: ${c.internalLinkDensity.count}`,
                                                                 pass: c.internalLinkDensity.status === 'good',
                                                                 detail: c.internalLinkDensity.status === 'good'
                                                                     ? `${c.internalLinkDensity.count} internal links. Good cross-referencing.`
-                                                                    : `Only ${c.internalLinkDensity.count} internal links.`,
+                                                                    : c.internalLinkDensity.status === 'sparse'
+                                                                        ? `Only ${c.internalLinkDensity.count} internal link${c.internalLinkDensity.count === 1 ? '' : 's'}. Add cross-references to related pages.`
+                                                                        : `${c.internalLinkDensity.count} internal links — high density relative to content length.`,
                                                                 fix: c.internalLinkDensity.status === 'sparse' ? 'Add "See also" links to related pages.' : undefined,
                                                                 info: 'Internal links help AI understand how your pages relate.',
                                                                 pts: 4,
