@@ -313,7 +313,8 @@ function scoreDocConfidence(html, url) {
  * checks run in parallel since they are independent.
  */
 async function runAgent(input) {
-    const { url, sessionId, analysisStartTime, llmsTxtUrl, ipHash, skipCitations } = input;
+    const { sessionId, analysisStartTime, llmsTxtUrl, ipHash, skipCitations } = input;
+    let url = input.url; // mutable — updated if redirect detected
     const progress = new progress_publisher_1.ProgressPublisher(sessionId);
     console.log(`[Pipeline] Starting direct analysis for URL: ${url}, session: ${sessionId}`);
     const pipelineStart = Date.now();
@@ -340,6 +341,19 @@ async function runAgent(input) {
             if (res.ok) {
                 prefetchedHtml = await res.text();
                 console.log(`[Pipeline] Prefetched ${url}: ${prefetchedHtml.length} bytes`);
+                // ── Follow redirects: update URL to final destination ──
+                const finalUrl = res.url;
+                if (finalUrl && finalUrl !== url) {
+                    const originalDomain = new URL(url).hostname;
+                    const finalDomain = new URL(finalUrl).hostname;
+                    if (finalDomain !== originalDomain) {
+                        console.log(`[Pipeline] Redirect detected: ${originalDomain} → ${finalDomain} (final URL: ${finalUrl})`);
+                    }
+                    else {
+                        console.log(`[Pipeline] Path redirect: ${url} → ${finalUrl}`);
+                    }
+                    url = finalUrl;
+                }
             }
             else {
                 console.warn(`[Pipeline] Prefetch failed with status ${res.status}`);

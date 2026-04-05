@@ -348,20 +348,20 @@ function calculateStructuredDataScore(r: AIReadinessResult | null): number {
     let points = 0;
     const maxPoints = WEIGHTS.structuredData;
 
-    // JSON-LD with valid type: 7 points
-    if (s.jsonLd.found && s.jsonLd.isValidSchemaType) points += 7;
-    else if (s.jsonLd.found) points += 4;
+    // JSON-LD with valid type: 5 points (secondary signal — helpful for AI search, not a coding-agent blocker)
+    if (s.jsonLd.found && s.jsonLd.isValidSchemaType) points += 5;
+    else if (s.jsonLd.found) points += 3;
 
-    // Schema completeness: 4 points
-    if (s.schemaCompleteness.status === 'complete') points += 4;
-    else if (s.schemaCompleteness.status === 'partial') points += 2;
+    // Schema completeness: 2 points (low impact)
+    if (s.schemaCompleteness.status === 'complete') points += 2;
+    else if (s.schemaCompleteness.status === 'partial') points += 1;
 
-    // OpenGraph completeness: 5 points
-    if (s.openGraphCompleteness.score === 'complete') points += 5;
-    else if (s.openGraphCompleteness.score === 'partial') points += 3;
+    // OpenGraph completeness: 10 points (important for AI search previews and content understanding)
+    if (s.openGraphCompleteness.score === 'complete') points += 10;
+    else if (s.openGraphCompleteness.score === 'partial') points += 6;
 
-    // Breadcrumbs: 4 points
-    if (s.breadcrumbs.found) points += 4;
+    // Breadcrumbs: 3 points (secondary signal — useful for hierarchy, not critical)
+    if (s.breadcrumbs.found) points += 3;
 
     return Math.min(Math.round(points), maxPoints);
 }

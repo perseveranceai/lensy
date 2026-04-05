@@ -209,6 +209,37 @@ interface DiscoverabilityData {
     metaRobots: { found: boolean; content?: string; blocksIndexing: boolean };
 }
 
+// ── v2 Evidence-aware Detection Types ──
+type EvidenceStatus = 'verified' | 'advertised' | 'mapped' | 'not_verified' | 'experimental';
+
+interface DetectionSignal {
+    status: EvidenceStatus;
+    method?: string;
+    validatedUrl?: string | null;
+    audience?: 'ai_search' | 'coding_agents' | 'both';
+    note?: string | null;
+}
+
+interface DetectionData {
+    site: {
+        llmsTxt: DetectionSignal;
+        llmsFullTxt: DetectionSignal;
+        sitemap: DetectionSignal;
+        agentsMd: DetectionSignal;
+        mcpJson: DetectionSignal;
+        blockedAiCrawlers: string[];
+        allowedAiCrawlers: string[];
+        openApiSpecs: string[];
+    };
+    page: {
+        markdown: DetectionSignal;
+        llmsTxtMapping: DetectionSignal;
+        llmsTxtMarkdownMapping: DetectionSignal;
+        contentNegotiation: DetectionSignal;
+    };
+    probeLog?: Array<{ url: string; statusCode: number; purpose: string; durationMs: number }>;
+}
+
 interface ConsumabilityData {
     markdownAvailable: { found: boolean; urls: string[]; discoverable: boolean; discoveryMethod?: string };
     textToHtmlRatio: { ratio: number; textBytes: number; htmlBytes: number; status: 'good' | 'low' | 'very-low' };
@@ -569,6 +600,7 @@ function LensyApp() {
         consumability?: ConsumabilityData;
         structuredData?: StructuredDataData;
         aiDiscoverability?: AIDiscoverabilityData;
+        detection?: DetectionData;  // v2: evidence-aware detection report
         overallScore?: { overallScore: number; scoreBreakdown: ScoreBreakdown; recommendationCount: number; contextualSuggestionCount: number; docConfidence?: { score: number; signals: string[] } };
     }>({});
     const [activeDetailCard, setActiveDetailCard] = useState<'score' | 'bots' | 'content' | 'queries' | null>(null);
@@ -5911,9 +5943,9 @@ function LensyApp() {
                                                     {asyncCards.structuredData ? (() => {
                                                         const s = asyncCards.structuredData!;
                                                         const items = [
-                                                            { label: 'JSON-LD', pass: s.jsonLd.found, detail: s.jsonLd.found ? `Found ${s.jsonLd.types.join(', ')} markup${s.schemaCompleteness.status === 'complete' ? '. Schema is complete.' : s.schemaCompleteness.status === 'partial' ? ' — some optional fields could be added.' : '.'}` : 'Not found. JSON-LD tells AI exactly what type of content this is.', info: 'Gives AI explicit type signals so it can accurately categorize your page.', pts: 11 },
+                                                            { label: 'JSON-LD', pass: s.jsonLd.found, detail: s.jsonLd.found ? `Found ${s.jsonLd.types.join(', ')} markup${s.schemaCompleteness.status === 'complete' ? '. Schema is complete.' : s.schemaCompleteness.status === 'partial' ? ' — some optional fields could be added.' : '.'}` : 'Structured data can improve machine understanding and rich-search eligibility. Helpful for discoverability, but not a major coding-agent blocker.', info: 'Secondary improvement for AI search — not a core coding-agent requirement.', pts: 5, audience: 'AI search', impact: 'Low–medium' },
                                                             { label: 'OpenGraph', pass: s.openGraphCompleteness.score === 'complete', detail: s.openGraphCompleteness.score === 'complete' ? 'All required tags present.' : s.openGraphCompleteness.score === 'partial' ? `Found, but missing ${s.openGraphCompleteness.missingTags.slice(0, 2).join(', ')}.` : 'Not found.', info: 'Controls the preview card when your link is shared on social channels.', pts: 5 },
-                                                            { label: 'Breadcrumbs', pass: s.breadcrumbs.found, detail: s.breadcrumbs.found ? 'BreadcrumbList schema found.' : 'No BreadcrumbList schema found.', info: 'BreadcrumbList schema tells AI where this page sits in your site hierarchy.', pts: 4 },
+                                                            { label: 'Breadcrumbs', pass: s.breadcrumbs.found, detail: s.breadcrumbs.found ? 'BreadcrumbList schema found.' : 'Breadcrumb markup helps search systems understand page hierarchy. Useful, but lower priority than crawlability and Markdown access.', info: 'Helps search systems display page hierarchy — secondary AI search signal.', pts: 3, audience: 'AI search', impact: 'Low' },
                                                         ];
                                                         return items.map((item, i) => (
                                                             <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>
@@ -5921,7 +5953,9 @@ function LensyApp() {
                                                                 <Box sx={{ flex: 1 }}>
                                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                                                         <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', lineHeight: 1.3, color: 'var(--text-primary)' }}>{item.label}</Typography>
-                                                                        {!item.pass && <Typography component="span" sx={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--accent-primary)' }}>+{item.pts} pts</Typography>}
+                                                                        {!item.pass && item.pts > 0 && <Typography component="span" sx={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--accent-primary)' }}>+{item.pts} pts</Typography>}
+                                                                        {(item as any).audience && !item.pass && <Typography component="span" sx={{ fontSize: '0.55rem', fontWeight: 600, color: 'var(--text-muted)', bgcolor: 'rgba(255,255,255,0.06)', px: 0.5, py: 0.15, borderRadius: 0.5 }}>{(item as any).audience}</Typography>}
+                                                                        {(item as any).impact && !item.pass && <Typography component="span" sx={{ fontSize: '0.55rem', fontWeight: 600, color: 'var(--text-muted)', opacity: 0.7 }}>{(item as any).impact} impact</Typography>}
                                                                         <Tooltip title={item.info} arrow placement="top" enterTouchDelay={0} leaveTouchDelay={3000}>
                                                                             <InfoIcon sx={{ fontSize: 12, color: 'var(--text-muted)', cursor: 'help', opacity: 0.5, '&:hover': { opacity: 1 } }} />
                                                                         </Tooltip>
@@ -5950,33 +5984,158 @@ function LensyApp() {
                                                     </Box>
                                                     {asyncCards.discoverability ? (() => {
                                                         const d = asyncCards.discoverability!;
-                                                        const items: Array<{ label: string; status: 'pass' | 'fail' | 'neutral'; detail: string; info?: string; waitlist?: boolean; waitlistLabel?: string; pts: number }> = [
+                                                        const det = asyncCards.detection;
+
+                                                        // ── Evidence badge colors ──
+                                                        const badgeStyles: Record<EvidenceStatus, { color: string; bg: string; icon: string }> = {
+                                                            verified: { color: '#16a34a', bg: 'rgba(22,163,74,0.1)', icon: '✓' },
+                                                            advertised: { color: '#d97706', bg: 'rgba(217,119,6,0.1)', icon: '⚠' },
+                                                            mapped: { color: '#15803d', bg: 'rgba(21,128,61,0.15)', icon: '◉' },
+                                                            not_verified: { color: '#dc2626', bg: 'rgba(220,38,38,0.1)', icon: '✗' },
+                                                            experimental: { color: '#6b7280', bg: 'rgba(107,114,128,0.1)', icon: '◇' },
+                                                        };
+                                                        const badgeLabels: Record<EvidenceStatus, string> = {
+                                                            verified: 'Verified',
+                                                            advertised: 'Advertised',
+                                                            mapped: 'Mapped',
+                                                            not_verified: 'Not verified',
+                                                            experimental: 'Experimental',
+                                                        };
+                                                        const audienceLabels: Record<string, string> = {
+                                                            ai_search: 'AI search',
+                                                            coding_agents: 'Coding agents',
+                                                            both: 'Both',
+                                                        };
+
+                                                        // ── Evidence badge component (inline) ──
+                                                        const EvidenceBadge = ({ signal }: { signal: DetectionSignal }) => {
+                                                            const style = badgeStyles[signal.status];
+                                                            return (
+                                                                <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.3, px: 0.6, py: 0.1, borderRadius: 1, fontSize: '0.6rem', fontWeight: 700, color: style.color, bgcolor: style.bg, whiteSpace: 'nowrap' }}>
+                                                                    {style.icon} {badgeLabels[signal.status]}
+                                                                </Box>
+                                                            );
+                                                        };
+
+                                                        const AudienceBadge = ({ audience }: { audience?: string }) => {
+                                                            if (!audience) return null;
+                                                            return (
+                                                                <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', px: 0.5, py: 0.1, borderRadius: 1, fontSize: '0.55rem', fontWeight: 600, color: 'var(--text-muted)', bgcolor: 'rgba(107,114,128,0.08)', whiteSpace: 'nowrap' }}>
+                                                                    {audienceLabels[audience] || audience}
+                                                                </Box>
+                                                            );
+                                                        };
+
+                                                        // ── Build evidence-aware items when v2 detection data is available ──
+                                                        type DiscItem = { label: string; status: 'pass' | 'fail' | 'neutral' | 'warn'; detail: string; info?: string; waitlist?: boolean; waitlistLabel?: string; pts: number; signal?: DetectionSignal; section?: string };
+
+                                                        const items: DiscItem[] = det ? [
+                                                            // ── Site-Level Signals ──
+                                                            { section: 'Site-Level', label: 'llms.txt', signal: det.site.llmsTxt,
+                                                              status: det.site.llmsTxt.status === 'verified' ? 'pass' : det.site.llmsTxt.status === 'advertised' ? 'warn' : 'fail',
+                                                              detail: det.site.llmsTxt.status === 'verified'
+                                                                  ? `Verified at ${det.site.llmsTxt.validatedUrl || 'found URL'}. AI coding tools can consume your docs directly.`
+                                                                  : det.site.llmsTxt.status === 'advertised'
+                                                                      ? `Advertised via ${det.site.llmsTxt.method || 'header'} but not validated. ${det.site.llmsTxt.note || ''}`
+                                                                      : `Not verified from tested paths.`,
+                                                              info: 'A markdown table of contents for your docs. Helps AI coding tools find and consume your content at inference time.',
+                                                              waitlist: det.site.llmsTxt.status === 'not_verified', pts: 10 },
+                                                            { section: 'Site-Level', label: 'llms-full.txt', signal: det.site.llmsFullTxt,
+                                                              status: det.site.llmsFullTxt.status === 'verified' ? 'pass' : det.site.llmsFullTxt.status === 'advertised' ? 'warn' : 'neutral',
+                                                              detail: det.site.llmsFullTxt.status === 'verified'
+                                                                  ? `Verified at ${det.site.llmsFullTxt.validatedUrl}. Full doc content available for coding agents.`
+                                                                  : det.site.llmsFullTxt.status === 'advertised'
+                                                                      ? `Advertised but not validated.`
+                                                                      : `Not found (optional for large doc sites).`,
+                                                              info: 'The complete concatenation of all doc pages. Useful for coding agents that need full context.', pts: 0 },
+                                                            { section: 'Site-Level', label: 'Sitemap', signal: det.site.sitemap,
+                                                              status: det.site.sitemap.status === 'verified' ? 'pass' : 'fail',
+                                                              detail: det.site.sitemap.status === 'verified' ? `Found. Crawlers can discover all your pages.` : 'Not found. Crawlers may miss deeper pages.',
+                                                              info: 'Lists every page on your site so crawlers don\'t have to guess.', pts: 5 },
+                                                            { section: 'Site-Level', label: 'Canonical URL', status: d.canonical.found ? 'pass' : 'fail',
+                                                              detail: d.canonical.found ? `Set. Prevents duplicate indexing.` : 'Not set. Search engines may index duplicate versions.',
+                                                              info: 'Tells search engines which URL is the authoritative version of this page.', pts: 5 },
+                                                            ...(d.metaRobots.blocksIndexing ? [{ label: 'Meta Robots', status: 'fail' as const, detail: `Set to "${d.metaRobots.content}". Blocks indexing.`, info: 'Your meta robots tag is preventing indexing.', pts: 5 } as DiscItem] : []),
+                                                            // ── Page-Level Signals ──
+                                                            { section: 'Page-Level', label: 'Page Markdown', signal: det.page.markdown,
+                                                              status: det.page.markdown.status === 'verified' ? 'pass' : det.page.markdown.status === 'advertised' ? 'warn' : 'neutral',
+                                                              detail: det.page.markdown.status === 'verified'
+                                                                  ? `Verified via ${det.page.markdown.method || 'probe'}. Coding agents can consume this page as markdown.`
+                                                                  : det.page.markdown.status === 'advertised'
+                                                                      ? `Advertised but not validated. ${det.page.markdown.note || ''}`
+                                                                      : `Markdown was not verified for this page.`,
+                                                              info: 'Whether this page can be served as markdown for AI coding tools.', pts: 0 },
+                                                            { section: 'Page-Level', label: 'Page in llms.txt', signal: det.page.llmsTxtMapping,
+                                                              status: det.page.llmsTxtMapping.status === 'mapped' ? 'pass' : 'neutral',
+                                                              detail: det.page.llmsTxtMapping.status === 'mapped'
+                                                                  ? `This page is listed in llms.txt${det.page.llmsTxtMapping.validatedUrl ? ` as ${det.page.llmsTxtMapping.validatedUrl}` : ''}.`
+                                                                  : det.site.llmsTxt.status === 'verified'
+                                                                      ? `Site has llms.txt but this page is not listed in it.`
+                                                                      : `Cannot check — llms.txt not found.`,
+                                                              info: 'Whether this specific page is listed in the site\'s llms.txt index.', pts: 0 },
+                                                            { section: 'Page-Level', label: 'Content Negotiation', signal: det.page.contentNegotiation,
+                                                              status: det.page.contentNegotiation.status === 'verified' ? 'pass' : 'neutral',
+                                                              detail: det.page.contentNegotiation.status === 'verified'
+                                                                  ? `Server returns markdown when requested with Accept: text/markdown.`
+                                                                  : `Server does not support content negotiation for this page.`,
+                                                              info: 'Whether the server returns markdown when an AI agent sends Accept: text/markdown header.', pts: 0 },
+                                                            // ── Experimental Signals ──
+                                                            ...(det.site.agentsMd.status === 'experimental' && det.site.agentsMd.validatedUrl ? [{
+                                                                label: 'AGENTS.md', signal: det.site.agentsMd, status: 'neutral' as const,
+                                                                detail: `Found at ${det.site.agentsMd.validatedUrl}. Emerging standard — not scored.`,
+                                                                info: 'Vercel convention for declaring agent-readiness. Not widely adopted yet.', pts: 0,
+                                                            } as DiscItem] : []),
+                                                            ...(det.site.mcpJson.status === 'experimental' && det.site.mcpJson.validatedUrl ? [{
+                                                                label: 'MCP Config', signal: det.site.mcpJson, status: 'neutral' as const,
+                                                                detail: `Found at ${det.site.mcpJson.validatedUrl}. Emerging standard — not scored.`,
+                                                                info: 'MCP server discovery file. Not widely adopted yet.', pts: 0,
+                                                            } as DiscItem] : []),
+                                                        ] : [
+                                                            // ── Fallback: v1 items (no detection data yet) ──
                                                             { label: 'llms.txt', status: d.llmsTxt.found ? 'pass' : 'fail', detail: d.llmsTxt.found ? `Found. AI coding tools can consume your docs directly.` : `Not found. llms.txt helps AI coding tools consume your docs faster.`, info: 'A markdown table of contents for your docs. Helps AI coding tools find and consume your content at inference time.', waitlist: !d.llmsTxt.found, pts: 10 },
                                                             { label: 'Sitemap', status: d.sitemapXml.found ? 'pass' : 'fail', detail: d.sitemapXml.found ? `Found. Crawlers can discover all your pages.` : 'Not found. Crawlers may miss deeper pages.', info: 'Lists every page on your site so crawlers don\'t have to guess.', pts: 5 },
                                                             { label: 'Canonical URL', status: d.canonical.found ? 'pass' : 'fail', detail: d.canonical.found ? `Set. Prevents duplicate indexing.` : 'Not set. Search engines may index duplicate versions.', info: 'Tells search engines which URL is the authoritative version of this page.', pts: 5 },
-                                                            ...(d.metaRobots.blocksIndexing ? [{ label: 'Meta Robots', status: 'fail' as const, detail: `Set to "${d.metaRobots.content}". Blocks indexing.`, info: 'Your meta robots tag is preventing indexing.', pts: 5 }] : []),
+                                                            ...(d.metaRobots.blocksIndexing ? [{ label: 'Meta Robots', status: 'fail' as const, detail: `Set to "${d.metaRobots.content}". Blocks indexing.`, info: 'Your meta robots tag is preventing indexing.', pts: 5 } as DiscItem] : []),
                                                         ];
+
+                                                        let lastSection = '';
                                                         return items.map((item, i) => (
-                                                            <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>
-                                                                {item.status === 'pass' ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} /> : item.status === 'neutral' ? <InfoIcon sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} /> : <ErrorIcon sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} />}
-                                                                <Box sx={{ flex: 1 }}>
-                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                                        <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', lineHeight: 1.3, color: 'var(--text-primary)' }}>{item.label}</Typography>
-                                                                        {item.status === 'fail' && <Typography component="span" sx={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--accent-primary)' }}>+{item.pts} pts</Typography>}
-                                                                        {item.info && (
-                                                                            <Tooltip title={item.info} arrow placement="top" enterTouchDelay={0} leaveTouchDelay={3000}>
-                                                                                <InfoIcon sx={{ fontSize: 12, color: 'var(--text-muted)', cursor: 'help', opacity: 0.5, '&:hover': { opacity: 1 } }} />
-                                                                            </Tooltip>
+                                                            <React.Fragment key={i}>
+                                                                {/* Section headers for v2 */}
+                                                                {det && item.section && item.section !== lastSection && (() => { lastSection = item.section; return (
+                                                                    <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, color: 'var(--text-muted)', fontSize: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.08em', mt: i > 0 ? 1 : 0, mb: 0.5 }}>
+                                                                        {item.section}
+                                                                    </Typography>
+                                                                ); })()}
+                                                                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>
+                                                                    {item.status === 'pass' ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} />
+                                                                     : item.status === 'warn' ? <WarningIcon sx={{ color: '#d97706', fontSize: 16, mt: 0.2 }} />
+                                                                     : item.status === 'neutral' ? <InfoIcon sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} />
+                                                                     : <ErrorIcon sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} />}
+                                                                    <Box sx={{ flex: 1 }}>
+                                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                                                                            <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', lineHeight: 1.3, color: 'var(--text-primary)' }}>{item.label}</Typography>
+                                                                            {item.signal && <EvidenceBadge signal={item.signal} />}
+                                                                            {item.signal?.audience && <AudienceBadge audience={item.signal.audience} />}
+                                                                            {item.status === 'fail' && item.pts > 0 && <Typography component="span" sx={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--accent-primary)' }}>+{item.pts} pts</Typography>}
+                                                                            {item.info && (
+                                                                                <Tooltip title={item.info} arrow placement="top" enterTouchDelay={0} leaveTouchDelay={3000}>
+                                                                                    <InfoIcon sx={{ fontSize: 12, color: 'var(--text-muted)', cursor: 'help', opacity: 0.5, '&:hover': { opacity: 1 } }} />
+                                                                                </Tooltip>
+                                                                            )}
+                                                                        </Box>
+                                                                        <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.7rem', lineHeight: 1.2, wordBreak: 'break-word' }}>{item.detail}</Typography>
+                                                                        {item.signal?.note && (
+                                                                            <Typography variant="caption" sx={{ display: 'block', color: '#d97706', fontSize: '0.65rem', lineHeight: 1.2, mt: 0.2, fontStyle: 'italic' }}>{item.signal.note}</Typography>
+                                                                        )}
+                                                                        {item.waitlist && (
+                                                                            <Typography variant="caption" component="a" href="/contact?ref=llmstxt" sx={{ display: 'block', color: 'var(--accent-primary)', fontSize: '0.7rem', fontWeight: 600, mt: 0.3, textDecoration: 'underline', '&:hover': { opacity: 0.8 } }}>
+                                                                                {item.waitlistLabel || 'We can help you generate one →'}
+                                                                            </Typography>
                                                                         )}
                                                                     </Box>
-                                                                    <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.7rem', lineHeight: 1.2, wordBreak: 'break-word' }}>{item.detail}</Typography>
-                                                                    {item.waitlist && (
-                                                                        <Typography variant="caption" component="a" href="/contact?ref=llmstxt" sx={{ display: 'block', color: 'var(--accent-primary)', fontSize: '0.7rem', fontWeight: 600, mt: 0.3, textDecoration: 'underline', '&:hover': { opacity: 0.8 } }}>
-                                                                            {item.waitlistLabel || 'We can help you generate one →'}
-                                                                        </Typography>
-                                                                    )}
                                                                 </Box>
-                                                            </Box>
+                                                            </React.Fragment>
                                                         ));
                                                     })() : <CircularProgress size={20} sx={{ opacity: 0.3 }} />}
                                                 </Box>
