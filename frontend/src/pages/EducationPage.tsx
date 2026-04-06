@@ -11,6 +11,13 @@ interface Article {
 
 const articles: Article[] = [
     {
+        slug: 'what-changed-in-lensy-after-rechecking-ai-ready-docs-signals',
+        title: 'What Changed in Lensy After Re-checking AI-Ready Docs Signals',
+        description: 'Markdown discoverability goes beyond .md files. How llms.txt, content negotiation, Link headers, and page-level mapping changed what Lensy checks.',
+        category: 'AI Readiness',
+        readTime: '4 min',
+    },
+    {
         slug: 'research-behind-ai-ready-docs',
         title: 'The Research Behind AI-Ready Documentation',
         description: 'Bot access, content structure, structured data, and discoverability — the four dimensions Lensy measures, grounded in peer-reviewed research.',
