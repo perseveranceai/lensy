@@ -4,7 +4,7 @@ import { writeSessionArtifact } from '../shared/s3-helpers';
 import { URL } from 'url';
 import { createProgressHelper } from './publish-progress';
 import { harvestSignals, executeProbes, crossReference } from './detection-engine';
-import { DetectionReport, DetectionSignal } from './detection-types';
+import { DetectionReport } from './detection-types';
 
 // ── Browser User-Agent for page fetching (hybrid Chrome UA — avoids JS shell responses from CDNs) ──
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 (+https://perseveranceai.com/bot)';
@@ -56,7 +56,7 @@ interface BotStatus {
 
 interface Recommendation {
     category: string;
-    priority: 'high' | 'medium' | 'low';
+    priority: 'high' | 'medium' | 'low' | 'best-practice';
     issue: string;
     fix: string;
     codeSnippet?: string;
@@ -118,7 +118,7 @@ export const checkAIReadinessTool = tool(
             const progress = createProgressHelper(input.sessionId);
             await progress.info('Analyzing AI readiness across 4 categories...');
 
-            const results = await checkAIReadiness(domain, input.url, input.sessionId, input.llmsTxtUrl, input.prefetchedHtml);
+            const results = await checkAIReadiness(domain, input.url, input.sessionId, input.llmsTxtUrl, input.prefetchedHtml, input.prefetchedHeaders);
 
             // Store results in S3
             await writeSessionArtifact(input.sessionId, 'ai-readiness-results.json', results);
@@ -158,14 +158,15 @@ export const checkAIReadinessTool = tool(
             url: z.string().describe('The URL to check AI readiness for'),
             sessionId: z.string().describe('The analysis session ID'),
             llmsTxtUrl: z.string().optional().describe('User-provided llms.txt URL. If provided, check this URL directly instead of auto-discovering.'),
-            prefetchedHtml: z.string().optional().describe('Pre-fetched HTML content of the target URL. If provided, skips the initial page fetch.')
+            prefetchedHtml: z.string().optional().describe('Pre-fetched HTML content of the target URL. If provided, skips the initial page fetch.'),
+            prefetchedHeaders: z.record(z.string()).optional().describe('Pre-fetched HTTP response headers from the target URL. Passed alongside prefetchedHtml to preserve Link headers for detection.')
         })
     }
 );
 
 // ── Main Analysis Function ───────────────────────────────────────────────
 
-async function checkAIReadiness(domain: string, targetUrl: string, sessionId: string, explicitLlmsTxtUrl?: string, prefetchedHtml?: string): Promise<AIReadinessResult> {
+async function checkAIReadiness(domain: string, targetUrl: string, sessionId: string, explicitLlmsTxtUrl?: string, prefetchedHtml?: string, prefetchedHeaders?: Record<string, string>): Promise<AIReadinessResult> {
     let baseUrl = `https://${domain}`;
     const recommendations: Recommendation[] = [];
     const progress = createProgressHelper(sessionId);
@@ -177,6 +178,9 @@ async function checkAIReadiness(domain: string, targetUrl: string, sessionId: st
     if (prefetchedHtml) {
         console.log(`[AIReadiness] Using prefetched HTML (${prefetchedHtml.length} bytes)`);
         targetHtml = prefetchedHtml;
+        if (prefetchedHeaders) {
+            targetHeadersRecord = prefetchedHeaders;
+        }
     } else {
         console.log(`[AIReadiness] No prefetched HTML, fetching ${targetUrl} directly`);
         try {
@@ -628,10 +632,10 @@ async function analyzeConsumability(
         });
     } else if (!markdown.discoverable) {
         recommendations.push({
-            category: 'Consumability',
-            priority: 'medium',
-            issue: 'Markdown version exists but is not signaled to AI bots — they won\'t discover it automatically.',
-            fix: 'Add a <link rel="alternate"> tag or HTTP Link header to signal markdown availability.',
+            category: 'Discoverability',
+            priority: 'best-practice',
+            issue: 'Expose the Markdown version via rel="alternate" in the HTML head as an additional machine-readable hint. This complements llms.txt, direct Markdown URLs, and content negotiation.',
+            fix: 'Add a <link rel="alternate" type="text/markdown"> tag — a standards-friendly discovery hint for tools that start from the HTML page.',
             codeSnippet: `<!-- Add to <head> -->\n<link rel="alternate" type="text/markdown" href="${markdown.urls[0] || `${new URL(targetUrl).pathname}.md`}" />`,
         });
     }

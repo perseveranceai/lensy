@@ -483,12 +483,17 @@ function classifyPageMapping(targetUrl, llmsTxtContent) {
         if (!url)
             continue;
         const normalizedUrl = normalizeUrlForMatching(url);
-        // Check exact match
-        if (normalizedUrl === normalizedTarget || normalizedUrl === normalizedTarget + '/') {
+        // Strip common file extensions for fuzzy matching (.md, .html, .htm, .mdx)
+        const normalizedUrlBase = normalizedUrl.replace(/\.(md|html|htm|mdx)$/, '');
+        const normalizedTargetBase = normalizedTarget.replace(/\.(md|html|htm|mdx)$/, '');
+        // Check match (exact, with trailing slash, or extension-stripped)
+        if (normalizedUrl === normalizedTarget
+            || normalizedUrl === normalizedTarget + '/'
+            || normalizedUrlBase === normalizedTargetBase) {
             foundExact = true;
             matchedUrl = url;
         }
-        // Check .md variant match
+        // Check .md variant match (llms.txt lists .md URL for a non-.md target page)
         if (normalizedUrl === mdVariant || normalizedUrl.endsWith(mdVariant)) {
             foundMd = true;
             matchedMdUrl = url;
@@ -496,8 +501,10 @@ function classifyPageMapping(targetUrl, llmsTxtContent) {
         // Also check if the page path appears as a relative URL in llms.txt
         try {
             const targetPath = new url_1.URL(targetUrl).pathname.replace(/\/$/, '');
+            const targetPathBase = targetPath.replace(/\.(md|html|htm|mdx)$/, '');
             const urlPath = url.startsWith('http') ? new url_1.URL(url).pathname.replace(/\/$/, '') : url.replace(/\/$/, '');
-            if (targetPath && urlPath === targetPath) {
+            const urlPathBase = urlPath.replace(/\.(md|html|htm|mdx)$/, '');
+            if (targetPath && (urlPath === targetPath || urlPathBase === targetPathBase)) {
                 foundExact = true;
                 matchedUrl = url;
             }
@@ -589,7 +596,7 @@ async function probeUrl(url, purpose, probeLog, returnContent = false) {
                 if (reader) {
                     const chunks = [];
                     let totalBytes = 0;
-                    const MAX_CONTENT_BYTES = 32 * 1024; // 32KB cap
+                    const MAX_CONTENT_BYTES = 512 * 1024; // 512KB — llms.txt files can be large and need full read for page mapping
                     while (totalBytes < MAX_CONTENT_BYTES) {
                         const { done, value } = await reader.read();
                         if (done)

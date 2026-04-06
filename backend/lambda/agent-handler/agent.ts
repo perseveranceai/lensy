@@ -336,6 +336,7 @@ export async function runAgent(input: AgentRunInput): Promise<string> {
         // ── Step 1.5: Fetch page HTML once (shared by both parallel checks) ──
         await progress.info('Fetching page content...');
         let prefetchedHtml = '';
+        let prefetchedHeaders: Record<string, string> = {};
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 10000);
@@ -351,7 +352,8 @@ export async function runAgent(input: AgentRunInput): Promise<string> {
             clearTimeout(timeoutId);
             if (res.ok) {
                 prefetchedHtml = await res.text();
-                console.log(`[Pipeline] Prefetched ${url}: ${prefetchedHtml.length} bytes`);
+                res.headers.forEach((v, k) => { prefetchedHeaders[k] = v; });
+                console.log(`[Pipeline] Prefetched ${url}: ${prefetchedHtml.length} bytes, headers: ${Object.keys(prefetchedHeaders).join(', ')}`);
 
                 // ── Follow redirects: update URL to final destination ──
                 const finalUrl = res.url;
@@ -533,8 +535,8 @@ Respond with JSON only:
             : 'Analyzing AI readiness and search discoverability in parallel...');
 
         const readinessInput = llmsTxtUrl
-            ? { url, sessionId, llmsTxtUrl, prefetchedHtml }
-            : { url, sessionId, prefetchedHtml };
+            ? { url, sessionId, llmsTxtUrl, prefetchedHtml, prefetchedHeaders }
+            : { url, sessionId, prefetchedHtml, prefetchedHeaders };
 
         const parallelTasks: Promise<any>[] = [
             checkAIReadinessTool.invoke(readinessInput),
