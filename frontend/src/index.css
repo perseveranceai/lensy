@@ -22,8 +22,8 @@
     --border-subtle: #1f1f1f;
     --border-default: #2a2a2a;
     --border-strong: #3a3a3a;
-    --accent-primary: #2563eb;
-    --accent-hover: #3b82f6;
+    --accent-primary: #e5e7eb;
+    --accent-hover: #fafafa;
     --accent-success: #22c55e;
     --accent-warning: #f59e0b;
     --accent-error: #ef4444;
@@ -52,8 +52,8 @@
     --border-subtle: #e5e7eb;
     --border-default: #d1d5db;
     --border-strong: #9ca3af;
-    --accent-primary: #2563eb;
-    --accent-hover: #3b82f6;
+    --accent-primary: #374151;
+    --accent-hover: #111111;
     --accent-success: #16a34a;
     --accent-warning: #d97706;
     --accent-error: #dc2626;
@@ -83,8 +83,8 @@
         --border-subtle: #e5e7eb;
         --border-default: #d1d5db;
         --border-strong: #9ca3af;
-        --accent-primary: #2563eb;
-        --accent-hover: #3b82f6;
+        --accent-primary: #374151;
+        --accent-hover: #111111;
         --accent-success: #16a34a;
         --accent-warning: #d97706;
         --accent-error: #dc2626;
@@ -416,6 +416,16 @@ h6 {
 /* LinearProgress */
 .MuiLinearProgress-root {
     background-color: var(--border-default) !important;
+}
+
+/* Anchor tags — monochrome + underlined */
+a {
+    color: var(--text-secondary);
+    text-decoration: underline;
+}
+
+a:hover {
+    color: var(--text-primary);
 }
 
 /* Code Blocks - Rounded 8px */

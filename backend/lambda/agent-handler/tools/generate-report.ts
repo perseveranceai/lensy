@@ -2,7 +2,7 @@ import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { readSessionArtifact, writeSessionArtifact } from '../shared/s3-helpers';
 import { createProgressHelper } from './publish-progress';
-import { invokeBedrockForJson } from '../shared/bedrock-helpers';
+
 import type { AIReadinessResult } from './check-ai-readiness';
 import type { AIDiscoverabilityResult } from './check-ai-discoverability';
 
@@ -21,19 +21,15 @@ import type { AIDiscoverabilityResult } from './check-ai-discoverability';
  *   - status.json   (session status set to 'completed')
  */
 
-// Use Haiku 4.5 for contextual suggestions — fast, cheap
-const SUGGESTION_MODEL = 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
-
 // ── Score Weights ─────────────────────────────────────────────────────────
 // AI Readiness = what doc owners control (70 raw points, rescaled to 0-100).
 // AI Citations (discoverability) is shown separately — it's an observation, not a readiness signal.
 
 const WEIGHTS = {
-    botAccess: 15,          // Out of 15 — are AI crawlers allowed?
-    discoverability: 20,    // Out of 20 — llms.txt, sitemap, canonical, meta robots
-    consumability: 45,      // Out of 45 — headings, word count, markdown, code, links
+    discoverability: 40,    // Out of 40 — llms.txt, sitemap, canonical, meta robots, markdown availability
+    consumability: 40,      // Out of 40 — headings, word count, code, links, JS rendering
     structuredData: 20,     // Out of 20 — JSON-LD, schema, OpenGraph, breadcrumbs
-    // Total readiness = 100 points
+    // Total readiness = 100 points (bot access is a prerequisite, not scored)
 };
 
 // AI Citations weight (separate from readiness score)
@@ -44,8 +40,9 @@ const AI_CITATION_WEIGHT = 30;
 interface AIReadinessReport {
     overallScore: number;
     letterGrade: string;  // A+, A, B+, B, C, D, F
+    botAccessState: 'fully_blocked' | 'partially_blocked' | 'accessible';
     scoreBreakdown: {
-        botAccess: number;
+        botAccess: number;          // always 0 — kept for backward compat, bot access is now a prerequisite
         discoverability: number;
         consumability: number;
         structuredData: number;
@@ -55,7 +52,7 @@ interface AIReadinessReport {
     aiDiscoverability: AIDiscoverabilityResult | null;
     recommendations: Array<{
         category: string;
-        priority: 'high' | 'medium' | 'low';
+        priority: 'high' | 'medium' | 'low' | 'best-practice';
         issue: string;
         fix: string;
         codeSnippet?: string;
@@ -101,9 +98,9 @@ export const generateReportTool = tool(
 
             // ── 2. Calculate score breakdown ─────────────────────────
             const scoreBreakdown = calculateScores(readinessResults, discoverabilityResults);
-            // AI Readiness = only what doc owners control (excludes citations)
+            const botAccessState = determineBotAccessState(readinessResults);
+            // AI Readiness = only what doc owners control (excludes citations and bot access prerequisite)
             const overallScore = Math.round(
-                scoreBreakdown.botAccess +
                 scoreBreakdown.discoverability +
                 scoreBreakdown.consumability +
                 scoreBreakdown.structuredData
@@ -113,7 +110,7 @@ export const generateReportTool = tool(
             console.log(`[generate_report] Score breakdown:`, scoreBreakdown, `Overall: ${overallScore} (${letterGrade}), Citations: ${scoreBreakdown.aiDiscoverability}`);
 
             // ── 3. Merge recommendations ─────────────────────────────
-            const recommendations = [
+            const recommendations: Array<{ category: string; priority: 'high' | 'medium' | 'low' | 'best-practice'; issue: string; fix: string }> = [
                 ...(readinessResults?.recommendations || []),
                 ...(discoverabilityResults?.recommendations?.map(r => ({
                     category: 'AI Discoverability',
@@ -124,8 +121,81 @@ export const generateReportTool = tool(
             ];
 
             // Sort by priority: high → medium → low
-            const priorityOrder = { high: 0, medium: 1, low: 2 };
-            recommendations.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
+            const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2, 'best-practice': 3 };
+            recommendations.sort((a, b) => (priorityOrder[a.priority] ?? 3) - (priorityOrder[b.priority] ?? 3));
+
+            // ── 3b. Generate best-practice recommendations from detection notes ──
+            const detection = readinessResults?.detection;
+            if (detection) {
+                const bestPractices: Array<{ category: string; priority: 'best-practice'; issue: string; fix: string }> = [];
+
+                // Link header mismatch: advertised at one URL, found at another
+                if (detection.site.llmsTxt.status === 'verified' && detection.site.llmsTxt.note) {
+                    bestPractices.push({
+                        category: 'Discoverability',
+                        priority: 'best-practice',
+                        issue: `Link header mismatch: ${detection.site.llmsTxt.note}`,
+                        fix: 'Update your HTTP Link header to point to the correct llms.txt path. AI tools that trust the Link header directly (without fallback probing) will miss your llms.txt.',
+                    });
+                }
+
+                // llms.txt advertised but not found
+                if (detection.site.llmsTxt.status === 'advertised') {
+                    bestPractices.push({
+                        category: 'Discoverability',
+                        priority: 'best-practice',
+                        issue: `llms.txt advertised but not found — ${detection.site.llmsTxt.note || 'header pointed to a URL that returned 404'}`,
+                        fix: 'Your server advertises an llms.txt via HTTP headers but the file is missing. Either create the file at the advertised path or remove the Link header to avoid misleading AI tools.',
+                    });
+                }
+
+                // llms-full.txt advertised but not found
+                if (detection.site.llmsFullTxt.status === 'advertised' && detection.site.llmsFullTxt.note) {
+                    bestPractices.push({
+                        category: 'Discoverability',
+                        priority: 'best-practice',
+                        issue: `llms-full.txt advertised but not validated — ${detection.site.llmsFullTxt.note}`,
+                        fix: 'Your llms-full.txt is referenced but the direct probe failed. Ensure the file is accessible at the expected URL.',
+                    });
+                }
+
+                // Markdown advertised but not found
+                if (detection.page.markdown.status === 'advertised' && detection.page.markdown.note) {
+                    bestPractices.push({
+                        category: 'Discoverability',
+                        priority: 'best-practice',
+                        issue: `Markdown version advertised but not accessible — ${detection.page.markdown.note}`,
+                        fix: 'Your page advertises a markdown version (via Link header or <link rel="alternate">) but the URL returned an error. Ensure the markdown endpoint is accessible.',
+                    });
+                }
+
+                // Experimental signals found (AGENTS.md, MCP)
+                const experimentalSignals = [
+                    { name: 'AGENTS.md', signal: detection.site.agentsMd },
+                    { name: 'MCP Config', signal: detection.site.mcpJson },
+                ].filter(s => s.signal.status === 'experimental');
+
+                for (const exp of experimentalSignals) {
+                    bestPractices.push({
+                        category: 'Discoverability',
+                        priority: 'best-practice',
+                        issue: `${exp.name} detected — emerging standard`,
+                        fix: `Your site has a ${exp.name} file, which is an emerging standard for AI agent interoperability. While not yet scored, this shows forward-thinking adoption. Keep it maintained as the standard evolves.`,
+                    });
+                }
+
+                // llms.txt verified with note about hint URL mismatch for llms-full.txt
+                if (detection.site.llmsFullTxt.status === 'verified' && detection.site.llmsFullTxt.note) {
+                    bestPractices.push({
+                        category: 'Discoverability',
+                        priority: 'best-practice',
+                        issue: `llms-full.txt: ${detection.site.llmsFullTxt.note}`,
+                        fix: 'Update your HTTP Link header to point to the correct llms-full.txt path for consistency.',
+                    });
+                }
+
+                recommendations.push(...bestPractices);
+            }
 
             // ── 4. Contextual suggestions skipped — saves ~5s LLM call ──
             // Rule-based recommendations already provide actionable fixes.
@@ -142,6 +212,7 @@ export const generateReportTool = tool(
             const finalReport: AIReadinessReport = {
                 overallScore,
                 letterGrade,
+                botAccessState,
                 scoreBreakdown,
                 categories: readinessResults?.categories || {
                     botAccess: { robotsTxtFound: false, bots: [], allowedCount: 0, blockedCount: 0 },
@@ -197,6 +268,7 @@ export const generateReportTool = tool(
             await progress.categoryResult('overallScore', {
                 overallScore,
                 letterGrade,
+                botAccessState,
                 scoreBreakdown,
                 recommendationCount: recommendations.length,
                 contextualSuggestionCount: contextualSuggestions.length,
@@ -268,7 +340,7 @@ function calculateScores(
     discoverability: AIDiscoverabilityResult | null
 ): AIReadinessReport['scoreBreakdown'] {
     return {
-        botAccess: calculateBotAccessScore(readiness),
+        botAccess: 0,  // No longer scored — bot access is a prerequisite, not a category
         discoverability: calculateDiscoverabilityScore(readiness),
         consumability: calculateConsumabilityScore(readiness),
         structuredData: calculateStructuredDataScore(readiness),
@@ -286,14 +358,14 @@ function getLetterGrade(score: number): string {
     return 'F';
 }
 
-function calculateBotAccessScore(r: AIReadinessResult | null): number {
-    if (!r) return 0;
+function determineBotAccessState(r: AIReadinessResult | null): AIReadinessReport['botAccessState'] {
+    if (!r) return 'accessible';  // No data = assume accessible
     const { allowedCount, blockedCount } = r.categories.botAccess;
     const total = allowedCount + blockedCount;
-    if (total === 0) return WEIGHTS.botAccess * 0.7;  // No robots.txt = default allow, partial credit
-
-    // Scale: all 10 allowed = full score, blocked bots reduce score proportionally
-    return Math.round((allowedCount / 10) * WEIGHTS.botAccess);
+    if (total === 0) return 'accessible';  // No robots.txt = bots allowed by default
+    if (allowedCount === 0) return 'fully_blocked';
+    if (blockedCount > 0) return 'partially_blocked';
+    return 'accessible';
 }
 
 function calculateDiscoverabilityScore(r: AIReadinessResult | null): number {
@@ -302,14 +374,19 @@ function calculateDiscoverabilityScore(r: AIReadinessResult | null): number {
     let points = 0;
     const maxPoints = WEIGHTS.discoverability;
 
-    // llms.txt: 10 points (helps AI coding tools consume docs at inference time)
-    if (d.llmsTxt.found) points += 10;
-    // sitemap.xml: 5 points
-    if (d.sitemapXml.found) points += 5;
+    // llms.txt: 15 points (primary signal — helps AI coding tools consume docs at inference time)
+    if (d.llmsTxt.found) points += 15;
+    // sitemap.xml: 8 points
+    if (d.sitemapXml.found) points += 8;
     // Canonical: 5 points
     if (d.canonical.found) points += 5;
     // Meta robots: only penalize if actively blocking (not scoring the default)
     if (d.metaRobots.blocksIndexing) points -= 5;
+
+    // Markdown availability: 12 points (discoverability signal — can AI tools find a markdown version?)
+    const c = r.categories.consumability;
+    if (c.markdownAvailable.found && c.markdownAvailable.discoverable) points += 12;
+    else if (c.markdownAvailable.found) points += 8;
 
     return Math.min(Math.round(points), maxPoints);
 }
@@ -320,20 +397,16 @@ function calculateConsumabilityScore(r: AIReadinessResult | null): number {
     let points = 0;
     const maxPoints = WEIGHTS.consumability;
 
-    // Heading hierarchy: 18 points (primary signal per DeepRead/GraphSkill research — agents use headings 87-98% of the time)
-    if (c.headingHierarchy.h1Count === 1) points += 10;
+    // Heading hierarchy: 20 points (primary signal per DeepRead/GraphSkill research — agents use headings 87-98% of the time)
+    if (c.headingHierarchy.h1Count === 1) points += 12;
     else if (c.headingHierarchy.h1Count > 0) points += 4;
     if (c.headingHierarchy.hasProperNesting) points += 8;
 
     // Not JS-rendered: 10 points
     if (!c.jsRendered) points += 10;
 
-    // Markdown available & discoverable: 8 points
-    if (c.markdownAvailable.found && c.markdownAvailable.discoverable) points += 8;
-    else if (c.markdownAvailable.found) points += 4;
-
-    // Word count: 5 points (research: 500-2000 words = 2-3x more AI citations)
-    if (c.wordCount >= 500 && c.wordCount <= 2000) points += 5;
+    // Word count: 6 points (research: 500-2000 words = 2-3x more AI citations)
+    if (c.wordCount >= 500 && c.wordCount <= 2000) points += 6;
     else if (c.wordCount >= 300) points += 3;
 
     // Internal link density: 4 points
@@ -348,20 +421,20 @@ function calculateStructuredDataScore(r: AIReadinessResult | null): number {
     let points = 0;
     const maxPoints = WEIGHTS.structuredData;
 
-    // JSON-LD with valid type: 7 points
-    if (s.jsonLd.found && s.jsonLd.isValidSchemaType) points += 7;
-    else if (s.jsonLd.found) points += 4;
+    // JSON-LD with valid type: 5 points (secondary signal — helpful for AI search, not a coding-agent blocker)
+    if (s.jsonLd.found && s.jsonLd.isValidSchemaType) points += 5;
+    else if (s.jsonLd.found) points += 3;
 
-    // Schema completeness: 4 points
-    if (s.schemaCompleteness.status === 'complete') points += 4;
-    else if (s.schemaCompleteness.status === 'partial') points += 2;
+    // Schema completeness: 2 points (low impact)
+    if (s.schemaCompleteness.status === 'complete') points += 2;
+    else if (s.schemaCompleteness.status === 'partial') points += 1;
 
-    // OpenGraph completeness: 5 points
-    if (s.openGraphCompleteness.score === 'complete') points += 5;
-    else if (s.openGraphCompleteness.score === 'partial') points += 3;
+    // OpenGraph completeness: 10 points (important for AI search previews and content understanding)
+    if (s.openGraphCompleteness.score === 'complete') points += 10;
+    else if (s.openGraphCompleteness.score === 'partial') points += 6;
 
-    // Breadcrumbs: 4 points
-    if (s.breadcrumbs.found) points += 4;
+    // Breadcrumbs: 3 points (secondary signal — useful for hierarchy, not critical)
+    if (s.breadcrumbs.found) points += 3;
 
     return Math.min(Math.round(points), maxPoints);
 }
@@ -380,75 +453,4 @@ function calculateAIDiscoverabilityScore(d: AIDiscoverabilityResult | null): num
     return Math.round(avgFoundRate * maxPoints);
 }
 
-// ── Contextual Suggestions (LLM-generated) ────────────────────────────────
-
-async function generateContextualSuggestions(
-    url: string,
-    readiness: AIReadinessResult | null,
-    discoverability: AIDiscoverabilityResult | null,
-): Promise<string[]> {
-    if (!readiness && !discoverability) return [];
-
-    // Build a concise summary for the LLM
-    const parts: string[] = [];
-    parts.push(`URL analyzed: ${url}`);
-
-    if (readiness) {
-        const ba = readiness.categories.botAccess;
-        const blocked = ba.bots.filter(b => b.status === 'blocked').map(b => b.name);
-        parts.push(`Bot Access: ${ba.allowedCount}/10 bots allowed${blocked.length > 0 ? ` (blocked: ${blocked.join(', ')})` : ''}`);
-
-        const disc = readiness.categories.discoverability;
-        parts.push(`llms.txt: ${disc.llmsTxt.found ? 'found' : 'NOT found'}`);
-        parts.push(`sitemap.xml: ${disc.sitemapXml.found ? 'found' : 'NOT found'}`);
-        parts.push(`Text-to-HTML ratio: ${(readiness.categories.consumability.textToHtmlRatio.ratio * 100).toFixed(1)}%`);
-        parts.push(`JS-rendered: ${readiness.categories.consumability.jsRendered ? 'YES (problem)' : 'No (good)'}`);
-        parts.push(`JSON-LD: ${readiness.categories.structuredData.jsonLd.found ? `found (${readiness.categories.structuredData.jsonLd.types.join(', ')})` : 'NOT found'}`);
-    }
-
-    if (discoverability) {
-        const foundQueries = discoverability.queries?.filter((q, i) => {
-            return Object.values(discoverability.engines).some(e =>
-                e?.results?.[i]?.cited
-            );
-        }) || [];
-        const missedQueries = discoverability.queries?.filter((q, i) => {
-            return !Object.values(discoverability.engines).some(e =>
-                e?.results?.[i]?.cited
-            );
-        }) || [];
-
-        if (foundQueries.length > 0) {
-            parts.push(`\nQueries that FOUND this page: ${foundQueries.map(q => `"${q}"`).join(', ')}`);
-        }
-        if (missedQueries.length > 0) {
-            parts.push(`Queries that did NOT find this page: ${missedQueries.map(q => `"${q}"`).join(', ')}`);
-        }
-        parts.push(`Overall discoverability: ${discoverability.overallDiscoverability}`);
-    }
-
-    const prompt = `You are an AI search readiness expert. A documentation page was analyzed for its visibility to AI search engines (Perplexity, ChatGPT, Claude Search, Gemini).
-
-Here are the results:
-${parts.join('\n')}
-
-Based on these results, generate 3-5 specific, actionable improvement suggestions. Each suggestion should:
-- Reference a specific finding from the analysis
-- Explain WHY it matters for AI search visibility
-- Give a concrete action the user can take
-
-Focus on the highest-impact improvements first. If queries missed the page, suggest content changes that would help for those specific query intents.
-
-Return a JSON array of strings. Each string is one suggestion (1-2 sentences).`;
-
-    const suggestions = await invokeBedrockForJson<string[]>(prompt, {
-        modelId: SUGGESTION_MODEL,
-        maxTokens: 1024,
-        temperature: 0.3,
-    });
-
-    if (Array.isArray(suggestions)) {
-        return suggestions.filter(s => typeof s === 'string' && s.length > 10).slice(0, 5);
-    }
-    return [];
-}
+// ── Contextual Suggestions — removed: rule-based recs are sufficient ──

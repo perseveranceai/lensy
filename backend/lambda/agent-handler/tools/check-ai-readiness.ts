@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { writeSessionArtifact } from '../shared/s3-helpers';
 import { URL } from 'url';
 import { createProgressHelper } from './publish-progress';
+import { harvestSignals, executeProbes, crossReference } from './detection-engine';
+import { DetectionReport } from './detection-types';
 
 // ── Browser User-Agent for page fetching (hybrid Chrome UA — avoids JS shell responses from CDNs) ──
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 (+https://perseveranceai.com/bot)';
@@ -54,7 +56,7 @@ interface BotStatus {
 
 interface Recommendation {
     category: string;
-    priority: 'high' | 'medium' | 'low';
+    priority: 'high' | 'medium' | 'low' | 'best-practice';
     issue: string;
     fix: string;
     codeSnippet?: string;
@@ -98,6 +100,8 @@ export interface AIReadinessResult {
             breadcrumbs: { found: boolean };
         };
     };
+    /** v2: Evidence-aware detection report (site-level + page-level signals) */
+    detection?: DetectionReport;
     recommendations: Recommendation[];
     // Legacy fields for backward compat during rollout
     overallScore: number;
@@ -114,7 +118,7 @@ export const checkAIReadinessTool = tool(
             const progress = createProgressHelper(input.sessionId);
             await progress.info('Analyzing AI readiness across 4 categories...');
 
-            const results = await checkAIReadiness(domain, input.url, input.sessionId, input.llmsTxtUrl, input.prefetchedHtml);
+            const results = await checkAIReadiness(domain, input.url, input.sessionId, input.llmsTxtUrl, input.prefetchedHtml, input.prefetchedHeaders);
 
             // Store results in S3
             await writeSessionArtifact(input.sessionId, 'ai-readiness-results.json', results);
@@ -154,25 +158,29 @@ export const checkAIReadinessTool = tool(
             url: z.string().describe('The URL to check AI readiness for'),
             sessionId: z.string().describe('The analysis session ID'),
             llmsTxtUrl: z.string().optional().describe('User-provided llms.txt URL. If provided, check this URL directly instead of auto-discovering.'),
-            prefetchedHtml: z.string().optional().describe('Pre-fetched HTML content of the target URL. If provided, skips the initial page fetch.')
+            prefetchedHtml: z.string().optional().describe('Pre-fetched HTML content of the target URL. If provided, skips the initial page fetch.'),
+            prefetchedHeaders: z.record(z.string()).optional().describe('Pre-fetched HTTP response headers from the target URL. Passed alongside prefetchedHtml to preserve Link headers for detection.')
         })
     }
 );
 
 // ── Main Analysis Function ───────────────────────────────────────────────
 
-async function checkAIReadiness(domain: string, targetUrl: string, sessionId: string, explicitLlmsTxtUrl?: string, prefetchedHtml?: string): Promise<AIReadinessResult> {
-    const baseUrl = `https://${domain}`;
+async function checkAIReadiness(domain: string, targetUrl: string, sessionId: string, explicitLlmsTxtUrl?: string, prefetchedHtml?: string, prefetchedHeaders?: Record<string, string>): Promise<AIReadinessResult> {
+    let baseUrl = `https://${domain}`;
     const recommendations: Recommendation[] = [];
-    const docsSubpath = deriveDocsSubpath(explicitLlmsTxtUrl, targetUrl, baseUrl);
     const progress = createProgressHelper(sessionId);
 
     // ── Use prefetched HTML if available, otherwise fetch target page ──
     let targetHtml = '';
     let targetHeaders: Headers | null = null;
+    let targetHeadersRecord: Record<string, string> | null = null;
     if (prefetchedHtml) {
         console.log(`[AIReadiness] Using prefetched HTML (${prefetchedHtml.length} bytes)`);
         targetHtml = prefetchedHtml;
+        if (prefetchedHeaders) {
+            targetHeadersRecord = prefetchedHeaders;
+        }
     } else {
         console.log(`[AIReadiness] No prefetched HTML, fetching ${targetUrl} directly`);
         try {
@@ -183,39 +191,83 @@ async function checkAIReadiness(domain: string, targetUrl: string, sessionId: st
             if (res.ok) {
                 targetHtml = await res.text();
                 targetHeaders = res.headers;
+                // Convert Headers to plain Record for v2 detection engine
+                targetHeadersRecord = {};
+                res.headers.forEach((v, k) => { targetHeadersRecord![k] = v; });
+
+                // ── Follow redirects: update baseUrl + targetUrl to final destination ──
+                const finalUrl = res.url;
+                if (finalUrl && finalUrl !== targetUrl) {
+                    const finalParsed = new URL(finalUrl);
+                    const newDomain = finalParsed.hostname;
+                    if (newDomain !== domain) {
+                        console.log(`[AIReadiness] Redirect detected: ${domain} → ${newDomain} (final URL: ${finalUrl})`);
+                        baseUrl = `${finalParsed.protocol}//${newDomain}`;
+                        targetUrl = finalUrl;
+                    }
+                }
             }
         } catch (e) {
             console.warn(`Failed to fetch target page ${targetUrl}:`, e);
         }
     }
 
-    // ── Fetch robots.txt once (reused for bot access + sitemap ref) ──
+    // ── Derive docsSubpath AFTER redirect resolution (uses correct baseUrl) ──
+    const docsSubpath = deriveDocsSubpath(explicitLlmsTxtUrl, targetUrl, baseUrl);
+
+    // ── Fetch robots.txt once (reused for bot access + sitemap ref + v2 detection) ──
     const robotsTxtUrl = `${baseUrl}/robots.txt`;
     const robotsCheck = await checkUrl(robotsTxtUrl, true);
 
-    // ── Category 1: Bot Access ───────────────────────────────────────
-    const botAccess = analyzeBotAccess(robotsCheck, recommendations);
-    // Publish immediately — frontend card fills in
+    // ═══════════════════════════════════════════════════════════════════
+    // v2 Detection Engine — 3-phase: harvest → parallel probes → cross-reference
+    // Runs IN PARALLEL with existing category analysis
+    // ═══════════════════════════════════════════════════════════════════
+    const detectionStart = Date.now();
+    console.log(`[AIReadiness v2] Starting 3-phase detection engine`);
+
+    // Phase 1: Signal Harvest (0 HTTP calls, ~0ms)
+    const signals = harvestSignals(
+        targetHtml,
+        targetHeadersRecord,
+        robotsCheck.content || null,
+        targetUrl,
+        baseUrl,
+    );
+    console.log(`[AIReadiness v2] Phase 1 complete: ${signals.llmsTxtHintUrls.length} llms.txt hints, ${signals.blockedCrawlers.length} blocked crawlers`);
+
+    // Phase 2 (v2 parallel probes) + existing categories run concurrently
+    const [probeResults, botAccess, discoverability, consumability] = await Promise.all([
+        // v2: All probes fire in parallel (~5s wall clock)
+        executeProbes(baseUrl, targetUrl, signals, robotsCheck.content || null),
+        // Existing Category 1: Bot Access (sync, no HTTP)
+        Promise.resolve(analyzeBotAccess(robotsCheck, recommendations)),
+        // Existing Category 2: Discoverability (sequential HTTP — will be replaced by v2 in future)
+        analyzeDiscoverability(baseUrl, targetUrl, targetHtml, robotsCheck, explicitLlmsTxtUrl, docsSubpath, recommendations),
+        // Existing Category 3: Consumability
+        analyzeConsumability(targetUrl, targetHtml, targetHeaders, baseUrl, false, recommendations),
+    ]);
+
+    // Phase 3: Cross-Reference (0 HTTP calls, ~0ms)
+    const detection = crossReference(signals, probeResults, targetUrl, baseUrl);
+    const detectionMs = Date.now() - detectionStart;
+    console.log(`[AIReadiness v2] Detection complete in ${detectionMs}ms — llms.txt: ${detection.site.llmsTxt.status}, markdown: ${detection.page.markdown.status}, page-mapped: ${detection.page.llmsTxtMapping.status}`);
+
+    // ── Publish results to frontend (cards fill in as they arrive) ──
     await progress.categoryResult('botAccess', botAccess, `Bot Access: ${botAccess.allowedCount}/10 bots allowed`);
-
-    // ── Category 2: Content Discoverability ──────────────────────────
-    const discoverability = await analyzeDiscoverability(
-        baseUrl, targetUrl, targetHtml, robotsCheck, explicitLlmsTxtUrl, docsSubpath, recommendations
-    );
     await progress.categoryResult('discoverability', discoverability, 'Content Discoverability analysis complete');
-
-    // ── Category 3: Content Consumability ────────────────────────────
-    const consumability = await analyzeConsumability(
-        targetUrl, targetHtml, targetHeaders, baseUrl, discoverability.llmsTxt.found, recommendations
-    );
     await progress.categoryResult('consumability', consumability, 'Content Consumability analysis complete');
 
     // ── Category 4: Structured Data & Semantic Markup ────────────────
     const structuredData = analyzeStructuredData(targetHtml, recommendations);
     await progress.categoryResult('structuredData', structuredData, 'Structured Data analysis complete');
 
+    // ── Publish v2 detection report ──
+    await progress.categoryResult('detection', detection, `Evidence detection: ${detection.site.llmsTxt.status} llms.txt, ${detection.page.markdown.status} markdown`);
+
     return {
         categories: { botAccess, discoverability, consumability, structuredData },
+        detection,
         recommendations,
         overallScore: 0, // Scoring added in generate-report
     };
@@ -580,10 +632,10 @@ async function analyzeConsumability(
         });
     } else if (!markdown.discoverable) {
         recommendations.push({
-            category: 'Consumability',
-            priority: 'medium',
-            issue: 'Markdown version exists but is not signaled to AI bots — they won\'t discover it automatically.',
-            fix: 'Add a <link rel="alternate"> tag or HTTP Link header to signal markdown availability.',
+            category: 'Discoverability',
+            priority: 'best-practice',
+            issue: 'Expose the Markdown version via rel="alternate" in the HTML head as an additional machine-readable hint. This complements llms.txt, direct Markdown URLs, and content negotiation.',
+            fix: 'Add a <link rel="alternate" type="text/markdown"> tag — a standards-friendly discovery hint for tools that start from the HTML page.',
             codeSnippet: `<!-- Add to <head> -->\n<link rel="alternate" type="text/markdown" href="${markdown.urls[0] || `${new URL(targetUrl).pathname}.md`}" />`,
         });
     }
@@ -987,9 +1039,9 @@ function analyzeStructuredData(
     if (uniqueTypes.length === 0) {
         recommendations.push({
             category: 'Structured Data',
-            priority: 'medium',
-            issue: 'No JSON-LD structured data found — AI search engines use this to understand page context.',
-            fix: 'Add JSON-LD structured data with an appropriate schema.org type.',
+            priority: 'low',
+            issue: 'No JSON-LD structured data found — structured data can improve machine understanding and rich-search eligibility. Helpful for discoverability, but not a major coding-agent blocker.',
+            fix: 'Add valid JSON-LD for the most relevant schema types used on your docs pages.',
             codeSnippet: `<script type="application/ld+json">\n{\n  "@context": "https://schema.org",\n  "@type": "TechArticle",\n  "headline": "Your Page Title",\n  "author": { "@type": "Organization", "name": "Your Org" },\n  "datePublished": "2026-01-01"\n}\n</script>`,
         });
     } else if (!isValidSchemaType) {
@@ -1059,8 +1111,8 @@ function analyzeStructuredData(
         recommendations.push({
             category: 'Structured Data',
             priority: 'low',
-            issue: 'No BreadcrumbList schema found — AI search engines can\'t determine where this page sits in your site hierarchy.',
-            fix: 'Add BreadcrumbList JSON-LD to help AI understand your site structure and display navigation paths.',
+            issue: 'No BreadcrumbList schema found — breadcrumb markup helps search systems understand page hierarchy. Useful, but lower priority than crawlability and Markdown access.',
+            fix: 'Add valid BreadcrumbList markup that matches the user-visible docs path.',
             codeSnippet: `<script type="application/ld+json">\n{\n  "@context": "https://schema.org",\n  "@type": "BreadcrumbList",\n  "itemListElement": [\n    { "@type": "ListItem", "position": 1, "name": "Docs", "item": "${'https://example.com/docs'}" },\n    { "@type": "ListItem", "position": 2, "name": "Getting Started", "item": "${'https://example.com/docs/getting-started'}" }\n  ]\n}\n</script>`,
         });
     }

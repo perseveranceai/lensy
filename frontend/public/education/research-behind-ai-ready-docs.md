@@ -28,4 +28,4 @@ OpenGraph meta tags influence how AI-powered preview systems and content aggrega
 
 ---
 
-Check your documentation's AI readiness at [perseveranceai.com](/)
+Check your documentation's AI readiness at [https://gamma.perseveranceai.com](https://gamma.perseveranceai.com)

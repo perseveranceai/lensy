@@ -65,7 +65,7 @@ const CollapsibleCard = ({ title, subtitle, children, defaultExpanded = true, co
         error: { border: '#ef4444', bg: 'rgba(239,68,68,0.08)', text: '#ef4444' },
         warning: { border: '#f59e0b', bg: 'rgba(245,158,11,0.08)', text: '#f59e0b' },
         success: { border: '#22c55e', bg: 'rgba(34,197,94,0.08)', text: '#22c55e' },
-        info: { border: '#3b82f6', bg: 'rgba(59,130,246,0.08)', text: '#3b82f6' },
+        info: { border: 'var(--accent-primary)', bg: 'rgba(255,255,255,0.05)', text: 'var(--accent-primary)' },
         default: { border: 'var(--border-default)', bg: 'transparent', text: 'var(--text-primary)' }
     };
 
@@ -209,6 +209,37 @@ interface DiscoverabilityData {
     metaRobots: { found: boolean; content?: string; blocksIndexing: boolean };
 }
 
+// ── v2 Evidence-aware Detection Types ──
+type EvidenceStatus = 'verified' | 'advertised' | 'mapped' | 'not_verified' | 'experimental';
+
+interface DetectionSignal {
+    status: EvidenceStatus;
+    method?: string;
+    validatedUrl?: string | null;
+    audience?: 'ai_search' | 'coding_agents' | 'both';
+    note?: string | null;
+}
+
+interface DetectionData {
+    site: {
+        llmsTxt: DetectionSignal;
+        llmsFullTxt: DetectionSignal;
+        sitemap: DetectionSignal;
+        agentsMd: DetectionSignal;
+        mcpJson: DetectionSignal;
+        blockedAiCrawlers: string[];
+        allowedAiCrawlers: string[];
+        openApiSpecs: string[];
+    };
+    page: {
+        markdown: DetectionSignal;
+        llmsTxtMapping: DetectionSignal;
+        llmsTxtMarkdownMapping: DetectionSignal;
+        contentNegotiation: DetectionSignal;
+    };
+    probeLog?: Array<{ url: string; statusCode: number; purpose: string; durationMs: number }>;
+}
+
 interface ConsumabilityData {
     markdownAvailable: { found: boolean; urls: string[]; discoverable: boolean; discoveryMethod?: string };
     textToHtmlRatio: { ratio: number; textBytes: number; htmlBytes: number; status: 'good' | 'low' | 'very-low' };
@@ -253,7 +284,7 @@ interface AIReadinessCategories {
 }
 
 interface ScoreBreakdown {
-    botAccess: number;
+    botAccess: number;          // always 0 in v2 — bot access is now a prerequisite, not scored
     discoverability: number;
     consumability: number;
     structuredData: number;
@@ -569,13 +600,22 @@ function LensyApp() {
         consumability?: ConsumabilityData;
         structuredData?: StructuredDataData;
         aiDiscoverability?: AIDiscoverabilityData;
-        overallScore?: { overallScore: number; scoreBreakdown: ScoreBreakdown; recommendationCount: number; contextualSuggestionCount: number; docConfidence?: { score: number; signals: string[] } };
+        detection?: DetectionData;  // v2: evidence-aware detection report
+        overallScore?: { overallScore: number; botAccessState?: 'fully_blocked' | 'partially_blocked' | 'accessible'; scoreBreakdown: ScoreBreakdown; recommendationCount: number; contextualSuggestionCount: number; docConfidence?: { score: number; signals: string[] } };
     }>({});
     const [activeDetailCard, setActiveDetailCard] = useState<'score' | 'bots' | 'content' | 'queries' | null>(null);
     const [showAllRecs, setShowAllRecs] = useState(false);
     const [showFullContentBreakdown, setShowFullContentBreakdown] = useState(false);
     const [heroTab, setHeroTab] = useState<'readiness' | 'citations' | 'recommendations'>('readiness');
+    const heroTabPanelRef = React.useRef<HTMLDivElement>(null);
     const [rejectedUrl, setRejectedUrl] = useState<string | null>(null);
+
+    // ── Focus management: move focus to tab panel on tab switch (WCAG 2.4.3) ──
+    useEffect(() => {
+        if (heroTabPanelRef.current) {
+            heroTabPanelRef.current.focus({ preventScroll: true });
+        }
+    }, [heroTab]);
 
     // ── Persist audit state across route changes only (not page refresh) ──
     // On full page refresh, JS globals reset → sessionAlive is false → clear storage
@@ -808,10 +848,7 @@ function LensyApp() {
                         const { category, data } = message.metadata;
                         console.log(`Async card update: ${category}`, data);
                         setAsyncCards(prev => ({ ...prev, [category]: data }));
-                        // Auto-expand bots card when it's the first to render
-                        if (category === 'botAccess' && !activeDetailCard) {
-                            setActiveDetailCard('bots');
-                        }
+                        // Bot access data received — no auto-expand needed (it's a banner now, not a card)
                         // Stop citations loading when data arrives
                         if (category === 'aiDiscoverability') {
                             setCitationsLoading(false);
@@ -3640,7 +3677,7 @@ function LensyApp() {
                                                 mt: 2,
                                                 bgcolor: 'rgba(59, 130, 246, 0.08)',
                                                 border: '1px solid rgba(59, 130, 246, 0.2)',
-                                                '& .MuiAlert-icon': { color: '#3b82f6' },
+                                                '& .MuiAlert-icon': { color: 'var(--accent-primary)' },
                                                 '& .MuiAlert-message': { color: 'var(--text-secondary)', width: '100%' }
                                             }}
                                         >
@@ -3670,12 +3707,12 @@ function LensyApp() {
                                                     >
                                                         <Box sx={{
                                                             width: 16, height: 16, borderRadius: '50%',
-                                                            border: githubDocsUrl === repoSuggestion.fullName ? '2px solid #3b82f6' : '2px solid var(--border-strong)',
+                                                            border: githubDocsUrl === repoSuggestion.fullName ? '2px solid var(--accent-primary)' : '2px solid var(--border-strong)',
                                                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                                                             flexShrink: 0
                                                         }}>
                                                             {githubDocsUrl === repoSuggestion.fullName && (
-                                                                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#3b82f6' }} />
+                                                                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'var(--accent-primary)' }} />
                                                             )}
                                                         </Box>
                                                         <Box>
@@ -3738,13 +3775,13 @@ function LensyApp() {
                                                             }
                                                         }}
                                                         sx={{
-                                                            bgcolor: '#3b82f6',
-                                                            color: '#fff',
+                                                            bgcolor: 'var(--text-primary)',
+                                                            color: 'var(--bg-primary)',
                                                             fontWeight: 700,
                                                             textTransform: 'none',
                                                             fontSize: '0.75rem',
-                                                            '&:hover': { bgcolor: '#2563eb' },
-                                                            '&:disabled': { bgcolor: 'rgba(59,130,246,0.3)', color: 'var(--text-muted)' }
+                                                            '&:hover': { bgcolor: 'var(--text-secondary)' },
+                                                            '&:disabled': { bgcolor: 'rgba(255,255,255,0.15)', color: 'var(--text-muted)' }
                                                         }}
                                                     >
                                                         Search Docs
@@ -3773,7 +3810,7 @@ function LensyApp() {
                                                 mt: 2,
                                                 bgcolor: 'rgba(59, 130, 246, 0.08)',
                                                 border: '1px solid rgba(59, 130, 246, 0.2)',
-                                                '& .MuiAlert-icon': { color: '#3b82f6' },
+                                                '& .MuiAlert-icon': { color: 'var(--accent-primary)' },
                                                 '& .MuiAlert-message': { color: 'var(--text-secondary)', width: '100%' }
                                             }}
                                         >
@@ -3918,7 +3955,7 @@ function LensyApp() {
                                                         mt: 1.5,
                                                         bgcolor: 'rgba(59, 130, 246, 0.07)',
                                                         border: '1px solid rgba(59, 130, 246, 0.25)',
-                                                        '& .MuiAlert-icon': { color: '#3b82f6' },
+                                                        '& .MuiAlert-icon': { color: 'var(--accent-primary)' },
                                                         '& .MuiAlert-message': { color: 'var(--text-secondary)', width: '100%' }
                                                     }}
                                                 >
@@ -3940,8 +3977,8 @@ function LensyApp() {
                                                         variant="contained"
                                                         onClick={handleBuildKb}
                                                         sx={{
-                                                            bgcolor: '#3b82f6', color: '#fff', fontWeight: 700,
-                                                            '&:hover': { bgcolor: '#2563eb' }
+                                                            bgcolor: 'var(--text-primary)', color: 'var(--bg-primary)', fontWeight: 700,
+                                                            '&:hover': { bgcolor: 'var(--text-secondary)' }
                                                         }}
                                                     >
                                                         Build Knowledge Base
@@ -3958,7 +3995,7 @@ function LensyApp() {
                                                         mt: 1.5,
                                                         bgcolor: 'rgba(59, 130, 246, 0.07)',
                                                         border: '1px solid rgba(59, 130, 246, 0.25)',
-                                                        '& .MuiAlert-icon': { color: '#3b82f6', pt: 0.5 },
+                                                        '& .MuiAlert-icon': { color: 'var(--accent-primary)', pt: 0.5 },
                                                         '& .MuiAlert-message': { color: 'var(--text-secondary)', width: '100%' }
                                                     }}
                                                 >
@@ -4097,7 +4134,7 @@ function LensyApp() {
                                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                                                 flexShrink: 0
                                             }}>
-                                                <Typography variant="caption" sx={{ fontWeight: 800, color: '#3b82f6', fontSize: '0.7rem' }}>
+                                                <Typography variant="caption" sx={{ fontWeight: 800, color: 'var(--accent-primary)', fontSize: '0.7rem' }}>
                                                     {githubIssues.filter(i => i.isDocsRelated).length}
                                                 </Typography>
                                             </Box>
@@ -4150,7 +4187,7 @@ function LensyApp() {
                                                                 }
                                                             }}
                                                             disabled={analysisState.status === 'analyzing'}
-                                                            sx={{ fontSize: '0.7rem', fontWeight: 600, textTransform: 'none', color: '#3b82f6', minWidth: 'auto', px: 1 }}
+                                                            sx={{ fontSize: '0.7rem', fontWeight: 600, textTransform: 'none', color: 'var(--accent-primary)', minWidth: 'auto', px: 1 }}
                                                         >
                                                             {selectedGithubIssues.length === githubIssues.filter(i => i.isDocsRelated).length ? 'Unselect all' : 'Select all'}
                                                         </Button>
@@ -4298,12 +4335,12 @@ function LensyApp() {
                                                                 </Typography>
                                                                 {/* Inline progress messages */}
                                                                 {analysisState.progressMessages.length > 0 && (
-                                                                    <Box sx={{ borderTop: '1px solid rgba(59, 130, 246, 0.1)', pt: 1 }}>
+                                                                    <Box aria-live="polite" aria-atomic="false" role="log" sx={{ borderTop: '1px solid rgba(59, 130, 246, 0.1)', pt: 1 }}>
                                                                         {analysisState.progressMessages.map((msg, index) => (
                                                                             <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.25 }}>
                                                                                 <Box sx={{
                                                                                     width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-                                                                                    bgcolor: msg.type === 'error' ? '#ef4444' : msg.type === 'success' ? '#22c55e' : msg.type === 'warning' ? '#f59e0b' : '#3b82f6'
+                                                                                    bgcolor: msg.type === 'error' ? '#ef4444' : msg.type === 'success' ? '#22c55e' : msg.type === 'warning' ? '#f59e0b' : 'var(--accent-primary)'
                                                                                 }} />
                                                                                 <Typography variant="caption" sx={{ fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
                                                                                     {msg.message}
@@ -4350,7 +4387,7 @@ function LensyApp() {
                                                                         border: '1px solid',
                                                                         borderColor: 'var(--border-subtle)',
                                                                         borderLeft: '3px solid',
-                                                                        borderLeftColor: '#3b82f6',
+                                                                        borderLeftColor: 'var(--accent-primary)',
                                                                         overflow: 'hidden'
                                                                     }}>
                                                                         <CardContent sx={{ pb: '12px !important', p: 2 }}>
@@ -4362,7 +4399,7 @@ function LensyApp() {
                                                                                 <a href={result.html_url} target="_blank" rel="noopener noreferrer"
                                                                                     style={{ marginLeft: 8, color: 'var(--text-muted)', display: 'inline-flex' }}
                                                                                     title="View issue on GitHub">
-                                                                                    <OpenInNewIcon sx={{ fontSize: 18, '&:hover': { color: '#3b82f6' } }} />
+                                                                                    <OpenInNewIcon sx={{ fontSize: 18, '&:hover': { color: 'var(--accent-primary)' } }} />
                                                                                 </a>
                                                                             </Box>
 
@@ -4565,9 +4602,9 @@ function LensyApp() {
                                                                                             fontWeight: 600,
                                                                                             fontSize: '0.7rem',
                                                                                             whiteSpace: 'nowrap',
-                                                                                            color: copiedFixIndex === idx ? '#22c55e' : '#3b82f6',
-                                                                                            borderColor: copiedFixIndex === idx ? '#22c55e' : '#3b82f6',
-                                                                                            '&:hover': { borderColor: copiedFixIndex === idx ? '#22c55e' : '#2563eb', bgcolor: 'rgba(59,130,246,0.05)' }
+                                                                                            color: copiedFixIndex === idx ? '#22c55e' : 'var(--accent-primary)',
+                                                                                            borderColor: copiedFixIndex === idx ? '#22c55e' : 'var(--accent-primary)',
+                                                                                            '&:hover': { borderColor: copiedFixIndex === idx ? '#22c55e' : 'var(--accent-hover)', bgcolor: 'rgba(255,255,255,0.03)' }
                                                                                         }}
                                                                                     >
                                                                                         {copiedFixIndex === idx ? 'Copied!' : 'Copy corrected text'}
@@ -4895,7 +4932,7 @@ function LensyApp() {
                             gap: 1.5,
                             flexWrap: 'wrap',
                         }}>
-                            <AutoAwesomeIcon sx={{ color: '#6366f1', fontSize: 18, flexShrink: 0 }} />
+                            <AutoAwesomeIcon sx={{ color: 'var(--accent-primary)', fontSize: 18, flexShrink: 0 }} />
                             <Typography sx={{
                                 fontSize: '0.875rem',
                                 color: 'var(--text-primary)',
@@ -4915,7 +4952,7 @@ function LensyApp() {
                                     fontSize: '0.8125rem',
                                     fontWeight: 600,
                                     color: '#fff',
-                                    background: 'var(--accent-primary, #6366f1)',
+                                    background: 'var(--accent-primary, var(--accent-primary))',
                                     borderRadius: '6px',
                                     padding: '0.375rem 0.875rem',
                                     textDecoration: 'none',
@@ -5005,7 +5042,7 @@ function LensyApp() {
                                     {errorConfig.title}
                                 </Typography>
                                 {errorConfig.showUrl && (rejectedUrl || url) && (
-                                    <Typography component="a" href={rejectedUrl || url} target="_blank" rel="noopener noreferrer" sx={{ display: 'block', fontSize: '0.8rem', color: 'var(--accent-primary)', mb: 1.5, fontFamily: 'var(--font-mono)', wordBreak: 'break-all', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
+                                    <Typography component="a" href={rejectedUrl || url} target="_blank" rel="noopener noreferrer" sx={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', mb: 1.5, fontFamily: 'var(--font-mono)', wordBreak: 'break-all', textDecoration: 'underline', '&:hover': { color: 'var(--text-primary)' } }}>
                                         {rejectedUrl || url}
                                     </Typography>
                                 )}
@@ -5033,7 +5070,7 @@ function LensyApp() {
                                                 fontSize: '0.875rem',
                                                 fontWeight: 600,
                                                 color: '#fff',
-                                                background: 'var(--accent-primary, #6366f1)',
+                                                background: 'var(--accent-primary, var(--accent-primary))',
                                                 border: 'none',
                                                 borderRadius: '8px',
                                                 padding: '0.625rem 1.5rem',
@@ -5102,7 +5139,7 @@ function LensyApp() {
                                         fontSize: '0.875rem',
                                         fontWeight: 600,
                                         color: '#fff',
-                                        background: 'var(--accent-primary, #6366f1)',
+                                        background: 'var(--accent-primary, var(--accent-primary))',
                                         border: 'none',
                                         borderRadius: '8px',
                                         padding: '0.625rem 1.5rem',
@@ -5149,7 +5186,7 @@ function LensyApp() {
                         </Box>
 
                         <Collapse in={progressExpanded}>
-                            <Box sx={{ maxHeight: 200, overflow: 'auto' }}>
+                            <Box aria-live="polite" aria-atomic="false" role="log" sx={{ maxHeight: 200, overflow: 'auto' }}>
                                 <List>
                                     {analysisState.progressMessages.map((msg, index) => (
                                         <ListItem key={index} sx={{ py: 0.5 }}>
@@ -5547,7 +5584,7 @@ function LensyApp() {
                 {(analysisState.status === 'analyzing' || analysisState.status === 'completed') && selectedMode !== 'github-issues' && selectedMode !== 'issue-discovery' && (
                     <Paper elevation={3} sx={{ p: 4, mb: 4 }}>
                         <Typography variant="h5" gutterBottom sx={{ fontWeight: 700, letterSpacing: '-0.02em' }}>
-                            AI Readiness Results
+                            Results
                         </Typography>
 
                         {/* ── Content Health Check Counter ── */}
@@ -5572,8 +5609,9 @@ function LensyApp() {
 
                             // Recommendations helpers
                             const recs = analysisState.report?.recommendations || [];
-                            const quickWins = recs.filter((r: any) => r.priority === 'high');
-                            const deeperImprovements = recs.filter((r: any) => r.priority !== 'high');
+                            const scoredRecsAll = recs.filter((r: any) => r.priority !== 'best-practice');
+                            const quickWins = scoredRecsAll.filter((r: any) => r.priority === 'high');
+                            const deeperImprovements = scoredRecsAll.filter((r: any) => r.priority !== 'high');
                             const topRecs = [...quickWins, ...deeperImprovements].slice(0, 3);
                             const getImpactLabel = (rec: any) => rec.priority === 'high' ? 'High impact' : rec.priority === 'medium' ? 'Medium impact' : 'Low impact';
                             const getEffortLabel = (rec: any) => rec.codeSnippet ? 'Medium effort' : 'Low effort';
@@ -5627,22 +5665,22 @@ function LensyApp() {
                                         }} />
                                         <Chip label={rec.category} size="small" sx={{
                                             height: 20, fontSize: '0.6rem', fontWeight: 600,
-                                            bgcolor: 'rgba(59,130,246,0.12)', color: 'var(--accent-hover)', border: '1px solid rgba(59,130,246,0.2)',
+                                            bgcolor: 'rgba(255,255,255,0.08)', color: 'var(--accent-hover)', border: '1px solid rgba(255,255,255,0.1)',
                                         }} />
                                     </Box>
                                     <Typography variant="body2" sx={{ color: 'var(--text-secondary)', fontSize: '0.8rem', lineHeight: 1.5 }}>{rec.fix}</Typography>
                                     {rec.issue?.toLowerCase().includes('llms.txt') && (
-                                        <Typography variant="caption" component="a" href="/contact?ref=llmstxt" target="_blank" rel="noopener noreferrer" sx={{ display: 'inline-block', mt: 0.5, fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent-primary)', textDecoration: 'underline', '&:hover': { opacity: 0.8 } }}>
+                                        <Typography variant="caption" component="a" href="/contact?ref=llmstxt" target="_blank" rel="noopener noreferrer" sx={{ display: 'inline-block', mt: 0.5, fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textDecoration: 'underline', '&:hover': { color: 'var(--text-primary)' } }}>
                                             We can help you generate one →
                                         </Typography>
                                     )}
                                     {rec.issue?.toLowerCase().includes('markdown') && !rec.issue?.toLowerCase().includes('llms.txt') && (
-                                        <Typography variant="caption" component="a" href="/contact?ref=markdown" target="_blank" rel="noopener noreferrer" sx={{ display: 'inline-block', mt: 0.5, fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent-primary)', textDecoration: 'underline', '&:hover': { opacity: 0.8 } }}>
+                                        <Typography variant="caption" component="a" href="/contact?ref=markdown" target="_blank" rel="noopener noreferrer" sx={{ display: 'inline-block', mt: 0.5, fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textDecoration: 'underline', '&:hover': { color: 'var(--text-primary)' } }}>
                                             We can help you generate markdown →
                                         </Typography>
                                     )}
                                     {rec.codeSnippet && (
-                                        <Box sx={{ mt: 1.5, p: 1.5, bgcolor: 'var(--bg-code-block)', color: 'var(--text-code-block)', borderRadius: 1, fontFamily: 'var(--font-mono)', fontSize: '0.75rem', whiteSpace: 'pre-wrap', overflowX: 'auto', border: '1px solid var(--border-subtle)' }}>
+                                        <Box sx={{ mt: 1.5, p: 1.5, bgcolor: 'var(--bg-code-block)', color: 'var(--text-code-block)', borderRadius: 1, fontFamily: 'var(--font-mono)', fontSize: '0.8rem', lineHeight: 1.5, whiteSpace: 'pre-wrap', overflowX: 'auto', border: '1px solid var(--border-subtle)' }}>
                                             {rec.codeSnippet}
                                         </Box>
                                     )}
@@ -5655,38 +5693,43 @@ function LensyApp() {
                                     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 2, mb: 2 }}>
                                         {/* ── Left Hero: AI Readiness ── */}
                                         <Card
+                                            role="button"
+                                            tabIndex={0}
+                                            aria-label="AI Readiness score card — click to view readiness details"
+                                            aria-pressed={heroTab === 'readiness' || heroTab === 'recommendations'}
+                                            onKeyDown={(e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setHeroTab('readiness'); } }}
                                             onClick={() => setHeroTab('readiness')}
                                             sx={{
                                                 cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                                                 height: { xs: 'auto', md: 150 },
                                                 border: (heroTab === 'readiness' || heroTab === 'recommendations') ? '2px solid var(--accent-primary)' : '1px solid var(--border-default)',
-                                                boxShadow: (heroTab === 'readiness' || heroTab === 'recommendations') ? '0 0 0 1px var(--accent-primary), 0 4px 12px rgba(59,130,246,0.15)' : 'none',
+                                                boxShadow: (heroTab === 'readiness' || heroTab === 'recommendations') ? '0 0 0 1px var(--accent-primary), 0 4px 12px rgba(255,255,255,0.08)' : 'none',
                                                 '&:hover': {
                                                     borderColor: (heroTab === 'readiness' || heroTab === 'recommendations') ? 'var(--accent-primary)' : 'var(--border-strong)',
                                                     transform: 'translateY(-2px)',
-                                                    boxShadow: (heroTab === 'readiness' || heroTab === 'recommendations') ? '0 0 0 1px var(--accent-primary), 0 8px 24px rgba(59,130,246,0.2)' : '0 8px 24px rgba(0,0,0,0.1)',
+                                                    boxShadow: (heroTab === 'readiness' || heroTab === 'recommendations') ? '0 0 0 1px var(--accent-primary), 0 8px 24px rgba(255,255,255,0.1)' : '0 8px 24px rgba(0,0,0,0.1)',
                                                 },
                                             }}
                                         >
                                             <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', py: 3, px: 3, '&:last-child': { pb: 3 } }}>
                                                 {asyncCards.overallScore ? (
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                                                        <Typography sx={{ fontSize: '3rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
-                                                            {getLetterGrade(asyncCards.overallScore.overallScore)}
+                                                    <Box sx={{
+                                                        display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 0.5,
+                                                        '@keyframes fadeSlideIn': { '0%': { opacity: 0, transform: 'translateY(4px)' }, '100%': { opacity: 1, transform: 'translateY(0)' } },
+                                                    }}>
+                                                        <Typography sx={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>
+                                                            AI Readiness
                                                         </Typography>
-                                                        <Box>
-                                                            <Typography variant="h6" sx={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '1.1rem', lineHeight: 1.2 }}>
-                                                                AI Readiness
+                                                        {analysisState.report && (
+                                                        <Box sx={{ animation: 'fadeSlideIn 0.5s ease-out' }}>
+                                                            <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 500, lineHeight: 1.4 }}>
+                                                                {recs.length === 0
+                                                                    ? 'Your documentation is well-optimized for AI tools.'
+                                                                    : `${scoredRecsAll.length} signal${scoredRecsAll.length !== 1 ? 's' : ''} to improve across ${new Set(scoredRecsAll.map((r: any) => r.category)).size} categor${new Set(scoredRecsAll.map((r: any) => r.category)).size !== 1 ? 'ies' : 'y'}`
+                                                                }
                                                             </Typography>
-                                                            <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontSize: '0.85rem', mt: 0.25 }}>
-                                                                {asyncCards.overallScore.overallScore}/100
-                                                            </Typography>
-                                                            {analysisState.report && (
-                                                            <Typography variant="caption" sx={{ color: 'var(--text-secondary)', fontSize: '0.75rem', display: 'block', mt: 0.5 }}>
-                                                                {getGradeLabel(asyncCards.overallScore.overallScore, recs.length)}
-                                                            </Typography>
-                                                            )}
                                                         </Box>
+                                                        )}
                                                     </Box>
                                                 ) : (
                                                     <Box sx={{ textAlign: 'center' }}>
@@ -5696,7 +5739,7 @@ function LensyApp() {
                                                             '@keyframes pulse': { '0%, 100%': { opacity: 0.4 }, '50%': { opacity: 1 } },
                                                             animation: 'pulse 1.5s ease-in-out infinite',
                                                         }}>
-                                                            Calculating score...
+                                                            Analyzing...
                                                         </Typography>
                                                     </Box>
                                                 )}
@@ -5709,6 +5752,12 @@ function LensyApp() {
                                             const citationsDisabled = !citationsReady && !aiDisc;
                                             return (
                                                 <Card
+                                                    role="button"
+                                                    tabIndex={citationsDisabled ? -1 : 0}
+                                                    aria-label="AI Citations card — click to view citation results"
+                                                    aria-pressed={heroTab === 'citations'}
+                                                    aria-disabled={citationsDisabled}
+                                                    onKeyDown={(e: React.KeyboardEvent) => { if ((e.key === 'Enter' || e.key === ' ') && !citationsDisabled) { e.preventDefault(); setHeroTab('citations'); if (!aiDisc && !citationsLoading) handleRunCitations(); } }}
                                                     onClick={() => {
                                                         if (citationsDisabled) return;
                                                         setHeroTab('citations');
@@ -5721,11 +5770,11 @@ function LensyApp() {
                                                         height: { xs: 'auto', md: 150 },
                                                         opacity: citationsDisabled ? 0.5 : 1,
                                                         border: heroTab === 'citations' ? '2px solid var(--accent-primary)' : '1px solid var(--border-default)',
-                                                        boxShadow: heroTab === 'citations' ? '0 0 0 1px var(--accent-primary), 0 4px 12px rgba(59,130,246,0.15)' : 'none',
+                                                        boxShadow: heroTab === 'citations' ? '0 0 0 1px var(--accent-primary), 0 4px 12px rgba(255,255,255,0.08)' : 'none',
                                                         '&:hover': citationsDisabled ? {} : {
                                                             borderColor: heroTab === 'citations' ? 'var(--accent-primary)' : 'var(--border-strong)',
                                                             transform: 'translateY(-2px)',
-                                                            boxShadow: heroTab === 'citations' ? '0 0 0 1px var(--accent-primary), 0 8px 24px rgba(59,130,246,0.2)' : '0 8px 24px rgba(0,0,0,0.1)',
+                                                            boxShadow: heroTab === 'citations' ? '0 0 0 1px var(--accent-primary), 0 8px 24px rgba(255,255,255,0.1)' : '0 8px 24px rgba(0,0,0,0.1)',
                                                         },
                                                     }}
                                                 >
@@ -5810,90 +5859,121 @@ function LensyApp() {
                                             );
                                         })() : null}
                                         {recs.length > 0 && (
-                                            <>
-                                                <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>·</Typography>
-                                                <Typography
-                                                    variant="caption"
-                                                    onClick={() => { const next = heroTab === 'recommendations' ? 'readiness' : 'recommendations'; if (next === 'recommendations') trackEvent('recommendations_viewed'); setHeroTab(next); }}
-                                                    sx={{
-                                                        color: 'var(--accent-primary)',
-                                                        cursor: 'pointer', fontWeight: 600, fontSize: '0.7rem',
-                                                        '&:hover': { textDecoration: 'underline' },
-                                                    }}
-                                                >
-                                                    {heroTab === 'recommendations' ? '← Back to details' : `View all ${recs.length} recommendations →`}
-                                                </Typography>
-                                            </>
+                                            <Typography
+                                                component="button"
+                                                onClick={() => {
+                                                    if (heroTab === 'recommendations') {
+                                                        setHeroTab('readiness');
+                                                    } else {
+                                                        trackEvent('recommendations_viewed');
+                                                        setHeroTab('recommendations');
+                                                    }
+                                                }}
+                                                aria-label={heroTab === 'recommendations' ? 'Back to readiness overview' : `View all ${recs.length} recommendations`}
+                                                sx={{
+                                                    '@keyframes fadeIn': { '0%': { opacity: 0 }, '100%': { opacity: 1 } },
+                                                    animation: 'fadeIn 0.6s ease-out',
+                                                    color: 'var(--text-primary)',
+                                                    cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem',
+                                                    px: 1.5, py: 0.5, borderRadius: 1,
+                                                    border: '1px solid var(--border-strong)',
+                                                    bgcolor: 'transparent',
+                                                    transition: 'all 0.2s',
+                                                    '&:hover': { bgcolor: 'rgba(255,255,255,0.06)' },
+                                                    '&:focus-visible': { outline: '2px solid var(--text-primary)', outlineOffset: 2 },
+                                                }}
+                                            >
+                                                {heroTab === 'recommendations' ? '← Back to Readiness' : `View all ${recs.length} recommendations →`}
+                                            </Typography>
                                         )}
                                     </Box>
 
                                     {/* ═══ DETAIL AREA: Tab-driven content ═══ */}
-                                    <Box sx={{ mb: 3, mt: 1 }}>
-                                        {/* ── Readiness Tab: 2x2 Grid ── */}
+                                    <Box ref={heroTabPanelRef} tabIndex={-1} role="tabpanel" aria-label={`${heroTab} tab panel`} sx={{ mb: 3, mt: 1, outline: 'none' }}>
+                                        {/* ── Readiness Tab: Prerequisite Banner + 3-Card Grid ── */}
                                         {heroTab === 'readiness' && (
-                                            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 2 }}>
-                                                {/* ── Cell 1: Bot Access (condensed) ── */}
-                                                <Box sx={{ p: 2, border: '1px solid var(--border-default)', borderRadius: 2, bgcolor: 'var(--bg-secondary)' }}>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-                                                        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.7rem' }}>
-                                                            Bot Access
-                                                        </Typography>
-                                                        {asyncCards.overallScore && (
-                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                                <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-primary)' }}>
-                                                                    {asyncCards.botAccess ? `${asyncCards.botAccess.allowedCount}/${asyncCards.botAccess.bots.length}` : `${asyncCards.overallScore.scoreBreakdown.botAccess}/15`}
-                                                                </Typography>
-                                                                {(asyncCards.botAccess ? asyncCards.botAccess.blockedCount === 0 : asyncCards.overallScore.scoreBreakdown.botAccess >= 13) ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} /> : <WarningIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} />}
-                                                            </Box>
-                                                        )}
-                                                    </Box>
-                                                    {asyncCards.botAccess ? (
-                                                        <>
-                                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-                                                            {asyncCards.botAccess.bots.map((bot, i) => {
-                                                                const isAllowed = bot.status === 'allowed' || bot.status === 'not-mentioned';
-                                                                return (
-                                                                    <Tooltip key={i} title={`${bot.name} (${bot.userAgent}) — ${isAllowed ? 'Allowed' : 'Blocked'}`} arrow placement="top" enterTouchDelay={0} leaveTouchDelay={3000}>
-                                                                        <Chip
-                                                                            icon={isAllowed ? <CheckCircleIcon sx={{ fontSize: '14px !important' }} /> : <ErrorIcon sx={{ fontSize: '14px !important' }} />}
-                                                                            label={bot.name.replace(/\s*\(.*\)/, '')}
-                                                                            size="small"
-                                                                            sx={{
-                                                                                height: 24, fontSize: '0.65rem', fontWeight: 600, cursor: 'help',
-                                                                                bgcolor: isAllowed ? 'var(--bg-tertiary)' : 'rgba(239,68,68,0.08)',
-                                                                                color: isAllowed ? 'var(--text-secondary)' : '#ef4444',
-                                                                                border: `1px solid ${isAllowed ? 'var(--border-default)' : 'rgba(239,68,68,0.2)'}`,
-                                                                                '& .MuiChip-icon': { color: isAllowed ? 'var(--text-muted)' : '#ef4444' },
-                                                                            }}
-                                                                        />
-                                                                    </Tooltip>
-                                                                );
-                                                            })}
-                                                        </Box>
-                                                        {/* Source link to robots.txt */}
-                                                        {(() => {
-                                                            try {
-                                                                const parsedUrl = new URL(url || (analysisState.report as any)?.url || '');
-                                                                const robotsUrl = `${parsedUrl.origin}/robots.txt`;
-                                                                return (
-                                                                    <Typography variant="caption" sx={{ mt: 1, display: 'block', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-                                                                        Source: <a href={robotsUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)', textDecoration: 'none' }}>
-                                                                            robots.txt
-                                                                        </a>
-                                                                        {asyncCards.botAccess && !asyncCards.botAccess.robotsTxtFound && (
-                                                                            <span> (not found — bots allowed by default)</span>
-                                                                        )}
-                                                                    </Typography>
-                                                                );
-                                                            } catch (e) { return null; }
-                                                        })()}
-                                                        </>
-                                                    ) : (
-                                                        <Box sx={{ textAlign: 'center', py: 2 }}><CircularProgress size={20} sx={{ opacity: 0.3 }} /></Box>
-                                                    )}
-                                                </Box>
+                                            <Box>
+                                                {/* ── Bot Access Prerequisite Banner ── */}
+                                                {asyncCards.botAccess && (() => {
+                                                    const ba = asyncCards.botAccess!;
+                                                    const botAccessState = asyncCards.overallScore?.botAccessState
+                                                        || (ba.blockedCount > 0 && ba.allowedCount === 0 ? 'fully_blocked' : ba.blockedCount > 0 ? 'partially_blocked' : 'accessible');
+                                                    const blockedBots = ba.bots.filter(b => b.status === 'blocked');
+                                                    const allowedBots = ba.bots.filter(b => b.status === 'allowed' || b.status === 'not-mentioned');
 
-                                                {/* ── Cell 2: Structured Data ── */}
+                                                    if (botAccessState === 'accessible') {
+                                                        // Accessible — show a compact success bar with bot chips
+                                                        return (
+                                                            <Box sx={{ mb: 2, p: 1.5, border: '1px solid var(--border-default)', borderLeft: '3px solid var(--text-muted)', borderRadius: 2, bgcolor: 'var(--bg-secondary)' }}>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                                                                    <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} />
+                                                                    <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                                                        Bot Access: {ba.allowedCount}/{ba.bots.length} bots allowed
+                                                                    </Typography>
+                                                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, ml: 0.5 }}>
+                                                                        {ba.bots.slice(0, 6).map((bot, i) => (
+                                                                            <Tooltip key={i} title={`${bot.name} (${bot.userAgent}) — Allowed`} arrow placement="top" enterTouchDelay={0} leaveTouchDelay={3000}>
+                                                                                <Chip label={bot.name.replace(/\s*\(.*\)/, '')} size="small" sx={{ height: 20, fontSize: '0.6rem', fontWeight: 600, cursor: 'help', bgcolor: 'var(--bg-tertiary)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }} />
+                                                                            </Tooltip>
+                                                                        ))}
+                                                                        {ba.bots.length > 6 && <Chip label={`+${ba.bots.length - 6}`} size="small" sx={{ height: 20, fontSize: '0.6rem', bgcolor: 'var(--bg-tertiary)', color: 'var(--text-muted)' }} />}
+                                                                    </Box>
+                                                                    {(() => { try { const robotsUrl = `${new URL(url || (analysisState.report as any)?.url || '').origin}/robots.txt`; return <Typography variant="caption" sx={{ ml: 'auto', fontSize: '0.6rem', color: 'var(--text-muted)' }}><a href={robotsUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-secondary)', textDecoration: 'underline' }}>robots.txt{!ba.robotsTxtFound ? ' (not found)' : ''}</a></Typography>; } catch { return null; } })()}
+                                                                </Box>
+                                                            </Box>
+                                                        );
+                                                    }
+
+                                                    const isFullyBlocked = botAccessState === 'fully_blocked';
+                                                    return (
+                                                        <Box sx={{
+                                                            mb: 2, p: 2, borderRadius: 2,
+                                                            border: '1px solid var(--border-default)',
+                                                            bgcolor: 'var(--bg-secondary)',
+                                                        }}>
+                                                            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
+                                                                <WarningIcon sx={{ color: 'var(--text-muted)', fontSize: 20, mt: 0.1 }} />
+                                                                <Box sx={{ flex: 1 }}>
+                                                                    <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-primary)', mb: 0.5 }}>
+                                                                        {isFullyBlocked
+                                                                            ? 'AI bot access is blocked'
+                                                                            : 'Partial bot access — some AI bots are blocked'}
+                                                                    </Typography>
+                                                                    <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.75rem', lineHeight: 1.4, display: 'block', mb: 1.5 }}>
+                                                                        {isFullyBlocked
+                                                                            ? 'AI readiness cannot be fully evaluated until bot access is allowed. The findings below are still useful, but bot access is the first fix.'
+                                                                            : 'Readiness is partial. Some AI bots are blocked, so results may not reflect all AI channels.'}
+                                                                    </Typography>
+                                                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                                                                        {ba.bots.map((bot, i) => {
+                                                                            const isAllowed = bot.status === 'allowed' || bot.status === 'not-mentioned';
+                                                                            return (
+                                                                                <Tooltip key={i} title={`${bot.name} (${bot.userAgent}) — ${isAllowed ? 'Allowed' : 'Blocked'}`} arrow placement="top" enterTouchDelay={0} leaveTouchDelay={3000}>
+                                                                                    <Chip
+                                                                                        icon={isAllowed ? <CheckCircleIcon sx={{ fontSize: '14px !important' }} /> : <ErrorIcon sx={{ fontSize: '14px !important' }} />}
+                                                                                        label={bot.name.replace(/\s*\(.*\)/, '')}
+                                                                                        size="small"
+                                                                                        sx={{
+                                                                                            height: 24, fontSize: '0.65rem', fontWeight: 600, cursor: 'help',
+                                                                                            bgcolor: 'var(--bg-tertiary)',
+                                                                                            color: 'var(--text-secondary)',
+                                                                                            border: '1px solid var(--border-default)',
+                                                                                            '& .MuiChip-icon': { color: 'var(--text-muted)' },
+                                                                                        }}
+                                                                                    />
+                                                                                </Tooltip>
+                                                                            );
+                                                                        })}
+                                                                    </Box>
+                                                                    {(() => { try { const robotsUrl = `${new URL(url || (analysisState.report as any)?.url || '').origin}/robots.txt`; return <Typography variant="caption" sx={{ mt: 1, display: 'block', fontSize: '0.65rem', color: 'var(--text-muted)' }}>Source: <a href={robotsUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-secondary)', textDecoration: 'underline' }}>robots.txt</a></Typography>; } catch { return null; } })()}
+                                                                </Box>
+                                                            </Box>
+                                                        </Box>
+                                                    );
+                                                })()}
+
+                                            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' }, gap: 2 }}>
+                                                {/* ── Cell 1: Structured Data ── */}
                                                 <Box sx={{ p: 2, border: '1px solid var(--border-default)', borderRadius: 2, bgcolor: 'var(--bg-secondary)' }}>
                                                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
                                                         <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.7rem' }}>
@@ -5901,29 +5981,28 @@ function LensyApp() {
                                                         </Typography>
                                                         {asyncCards.overallScore && (
                                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                                <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-primary)' }}>
-                                                                    {asyncCards.overallScore.scoreBreakdown.structuredData}/20
-                                                                </Typography>
-                                                                {asyncCards.overallScore.scoreBreakdown.structuredData >= 16 ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} /> : <WarningIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} />}
+                                                                {asyncCards.overallScore.scoreBreakdown.structuredData >= 15 ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} /> : <WarningIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} />}
                                                             </Box>
                                                         )}
                                                     </Box>
                                                     {asyncCards.structuredData ? (() => {
                                                         const s = asyncCards.structuredData!;
                                                         const items = [
-                                                            { label: 'JSON-LD', pass: s.jsonLd.found, detail: s.jsonLd.found ? `Found ${s.jsonLd.types.join(', ')} markup${s.schemaCompleteness.status === 'complete' ? '. Schema is complete.' : s.schemaCompleteness.status === 'partial' ? ' — some optional fields could be added.' : '.'}` : 'Not found. JSON-LD tells AI exactly what type of content this is.', info: 'Gives AI explicit type signals so it can accurately categorize your page.', pts: 11 },
+                                                            { label: 'JSON-LD', pass: s.jsonLd.found, detail: s.jsonLd.found ? `Found ${s.jsonLd.types.join(', ')} markup${s.schemaCompleteness.status === 'complete' ? '. Schema is complete.' : s.schemaCompleteness.status === 'partial' ? ' — some optional fields could be added.' : '.'}` : 'Structured data can improve machine understanding and rich-search eligibility. Helpful for discoverability, but not a major coding-agent blocker.', info: 'Secondary improvement for AI search — not a core coding-agent requirement.', pts: 5, audience: 'AI search', impact: 'Low–medium' },
                                                             { label: 'OpenGraph', pass: s.openGraphCompleteness.score === 'complete', detail: s.openGraphCompleteness.score === 'complete' ? 'All required tags present.' : s.openGraphCompleteness.score === 'partial' ? `Found, but missing ${s.openGraphCompleteness.missingTags.slice(0, 2).join(', ')}.` : 'Not found.', info: 'Controls the preview card when your link is shared on social channels.', pts: 5 },
-                                                            { label: 'Breadcrumbs', pass: s.breadcrumbs.found, detail: s.breadcrumbs.found ? 'BreadcrumbList schema found.' : 'No BreadcrumbList schema found.', info: 'BreadcrumbList schema tells AI where this page sits in your site hierarchy.', pts: 4 },
+                                                            { label: 'Breadcrumbs', pass: s.breadcrumbs.found, detail: s.breadcrumbs.found ? 'BreadcrumbList schema found.' : 'Breadcrumb markup helps search systems understand page hierarchy. Useful, but lower priority than crawlability and Markdown access.', info: 'Helps search systems display page hierarchy — secondary AI search signal.', pts: 3, audience: 'AI search', impact: 'Low' },
                                                         ];
                                                         return items.map((item, i) => (
-                                                            <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>
-                                                                {item.pass ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} /> : <ErrorIcon sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} />}
+                                                            <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1.5 }}>
+                                                                {item.pass ? <CheckCircleIcon aria-label="Pass" sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} /> : <ErrorIcon aria-label="Needs improvement" sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} />}
                                                                 <Box sx={{ flex: 1 }}>
                                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                                                         <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', lineHeight: 1.3, color: 'var(--text-primary)' }}>{item.label}</Typography>
-                                                                        {!item.pass && <Typography component="span" sx={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--accent-primary)' }}>+{item.pts} pts</Typography>}
+                                                                        {/* +pts badges removed — scoring math under review */}
+                                                                        {(item as any).audience && !item.pass && <Typography component="span" sx={{ fontSize: '0.55rem', fontWeight: 600, color: 'var(--text-muted)', bgcolor: 'rgba(255,255,255,0.06)', px: 0.5, py: 0.15, borderRadius: 0.5 }}>{(item as any).audience}</Typography>}
+                                                                        {(item as any).impact && !item.pass && <Typography component="span" sx={{ fontSize: '0.55rem', fontWeight: 600, color: 'var(--text-muted)', opacity: 0.7 }}>{(item as any).impact} impact</Typography>}
                                                                         <Tooltip title={item.info} arrow placement="top" enterTouchDelay={0} leaveTouchDelay={3000}>
-                                                                            <InfoIcon sx={{ fontSize: 12, color: 'var(--text-muted)', cursor: 'help', opacity: 0.5, '&:hover': { opacity: 1 } }} />
+                                                                            <InfoIcon tabIndex={0} role="img" aria-label="More info" sx={{ fontSize: 12, color: 'var(--text-muted)', cursor: 'help', opacity: 0.5, '&:hover': { opacity: 1 }, '&:focus-visible': { opacity: 1, outline: '2px solid var(--accent-primary)', outlineOffset: 2, borderRadius: '2px' } }} />
                                                                         </Tooltip>
                                                                     </Box>
                                                                     <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.7rem', lineHeight: 1.2, wordBreak: 'break-word' }}>{item.detail}</Typography>
@@ -5941,42 +6020,165 @@ function LensyApp() {
                                                         </Typography>
                                                         {asyncCards.overallScore && (
                                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                                <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-primary)' }}>
-                                                                    {asyncCards.overallScore.scoreBreakdown.discoverability}/20
-                                                                </Typography>
-                                                                {asyncCards.overallScore.scoreBreakdown.discoverability >= 16 ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} /> : <WarningIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} />}
+                                                                {asyncCards.overallScore.scoreBreakdown.discoverability >= 30 ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} /> : <WarningIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} />}
                                                             </Box>
                                                         )}
                                                     </Box>
                                                     {asyncCards.discoverability ? (() => {
                                                         const d = asyncCards.discoverability!;
-                                                        const items: Array<{ label: string; status: 'pass' | 'fail' | 'neutral'; detail: string; info?: string; waitlist?: boolean; waitlistLabel?: string; pts: number }> = [
-                                                            { label: 'llms.txt', status: d.llmsTxt.found ? 'pass' : 'fail', detail: d.llmsTxt.found ? `Found. AI coding tools can consume your docs directly.` : `Not found. llms.txt helps AI coding tools consume your docs faster.`, info: 'A markdown table of contents for your docs. Helps AI coding tools find and consume your content at inference time.', waitlist: !d.llmsTxt.found, pts: 10 },
-                                                            { label: 'Sitemap', status: d.sitemapXml.found ? 'pass' : 'fail', detail: d.sitemapXml.found ? `Found. Crawlers can discover all your pages.` : 'Not found. Crawlers may miss deeper pages.', info: 'Lists every page on your site so crawlers don\'t have to guess.', pts: 5 },
+                                                        const det = asyncCards.detection;
+
+                                                        // ── Evidence badge colors ──
+                                                        const badgeStyles: Record<EvidenceStatus, { color: string; bg: string; icon: string }> = {
+                                                            verified: { color: 'var(--text-secondary)', bg: 'rgba(107,114,128,0.1)', icon: '✓' },
+                                                            advertised: { color: 'var(--text-muted)', bg: 'rgba(107,114,128,0.08)', icon: '⚠' },
+                                                            mapped: { color: 'var(--text-secondary)', bg: 'rgba(107,114,128,0.1)', icon: '◉' },
+                                                            not_verified: { color: 'var(--text-muted)', bg: 'rgba(107,114,128,0.08)', icon: '✗' },
+                                                            experimental: { color: 'var(--text-muted)', bg: 'rgba(107,114,128,0.08)', icon: '◇' },
+                                                        };
+                                                        const badgeLabels: Record<EvidenceStatus, string> = {
+                                                            verified: 'Verified',
+                                                            advertised: 'Advertised',
+                                                            mapped: 'Mapped',
+                                                            not_verified: 'Not verified',
+                                                            experimental: 'Experimental',
+                                                        };
+                                                        const audienceLabels: Record<string, string> = {
+                                                            ai_search: 'AI search',
+                                                            coding_agents: 'Coding agents',
+                                                            both: 'Both',
+                                                        };
+
+                                                        // ── Evidence badge component (inline) ──
+                                                        const EvidenceBadge = ({ signal }: { signal: DetectionSignal }) => {
+                                                            const style = badgeStyles[signal.status];
+                                                            return (
+                                                                <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.3, px: 0.6, py: 0.1, borderRadius: 1, fontSize: '0.6rem', fontWeight: 700, color: style.color, bgcolor: style.bg, whiteSpace: 'nowrap' }}>
+                                                                    {style.icon} {badgeLabels[signal.status]}
+                                                                </Box>
+                                                            );
+                                                        };
+
+                                                        const AudienceBadge = ({ audience }: { audience?: string }) => {
+                                                            if (!audience) return null;
+                                                            return (
+                                                                <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', px: 0.5, py: 0.1, borderRadius: 1, fontSize: '0.55rem', fontWeight: 600, color: 'var(--text-muted)', bgcolor: 'rgba(107,114,128,0.08)', whiteSpace: 'nowrap' }}>
+                                                                    {audienceLabels[audience] || audience}
+                                                                </Box>
+                                                            );
+                                                        };
+
+                                                        // ── Build evidence-aware items when v2 detection data is available ──
+                                                        type DiscItem = { label: string; status: 'pass' | 'fail' | 'neutral' | 'warn'; detail: string; info?: string; waitlist?: boolean; waitlistLabel?: string; pts: number; signal?: DetectionSignal; section?: string };
+
+                                                        const items: DiscItem[] = det ? [
+                                                            // ── Site-Level Signals ──
+                                                            { section: 'Site-Level', label: 'llms.txt', signal: det.site.llmsTxt,
+                                                              status: det.site.llmsTxt.status === 'verified' ? 'pass' : det.site.llmsTxt.status === 'advertised' ? 'warn' : 'fail',
+                                                              detail: det.site.llmsTxt.status === 'verified'
+                                                                  ? `Verified at ${det.site.llmsTxt.validatedUrl || 'found URL'}. AI coding tools can consume your docs directly.`
+                                                                  : det.site.llmsTxt.status === 'advertised'
+                                                                      ? `Advertised via ${det.site.llmsTxt.method || 'header'} but not validated. ${det.site.llmsTxt.note || ''}`
+                                                                      : `Not verified from tested paths.`,
+                                                              info: 'A markdown table of contents for your docs. Helps AI coding tools find and consume your content at inference time.',
+                                                              waitlist: det.site.llmsTxt.status === 'not_verified', pts: 15 },
+                                                            { section: 'Site-Level', label: 'llms-full.txt', signal: det.site.llmsFullTxt,
+                                                              status: det.site.llmsFullTxt.status === 'verified' ? 'pass' : det.site.llmsFullTxt.status === 'advertised' ? 'warn' : 'neutral',
+                                                              detail: det.site.llmsFullTxt.status === 'verified'
+                                                                  ? `Verified at ${det.site.llmsFullTxt.validatedUrl}. Full doc content available for coding agents.`
+                                                                  : det.site.llmsFullTxt.status === 'advertised'
+                                                                      ? `Advertised but not validated.`
+                                                                      : `Not found (optional for large doc sites).`,
+                                                              info: 'The complete concatenation of all doc pages. Useful for coding agents that need full context.', pts: 0 },
+                                                            { section: 'Site-Level', label: 'Sitemap', signal: det.site.sitemap,
+                                                              status: det.site.sitemap.status === 'verified' ? 'pass' : 'fail',
+                                                              detail: det.site.sitemap.status === 'verified' ? `Found. Crawlers can discover all your pages.` : 'Not found. Crawlers may miss deeper pages.',
+                                                              info: 'Lists every page on your site so crawlers don\'t have to guess.', pts: 8 },
+                                                            { section: 'Site-Level', label: 'Canonical URL', status: d.canonical.found ? 'pass' : 'fail',
+                                                              detail: d.canonical.found ? `Set. Prevents duplicate indexing.` : 'Not set. Search engines may index duplicate versions.',
+                                                              info: 'Tells search engines which URL is the authoritative version of this page.', pts: 5 },
+                                                            ...(d.metaRobots.blocksIndexing ? [{ label: 'Meta Robots', status: 'fail' as const, detail: `Set to "${d.metaRobots.content}". Blocks indexing.`, info: 'Your meta robots tag is preventing indexing.', pts: 5 } as DiscItem] : []),
+                                                            // ── Page-Level Signals ──
+                                                            { section: 'Page-Level', label: 'Page Markdown', signal: det.page.markdown,
+                                                              status: det.page.markdown.status === 'verified' ? 'pass' : det.page.markdown.status === 'advertised' ? 'warn' : 'neutral',
+                                                              detail: det.page.markdown.status === 'verified'
+                                                                  ? `Verified via ${det.page.markdown.method || 'probe'}. Coding agents can consume this page as markdown.`
+                                                                  : det.page.markdown.status === 'advertised'
+                                                                      ? `Advertised but not validated. ${det.page.markdown.note || ''}`
+                                                                      : `Markdown was not verified for this page.`,
+                                                              info: 'Whether this page can be served as markdown for AI coding tools.', pts: 0 },
+                                                            { section: 'Page-Level', label: 'Page in llms.txt', signal: det.page.llmsTxtMapping,
+                                                              status: det.page.llmsTxtMapping.status === 'mapped' ? 'pass' : 'neutral',
+                                                              detail: det.page.llmsTxtMapping.status === 'mapped'
+                                                                  ? `This page is listed in llms.txt${det.page.llmsTxtMapping.validatedUrl ? ` as ${det.page.llmsTxtMapping.validatedUrl}` : ''}.`
+                                                                  : det.site.llmsTxt.status === 'verified'
+                                                                      ? `Site has llms.txt but this page is not listed in it.`
+                                                                      : `Cannot check — llms.txt not found.`,
+                                                              info: 'Whether this specific page is listed in the site\'s llms.txt index.', pts: 0 },
+                                                            { section: 'Page-Level', label: 'Content Negotiation', signal: det.page.contentNegotiation,
+                                                              status: det.page.contentNegotiation.status === 'verified' ? 'pass' : 'neutral',
+                                                              detail: det.page.contentNegotiation.status === 'verified'
+                                                                  ? `Server returns markdown when requested with Accept: text/markdown.`
+                                                                  : `Server does not support content negotiation for this page.`,
+                                                              info: 'Whether the server returns markdown when an AI agent sends Accept: text/markdown header.', pts: 0 },
+                                                            // ── Experimental Signals ──
+                                                            ...(det.site.agentsMd.status === 'experimental' && det.site.agentsMd.validatedUrl ? [{
+                                                                label: 'AGENTS.md', signal: det.site.agentsMd, status: 'neutral' as const,
+                                                                detail: `Found at ${det.site.agentsMd.validatedUrl}. Emerging standard — not scored.`,
+                                                                info: 'Vercel convention for declaring agent-readiness. Not widely adopted yet.', pts: 0,
+                                                            } as DiscItem] : []),
+                                                            ...(det.site.mcpJson.status === 'experimental' && det.site.mcpJson.validatedUrl ? [{
+                                                                label: 'MCP Config', signal: det.site.mcpJson, status: 'neutral' as const,
+                                                                detail: `Found at ${det.site.mcpJson.validatedUrl}. Emerging standard — not scored.`,
+                                                                info: 'MCP server discovery file. Not widely adopted yet.', pts: 0,
+                                                            } as DiscItem] : []),
+                                                        ] : [
+                                                            // ── Fallback: v1 items (no detection data yet) ──
+                                                            { label: 'llms.txt', status: d.llmsTxt.found ? 'pass' : 'fail', detail: d.llmsTxt.found ? `Found. AI coding tools can consume your docs directly.` : `Not found. llms.txt helps AI coding tools consume your docs faster.`, info: 'A markdown table of contents for your docs. Helps AI coding tools find and consume your content at inference time.', waitlist: !d.llmsTxt.found, pts: 15 },
+                                                            { label: 'Sitemap', status: d.sitemapXml.found ? 'pass' : 'fail', detail: d.sitemapXml.found ? `Found. Crawlers can discover all your pages.` : 'Not found. Crawlers may miss deeper pages.', info: 'Lists every page on your site so crawlers don\'t have to guess.', pts: 8 },
                                                             { label: 'Canonical URL', status: d.canonical.found ? 'pass' : 'fail', detail: d.canonical.found ? `Set. Prevents duplicate indexing.` : 'Not set. Search engines may index duplicate versions.', info: 'Tells search engines which URL is the authoritative version of this page.', pts: 5 },
-                                                            ...(d.metaRobots.blocksIndexing ? [{ label: 'Meta Robots', status: 'fail' as const, detail: `Set to "${d.metaRobots.content}". Blocks indexing.`, info: 'Your meta robots tag is preventing indexing.', pts: 5 }] : []),
+                                                            ...(d.metaRobots.blocksIndexing ? [{ label: 'Meta Robots', status: 'fail' as const, detail: `Set to "${d.metaRobots.content}". Blocks indexing.`, info: 'Your meta robots tag is preventing indexing.', pts: 5 } as DiscItem] : []),
+                                                            { label: 'Markdown', status: asyncCards.consumability?.markdownAvailable?.found ? 'pass' : 'fail', detail: asyncCards.consumability?.markdownAvailable?.found ? (asyncCards.consumability?.markdownAvailable?.discoverable ? 'Available and discoverable by coding agents.' : 'Available but not easily discoverable. Add a <link rel="alternate" type="text/markdown"> tag.') : 'No markdown version found.', info: 'AI coding agents work better with markdown (up to 80% fewer tokens).', waitlist: !asyncCards.consumability?.markdownAvailable?.found, pts: 12 },
                                                         ];
+
+                                                        let lastSection = '';
                                                         return items.map((item, i) => (
-                                                            <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>
-                                                                {item.status === 'pass' ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} /> : item.status === 'neutral' ? <InfoIcon sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} /> : <ErrorIcon sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} />}
-                                                                <Box sx={{ flex: 1 }}>
-                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                                        <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', lineHeight: 1.3, color: 'var(--text-primary)' }}>{item.label}</Typography>
-                                                                        {item.status === 'fail' && <Typography component="span" sx={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--accent-primary)' }}>+{item.pts} pts</Typography>}
-                                                                        {item.info && (
-                                                                            <Tooltip title={item.info} arrow placement="top" enterTouchDelay={0} leaveTouchDelay={3000}>
-                                                                                <InfoIcon sx={{ fontSize: 12, color: 'var(--text-muted)', cursor: 'help', opacity: 0.5, '&:hover': { opacity: 1 } }} />
-                                                                            </Tooltip>
+                                                            <React.Fragment key={i}>
+                                                                {/* Section headers for v2 */}
+                                                                {det && item.section && item.section !== lastSection && (() => { lastSection = item.section; return (
+                                                                    <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, color: 'var(--text-muted)', fontSize: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.08em', mt: i > 0 ? 1 : 0, mb: 0.5 }}>
+                                                                        {item.section}
+                                                                    </Typography>
+                                                                ); })()}
+                                                                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1.5 }}>
+                                                                    {item.status === 'pass' ? <CheckCircleIcon aria-label="Verified" sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} />
+                                                                     : item.status === 'warn' ? <WarningIcon aria-label="Advertised but not verified" sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} />
+                                                                     : item.status === 'neutral' ? <InfoIcon aria-label="Informational" sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} />
+                                                                     : <ErrorIcon aria-label="Not found" sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} />}
+                                                                    <Box sx={{ flex: 1 }}>
+                                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                                                                            <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', lineHeight: 1.3, color: 'var(--text-primary)' }}>{item.label}</Typography>
+                                                                            {item.signal && <EvidenceBadge signal={item.signal} />}
+                                                                            {item.signal?.audience && <AudienceBadge audience={item.signal.audience} />}
+                                                                            {/* +pts badges removed — scoring math under review */}
+                                                                            {item.info && (
+                                                                                <Tooltip title={item.info} arrow placement="top" enterTouchDelay={0} leaveTouchDelay={3000}>
+                                                                                    <InfoIcon tabIndex={0} role="img" aria-label="More info" sx={{ fontSize: 12, color: 'var(--text-muted)', cursor: 'help', opacity: 0.5, '&:hover': { opacity: 1 }, '&:focus-visible': { opacity: 1, outline: '2px solid var(--accent-primary)', outlineOffset: 2, borderRadius: '2px' } }} />
+                                                                                </Tooltip>
+                                                                            )}
+                                                                        </Box>
+                                                                        <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.7rem', lineHeight: 1.2, wordBreak: 'break-word' }}>{item.detail}</Typography>
+                                                                        {item.signal?.note && (
+                                                                            <Typography variant="caption" sx={{ display: 'block', color: '#d97706', fontSize: '0.65rem', lineHeight: 1.2, mt: 0.2, fontStyle: 'italic' }}>{item.signal.note}</Typography>
+                                                                        )}
+                                                                        {item.waitlist && (
+                                                                            <Typography variant="caption" component="a" href="/contact?ref=llmstxt" sx={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.7rem', fontWeight: 600, mt: 0.3, textDecoration: 'underline', '&:hover': { color: 'var(--text-primary)' } }}>
+                                                                                {item.waitlistLabel || 'We can help you generate one →'}
+                                                                            </Typography>
                                                                         )}
                                                                     </Box>
-                                                                    <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.7rem', lineHeight: 1.2, wordBreak: 'break-word' }}>{item.detail}</Typography>
-                                                                    {item.waitlist && (
-                                                                        <Typography variant="caption" component="a" href="/contact?ref=llmstxt" sx={{ display: 'block', color: 'var(--accent-primary)', fontSize: '0.7rem', fontWeight: 600, mt: 0.3, textDecoration: 'underline', '&:hover': { opacity: 0.8 } }}>
-                                                                            {item.waitlistLabel || 'We can help you generate one →'}
-                                                                        </Typography>
-                                                                    )}
                                                                 </Box>
-                                                            </Box>
+                                                            </React.Fragment>
                                                         ));
                                                     })() : <CircularProgress size={20} sx={{ opacity: 0.3 }} />}
                                                 </Box>
@@ -5989,10 +6191,7 @@ function LensyApp() {
                                                         </Typography>
                                                         {asyncCards.overallScore && (
                                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                                <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-primary)' }}>
-                                                                    {asyncCards.overallScore.scoreBreakdown.consumability}/45
-                                                                </Typography>
-                                                                {asyncCards.overallScore.scoreBreakdown.consumability >= 36 ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} /> : <WarningIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} />}
+                                                                {asyncCards.overallScore.scoreBreakdown.consumability >= 32 ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} /> : <WarningIcon sx={{ color: 'var(--text-muted)', fontSize: 16 }} />}
                                                             </Box>
                                                         )}
                                                     </Box>
@@ -6033,7 +6232,7 @@ function LensyApp() {
                                                                     })(),
                                                                 fix: h2Count === 0 ? 'Add sections like ## Getting Started' : (!c.headingHierarchy.hasProperNesting ? 'Restructure: H1 > H2 > H3.' : undefined),
                                                                 info: 'AI splits pages at heading boundaries. Each H2 becomes a separately retrievable unit.',
-                                                                pts: c.headingHierarchy.h1Count === 1 ? 8 : 10,
+                                                                pts: c.headingHierarchy.h1Count === 1 ? 8 : 12,
                                                             },
                                                             ...(wordCount > 0 ? [{
                                                                 label: `Word count: ${wordCount.toLocaleString()}`,
@@ -6044,20 +6243,8 @@ function LensyApp() {
                                                                         ? `${wordCount.toLocaleString()} words. Consider splitting.`
                                                                         : `${wordCount.toLocaleString()} words. Good depth.`),
                                                                 info: 'Sweet spot is 500-2,000 words.',
-                                                                pts: 5,
+                                                                pts: 6,
                                                             }] : []),
-                                                            {
-                                                                label: 'Markdown',
-                                                                pass: c.markdownAvailable.found && c.markdownAvailable.discoverable,
-                                                                detail: c.markdownAvailable.found
-                                                                    ? (c.markdownAvailable.discoverable ? 'Available and discoverable by coding agents.' : 'Available but not signaled to AI bots — they won\'t discover it automatically.')
-                                                                    : 'No markdown version found.',
-                                                                fix: !c.markdownAvailable.found ? 'Serve a .md version alongside HTML.' : (!c.markdownAvailable.discoverable ? 'Add a <link rel="alternate" type="text/markdown"> tag.' : undefined),
-                                                                waitlist: !c.markdownAvailable.found,
-                                                                waitlistLabel: 'Join the waitlist for markdown generation →',
-                                                                info: 'AI coding agents work better with markdown (up to 80% fewer tokens).',
-                                                                pts: c.markdownAvailable.discoverable ? 8 : 4,
-                                                            },
                                                             ...(c.codeBlocks.hasCode ? [{
                                                                 label: `Code blocks: ${c.codeBlocks.count}`,
                                                                 pass: c.codeBlocks.withLanguageHints > 0,
@@ -6086,26 +6273,26 @@ function LensyApp() {
                                                         ];
 
                                                         return items.map((item, i) => (
-                                                            <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>
-                                                                {(item as any).neutral ? <InfoIcon sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} /> : item.pass ? <CheckCircleIcon sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} /> : <WarningIcon sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} />}
+                                                            <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1.5 }}>
+                                                                {(item as any).neutral ? <InfoIcon aria-label="Informational" sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} /> : item.pass ? <CheckCircleIcon aria-label="Pass" sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} /> : <WarningIcon aria-label="Needs improvement" sx={{ color: 'var(--text-muted)', fontSize: 16, mt: 0.2 }} />}
                                                                 <Box sx={{ flex: 1 }}>
                                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                                                         <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', lineHeight: 1.3, color: 'var(--text-primary)' }}>{item.label}</Typography>
-                                                                        {!item.pass && !(item as any).neutral && <Typography component="span" sx={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--accent-primary)' }}>+{item.pts} pts</Typography>}
+                                                                        {/* +pts badges removed — scoring math under review */}
                                                                         {item.info && (
                                                                             <Tooltip title={item.info} arrow placement="top" enterTouchDelay={0} leaveTouchDelay={3000}>
-                                                                                <InfoIcon sx={{ fontSize: 12, color: 'var(--text-muted)', cursor: 'help', opacity: 0.5, '&:hover': { opacity: 1 } }} />
+                                                                                <InfoIcon tabIndex={0} role="img" aria-label="More info" sx={{ fontSize: 12, color: 'var(--text-muted)', cursor: 'help', opacity: 0.5, '&:hover': { opacity: 1 }, '&:focus-visible': { opacity: 1, outline: '2px solid var(--accent-primary)', outlineOffset: 2, borderRadius: '2px' } }} />
                                                                             </Tooltip>
                                                                         )}
                                                                     </Box>
                                                                     <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.7rem', lineHeight: 1.2, wordBreak: 'break-word' }}>{item.detail}</Typography>
                                                                     {item.fix && (
-                                                                        <Typography variant="caption" sx={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.65rem', lineHeight: 1.3, mt: 0.25, fontWeight: 500 }}>
+                                                                        <Typography variant="caption" sx={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.7rem', lineHeight: 1.3, mt: 0.5, fontWeight: 500, bgcolor: 'rgba(107,114,128,0.06)', px: 0.75, py: 0.4, borderRadius: 0.5, borderLeft: '2px solid var(--border-default)' }}>
                                                                             → {item.fix}
                                                                         </Typography>
                                                                     )}
                                                                     {item.waitlist && (
-                                                                        <Typography variant="caption" component="a" href="/contact?ref=markdown" sx={{ display: 'block', color: 'var(--accent-primary)', fontSize: '0.7rem', fontWeight: 600, mt: 0.3, textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
+                                                                        <Typography variant="caption" component="a" href="/contact?ref=markdown" sx={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.7rem', fontWeight: 600, mt: 0.3, textDecoration: 'underline', '&:hover': { color: 'var(--text-primary)' } }}>
                                                                             {item.waitlistLabel || 'We can help →'}
                                                                         </Typography>
                                                                     )}
@@ -6114,6 +6301,7 @@ function LensyApp() {
                                                         ));
                                                     })() : <CircularProgress size={20} sx={{ opacity: 0.3 }} />}
                                                 </Box>
+                                            </Box>
                                             </Box>
                                         )}
 
@@ -6186,12 +6374,12 @@ function LensyApp() {
                                                                                 )}
                                                                             </td>
                                                                             <td style={{ padding: '10px 14px', textAlign: 'center', borderBottom: '1px solid var(--border-subtle)', verticalAlign: 'middle', width: '120px' }}>
-                                                                                <Chip label={isCited ? 'Cited' : 'Not Cited'} size="small" sx={{
-                                                                                    bgcolor: isCited ? 'rgba(34,197,94,0.1)' : 'var(--bg-tertiary)',
-                                                                                    color: isCited ? '#16a34a' : 'var(--text-muted)',
+                                                                                <Chip label={isCited ? 'Cited' : 'Not Cited'} size="small" aria-label={`${query} — ${isCited ? 'Cited by Perplexity' : 'Not cited by Perplexity'}`} sx={{
+                                                                                    bgcolor: isCited ? 'rgba(107,114,128,0.12)' : 'var(--bg-tertiary)',
+                                                                                    color: isCited ? 'var(--text-secondary)' : 'var(--text-muted)',
                                                                                     fontWeight: 700,
                                                                                     fontSize: '0.7rem',
-                                                                                    border: `1px solid ${isCited ? 'rgba(34,197,94,0.2)' : 'var(--border-default)'}`,
+                                                                                    border: `1px solid ${isCited ? 'rgba(107,114,128,0.2)' : 'var(--border-default)'}`,
                                                                                 }} />
                                                                             </td>
                                                                         </tr>
@@ -6224,14 +6412,21 @@ function LensyApp() {
                                                         </>
                                                     );
                                                 })() : (
-                                                    <Box sx={{ textAlign: 'center', py: 4 }}>
+                                                    <Box sx={{ py: 2 }}>
                                                         {citationsLoading ? (
-                                                            <>
-                                                                <CircularProgress size={32} sx={{ opacity: 0.3, mb: 1 }} />
-                                                                <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontWeight: 500 }}>
+                                                            <Box>
+                                                                <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontWeight: 500, mb: 2, textAlign: 'center' }}>
                                                                     Testing synthetic queries on Perplexity...
                                                                 </Typography>
-                                                            </>
+                                                                {/* Skeleton table rows */}
+                                                                {[1, 2, 3, 4, 5].map((row) => (
+                                                                    <Box key={row} sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 1.2, borderBottom: '1px solid var(--border-default)', '@keyframes shimmer': { '0%': { opacity: 0.15 }, '50%': { opacity: 0.3 }, '100%': { opacity: 0.15 } } }}>
+                                                                        <Box sx={{ width: '45%', height: 12, borderRadius: 1, bgcolor: 'var(--text-muted)', animation: 'shimmer 1.5s ease-in-out infinite', animationDelay: `${row * 0.15}s` }} />
+                                                                        <Box sx={{ width: '20%', height: 12, borderRadius: 1, bgcolor: 'var(--text-muted)', animation: 'shimmer 1.5s ease-in-out infinite', animationDelay: `${row * 0.15 + 0.1}s` }} />
+                                                                        <Box sx={{ width: '15%', height: 12, borderRadius: 1, bgcolor: 'var(--text-muted)', animation: 'shimmer 1.5s ease-in-out infinite', animationDelay: `${row * 0.15 + 0.2}s` }} />
+                                                                    </Box>
+                                                                ))}
+                                                            </Box>
                                                         ) : (
                                                             <>
                                                                 <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontWeight: 500, mb: 1 }}>
@@ -6253,108 +6448,77 @@ function LensyApp() {
                                         )}
 
                                         {/* ── Recommendations Tab ── */}
-                                        {heroTab === 'recommendations' && recs.length > 0 && (
+                                        {heroTab === 'recommendations' && recs.length > 0 && (() => {
+                                            const recQuickWins = scoredRecsAll.filter((r: any) => r.priority === 'high');
+                                            const recDeeperImprovements = scoredRecsAll.filter((r: any) => r.priority !== 'high');
+                                            const bestPractices = recs.filter((r: any) => r.priority === 'best-practice');
+                                            return (
                                             <Box>
                                                 <Typography variant="h6" sx={{ fontWeight: 700, mb: 0.5, fontSize: '1rem' }}>
                                                     All Recommendations ({recs.length})
                                                 </Typography>
-                                                <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontSize: '0.8rem', mb: 2 }}>
-                                                    Prioritized fixes to improve your AI Readiness score
+                                                <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontSize: '0.8rem', mb: 2.5 }}>
+                                                    Quick Wins and Deeper Improvements affect your score. Things to Watch are informational and don't impact scoring.
                                                 </Typography>
-                                                <Grid container spacing={2}>
-                                                    <Grid item xs={12} md={6}>
-                                                        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1.5, fontSize: '0.7rem' }}>
+
+                                                {/* ── Quick Wins ── */}
+                                                {recQuickWins.length > 0 && (
+                                                    <Box sx={{ mb: 2, p: 2, borderRadius: 2, border: '1px solid var(--border-default)', bgcolor: 'var(--bg-card-dim)' }}>
+                                                        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1.5, fontSize: '0.75rem' }}>
                                                             Quick Wins
                                                         </Typography>
-                                                        {recs.filter((r: any) => r.priority === 'high').map(renderRec)}
-                                                        {recs.filter((r: any) => r.priority === 'high').length === 0 && (
-                                                            <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>No high-priority issues ✅</Typography>
-                                                        )}
-                                                    </Grid>
-                                                    <Grid item xs={12} md={6}>
-                                                        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1.5, fontSize: '0.7rem' }}>
+                                                        {recQuickWins.map(renderRec)}
+                                                    </Box>
+                                                )}
+
+                                                {/* ── Deeper Improvements ── */}
+                                                {recDeeperImprovements.length > 0 && (
+                                                    <Box sx={{ mb: 2, p: 2, borderRadius: 2, border: '1px solid var(--border-default)', bgcolor: 'var(--bg-card-dim)' }}>
+                                                        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1.5, fontSize: '0.75rem' }}>
                                                             Deeper Improvements
                                                         </Typography>
-                                                        {recs.filter((r: any) => r.priority !== 'high').map(renderRec)}
-                                                    </Grid>
-                                                </Grid>
+                                                        {recDeeperImprovements.map(renderRec)}
+                                                    </Box>
+                                                )}
+
+                                                {/* ── Things to Watch: non-scored observations from detection engine ── */}
+                                                {bestPractices.length > 0 && (
+                                                    <Box sx={{ mb: 2, p: 2, borderRadius: 2, border: '1px dashed var(--border-default)', bgcolor: 'var(--bg-card-dim)' }}>
+                                                        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.25, fontSize: '0.75rem' }}>
+                                                            Things to Watch
+                                                        </Typography>
+                                                        <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.7rem', display: 'block', mb: 1.5 }}>
+                                                            Emerging patterns that don't affect your score
+                                                        </Typography>
+                                                        {bestPractices.map((rec: any, i: number) => (
+                                                            <Box key={i} sx={{
+                                                                mb: i < bestPractices.length - 1 ? 2 : 0, p: 2, borderRadius: 1,
+                                                                borderLeft: '3px solid var(--text-primary)',
+                                                                bgcolor: 'var(--bg-tertiary)',
+                                                            }}>
+                                                                <Typography variant="body2" sx={{ fontWeight: 700, mb: 0.5, color: 'var(--text-secondary)' }}>{rec.issue}</Typography>
+                                                                <Box sx={{ display: 'flex', gap: 0.75, mb: 1, flexWrap: 'wrap' }}>
+                                                                    <Chip label={rec.category} size="small" sx={{
+                                                                        height: 20, fontSize: '0.6rem', fontWeight: 600,
+                                                                        bgcolor: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid var(--border-default)',
+                                                                    }} />
+                                                                </Box>
+                                                                <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontSize: '0.8rem', lineHeight: 1.5 }}>{rec.fix}</Typography>
+                                                            </Box>
+                                                        ))}
+                                                    </Box>
+                                                )}
                                             </Box>
-                                        )}
+                                            );
+                                        })()}
                                     </Box>
 
-                                    {/* Grade Mapping Reference */}
-                                    {(heroTab === 'readiness' || heroTab === 'recommendations') && asyncCards.overallScore && (
-                                        <Box sx={{ mt: 3, p: 2, borderRadius: 2, bgcolor: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}>
-                                            <Typography variant="caption" sx={{ fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.65rem', display: 'block', mb: 1.5 }}>
-                                                Score Grading Scale
-                                            </Typography>
-                                            {(() => {
-                                                const currentScore = asyncCards.overallScore!.overallScore;
-                                                const grades = [
-                                                    { grade: 'F', start: 0, end: 39 },
-                                                    { grade: 'D', start: 40, end: 59 },
-                                                    { grade: 'C', start: 60, end: 74 },
-                                                    { grade: 'B', start: 75, end: 84 },
-                                                    { grade: 'B+', start: 85, end: 89 },
-                                                    { grade: 'A', start: 90, end: 94 },
-                                                    { grade: 'A+', start: 95, end: 100 },
-                                                ];
-                                                return (
-                                                    <Box>
-                                                        {/* Bar with grade labels */}
-                                                        <Box sx={{ display: 'flex', height: 28, borderRadius: 1, overflow: 'hidden', border: '1px solid var(--border-default)' }}>
-                                                            {grades.map((g, i) => {
-                                                                const width = g.end - g.start + 1;
-                                                                const isActive = currentScore >= g.start && currentScore <= g.end;
-                                                                return (
-                                                                    <Box key={g.grade} sx={{
-                                                                        flex: width,
-                                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                                        bgcolor: isActive ? '#fff' : 'var(--bg-secondary)',
-                                                                        borderRight: i < grades.length - 1 ? '1px solid var(--border-default)' : 'none',
-                                                                        transition: 'all 0.3s',
-                                                                        position: 'relative',
-                                                                    }}>
-                                                                        <Typography sx={{
-                                                                            fontSize: '0.75rem', fontWeight: 900, letterSpacing: '0.02em',
-                                                                            color: isActive ? '#000000 !important' : 'var(--text-muted)',
-                                                                            opacity: 1,
-                                                                        }}>
-                                                                            {g.grade}
-                                                                        </Typography>
-                                                                    </Box>
-                                                                );
-                                                            })}
-                                                        </Box>
-                                                        {/* Range labels below each segment */}
-                                                        <Box sx={{ display: 'flex', mt: 0.5 }}>
-                                                            {grades.map((g) => {
-                                                                const width = g.end - g.start + 1;
-                                                                const isActive = currentScore >= g.start && currentScore <= g.end;
-                                                                return (
-                                                                    <Box key={g.grade} sx={{ flex: width, textAlign: 'center' }}>
-                                                                        <Typography sx={{
-                                                                            fontSize: '0.55rem',
-                                                                            color: isActive ? 'var(--text-primary)' : 'var(--text-muted)',
-                                                                            fontWeight: isActive ? 700 : 400,
-                                                                            opacity: isActive ? 1 : 0.6,
-                                                                        }}>
-                                                                            {isActive ? `▲ ${currentScore}` : `${g.start}–${g.end}`}
-                                                                        </Typography>
-                                                                    </Box>
-                                                                );
-                                                            })}
-                                                        </Box>
-                                                    </Box>
-                                                );
-                                            })()}
-                                        </Box>
-                                    )}
+                                    {/* Grade scale bar removed — scoring math needs rebalancing */}
 
                                     {/* Disclaimer */}
                                     <Box sx={{ mt: 2, p: 1.5, borderRadius: 1, bgcolor: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.15)' }}>
                                         <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.7rem', lineHeight: 1.5 }}>
-                                            This analysis is AI-generated and may not be 100% accurate. Results are directional and intended to guide improvements, not serve as a definitive audit. Lensy is currently in Beta — please verify recommendations before implementing. <a href="/contact?ref=feedback" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)', textDecoration: 'underline' }}>Share feedback</a>
+                                            This analysis is AI-generated and may not be 100% accurate. Results are directional and intended to guide improvements, not serve as a definitive audit. Lensy is currently in Beta — please verify recommendations before implementing. <a href="/contact?ref=feedback" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-secondary)', textDecoration: 'underline' }}>Share feedback</a>
                                         </Typography>
                                     </Box>
 
@@ -6420,7 +6584,7 @@ function LensyApp() {
                                 {
                                     step: '2',
                                     title: 'AI agent analyzes your page',
-                                    desc: 'Lensy checks bot access rules, structured data, discoverability signals, and content quality in real time.',
+                                    desc: 'Lensy checks discoverability signals, content quality, and structured data in real time, with bot access as a prerequisite.',
                                 },
                                 {
                                     step: '3',
@@ -6522,15 +6686,14 @@ function LensyApp() {
                                 <rect x="30" y="174" width="280" height="90" rx="10" fill="url(#nodeGrad)" stroke="var(--border-default)" strokeWidth="1.5" />
                                 <text x="170" y="194" textAnchor="middle" fill="var(--text-primary)" fontSize="11" fontWeight="600" fontFamily="var(--font-sans, system-ui)">AI Readiness Analysis</text>
                                 {/* Sub-items in 2x2 grid */}
-                                <text x="100" y="216" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">Bot Access</text>
-                                <text x="240" y="216" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">Structured Data</text>
-                                <text x="100" y="236" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">Discoverability</text>
-                                <text x="240" y="236" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">Content Quality</text>
+                                <text x="90" y="220" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">Discoverability</text>
+                                <text x="170" y="220" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">Content Quality</text>
+                                <text x="250" y="220" textAnchor="middle" fill="var(--text-secondary)" fontSize="9" fontFamily="var(--font-sans, system-ui)">Structured Data</text>
+                                <text x="170" y="238" textAnchor="middle" fill="var(--text-muted)" fontSize="8" fontFamily="var(--font-sans, system-ui)" opacity="0.7">+ bot access prerequisite check</text>
                                 {/* Dots between items */}
-                                <circle cx="100" cy="210" r="2" fill="var(--text-secondary)" opacity="0.5" />
-                                <circle cx="240" cy="210" r="2" fill="var(--text-secondary)" opacity="0.5" />
-                                <circle cx="100" cy="230" r="2" fill="var(--text-secondary)" opacity="0.5" />
-                                <circle cx="240" cy="230" r="2" fill="var(--text-secondary)" opacity="0.5" />
+                                <circle cx="90" cy="214" r="2" fill="var(--text-secondary)" opacity="0.5" />
+                                <circle cx="170" cy="214" r="2" fill="var(--text-secondary)" opacity="0.5" />
+                                <circle cx="250" cy="214" r="2" fill="var(--text-secondary)" opacity="0.5" />
                                 {/* Separator dots */}
                                 <rect x="55" y="247" width="230" height="1" fill="var(--border-subtle)" opacity="0.5" />
                                 <text x="170" y="258" textAnchor="middle" fill="var(--text-secondary)" fontSize="8" fontFamily="var(--font-sans, system-ui)" opacity="0.7">parallel analysis</text>

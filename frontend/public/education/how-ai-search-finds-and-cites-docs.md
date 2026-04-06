@@ -26,4 +26,4 @@ Several patterns emerge. Pages with clear headings, code examples, and step-by-s
 
 ---
 
-Check your documentation's AI readiness at [perseveranceai.com](/)
+Check your documentation's AI readiness at [https://gamma.perseveranceai.com](https://gamma.perseveranceai.com)

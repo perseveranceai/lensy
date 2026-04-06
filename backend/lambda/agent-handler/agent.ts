@@ -321,7 +321,8 @@ export interface AgentRunInput {
  * checks run in parallel since they are independent.
  */
 export async function runAgent(input: AgentRunInput): Promise<string> {
-    const { url, sessionId, analysisStartTime, llmsTxtUrl, ipHash, skipCitations } = input;
+    const { sessionId, analysisStartTime, llmsTxtUrl, ipHash, skipCitations } = input;
+    let url = input.url;  // mutable — updated if redirect detected
     const progress = new ProgressPublisher(sessionId);
 
     console.log(`[Pipeline] Starting direct analysis for URL: ${url}, session: ${sessionId}`);
@@ -335,6 +336,7 @@ export async function runAgent(input: AgentRunInput): Promise<string> {
         // ── Step 1.5: Fetch page HTML once (shared by both parallel checks) ──
         await progress.info('Fetching page content...');
         let prefetchedHtml = '';
+        let prefetchedHeaders: Record<string, string> = {};
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 10000);
@@ -350,7 +352,21 @@ export async function runAgent(input: AgentRunInput): Promise<string> {
             clearTimeout(timeoutId);
             if (res.ok) {
                 prefetchedHtml = await res.text();
-                console.log(`[Pipeline] Prefetched ${url}: ${prefetchedHtml.length} bytes`);
+                res.headers.forEach((v, k) => { prefetchedHeaders[k] = v; });
+                console.log(`[Pipeline] Prefetched ${url}: ${prefetchedHtml.length} bytes, headers: ${Object.keys(prefetchedHeaders).join(', ')}`);
+
+                // ── Follow redirects: update URL to final destination ──
+                const finalUrl = res.url;
+                if (finalUrl && finalUrl !== url) {
+                    const originalDomain = new URL(url).hostname;
+                    const finalDomain = new URL(finalUrl).hostname;
+                    if (finalDomain !== originalDomain) {
+                        console.log(`[Pipeline] Redirect detected: ${originalDomain} → ${finalDomain} (final URL: ${finalUrl})`);
+                    } else {
+                        console.log(`[Pipeline] Path redirect: ${url} → ${finalUrl}`);
+                    }
+                    url = finalUrl;
+                }
             } else {
                 console.warn(`[Pipeline] Prefetch failed with status ${res.status}`);
             }
@@ -519,8 +535,8 @@ Respond with JSON only:
             : 'Analyzing AI readiness and search discoverability in parallel...');
 
         const readinessInput = llmsTxtUrl
-            ? { url, sessionId, llmsTxtUrl, prefetchedHtml }
-            : { url, sessionId, prefetchedHtml };
+            ? { url, sessionId, llmsTxtUrl, prefetchedHtml, prefetchedHeaders }
+            : { url, sessionId, prefetchedHtml, prefetchedHeaders };
 
         const parallelTasks: Promise<any>[] = [
             checkAIReadinessTool.invoke(readinessInput),
