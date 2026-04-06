@@ -4,12 +4,13 @@
 
 ## Main Pages
 
-- [Home](https://gamma.perseveranceai.com/): AI readiness scanner for documentation pages
-- [Education](https://gamma.perseveranceai.com/education): Guides on optimizing docs for AI search
-- [About](https://gamma.perseveranceai.com/about): About Perseverance AI
-- [Contact / Waitlist](https://gamma.perseveranceai.com/contact): Join the waitlist for early access
+- [Home](https://perseveranceai.com/): AI readiness scanner for documentation pages
+- [Education](https://perseveranceai.com/education): Guides on optimizing docs for AI search
+- [About](https://perseveranceai.com/about): About Perseverance AI
+- [Contact / Waitlist](https://perseveranceai.com/contact): Join the waitlist for early access
 
 ## Education Articles
 
-- [The Research Behind AI-Ready Documentation](https://gamma.perseveranceai.com/education/research-behind-ai-ready-docs): AI Readiness | 3 min read
-- [How AI Search Finds, Processes, and Cites Your Docs](https://gamma.perseveranceai.com/education/how-ai-search-finds-and-cites-docs): AI Discoverability | 3 min read
+- [What Changed in Lensy After Re-checking AI-Ready Docs Signals](https://perseveranceai.com/education/what-changed-in-lensy-after-rechecking-ai-ready-docs-signals): AI Readiness | 4 min read
+- [The Research Behind AI-Ready Documentation](https://perseveranceai.com/education/research-behind-ai-ready-docs): AI Readiness | 3 min read
+- [How AI Search Finds, Processes, and Cites Your Docs](https://perseveranceai.com/education/how-ai-search-finds-and-cites-docs): AI Discoverability | 3 min read
