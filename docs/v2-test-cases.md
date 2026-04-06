@@ -79,9 +79,10 @@ meta robots, docs subpath), crossReference (evidence classification, page mappin
 **Expected:**
 - 3 category cards render: Structured Data, Discoverability, Content Quality
 - Bot Access renders as prerequisite banner above the grid (not a 4th card)
-- Score breakdown still works — denominator labels: /40, /40, /20
+- Category card headers show category name + status icon (check or warning) — NO score numbers or denominators
+- AI Readiness hero card shows centered title "AI Readiness" + summary line — NO grade letter or score
+- No `+pts` badges on any check items
 - Recommendations still appear
-- Overall score still calculates (out of 100)
 **Verify:** No regressions in existing functionality
 
 ---
@@ -96,7 +97,7 @@ meta robots, docs subpath), crossReference (evidence classification, page mappin
   - "Not verified" = `var(--text-muted)` with X icon
   - "Experimental" = `var(--text-muted)` with diamond icon
 - Audience tags use muted monochrome styling
-- The ONLY accent color anywhere is `var(--accent-primary)` blue for `+pts` badges and links
+- Links use monochrome colors with underlines (not blue accent)
 **Verify:** No colored icons, badges, or banners. Monochrome throughout.
 
 ---
@@ -180,17 +181,17 @@ meta robots, docs subpath), crossReference (evidence classification, page mappin
 
 ---
 
-### TC-14: Scoring weights rebalance
+### TC-14: Score/grade removal
 **URL:** `https://docs.anthropic.com/en/docs/overview`
 **Expected:**
-- Overall score = Discoverability + Content Quality + Structured Data (no bot access in score)
-- Discoverability denominator: /40
-- Content Quality denominator: /40
-- Structured Data denominator: /20
-- Total: /100
-- Bot Access is NOT included in score calculation
-- SVG chart (if visible) shows 3 categories only
-**Verify:** Score math is correct; bot access has zero weight
+- NO grade letter (A+, A, B+, etc.) visible anywhere
+- NO score numbers or denominators (/20, /40, /100) on category card headers
+- NO `+pts` badges on check items
+- NO grade scale bar
+- AI Readiness hero card shows centered "AI Readiness" title + summary line (e.g., "3 signals to improve across 2 categories")
+- Category card headers show category name + status icon only (check or warning)
+- Bot Access is NOT included in score calculation (internal only)
+**Verify:** All scoring UI is removed; summary text is accurate
 
 ---
 
@@ -235,9 +236,7 @@ meta robots, docs subpath), crossReference (evidence classification, page mappin
 - Tab key navigates through: hero cards → "View recommendations" button → check items → info icons
 - Hero cards: `role="button"`, respond to Enter/Space, have `aria-label` and `aria-pressed`
 - Info icons (tooltip triggers): focusable via Tab, show `focus-visible` outline (blue ring)
-- `+N pts` badges have `aria-label` ("Fixing this adds N points to your AI Readiness score")
 - Check row icons have `aria-label` ("Pass", "Needs improvement")
-- Grade scale bar: inactive grades have sufficient contrast (not dimmed with opacity)
 - Tab panel has `role="tabpanel"` and receives focus on tab switch
 **Verify:** Full keyboard navigation works; screen reader announces meaningful labels
 
@@ -259,7 +258,7 @@ meta robots, docs subpath), crossReference (evidence classification, page mappin
 - Grid shows exactly 3 cards: Content Quality, Structured Data, Discoverability
 - Grid uses `repeat(3, 1fr)` layout (not 2x2)
 - Bot Access is NOT a card — it's a prerequisite banner above the grid
-- Each card header shows category name + score/denominator + status icon
+- Each card header shows category name + status icon (no score numbers)
 - Check items within cards have `mb: 1.5` spacing (not cramped)
 **Verify:** Layout is 3 columns; bot access is a banner, not a card
 
@@ -273,8 +272,8 @@ meta robots, docs subpath), crossReference (evidence classification, page mappin
 4. [ ] Verify Bot Access appears as prerequisite banner ABOVE the grid
 5. [ ] Verify Discoverability card shows Markdown signal (not in Content Quality)
 6. [ ] Verify all evidence badges are monochrome (no green/amber/red colors)
-7. [ ] Verify score denominators: /40, /40, /20 (totaling /100)
-8. [ ] Verify overall score = sum of 3 categories (bot access NOT scored)
+7. [ ] Verify NO score numbers, denominators, or grade letters visible
+8. [ ] Verify AI Readiness hero card shows centered title + summary (no grade/score)
 9. [ ] Click "View all N recommendations" → verify "← Back to Readiness" button works
 10. [ ] Tab through interactive elements → verify keyboard focus indicators work
 11. [ ] Enter `https://example.com` → Verify "Not verified" states render correctly
