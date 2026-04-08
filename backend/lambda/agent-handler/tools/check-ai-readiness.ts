@@ -254,8 +254,15 @@ async function checkAIReadiness(domain: string, targetUrl: string, sessionId: st
     console.log(`[AIReadiness v2] Detection complete in ${detectionMs}ms — llms.txt: ${detection.site.llmsTxt.status}, markdown: ${detection.page.markdown.status}, page-mapped: ${detection.page.llmsTxtMapping.status}`);
 
     // ── Publish results to frontend (cards fill in as they arrive) ──
+    // Strip fullContent from discoverability before WebSocket publish — it can be
+    // hundreds of KB for large llms.txt files, exceeding API Gateway's 128KB frame limit.
+    // The full data is still returned to the caller and persisted to S3 for the report.
+    const discoverabilityForWs = {
+        ...discoverability,
+        llmsTxt: { ...discoverability.llmsTxt, fullContent: undefined },
+    };
     await progress.categoryResult('botAccess', botAccess, `Bot Access: ${botAccess.allowedCount}/10 bots allowed`);
-    await progress.categoryResult('discoverability', discoverability, 'Content Discoverability analysis complete');
+    await progress.categoryResult('discoverability', discoverabilityForWs, 'Content Discoverability analysis complete');
     await progress.categoryResult('consumability', consumability, 'Content Consumability analysis complete');
 
     // ── Category 4: Structured Data & Semantic Markup ────────────────

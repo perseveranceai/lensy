@@ -60,11 +60,27 @@ export class ProgressPublisher {
             // Include sessionId in message for frontend filtering
             const messageWithSession = { ...message, sessionId: this.sessionId };
 
+            // API Gateway WebSocket has a 128KB frame limit. If the serialized payload
+            // exceeds 120KB (with headroom), strip the data field to prevent HTTP 413 errors
+            // that silently break frontend card rendering.
+            const MAX_WS_PAYLOAD_BYTES = 120 * 1024; // 120KB — leave 8KB headroom
+            let payload = JSON.stringify(messageWithSession);
+            if (Buffer.byteLength(payload, 'utf8') > MAX_WS_PAYLOAD_BYTES) {
+                console.warn(`[ProgressPublisher] Payload too large (${Buffer.byteLength(payload, 'utf8')} bytes) for message: ${message.message}. Stripping metadata.data to fit within WebSocket frame limit.`);
+                const trimmed = {
+                    ...messageWithSession,
+                    metadata: messageWithSession.metadata
+                        ? { ...messageWithSession.metadata, data: { _truncated: true, message: 'Payload exceeded 128KB WebSocket limit — full data available in S3 artifact' } }
+                        : messageWithSession.metadata,
+                };
+                payload = JSON.stringify(trimmed);
+            }
+
             const sendPromises = connections.map(async (connectionId) => {
                 try {
                     await this.apiGatewayClient!.send(new PostToConnectionCommand({
                         ConnectionId: connectionId,
-                        Data: Buffer.from(JSON.stringify(messageWithSession))
+                        Data: Buffer.from(payload)
                     }));
                     console.log(`Sent progress to connection ${connectionId}:`, message.message);
                 } catch (error: any) {
