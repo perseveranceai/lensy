@@ -2,6 +2,12 @@
 
 All notable changes to the Lensy Documentation Auditor project will be documented in this file.
 
+## [2.0.1] — 2026-04-07
+
+### Fixed
+- **Discoverability spinner bug**: stripped `fullContent` (entire llms.txt file) from WebSocket payload — was exceeding API Gateway's 128KB frame limit, causing the discoverability card to show an infinite spinner on sites with large llms.txt files (dub.co, infisical, appwrite, tinybird, gitbook)
+- **WebSocket payload guard**: added 120KB safety limit in ProgressPublisher to truncate oversized payloads before sending, preventing silent card rendering failures
+
 ## [2.0.0] — 2026-04-05
 
 ### Added
