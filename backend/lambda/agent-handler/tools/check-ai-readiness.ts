@@ -633,8 +633,8 @@ async function analyzeConsumability(
         recommendations.push({
             category: 'Consumability',
             priority: 'medium',
-            issue: 'No markdown version detected — AI coding assistants (Cursor, Copilot, Claude Code) prefer markdown for cleaner code generation. If you serve a .md version, add a discovery signal so AI tools can find it.',
-            fix: `Add a <link rel="alternate" type="text/markdown"> tag in <head> so AI agents can discover and fetch the markdown version. If you already serve .md files, this tag is the missing link between your markdown and the tools that need it.`,
+            issue: 'Markdown discovery signal missing — a <link rel="alternate" type="text/markdown"> tag helps AI coding assistants (Cursor, Copilot, Claude Code) find and fetch your markdown version.',
+            fix: `Add a <link rel="alternate" type="text/markdown"> tag in your <head>. Even if you already serve .md files, AI tools need this HTML signal to discover them.`,
             codeSnippet: `<!-- Add to <head> -->\n<link rel="alternate" type="text/markdown" href="${new URL(targetUrl).pathname}.md" />`,
         });
     } else if (!markdown.discoverable) {
