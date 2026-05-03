@@ -518,7 +518,7 @@ function classifyExperimental(probe: ProbeResult | null, name: string): Detectio
             note: `${name} found — emerging standard, not scored`,
         };
     }
-    return experimentalSignal(undefined, 'coding_agents');
+    return notVerifiedSignal('coding_agents');
 }
 
 function classifyMarkdown(
@@ -643,7 +643,7 @@ function classifyPageMapping(
                 foundMd = true;
                 matchedMdUrl = url;
             }
-        } catch {}
+        } catch { }
     }
 
     const llmsTxtMapping: DetectionSignal = foundExact || foundMd
@@ -680,13 +680,13 @@ function extractOpenApiSpecs(llmsTxtContent: string | undefined): string[] {
 
 /** Content-type expectations per probe purpose — reject HTML soft-404s */
 const EXPECTED_CONTENT_TYPES: Record<string, string[]> = {
-    'llms.txt':             ['text/plain', 'text/markdown', 'application/octet-stream'],
-    'llms-full.txt':        ['text/plain', 'text/markdown', 'application/octet-stream'],
-    'AGENTS.md':            ['text/plain', 'text/markdown', 'application/octet-stream'],
-    'mcp.json':             ['application/json', 'text/json'],
-    'sitemap.xml':          ['application/xml', 'text/xml'],
-    'markdown-alternate':   ['text/markdown', 'text/plain'],
-    'direct-md':            ['text/markdown', 'text/plain', 'application/octet-stream'],
+    'llms.txt': ['text/plain', 'text/markdown', 'application/octet-stream'],
+    'llms-full.txt': ['text/plain', 'text/markdown', 'application/octet-stream'],
+    'AGENTS.md': ['text/plain', 'text/markdown', 'application/octet-stream'],
+    'mcp.json': ['application/json', 'text/json'],
+    'sitemap.xml': ['application/xml', 'text/xml'],
+    'markdown-alternate': ['text/markdown', 'text/plain'],
+    'direct-md': ['text/markdown', 'text/plain', 'application/octet-stream'],
 };
 
 /**
@@ -923,7 +923,7 @@ function deriveDocsSubpath(targetUrl: string, baseUrl: string): string | null {
         if (segments.length > 0 && DOCS_PATH_SEGMENTS.has(segments[0].toLowerCase())) {
             return `/${segments[0]}`;
         }
-    } catch {}
+    } catch { }
     return null;
 }
 

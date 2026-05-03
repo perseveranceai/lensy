@@ -407,7 +407,7 @@ function classifyExperimental(probe, name) {
             note: `${name} found — emerging standard, not scored`,
         };
     }
-    return (0, detection_types_1.experimentalSignal)(undefined, 'coding_agents');
+    return (0, detection_types_1.notVerifiedSignal)('coding_agents');
 }
 function classifyMarkdown(signals, markdownProbes) {
     // Priority: content negotiation > link-alternate > direct .md probe
