@@ -16,16 +16,16 @@ const FETCH_HEADERS = {
 
 // ── AI Bot Registry ─────────────────────────────────────────────────────
 const AI_BOTS = [
-    { name: 'GPTBot (OpenAI)',        userAgent: 'GPTBot' },
+    { name: 'GPTBot (OpenAI)', userAgent: 'GPTBot' },
     { name: 'OAI-SearchBot (OpenAI)', userAgent: 'OAI-SearchBot' },
-    { name: 'ChatGPT-User (OpenAI)',  userAgent: 'ChatGPT-User' },
-    { name: 'ClaudeBot (Anthropic)',   userAgent: 'ClaudeBot' },
-    { name: 'Claude-Web (Anthropic)',  userAgent: 'Claude-Web' },
-    { name: 'PerplexityBot',          userAgent: 'PerplexityBot' },
-    { name: 'Amazonbot',              userAgent: 'Amazonbot' },
-    { name: 'Bingbot (Microsoft)',     userAgent: 'Bingbot' },
+    { name: 'ChatGPT-User (OpenAI)', userAgent: 'ChatGPT-User' },
+    { name: 'ClaudeBot (Anthropic)', userAgent: 'ClaudeBot' },
+    { name: 'Claude-Web (Anthropic)', userAgent: 'Claude-Web' },
+    { name: 'PerplexityBot', userAgent: 'PerplexityBot' },
+    { name: 'Amazonbot', userAgent: 'Amazonbot' },
+    { name: 'Bingbot (Microsoft)', userAgent: 'Bingbot' },
     { name: 'Bytespider (ByteDance)', userAgent: 'Bytespider' },
-    { name: 'Google-Extended',         userAgent: 'Google-Extended' },
+    { name: 'Google-Extended', userAgent: 'Google-Extended' },
 ];
 
 // ── Known Schema.org types for documentation ─────────────────────────────
@@ -37,13 +37,13 @@ const VALID_SCHEMA_TYPES = [
 
 // ── Required fields per schema type ──────────────────────────────────────
 const SCHEMA_REQUIRED_FIELDS: Record<string, string[]> = {
-    Article:      ['headline', 'author', 'datePublished'],
-    TechArticle:  ['headline', 'author', 'datePublished'],
-    HowTo:        ['name', 'step'],
-    FAQPage:      ['mainEntity'],
-    BlogPosting:  ['headline', 'author', 'datePublished'],
-    WebPage:      ['name'],
-    WebSite:      ['name', 'url'],
+    Article: ['headline', 'author', 'datePublished'],
+    TechArticle: ['headline', 'author', 'datePublished'],
+    HowTo: ['name', 'step'],
+    FAQPage: ['mainEntity'],
+    BlogPosting: ['headline', 'author', 'datePublished'],
+    WebPage: ['name'],
+    WebSite: ['name', 'url'],
 };
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -633,8 +633,8 @@ async function analyzeConsumability(
         recommendations.push({
             category: 'Consumability',
             priority: 'medium',
-            issue: 'No markdown version detected — AI coding assistants (Cursor, Copilot, Claude Code) prefer markdown for cleaner code generation.',
-            fix: `Serve a .md version and add a <link rel="alternate"> tag so AI agents can discover and fetch it instead of HTML.`,
+            issue: 'No markdown version detected — AI coding assistants (Cursor, Copilot, Claude Code) prefer markdown for cleaner code generation. If you serve a .md version, add a discovery signal so AI tools can find it.',
+            fix: `Add a <link rel="alternate" type="text/markdown"> tag in <head> so AI agents can discover and fetch the markdown version. If you already serve .md files, this tag is the missing link between your markdown and the tools that need it.`,
             codeSnippet: `<!-- Add to <head> -->\n<link rel="alternate" type="text/markdown" href="${new URL(targetUrl).pathname}.md" />`,
         });
     } else if (!markdown.discoverable) {
@@ -996,7 +996,7 @@ function analyzeInternalLinks(html: string, baseUrl: string): AIReadinessResult[
                     internalCount++;
                 }
             }
-        } catch {}
+        } catch { }
     }
 
     // Calculate text word count for density (from content only)
@@ -1036,7 +1036,7 @@ function analyzeStructuredData(
                     types.push(...t);
                 }
                 allFields.push(...Object.keys(data));
-            } catch {}
+            } catch { }
         }
     }
 
@@ -1146,7 +1146,7 @@ function deriveDocsSubpath(llmsTxtUrl?: string, targetUrl?: string, baseUrl?: st
             const path = new URL(llmsTxtUrl).pathname;
             const dir = path.substring(0, path.lastIndexOf('/'));
             if (dir && dir !== '/') return dir;
-        } catch {}
+        } catch { }
     }
     if (targetUrl && baseUrl) {
         try {
@@ -1155,7 +1155,7 @@ function deriveDocsSubpath(llmsTxtUrl?: string, targetUrl?: string, baseUrl?: st
             if (segments.length > 1 && DOCS_PATH_SEGMENTS.has(segments[0].toLowerCase())) {
                 return `/${segments[0]}`;
             }
-        } catch {}
+        } catch { }
     }
     return null;
 }
