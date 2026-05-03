@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import { trackEvent } from './analytics';
+import { BRAND_NEUTRAL } from './brand';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -5760,12 +5761,12 @@ function LensyApp() {
                                         }} />
                                     </Box>
                                     <Typography variant="body2" sx={{ color: 'var(--text-secondary)', fontSize: '0.8rem', lineHeight: 1.5 }}>{rec.fix}</Typography>
-                                    {rec.issue?.toLowerCase().includes('llms.txt') && (
+                                    {rec.issue?.toLowerCase().includes('llms.txt') && !BRAND_NEUTRAL && (
                                         <Typography variant="caption" component="a" href="/contact?ref=llmstxt" target="_blank" rel="noopener noreferrer" sx={{ display: 'inline-block', mt: 0.5, fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textDecoration: 'underline', '&:hover': { color: 'var(--text-primary)' } }}>
                                             We can help you generate one →
                                         </Typography>
                                     )}
-                                    {rec.issue?.toLowerCase().includes('markdown') && !rec.issue?.toLowerCase().includes('llms.txt') && (
+                                    {rec.issue?.toLowerCase().includes('markdown') && !rec.issue?.toLowerCase().includes('llms.txt') && !BRAND_NEUTRAL && (
                                         <Typography variant="caption" component="a" href="/contact?ref=markdown" target="_blank" rel="noopener noreferrer" sx={{ display: 'inline-block', mt: 0.5, fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textDecoration: 'underline', '&:hover': { color: 'var(--text-primary)' } }}>
                                             We can help you generate markdown →
                                         </Typography>
@@ -6625,7 +6626,7 @@ function LensyApp() {
                                     {/* Disclaimer */}
                                     <Box sx={{ mt: 2, p: 1.5, borderRadius: 1, bgcolor: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.15)' }}>
                                         <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.7rem', lineHeight: 1.5 }}>
-                                            This analysis is AI-generated and may not be 100% accurate. Results are directional and intended to guide improvements, not serve as a definitive audit. Lensy is currently in Beta — please verify recommendations before implementing. <a href="/contact?ref=feedback" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-secondary)', textDecoration: 'underline' }}>Share feedback</a>
+                                            This analysis is AI-generated and may not be 100% accurate. Results are directional and intended to guide improvements, not serve as a definitive audit. Lensy is currently in Beta — please verify recommendations before implementing.{!BRAND_NEUTRAL && <> <a href="/contact?ref=feedback" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-secondary)', textDecoration: 'underline' }}>Share feedback</a></>}
                                         </Typography>
                                     </Box>
 
