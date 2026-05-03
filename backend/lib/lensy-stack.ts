@@ -332,7 +332,7 @@ export class LensyStack extends cdk.Stack {
             USE_AGENT: useAgent,
             AGENT_FUNCTION_NAME: agentHandler.functionName,
             USAGE_TRACKING_TABLE: usageTrackingTable.tableName,
-            FREE_TIER_DAILY_LIMIT: lensyEnv === 'prod' ? '3' : '100',
+            FREE_TIER_DAILY_LIMIT: lensyEnv === 'prod' ? '100' : '100',
             FEEDBACK_TABLE: feedbackTable.tableName,
             FEEDBACK_EMAIL: 'hello@perseveranceai.com',
             WAITLIST_TABLE: waitlistTable.tableName,

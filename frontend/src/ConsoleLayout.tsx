@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import FeedbackWidget from './components/FeedbackWidget';
 import { trackEvent } from './analytics';
+import { BRAND_NEUTRAL, PRODUCT_NAME } from './brand';
 const logoImg = `${process.env.PUBLIC_URL}/logo.png`;
 
 type ThemeMode = 'dark' | 'light' | 'system';
@@ -89,8 +90,8 @@ function ConsoleLayout() {
     const navLinks: Array<{ path: string; label: string; beta?: boolean; anchor?: string; key?: string }> = [
         { path: '/', label: 'Lensy', beta: true },
         { path: '/', label: 'How It Works', anchor: 'how-it-works', key: 'how-it-works' },
-        { path: '/education', label: 'Education' },
-        { path: '/contact', label: 'Contact' },
+        ...(BRAND_NEUTRAL ? [] : [{ path: '/education', label: 'Education' }]),
+        ...(BRAND_NEUTRAL ? [] : [{ path: '/contact', label: 'Contact' }]),
     ];
 
     const isActive = (path: string) => {
@@ -141,7 +142,7 @@ function ConsoleLayout() {
                         onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.8')}
                         onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
                     >
-                        <img src={logoImg} alt="Perseverance AI" className="header-logo" style={{ height: '70px', width: '70px', objectFit: 'contain' }} />
+                        {!BRAND_NEUTRAL && <img src={logoImg} alt={BRAND_NEUTRAL ? PRODUCT_NAME : 'Perseverance AI'} className="header-logo" style={{ height: '70px', width: '70px', objectFit: 'contain' }} />}
                         <span className="perseverance-text" style={{
                             fontFamily: 'var(--font-sans, var(--font-ui))',
                             fontSize: '1rem',
@@ -149,7 +150,7 @@ function ConsoleLayout() {
                             color: 'var(--text-primary)',
                             whiteSpace: 'nowrap',
                         }}>
-                            Perseverance AI
+                            {BRAND_NEUTRAL ? null : 'Perseverance AI'}
                         </span>
                     </a>
 
@@ -406,8 +407,8 @@ function ConsoleLayout() {
                 <Outlet />
             </main>
 
-            {/* Feedback Widget — visible on all pages (bottom-left) */}
-            <FeedbackWidget />
+            {/* Feedback Widget — visible on all pages (bottom-left), hidden in brand-neutral */}
+            {!BRAND_NEUTRAL && <FeedbackWidget />}
 
             {/* Back to Top — bottom-right, appears after scrolling */}
             {showBackToTop && (
@@ -453,35 +454,39 @@ function ConsoleLayout() {
                     alignItems: 'center',
                     gap: '1rem',
                 }}>
-                    {/* Logo */}
-                    <a
-                        href="/"
-                        onClick={(e) => { e.preventDefault(); navigate('/'); }}
-                        style={{ textDecoration: 'none', display: 'flex', alignItems: 'center' }}
-                    >
-                        <img src={logoImg} alt="Perseverance AI" className="footer-logo" style={{ height: '60px', width: '60px', objectFit: 'contain' }} />
-                    </a>
+                    {/* Logo — hide in brand-neutral mode */}
+                    {!BRAND_NEUTRAL && (
+                        <a
+                            href="/"
+                            onClick={(e) => { e.preventDefault(); navigate('/'); }}
+                            style={{ textDecoration: 'none', display: 'flex', alignItems: 'center' }}
+                        >
+                            <img src={logoImg} alt={BRAND_NEUTRAL ? PRODUCT_NAME : 'Perseverance AI'} className="footer-logo" style={{ height: '60px', width: '60px', objectFit: 'contain' }} />
+                        </a>
+                    )}
 
                     {/* Social Links */}
-                    <div style={{
-                        display: 'flex',
-                        gap: '1.5rem',
-                        flexWrap: 'wrap',
-                        justifyContent: 'center',
-                    }}>
-                        <a href="https://www.linkedin.com/company/getperseverance/" target="_blank" rel="noopener noreferrer"
-                            style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)', fontWeight: 500 }}>
-                            LinkedIn
-                        </a>
-                        <a href="https://x.com/getperseverance" target="_blank" rel="noopener noreferrer"
-                            style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)', fontWeight: 500 }}>
-                            X
-                        </a>
-                        <a href="https://calendly.com/getperseverance" target="_blank" rel="noopener noreferrer"
-                            style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)', fontWeight: 500 }}>
-                            Schedule a conversation
-                        </a>
-                    </div>
+                    {!BRAND_NEUTRAL && (
+                        <div style={{
+                            display: 'flex',
+                            gap: '1.5rem',
+                            flexWrap: 'wrap',
+                            justifyContent: 'center',
+                        }}>
+                            <a href="https://www.linkedin.com/company/getperseverance/" target="_blank" rel="noopener noreferrer"
+                                style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)', fontWeight: 500 }}>
+                                LinkedIn
+                            </a>
+                            <a href="https://x.com/getperseverance" target="_blank" rel="noopener noreferrer"
+                                style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)', fontWeight: 500 }}>
+                                X
+                            </a>
+                            <a href="https://calendly.com/getperseverance" target="_blank" rel="noopener noreferrer"
+                                style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)', fontWeight: 500 }}>
+                                Schedule a conversation
+                            </a>
+                        </div>
+                    )}
 
                     {/* Legal + Copyright */}
                     <div style={{
@@ -492,16 +497,22 @@ function ConsoleLayout() {
                         justifyContent: 'center',
                     }}>
                         <span style={{ fontFamily: 'var(--font-sans)', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                            &copy; {new Date().getFullYear()} Perseverance AI. All rights reserved.
+                            {BRAND_NEUTRAL
+                                ? `© ${new Date().getFullYear()} Lensy. Open beta.`
+                                : `© ${new Date().getFullYear()} Perseverance AI. All rights reserved.`}
                         </span>
-                        <a href="/terms" onClick={(e) => { e.preventDefault(); navigate('/terms'); }}
-                            style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)' }}>
-                            Terms
-                        </a>
-                        <a href="/privacy" onClick={(e) => { e.preventDefault(); navigate('/privacy'); }}
-                            style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)' }}>
-                            Privacy
-                        </a>
+                        {!BRAND_NEUTRAL && (
+                            <>
+                                <a href="/terms" onClick={(e) => { e.preventDefault(); navigate('/terms'); }}
+                                    style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)' }}>
+                                    Terms
+                                </a>
+                                <a href="/privacy" onClick={(e) => { e.preventDefault(); navigate('/privacy'); }}
+                                    style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)' }}>
+                                    Privacy
+                                </a>
+                            </>
+                        )}
                     </div>
                 </div>
             </footer>

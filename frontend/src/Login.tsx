@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { BRAND_NEUTRAL, PRODUCT_NAME } from './brand';
 const logoImg = `${process.env.PUBLIC_URL}/logo.png`;
 
 /**
@@ -117,7 +118,7 @@ function Login() {
                         alignItems: 'center',
                         marginBottom: '1rem',
                     }}>
-                        <img src={logoImg} alt="Perseverance AI" style={{ height: '64px', width: '64px', objectFit: 'contain' }} />
+                        <img src={logoImg} alt={BRAND_NEUTRAL ? PRODUCT_NAME : 'Perseverance AI'} style={{ height: '64px', width: '64px', objectFit: 'contain' }} />
                     </div>
                     <h1 style={{
                         fontFamily: 'var(--font-sans, var(--font-ui))',
@@ -127,7 +128,7 @@ function Login() {
                         margin: '0 0 0.5rem 0',
                         letterSpacing: '-0.01em',
                     }}>
-                        Perseverance AI Console
+                        {BRAND_NEUTRAL ? 'Lensy' : 'Perseverance AI Console'}
                     </h1>
                     <p style={{
                         fontFamily: 'var(--font-sans, var(--font-ui))',
