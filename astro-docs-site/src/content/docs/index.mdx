@@ -1,0 +1,53 @@
+---
+title: Directus Documentation
+description: AI-optimized Directus documentation — powered by PerseveranceAI
+template: splash
+hero:
+  title: Directus Documentation
+  tagline: AI-optimized for developer tools, search engines, and coding assistants — by Perseverance AI
+  actions:
+    - text: Getting Started
+      link: /getting-started/overview/
+      icon: right-arrow
+      variant: primary
+    - text: SDK Guide
+      link: /guides/connect/sdk/
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## Explore the Docs
+
+<CardGrid>
+  <Card title="Getting Started" icon="rocket">
+    Learn what Directus is, how it works, and how to use the API.
+
+    [Overview](/getting-started/overview/) · [Use the API](/getting-started/use-the-api/)
+  </Card>
+  <Card title="Authentication" icon="approve-check">
+    Understand access tokens, session cookies, and static tokens.
+
+    [Access Tokens](/guides/auth/tokens-cookies/)
+  </Card>
+  <Card title="Directus SDK" icon="seti:javascript">
+    Connect to Directus from JavaScript and TypeScript projects.
+
+    [SDK Guide](/guides/connect/sdk/)
+  </Card>
+  <Card title="Extensions" icon="puzzle">
+    Extend Directus with custom API endpoints, interfaces, and more.
+
+    [Extensions Overview](/guides/extensions/overview/)
+  </Card>
+</CardGrid>
+
+## AI-Ready by Default
+
+Every page on this site includes:
+
+- **llms.txt** — structured index for AI tools ([view](/llms.txt))
+- **Per-page markdown** — raw `.md` available at every URL ([example](/guides/connect/sdk.md))
+- **Content negotiation** — `Accept: text/markdown` returns markdown
+- **JSON-LD structured data** — TechArticle + BreadcrumbList schema
+- **AGENTS.md** — AI agent interoperability config ([view](/AGENTS.md))

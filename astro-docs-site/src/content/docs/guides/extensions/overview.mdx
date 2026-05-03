@@ -1,0 +1,266 @@
+---
+title: Extensions Overview
+description: Extensions are used to extend the functionality of Directus.
+navigation:
+  title: Overview
+markdownUrl: /md/guides/extensions/overview.md
+jsonLd: |
+  [{"@context":"https://schema.org","@type":"TechArticle","headline":"Extensions Overview","description":"Extensions are used to extend the functionality of Directus.","url":"https://d15fvxnndct814.cloudfront.net/guides/extensions/overview/","author":{"@type":"Organization","name":"Directus"},"publisher":{"@type":"Organization","name":"PerseveranceAI"},"datePublished":"2026-04-19"},{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Docs","item":"https://d15fvxnndct814.cloudfront.net/"},{"@type":"ListItem","position":2,"name":"Guides","item":"https://d15fvxnndct814.cloudfront.net/guides/"},{"@type":"ListItem","position":3,"name":"Extensions","item":"https://d15fvxnndct814.cloudfront.net/guides/extensions/"},{"@type":"ListItem","position":4,"name":"Overview","item":"https://d15fvxnndct814.cloudfront.net/guides/extensions/overview/"}]}]
+---
+
+:::note
+Watch the Extensions overview video on the [Directus website](https://directus.io/docs/guides/extensions/overview).
+:::
+
+Directus has been built to be extensible - both allowing for powerful enhancements to be built for single projects, and for publishing in the [Directus Marketplace](/guides/extensions/marketplace).
+
+Extensions in Directus run within the same environment as the main application, allowing them to leverage existing access to underlying [services](/guides/extensions/api-extensions/services) and [UI components](/guides/extensions/app-extensions/ui-library).
+
+## Extension Types at a Glance
+
+Directus extensions fall into two broad categories:
+
+- **App Extensions** — Vue 3 components that run inside the Data Studio (browser).
+- **API Extensions** — Node.js modules that run inside the Directus server process.
+
+Each type has a distinct entrypoint, build target, and lifecycle. Mixing them up (for example, trying to import a Node.js `fs` module inside an App Extension) is one of the most common early mistakes.
+
+### Extension Anatomy
+
+Every Directus extension is a Node.js package with a `package.json` that includes a `directus:extension` field describing its type and entrypoint:
+
+```json
+{
+  "name": "directus-extension-my-interface",
+  "version": "1.0.0",
+  "directus:extension": {
+    "type": "interface",
+    "path": {
+      "app": "dist/app.js"
+    },
+    "source": {
+      "app": "src/index.ts"
+    },
+    "host": "^10.0.0"
+  },
+  "scripts": {
+    "build": "directus-extension build",
+    "dev": "directus-extension build --watch"
+  },
+  "devDependencies": {
+    "@directus/extensions-sdk": "^10.0.0"
+  }
+}
+```
+
+The `host` field pins the extension to a compatible range of Directus versions. Mismatching this field is a common source of silent failures in the Marketplace.
+
+### Scaffolding a New Extension
+
+Use the official SDK CLI to scaffold any extension type:
+
+```bash
+npx create-directus-extension@latest
+```
+
+You will be prompted for the extension type, name, and language (JavaScript or TypeScript). The CLI creates the correct folder structure, `package.json`, and a starter entrypoint file.
+
+To build and watch for changes during development:
+
+```bash
+npm run dev
+```
+
+To produce a production bundle:
+
+```bash
+npm run build
+```
+
+The compiled output goes to `dist/`. Drop the entire extension folder into your Directus `extensions/` directory (or publish it to npm for Marketplace distribution).
+
+---
+
+## App Extensions
+
+[App Extensions](/guides/extensions/app-extensions) extend the functionality of the Data Studio. They are Vue 3 single-file components compiled by the `@directus/extensions-sdk` build toolchain and loaded dynamically by the browser at runtime.
+
+### Interfaces
+
+![An "input" in the content module](/img/e0712e22-1cda-403b-9903-7e20aa473701.webp)
+
+[Interfaces](/guides/extensions/app-extensions/interfaces) are form inputs used primarily inside of the editor. Interfaces are the primary way users interact with data inside of Directus. Custom interfaces can be used for use cases with unique interaction needs, complex data entry, and any time you need to add elements to the editor.
+
+A minimal interface entrypoint exports a Vue component and a configuration object:
+
+```typescript
+// src/index.ts
+import { defineInterface } from '@directus/extensions-sdk';
+import InterfaceComponent from './interface.vue';
+
+export default defineInterface({
+  id: 'my-custom-interface',
+  name: 'My Custom Interface',
+  icon: 'box',
+  description: 'A simple custom text interface.',
+  component: InterfaceComponent,
+  types: ['string'],
+  options: [
+    {
+      field: 'placeholder',
+      name: 'Placeholder',
+      type: 'string',
+      meta: {
+        interface: 'input',
+      },
+    },
+  ],
+});
+```
+
+The `types` array restricts which Directus field types can use this interface, preventing it from appearing on incompatible fields.
+
+### Displays
+
+![A Datetime display in the content module](/img/99a21abb-a866-4766-bbce-0ed13295112b.webp)
+
+[Displays](/guides/extensions/app-extensions/displays) are small components that are used to display a single value throughout the Data Studio. Displays receive a single value and any custom display options that are defined in the display entrypoint. They are then expected to render the value in a user-friendly way.
+
+Displays are read-only by design — they render values in collection listings, related-item previews, and export views. They do not receive the full item, only the value of the field they are assigned to.
+
+### Layouts
+
+![A table display in the content module](/img/ca3ceb27-7cbd-493d-acb1-d15cb707fb31.webp)
+
+[Layouts](/guides/extensions/app-extensions/layouts) allow for listing of items in Explore pages. Layouts receive a collection, filters, searches, and any custom layout options that are defined in the layout entrypoint. They are then expected to fetch and render the items from a collection.
+
+Layouts are responsible for their own data fetching via the injected `useItems` composable. They must also implement pagination and sorting if those features are needed — the core application does not handle these on behalf of the layout.
+
+### Panels
+
+![A panel in the insights module](/img/cd83e252-c23b-4e03-b2f4-dc35cee2d6a7.webp)
+
+[Panels](/guides/extensions/app-extensions/panels) are customizable components within Insights dashboards. Panels are the building blocks of analytics dashboards, enabling rapid, no-code creation of data visualizations with data from a Directus project. Panels can also contain interactive elements, making them suitable for building custom internal applications within dashboards.
+
+### Modules
+
+![A module in Directus](/img/7db9b50a-d25b-40b1-86dc-3e09dad388bf.webp)
+
+[Modules](/guides/extensions/app-extensions/modules) are top-level areas of the Data Studio, navigated to from the left-hand module bar. They will load at the specified routes. The Data Studio splits up functionality into modules — the content module, the files module, the user module, the insights module, and the settings module. Extensions can add new modules to the Data Studio.
+
+Modules are full Vue Router sub-applications. You define child routes inside the module entrypoint, giving you complete control over navigation within your custom section.
+
+### Themes
+
+![Directus' default theme](/img/91797ca8-68fa-4231-b143-8d5e134e9981.webp)
+
+[Themes](/guides/extensions/app-extensions/themes) are used to style the Data Studio. They can be used to change the colors, fonts, and other visual elements of the Data Studio. Themes are defined as a JSON object mapping CSS custom property names to values — no Vue component is required.
+
+---
+
+## API Extensions
+
+[API Extensions](/guides/extensions/api-extensions) extend the functionality of the API. They run inside the Directus server process (Node.js) and have access to the full Directus services layer, the database via Knex, and the event bus.
+
+### Hooks
+
+[Hooks](/guides/extensions/api-extensions/hooks) allow running code when events occur within Directus. Events are triggered on schedules, database events, or during the Directus application lifecycle.
+
+A hook can register multiple event listeners from a single entrypoint:
+
+```typescript
+// src/index.ts
+import { defineHook } from '@directus/extensions-sdk';
+
+export default defineHook(({ filter, action, schedule }, { services, database, logger }) => {
+  // Mutate data before it is written to the database
+  filter('items.create', (payload, { collection }) => {
+    if (collection === 'articles') {
+      payload.slug = payload.title?.toLowerCase().replace(/\s+/g, '-');
+    }
+    return payload;
+  });
+
+  // React after an item has been created
+  action('items.create', ({ collection, key }) => {
+    logger.info(`New item created in ${collection} with key ${key}`);
+  });
+
+  // Run on a cron schedule
+  schedule('*/15 * * * *', async () => {
+    logger.info('Running scheduled task every 15 minutes');
+  });
+});
+```
+
+`filter` hooks can modify or reject a payload before it is persisted. `action` hooks run after the fact and cannot alter the result. Throwing an error inside a `filter` hook will abort the operation and return a 400-level response to the client.
+
+### Endpoints
+
+[Endpoints](/guides/extensions/api-extensions/endpoints) allow you to register new API routes in your Directus project. Custom endpoints are mounted under `/extensions/<endpoint-id>/` by default.
+
+```typescript
+// src/index.ts
+import { defineEndpoint } from '@directus/extensions-sdk';
+
+export default defineEndpoint((router, { services, database }) => {
+  router.get('/', async (req, res) => {
+    const { ItemsService } = services;
+    const itemsService = new ItemsService('articles', {
+      schema: req.schema,
+      accountability: req.accountability,
+    });
+
+    const items = await itemsService.readByQuery({ limit: 10 });
+    res.json({ data: items });
+  });
+});
+```
+
+Always pass `accountability` from the request when instantiating a service — omitting it bypasses Directus access control entirely.
+
+### Operations
+
+[Operations](/guides/extensions/api-extensions/operations) are single steps in a Flow — the no-code automation tool part of Directus Automate. A custom operation appears in the Flow editor as a draggable node and can perform any async server-side logic, returning data that subsequent steps can reference.
+
+---
+
+## Deploying Extensions
+
+Place the built extension folder inside the `extensions/` directory at the root of your Directus project. Directus scans this directory on startup.
+
+```
+extensions/
+  directus-extension-my-interface/
+    package.json
+    dist/
+      app.js
+```
+
+Restart the Directus server after adding or updating an extension. In Docker environments, this means restarting the container. Hot-reloading is available during development via `npm run dev`, but is not supported in production.
+
+---
+
+## Common Issues
+
+### Extension not appearing in the Data Studio
+
+- Confirm the `type` field in `package.json` under `directus:extension` matches the intended extension type exactly (e.g., `interface`, not `interfaces`).
+- Verify the `dist/` folder exists and contains the compiled output. Run `npm run build` if it is missing.
+- Check the Directus server logs on startup — malformed extensions log a warning and are skipped silently in the UI.
+
+### `host` version mismatch warning
+
+The `host` field in `package.json` must be a semver range that includes your running Directus version. If it does not match, Directus will refuse to load the extension. Update the range (e.g., `"^10.0.0"`) and rebuild.
+
+### Accountability bypass in custom endpoints
+
+Instantiating a service without passing `accountability: req.accountability` grants the operation admin-level access regardless of the authenticated user's role. Always forward accountability unless you have an explicit reason not to, and document that decision clearly.
+
+### Filter hook not modifying payload
+
+Ensure your `filter` callback returns the (modified) payload. A `filter` hook that returns `undefined` will cause the original payload to be used unchanged — it does not automatically merge your changes.
+
+### App Extension importing Node.js built-ins
+
+App Extensions run in the browser. Importing Node.js modules such as `fs`, `path`, or `crypto` will cause the build to fail or produce a broken bundle. Use browser-compatible alternatives or move that logic into an API Extension (Hook or Endpoint) and call it over HTTP.

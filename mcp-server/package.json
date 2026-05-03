@@ -1,0 +1,29 @@
+{
+    "name": "@perseverance/mcp-server",
+    "version": "0.1.0",
+    "description": "Perseverance Writer Agent — MCP server for AI-readiness documentation improvements",
+    "type": "module",
+    "bin": {
+        "perseverance-mcp": "./dist/index.js"
+    },
+    "scripts": {
+        "build": "tsc",
+        "dev": "tsx src/index.ts",
+        "clean": "rm -rf dist"
+    },
+    "dependencies": {
+        "@modelcontextprotocol/sdk": "^1.12.1",
+        "@langchain/langgraph": "^1.1.5",
+        "@langchain/core": "^1.1.16",
+        "@langchain/aws": "^1.2.3",
+        "@aws-sdk/client-bedrock-runtime": "^3.700.0",
+        "@octokit/rest": "^21.1.1",
+        "zod": "^3.25.32",
+        "dotenv": "^16.4.7"
+    },
+    "devDependencies": {
+        "typescript": "^5.7.0",
+        "tsx": "^4.19.0",
+        "@types/node": "^22.0.0"
+    }
+}

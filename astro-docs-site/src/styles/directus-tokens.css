@@ -1,0 +1,469 @@
+/* ============================================================
+   Directus Design Tokens → Starlight Theme Override
+   Extracted from directus.io/docs on April 18, 2026
+   
+   Maps Directus brand tokens to Starlight's --sl-* CSS API.
+   This is the ONLY file that changes between customers.
+   ============================================================ */
+
+/* ── Brand Palette ─────────────────────────────────────────── */
+:root {
+    /* Primary: Directus Purple */
+    --cx-primary-50: #f5f0ff;
+    --cx-primary-100: #ede5ff;
+    --cx-primary-200: #dcceff;
+    --cx-primary-300: #c3a6ff;
+    --cx-primary-400: #a574ff;
+    --cx-primary-500: #8844ff;
+    --cx-primary-600: #6644ff;
+    /* ← THE Directus purple */
+    --cx-primary-700: #5c35e8;
+    --cx-primary-800: #4d2bc3;
+    --cx-primary-900: #40259f;
+
+    /* Secondary: Directus Pink */
+    --cx-secondary-500: #f83cb0;
+    --cx-secondary-600: #e02d9b;
+
+    /* Slate Neutrals */
+    --cx-slate-50: #f8fafc;
+    --cx-slate-100: #f1f5f9;
+    --cx-slate-200: #e2e8f0;
+    --cx-slate-300: #cbd5e1;
+    --cx-slate-400: #94a3b8;
+    --cx-slate-500: #64748b;
+    --cx-slate-600: #475569;
+    --cx-slate-700: #334155;
+    --cx-slate-800: #1e293b;
+    --cx-slate-900: #0f172a;
+    --cx-slate-950: #020617;
+
+    /* Code Block: Dark Navy */
+    --cx-code-bg: #172940;
+    --cx-code-border: #1e3a5f;
+
+    /* Typography */
+    --cx-font-heading: 'Poppins', system-ui, sans-serif;
+    --cx-font-body: 'Inter', system-ui, sans-serif;
+    --cx-font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+
+/* ── Starlight Core Overrides ──────────────────────────────── */
+:root {
+    /* Accent color (purple) */
+    --sl-color-accent-low: #2a1a5e;
+    --sl-color-accent: var(--cx-primary-600);
+    --sl-color-accent-high: var(--cx-primary-300);
+
+    /* Typography */
+    --sl-font: var(--cx-font-body);
+    --sl-font-system-mono: var(--cx-font-mono);
+
+    /* Content width */
+    --sl-content-width: 65ch;
+
+    /* Heading sizes */
+    --sl-text-h1: clamp(1.75rem, 4vw, 2.25rem);
+    --sl-text-h2: clamp(1.375rem, 3vw, 1.875rem);
+    --sl-text-h3: clamp(1.125rem, 2.5vw, 1.5rem);
+    --sl-text-h4: 1.125rem;
+    --sl-text-h5: 1rem;
+
+    /* Line heights */
+    --sl-line-height: 1.7;
+    --sl-line-height-headings: 1.3;
+}
+
+/* ── Light Mode ────────────────────────────────────────────── */
+:root[data-theme='light'],
+:root:not([data-theme='dark']) {
+    /* Surfaces */
+    --sl-color-bg: #ffffff;
+    --sl-color-bg-nav: var(--cx-slate-50);
+    --sl-color-bg-sidebar: var(--cx-slate-50);
+    --sl-color-bg-inline-code: var(--cx-slate-100);
+
+    /* Text */
+    --sl-color-text: var(--cx-slate-800);
+    --sl-color-text-accent: var(--cx-primary-600);
+
+    /* Borders */
+    --sl-color-hairline-light: var(--cx-slate-200);
+    --sl-color-hairline: var(--cx-slate-300);
+
+    /* White text on accent backgrounds */
+    --sl-color-white: #ffffff;
+    --sl-color-black: var(--cx-slate-900);
+
+    /* Gray scale for muted text */
+    --sl-color-gray-1: var(--cx-slate-700);
+    --sl-color-gray-2: var(--cx-slate-600);
+    --sl-color-gray-3: var(--cx-slate-500);
+    --sl-color-gray-4: var(--cx-slate-400);
+    --sl-color-gray-5: var(--cx-slate-200);
+    --sl-color-gray-6: var(--cx-slate-100);
+    --sl-color-gray-7: var(--cx-slate-50);
+}
+
+/* ── Dark Mode ─────────────────────────────────────────────── */
+:root[data-theme='dark'] {
+    /* Surfaces */
+    --sl-color-bg: var(--cx-slate-950);
+    --sl-color-bg-nav: var(--cx-slate-900);
+    --sl-color-bg-sidebar: var(--cx-slate-900);
+    --sl-color-bg-inline-code: var(--cx-slate-800);
+
+    /* Text */
+    --sl-color-text: var(--cx-slate-100);
+    --sl-color-text-accent: var(--cx-primary-400);
+
+    /* Borders */
+    --sl-color-hairline-light: var(--cx-slate-800);
+    --sl-color-hairline: var(--cx-slate-700);
+
+    /* Accent adjustments for dark */
+    --sl-color-accent-low: #1a0f3d;
+    --sl-color-accent: var(--cx-primary-500);
+    --sl-color-accent-high: var(--cx-primary-200);
+
+    /* Gray scale */
+    --sl-color-gray-1: var(--cx-slate-200);
+    --sl-color-gray-2: var(--cx-slate-300);
+    --sl-color-gray-3: var(--cx-slate-400);
+    --sl-color-gray-4: var(--cx-slate-500);
+    --sl-color-gray-5: var(--cx-slate-700);
+    --sl-color-gray-6: var(--cx-slate-800);
+    --sl-color-gray-7: var(--cx-slate-900);
+}
+
+/* ── Heading Font Override ─────────────────────────────────── */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.sl-markdown-content h1,
+.sl-markdown-content h2,
+.sl-markdown-content h3,
+.sl-markdown-content h4 {
+    font-family: var(--cx-font-heading);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+}
+
+h1,
+.sl-markdown-content h1 {
+    font-weight: 700;
+    letter-spacing: -0.03em;
+}
+
+/* ── Code Blocks ───────────────────────────────────────────── */
+.sl-markdown-content pre,
+pre.astro-code {
+    background-color: var(--cx-code-bg) !important;
+    border: 1px solid var(--cx-code-border);
+    border-radius: 0.5rem;
+    padding: 1.25rem;
+    font-size: 0.875rem;
+    line-height: 1.7;
+}
+
+.sl-markdown-content pre code {
+    font-family: var(--cx-font-mono);
+    font-size: 0.875rem;
+}
+
+/* Inline code */
+.sl-markdown-content :not(pre)>code {
+    background-color: var(--sl-color-bg-inline-code);
+    padding: 0.15em 0.35em;
+    border-radius: 0.25rem;
+    font-size: 0.875em;
+    font-family: var(--cx-font-mono);
+}
+
+/* ── Tables ────────────────────────────────────────────────── */
+.sl-markdown-content table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    margin: 1.5rem 0;
+}
+
+.sl-markdown-content th {
+    background-color: var(--cx-slate-100);
+    font-weight: 600;
+    text-align: left;
+    padding: 0.75rem 1rem;
+    border-bottom: 2px solid var(--cx-slate-300);
+}
+
+:root[data-theme='dark'] .sl-markdown-content th {
+    background-color: var(--cx-slate-800);
+    border-bottom-color: var(--cx-slate-600);
+}
+
+.sl-markdown-content td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--sl-color-hairline-light);
+    vertical-align: top;
+}
+
+.sl-markdown-content tr:hover td {
+    background-color: var(--cx-slate-50);
+}
+
+:root[data-theme='dark'] .sl-markdown-content tr:hover td {
+    background-color: var(--cx-slate-800);
+}
+
+/* ── Admonitions (Note, Tip, Caution, Danger) ──────────────── */
+.starlight-aside {
+    border-radius: 0.5rem;
+    padding: 1rem 1.25rem;
+    margin: 1.5rem 0;
+    border-left-width: 4px;
+}
+
+.starlight-aside--note {
+    background-color: var(--cx-primary-50);
+    border-left-color: var(--cx-primary-600);
+}
+
+:root[data-theme='dark'] .starlight-aside--note {
+    background-color: rgba(102, 68, 255, 0.08);
+}
+
+.starlight-aside--tip {
+    background-color: #f0fdf4;
+    border-left-color: #16a34a;
+}
+
+:root[data-theme='dark'] .starlight-aside--tip {
+    background-color: rgba(22, 163, 74, 0.08);
+}
+
+.starlight-aside--caution {
+    background-color: #fffbeb;
+    border-left-color: #d97706;
+}
+
+:root[data-theme='dark'] .starlight-aside--caution {
+    background-color: rgba(217, 119, 6, 0.08);
+}
+
+.starlight-aside--danger {
+    background-color: #fef2f2;
+    border-left-color: #dc2626;
+}
+
+:root[data-theme='dark'] .starlight-aside--danger {
+    background-color: rgba(220, 38, 38, 0.08);
+}
+
+/* ── Links ─────────────────────────────────────────────────── */
+.sl-markdown-content a {
+    color: var(--sl-color-text-accent);
+    text-decoration: underline;
+    text-decoration-color: transparent;
+    text-underline-offset: 0.15em;
+    transition: text-decoration-color 0.15s ease;
+}
+
+.sl-markdown-content a:hover {
+    text-decoration-color: var(--sl-color-text-accent);
+}
+
+/* ── Blockquotes ───────────────────────────────────────────── */
+.sl-markdown-content blockquote {
+    border-left: 3px solid var(--cx-primary-300);
+    padding-left: 1rem;
+    margin: 1.5rem 0;
+    color: var(--sl-color-gray-2);
+    font-style: italic;
+}
+
+:root[data-theme='dark'] .sl-markdown-content blockquote {
+    border-left-color: var(--cx-primary-700);
+}
+
+/* ── Lists ─────────────────────────────────────────────────── */
+.sl-markdown-content ul,
+.sl-markdown-content ol {
+    padding-left: 1.5rem;
+    margin: 1rem 0;
+}
+
+.sl-markdown-content li {
+    margin: 0.35rem 0;
+    line-height: 1.7;
+}
+
+.sl-markdown-content li::marker {
+    color: var(--cx-primary-500);
+}
+
+/* ── Sidebar ───────────────────────────────────────────────── */
+nav.sidebar a[aria-current='page'],
+nav.sidebar a[aria-current='true'],
+.sidebar-content a[aria-current='page'],
+[data-current='true'] {
+    color: #ffffff !important;
+    font-weight: 600;
+    border-left-color: var(--cx-primary-600);
+}
+
+:root[data-theme='dark'] nav.sidebar a[aria-current='page'],
+:root[data-theme='dark'] nav.sidebar a[aria-current='true'],
+:root[data-theme='dark'] .sidebar-content a[aria-current='page'],
+:root[data-theme='dark'] [data-current='true'] {
+    color: #ffffff !important;
+    border-left-color: var(--cx-primary-400);
+}
+
+/* ── TOC (Table of Contents) ───────────────────────────────── */
+starlight-toc a[aria-current='true'] {
+    color: var(--cx-primary-600);
+    font-weight: 500;
+}
+
+:root[data-theme='dark'] starlight-toc a[aria-current='true'] {
+    color: var(--cx-primary-400);
+}
+
+/* ── LinkCard Styling ──────────────────────────────────────── */
+.sl-link-card {
+    border-color: var(--cx-slate-200);
+    border-radius: 0.5rem;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sl-link-card:hover {
+    border-color: var(--cx-primary-400);
+    box-shadow: 0 2px 8px rgba(102, 68, 255, 0.1);
+}
+
+:root[data-theme='dark'] .sl-link-card {
+    border-color: var(--cx-slate-700);
+}
+
+:root[data-theme='dark'] .sl-link-card:hover {
+    border-color: var(--cx-primary-500);
+    box-shadow: 0 2px 8px rgba(102, 68, 255, 0.15);
+}
+
+/* ── Tabs ──────────────────────────────────────────────────── */
+starlight-tabs [role='tablist'] {
+    border-bottom-color: var(--cx-slate-200);
+}
+
+:root[data-theme='dark'] starlight-tabs [role='tablist'] {
+    border-bottom-color: var(--cx-slate-700);
+}
+
+starlight-tabs [role='tab'][aria-selected='true'] {
+    color: var(--cx-primary-600);
+    border-bottom-color: var(--cx-primary-600);
+}
+
+:root[data-theme='dark'] starlight-tabs [role='tab'][aria-selected='true'] {
+    color: var(--cx-primary-400);
+    border-bottom-color: var(--cx-primary-400);
+}
+
+/* ── Utility Classes ───────────────────────────────────────── */
+.dx-powered-by {
+    font-size: 0.75rem;
+    color: var(--sl-color-gray-3);
+    text-align: center;
+    padding: 1rem 0;
+    border-top: 1px solid var(--sl-color-hairline-light);
+    margin-top: 3rem;
+}
+
+.dx-ai-ready-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #16a34a;
+    background: #f0fdf4;
+    padding: 0.2rem 0.6rem;
+    border-radius: 9999px;
+    border: 1px solid #bbf7d0;
+}
+
+:root[data-theme='dark'] .dx-ai-ready-badge {
+    background: rgba(22, 163, 74, 0.1);
+    border-color: rgba(22, 163, 74, 0.3);
+}
+
+.dx-breadcrumb {
+    font-size: 0.8rem;
+    color: var(--sl-color-gray-3);
+    margin-bottom: 0.5rem;
+}
+
+.dx-breadcrumb a {
+    color: var(--sl-color-gray-3);
+    text-decoration: none;
+}
+
+.dx-breadcrumb a:hover {
+    color: var(--sl-color-text-accent);
+}
+
+/* Fix: sidebar group labels — ensure readable text */
+.sidebar-content .top-level>li>details>summary,
+.sidebar-content .top-level>li>a,
+nav.sidebar summary span,
+nav.sidebar .group-label {
+    color: var(--sl-color-text) !important;
+}
+
+/* Fix: heading anchor links — hidden until hover */
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6) a.anchor-link,
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6) a[aria-hidden] {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    text-decoration: none;
+}
+
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6):hover a.anchor-link,
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6):hover a[aria-hidden] {
+    opacity: 0.5;
+}
+
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6) a.anchor-link:hover,
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6) a[aria-hidden]:hover {
+    opacity: 1;
+}
+
+/* ── Responsive ────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .sl-markdown-content pre {
+        font-size: 0.8rem;
+        padding: 1rem;
+    }
+
+    .sl-markdown-content table {
+        font-size: 0.8rem;
+    }
+
+    .sl-markdown-content th,
+    .sl-markdown-content td {
+        padding: 0.5rem 0.75rem;
+    }
+}
+
+/* Fix: nav title clipping — ensure left padding */
+.site-title {
+    padding-left: 0.5rem;
+}
+
+/* Fix: hero section styling */
+.hero {
+    padding: 3rem 1rem;
+}

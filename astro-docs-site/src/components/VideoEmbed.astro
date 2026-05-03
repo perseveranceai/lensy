@@ -1,0 +1,19 @@
+---
+/**
+ * VideoEmbed.astro — Responsive Vimeo video embed.
+ * Used by extensions/overview.mdx only.
+ */
+interface Props {
+  videoId: string;
+}
+const { videoId } = Astro.props;
+---
+<div class="video-wrapper" style="position:relative;padding-bottom:56.25%;height:0;margin:1.5rem 0;">
+  <iframe
+    src={`https://player.vimeo.com/video/${videoId}`}
+    style="position:absolute;top:0;left:0;width:100%;height:100%;border-radius:0.5rem;"
+    frameborder="0"
+    allow="autoplay; fullscreen; picture-in-picture"
+    allowfullscreen
+  ></iframe>
+</div>

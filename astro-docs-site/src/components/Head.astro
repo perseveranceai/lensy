@@ -1,0 +1,45 @@
+---
+/**
+ * Head.astro — Starlight Head component override.
+ * Injects AI-readiness metadata from frontmatter into <head>.
+ *
+ * Frontmatter fields consumed:
+ *   canonical     → <link rel="canonical">
+ *   markdownUrl   → <link rel="alternate" type="text/markdown">
+ *   jsonLd        → <script type="application/ld+json"> (handles arrays by emitting separate tags)
+ *   aiDescription → <meta name="description">
+ */
+const route = Astro.locals.starlightRoute;
+const { head } = route;
+const frontmatter = route.entry?.data || {};
+
+// Parse JSON-LD: if it's an array, emit one <script> per item
+// This ensures Lensy (and other parsers) can detect each schema type individually
+let jsonLdItems: string[] = [];
+if (frontmatter.jsonLd) {
+  try {
+    const parsed = JSON.parse(frontmatter.jsonLd);
+    if (Array.isArray(parsed)) {
+      jsonLdItems = parsed.map((item: any) => JSON.stringify(item));
+    } else {
+      jsonLdItems = [frontmatter.jsonLd];
+    }
+  } catch {
+    jsonLdItems = [frontmatter.jsonLd];
+  }
+}
+---
+{head.map(({ tag: Tag, attrs, content }) => <Tag {...attrs} set:html={content} />)}
+
+{frontmatter.canonical && (
+  <link rel="canonical" href={frontmatter.canonical} />
+)}
+{frontmatter.markdownUrl && (
+  <link rel="alternate" type="text/markdown" href={frontmatter.markdownUrl} />
+)}
+{jsonLdItems.map((item) => (
+  <script type="application/ld+json" set:html={item} />
+))}
+{frontmatter.aiDescription && (
+  <meta name="description" content={frontmatter.aiDescription} />
+)}

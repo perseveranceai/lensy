@@ -1,0 +1,202 @@
+---
+title: Overview
+headline: Getting Started
+description: Learn about the Directus Data Engine and Studio, when to use it, and how it works.
+navigation:
+  title: Overview
+markdownUrl: /md/getting-started/overview.md
+jsonLd: |
+  [{"@context":"https://schema.org","@type":"TechArticle","headline":"Overview","description":"Learn about the Directus Data Engine and Studio, when to use it, and how it works.","url":"https://d15fvxnndct814.cloudfront.net/getting-started/overview/","author":{"@type":"Organization","name":"Directus"},"publisher":{"@type":"Organization","name":"PerseveranceAI"},"datePublished":"2026-04-19"},{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Docs","item":"https://d15fvxnndct814.cloudfront.net/"},{"@type":"ListItem","position":2,"name":"Getting Started","item":"https://d15fvxnndct814.cloudfront.net/getting-started/"},{"@type":"ListItem","position":3,"name":"Overview","item":"https://d15fvxnndct814.cloudfront.net/getting-started/overview/"}]}]
+---
+
+Directus is a backend for building your projects. Connect it to your database, asset storage, and external services, and immediately receive rich developer tooling (Data Engine) and a comprehensive web application (Data Studio) to work with your data. Granular access control means users can only see, interact with, and create the data their role allows.
+
+Directus wraps your existing SQL database — it does not impose a proprietary data format or lock you into a custom schema. Your data stays in standard tables and columns, queryable directly at any time.
+
+## How It Works
+
+Directus sits between your database and your applications. When you connect a database, Directus introspects the schema and automatically generates a REST and GraphQL API for every table. You can then use the Data Studio (a web UI) to manage content, configure permissions, set up flows (automation), and invite collaborators — all without writing backend code.
+
+The two main surfaces are:
+
+- **Data Engine** — the headless API layer. Exposes your data over REST and GraphQL, handles authentication, enforces access control, and runs server-side logic via Flows and Extensions.
+- **Data Studio** — the visual web application. Lets non-technical users browse and edit data, manage files, configure settings, and monitor activity.
+
+Both surfaces are available whether you use Directus Cloud or self-host.
+
+### REST and GraphQL APIs
+
+Every collection (database table) you create or connect is immediately accessible via a predictable REST endpoint and a GraphQL schema. For example, if you have a table called `articles`, the following requests work out of the box:
+
+```bash
+# Fetch all items in the articles collection
+curl https://your-directus-project.directus.app/items/articles \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+```bash
+# Fetch a single article by ID
+curl https://your-directus-project.directus.app/items/articles/1 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+```graphql
+# Equivalent GraphQL query
+query {
+  articles {
+    id
+    title
+    status
+    date_published
+  }
+}
+```
+
+### Authentication
+
+Directus uses token-based authentication. You can authenticate with an email and password to receive a short-lived access token and a refresh token:
+
+```bash
+curl -X POST https://your-directus-project.directus.app/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "admin@example.com",
+    "password": "your-password"
+  }'
+```
+
+The response includes `access_token`, `refresh_token`, and `expires` values. Pass the access token as a `Bearer` header on subsequent requests.
+
+### Access Control
+
+Permissions are configured per role, per collection, and per action (create, read, update, delete, share). You can also apply field-level restrictions and row-level filters — for example, allowing a user to read only rows where `owner == $CURRENT_USER`.
+
+## Choose How to Run Directus
+
+You can use Directus Cloud for a fully managed project or self-host with Docker on your own infrastructure.
+
+## Directus Cloud
+
+Directus Cloud is a fully managed service. Cloud architecture can be complicated and resource-intensive, so Directus Cloud provides scalable, optimized storage and infrastructure, and automatic updates so you can focus on building your project.
+
+With your Directus Cloud account, you can set up teams to organize projects and billing. You'll be able to get a project running in about 90 seconds. Directus Cloud projects scale automatically to improve reliability, even with unexpected peaks in traffic.
+
+### When to Choose Cloud
+
+- You want the fastest path from zero to a running API.
+- You do not want to manage infrastructure, SSL certificates, or database backups.
+- You need automatic scaling for variable or unpredictable traffic.
+- You want guaranteed compatibility with the latest Directus releases.
+
+## Self-Hosted
+
+If you want to run Directus on your own infrastructure, start with [Create a project](/getting-started/create-a-project).
+
+Self-hosting uses Docker. A minimal `docker-compose.yml` for a local PostgreSQL setup looks like this:
+
+```yaml
+version: "3"
+services:
+  database:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: directus
+      POSTGRES_PASSWORD: directus
+      POSTGRES_DB: directus
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  directus:
+    image: directus/directus:latest
+    ports:
+      - "8055:8055"
+    depends_on:
+      - database
+    environment:
+      SECRET: "replace-with-a-secure-random-string"
+      DB_CLIENT: "pg"
+      DB_HOST: "database"
+      DB_PORT: "5432"
+      DB_DATABASE: "directus"
+      DB_USER: "directus"
+      DB_PASSWORD: "directus"
+      ADMIN_EMAIL: "admin@example.com"
+      ADMIN_PASSWORD: "change-me"
+
+volumes:
+  db_data:
+```
+
+Run it with:
+
+```bash
+docker compose up -d
+```
+
+Directus will be available at `http://localhost:8055`. The Data Studio is accessible in your browser at the same address.
+
+### When to Choose Self-Hosted
+
+- You need to run Directus inside a private network or VPC.
+- You have compliance requirements that prevent data leaving your infrastructure.
+- You want full control over database configuration, backups, and upgrades.
+- You are integrating Directus with an existing database that already contains data.
+
+See all deployment options (Cloud, Docker, and platform-specific guides) in the [self-hosting tutorials](/tutorials/self-hosting).
+
+Need advanced configuration, unlimited scalability, and dedicated support? **[Contact us to check out Directus Enterprise Cloud](https://directus.io/contact).**
+
+## Key Concepts to Know Before You Start
+
+### Collections and Fields
+
+A **collection** maps to a database table. A **field** maps to a column. When you create a collection in the Data Studio, Directus creates the underlying table. When you connect an existing database, Directus reads the existing tables and exposes them as collections automatically.
+
+### Flows (Automation)
+
+Flows are Directus's built-in automation system. You can trigger logic on events (e.g., when an item is created), on a schedule (cron), or via a webhook. Each flow is a chain of operations — send an email, call an external API, transform data, run a custom script — configured visually in the Studio or defined in code via extensions.
+
+### Extensions
+
+Directus is extensible at every layer. You can write custom:
+
+- **Endpoints** — additional REST routes
+- **Hooks** — event listeners that run server-side logic
+- **Operations** — custom steps inside Flows
+- **Interfaces, Displays, Panels, Modules** — custom UI components in the Data Studio
+
+Extensions are Node.js packages dropped into the `extensions/` directory (self-hosted) or uploaded via the Cloud dashboard.
+
+## Troubleshooting
+
+### Cannot connect to the database on startup
+
+Check that the `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USER`, and `DB_PASSWORD` environment variables are all set correctly. When using Docker Compose, `DB_HOST` should be the service name (e.g., `database`), not `localhost`.
+
+### 403 Forbidden on API requests
+
+A 403 response usually means the role associated with your token does not have read permission on that collection. Open the Data Studio, go to **Settings → Access Control**, select the relevant role, and verify that the collection has the correct permissions enabled.
+
+### Admin password not accepted after first run
+
+The `ADMIN_EMAIL` and `ADMIN_PASSWORD` environment variables are only applied on the very first run when the database is empty. If you need to reset the admin password after initial setup, use the Directus CLI:
+
+```bash
+npx directus users passwd --email admin@example.com --password new-password
+```
+
+Or, inside a running Docker container:
+
+```bash
+docker exec -it <container_name> npx directus users passwd \
+  --email admin@example.com \
+  --password new-password
+```
+
+### Self-hosted container exits immediately
+
+Run `docker compose logs directus` to inspect the startup output. Common causes are missing required environment variables (especially `SECRET` and `DB_CLIENT`) or a database that is not yet ready to accept connections. Adding a `healthcheck` to the database service and a `depends_on` condition in the Directus service resolves most race-condition startup failures.
+
+### Rate limits on Directus Cloud
+
+Directus Cloud enforces rate limits on API requests. If you receive `429 Too Many Requests`, implement exponential backoff in your client or review your request patterns to batch reads where possible.
