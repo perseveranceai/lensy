@@ -6279,7 +6279,7 @@ function LensyApp() {
                                                                             {item.signal?.note && (
                                                                                 <Typography variant="caption" sx={{ display: 'block', color: '#d97706', fontSize: '0.65rem', lineHeight: 1.2, mt: 0.2, fontStyle: 'italic' }}>{item.signal.note}</Typography>
                                                                             )}
-                                                                            {item.waitlist && (
+                                                                            {item.waitlist && !BRAND_NEUTRAL && (
                                                                                 <Typography variant="caption" component="a" href="/contact?ref=llmstxt" sx={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.7rem', fontWeight: 600, mt: 0.3, textDecoration: 'underline', '&:hover': { color: 'var(--text-primary)' } }}>
                                                                                     {item.waitlistLabel || 'We can help you generate one →'}
                                                                                 </Typography>
