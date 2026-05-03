@@ -496,11 +496,11 @@ function ConsoleLayout() {
                         flexWrap: 'wrap',
                         justifyContent: 'center',
                     }}>
-                        <span style={{ fontFamily: 'var(--font-sans)', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                            {BRAND_NEUTRAL
-                                ? `© ${new Date().getFullYear()} Lensy. Open beta.`
-                                : `© ${new Date().getFullYear()} Perseverance AI. All rights reserved.`}
-                        </span>
+                        {!BRAND_NEUTRAL && (
+                            <span style={{ fontFamily: 'var(--font-sans)', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                {`© ${new Date().getFullYear()} Perseverance AI. All rights reserved.`}
+                            </span>
+                        )}
                         {!BRAND_NEUTRAL && (
                             <>
                                 <a href="/terms" onClick={(e) => { e.preventDefault(); navigate('/terms'); }}
