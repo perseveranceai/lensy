@@ -22,6 +22,10 @@ import { checkAIReadinessTool } from './tools/check-ai-readiness';
 import { checkAIDiscoverabilityTool } from './tools/check-ai-discoverability';
 import { generateReportTool } from './tools/generate-report';
 
+// SPA headless rendering fallback
+import { fetchRendered } from './renderHeadless';
+import { SPA_USER_MESSAGE } from './messages';
+
 // DynamoDB for audit log + usage refund
 import { DynamoDBClient, PutItemCommand, UpdateItemCommand } from '@aws-sdk/client-dynamodb';
 const dynamoClient = new DynamoDBClient({});
@@ -293,6 +297,51 @@ function scoreDocConfidence(html: string, url: string): DocConfidence {
     return { isDoc, confidence, signals };
 }
 
+// ─── SPA Shell Detection ──────────────────────────────────────────────────────
+
+interface SPAShellSignal {
+    isSPA: boolean;
+    reason?: string;
+}
+
+/**
+ * Detect whether the fetched HTML is a JavaScript SPA shell with no rendered content.
+ *
+ * Heuristic: small HTML + known SPA mount-point markers = SPA shell.
+ * A real doc page will have at least 5 KB of HTML and/or 50+ visible words.
+ */
+function detectSPAShell(html: string): SPAShellSignal {
+    const htmlSize = Buffer.byteLength(html, 'utf-8');
+
+    // Count rough visible word count by stripping tags
+    const stripped = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    const visibleWordCount = stripped.split(' ').filter(w => w.length > 2).length;
+
+    // If the page has substantial content, it's not a shell
+    if (htmlSize >= 5000 || visibleWordCount >= 50) {
+        return { isSPA: false };
+    }
+
+    const spaMarkers: [RegExp, string][] = [
+        [/<div\s+id=["']root["']/i, 'React root div'],
+        [/<div\s+id=["']__next["']/i, 'Next.js __next div'],
+        [/<div\s+id=["']app["']/i, 'Vue/generic app div'],
+        [/<noscript>[^<]*JavaScript/i, 'noscript JS warning'],
+        [/<script[^>]+src=["'][^"']*\.js["']/i, 'JS bundle with no rendered content'],
+    ];
+
+    for (const [re, label] of spaMarkers) {
+        if (re.test(html)) {
+            return {
+                isSPA: true,
+                reason: `htmlSize=${htmlSize}B, visibleWords=${visibleWordCount}, marker="${label}"`,
+            };
+        }
+    }
+
+    return { isSPA: false };
+}
+
 // ─── Public API ──────────────────────────────────────────────
 
 export interface AgentRunInput {
@@ -372,6 +421,79 @@ export async function runAgent(input: AgentRunInput): Promise<string> {
             }
         } catch (e) {
             console.warn(`[Pipeline] Prefetch failed:`, (e as Error).message);
+        }
+
+        if (!prefetchedHtml) {
+            // ── SPA / JS-rendered page fallback ──
+            // Before giving up entirely, try Browserless headless rendering.
+            // This recovers pages that return a near-empty HTML shell on static fetch.
+            const headlessEnabled = process.env.LENSY_HEADLESS_FALLBACK_ENABLED === 'true';
+            if (headlessEnabled) {
+                console.log(JSON.stringify({ event: 'static-fetch-empty-attempting-render', url }));
+                const rendered = await fetchRendered(url);
+                if (rendered.ok && rendered.html) {
+                    console.log(JSON.stringify({
+                        event: 'render-success-after-empty-static',
+                        url,
+                        durationMs: rendered.durationMs,
+                        renderedSize: Buffer.byteLength(rendered.html, 'utf-8'),
+                    }));
+                    prefetchedHtml = rendered.html;
+                } else {
+                    console.log(JSON.stringify({ event: 'render-failure', url, error: rendered.error, durationMs: rendered.durationMs }));
+                }
+            }
+        }
+
+        // ── SPA shell detection — retry with Browserless if static fetch returned a shell ──
+        if (prefetchedHtml) {
+            const spaSignal = detectSPAShell(prefetchedHtml);
+            if (spaSignal.isSPA) {
+                const headlessEnabled = process.env.LENSY_HEADLESS_FALLBACK_ENABLED === 'true';
+                if (headlessEnabled) {
+                    console.log(JSON.stringify({ event: 'spa-detected-attempting-render', url, reason: spaSignal.reason }));
+                    const rendered = await fetchRendered(url);
+                    if (rendered.ok && rendered.html) {
+                        console.log(JSON.stringify({
+                            event: 'render-success',
+                            url,
+                            durationMs: rendered.durationMs,
+                            renderedSize: Buffer.byteLength(rendered.html, 'utf-8'),
+                        }));
+                        prefetchedHtml = rendered.html;
+                        // Fall through — rendered HTML continues down the normal pipeline
+                    } else {
+                        console.log(JSON.stringify({ event: 'render-failure', url, error: rendered.error, durationMs: rendered.durationMs }));
+                        await progress.error(SPA_USER_MESSAGE);
+                        await writeSessionArtifact(sessionId, 'status.json', {
+                            status: 'rejected',
+                            reason: 'spa-render-failed',
+                            completedAt: new Date().toISOString(),
+                        });
+                        await writeAuditLog(sessionId, url, 'rejected', {
+                            reason: 'spa-render-failed',
+                            renderError: rendered.error ?? 'unknown',
+                            renderDurationMs: String(rendered.durationMs),
+                        });
+                        if (ipHash) await refundUsage(ipHash);
+                        return JSON.stringify({ success: false, error: 'spa-render-failed', message: SPA_USER_MESSAGE });
+                    }
+                } else {
+                    // Feature flag off — friendly message, same UX as before
+                    await progress.error(SPA_USER_MESSAGE);
+                    await writeSessionArtifact(sessionId, 'status.json', {
+                        status: 'rejected',
+                        reason: 'spa-shell-detected',
+                        completedAt: new Date().toISOString(),
+                    });
+                    await writeAuditLog(sessionId, url, 'rejected', {
+                        reason: 'spa-shell-detected',
+                        spaDetail: spaSignal.reason ?? '',
+                    });
+                    if (ipHash) await refundUsage(ipHash);
+                    return JSON.stringify({ success: false, error: 'spa-shell-detected', message: SPA_USER_MESSAGE });
+                }
+            }
         }
 
         if (!prefetchedHtml) {

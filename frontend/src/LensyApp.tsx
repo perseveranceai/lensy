@@ -825,6 +825,9 @@ function LensyApp() {
                             'unable to access',
                             'unable to fetch',
                             'does not appear to be',
+                            'loads its content with JavaScript',
+                            'spa-shell-detected',
+                            'spa-render-failed',
                         ];
                         const isTerminal = terminalPatterns.some(p => message.message?.includes(p));
                         if (isTerminal) {
@@ -5061,53 +5064,61 @@ function LensyApp() {
                     {analysisState.status === 'error' && analysisState.sourceMode !== 'github-issues' && (() => {
                         const error = analysisState.error || '';
                         // Classify error into branded messaging
-                        const errorConfig = error.includes('does not appear to be') || error.includes('not a documentation page') || error.includes('non-documentation-page')
+                        const errorConfig = error.includes('spa-shell-detected') || error.includes('spa-render-failed') || error.includes('loads its content with JavaScript')
                             ? {
-                                title: "This page doesn't look like technical documentation",
-                                description: 'Lensy is designed for developer docs, API references, SDK guides, and technical tutorials. Try entering a specific documentation page URL instead.',
+                                title: 'This page requires JavaScript to render',
+                                description: 'This page loads its content with JavaScript, so we\'re seeing an empty shell rather than your docs. Try a deep-link sub-page that\'s pre-rendered or static. Automatic JavaScript rendering is coming soon.',
                                 showUrl: true,
                                 actionLabel: 'Try another URL',
                                 actionType: 'reset' as const,
                             }
-                            : error.includes('unreachable') || error.includes('unable to access') || error.includes('unable to fetch')
+                            : error.includes('does not appear to be') || error.includes('not a documentation page') || error.includes('non-documentation-page')
                                 ? {
-                                    title: 'This URL could not be reached',
-                                    description: 'Lensy was unable to fetch content from this page. This can happen if the URL is incorrect, the site is down, or it blocks automated access. Double-check the URL and try again.',
+                                    title: "This page doesn't look like technical documentation",
+                                    description: 'Lensy is designed for developer docs, API references, SDK guides, and technical tutorials. Try entering a specific documentation page URL instead.',
                                     showUrl: true,
-                                    actionLabel: 'Try again',
+                                    actionLabel: 'Try another URL',
                                     actionType: 'reset' as const,
                                 }
-                                : error.includes('timed out') || error.includes('timeout')
+                                : error.includes('unreachable') || error.includes('unable to access') || error.includes('unable to fetch')
                                     ? {
-                                        title: 'Analysis timed out',
-                                        description: 'The analysis took longer than expected. This can happen with very large pages or slow-responding servers. You can try again — it often works on the second attempt.',
-                                        showUrl: false,
-                                        actionLabel: 'Retry',
-                                        actionType: 'retry' as const,
+                                        title: 'This URL could not be reached',
+                                        description: 'Lensy was unable to fetch content from this page. This can happen if the URL is incorrect, the site is down, or it blocks automated access. Double-check the URL and try again.',
+                                        showUrl: true,
+                                        actionLabel: 'Try again',
+                                        actionType: 'reset' as const,
                                     }
-                                    : error.includes('rate') || error.includes('throttl')
+                                    : error.includes('timed out') || error.includes('timeout')
                                         ? {
-                                            title: 'Too many requests',
-                                            description: 'Please wait a moment before running another analysis.',
+                                            title: 'Analysis timed out',
+                                            description: 'The analysis took longer than expected. This can happen with very large pages or slow-responding servers. You can try again — it often works on the second attempt.',
                                             showUrl: false,
-                                            actionLabel: 'Try again',
-                                            actionType: 'reset' as const,
+                                            actionLabel: 'Retry',
+                                            actionType: 'retry' as const,
                                         }
-                                        : error.includes('Please enter') || error.includes('Please select') || error.includes('Invalid')
+                                        : error.includes('rate') || error.includes('throttl')
                                             ? {
-                                                title: error,
-                                                description: '',
-                                                showUrl: false,
-                                                actionLabel: '',
-                                                actionType: 'none' as const,
-                                            }
-                                            : {
-                                                title: 'Something went wrong',
-                                                description: error || 'An unexpected error occurred during analysis. Please try again or reach out if the issue persists.',
+                                                title: 'Too many requests',
+                                                description: 'Please wait a moment before running another analysis.',
                                                 showUrl: false,
                                                 actionLabel: 'Try again',
                                                 actionType: 'reset' as const,
-                                            };
+                                            }
+                                            : error.includes('Please enter') || error.includes('Please select') || error.includes('Invalid')
+                                                ? {
+                                                    title: error,
+                                                    description: '',
+                                                    showUrl: false,
+                                                    actionLabel: '',
+                                                    actionType: 'none' as const,
+                                                }
+                                                : {
+                                                    title: 'Something went wrong',
+                                                    description: error || 'An unexpected error occurred during analysis. Please try again or reach out if the issue persists.',
+                                                    showUrl: false,
+                                                    actionLabel: 'Try again',
+                                                    actionType: 'reset' as const,
+                                                };
 
                         // Validation errors — compact inline style
                         if (errorConfig.actionType === 'none') {

@@ -272,6 +272,10 @@ export class LensyStack extends cdk.Stack {
                 LANGSMITH_API_KEY: process.env.LANGSMITH_API_KEY || '',
                 PERPLEXITY_API_KEY: process.env.PERPLEXITY_API_KEY || '',
                 DEPLOY_VERSION: '2026-03-21-v10-ui-restructure',
+                // Browserless headless rendering fallback for SPA docs
+                BROWSERLESS_API_KEY: process.env.BROWSERLESS_API_KEY || '',
+                BROWSERLESS_ENDPOINT: process.env.BROWSERLESS_ENDPOINT || 'https://chrome.browserless.io',
+                LENSY_HEADLESS_FALLBACK_ENABLED: process.env.LENSY_HEADLESS_FALLBACK_ENABLED || 'false',
             }
         });
         analysisBucket.grantReadWrite(agentHandler);
