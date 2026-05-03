@@ -116,11 +116,24 @@ exports.generateReportTool = (0, tools_1.tool)(async (input) => {
                 { name: 'MCP Config', signal: detection.site.mcpJson },
             ].filter(s => s.signal.status === 'experimental');
             for (const exp of experimentalSignals) {
+                const descriptions = {
+                    'AGENTS.md': {
+                        issue: 'AGENTS.md detected — this file tells AI coding agents what your site does and how to interact with it',
+                        fix: 'AGENTS.md is an emerging standard that helps AI coding assistants (Cursor, Copilot, Claude Code) understand your site\'s capabilities, available APIs, and preferred interaction patterns. Think of it as a README specifically for AI agents. While not yet scored, maintaining it helps AI tools work more effectively with your documentation.',
+                    },
+                    'MCP Config': {
+                        issue: 'MCP Config detected — this file enables AI tools to connect to your site as a data source',
+                        fix: 'MCP (Model Context Protocol) Config is an emerging standard that lets AI-powered IDEs and tools connect directly to your documentation as a structured data source. It defines available tools, resources, and endpoints that AI agents can call programmatically. While not yet scored, it represents the next generation of AI-documentation interoperability.',
+                    },
+                };
+                const desc = descriptions[exp.name] || {
+                    issue: `${exp.name} detected — emerging standard`,
+                    fix: `Your site has a ${exp.name} file, which is an emerging standard for AI agent interoperability. While not yet scored, this shows forward-thinking adoption. Keep it maintained as the standard evolves.`,
+                };
                 bestPractices.push({
                     category: 'Discoverability',
                     priority: 'best-practice',
-                    issue: `${exp.name} detected — emerging standard`,
-                    fix: `Your site has a ${exp.name} file, which is an emerging standard for AI agent interoperability. While not yet scored, this shows forward-thinking adoption. Keep it maintained as the standard evolves.`,
+                    ...desc,
                 });
             }
             // llms.txt verified with note about hint URL mismatch for llms-full.txt
