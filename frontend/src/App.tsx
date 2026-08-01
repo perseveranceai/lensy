@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import Login from './Login';
 import {
     Container,
     Paper,
@@ -307,6 +309,17 @@ interface AnalysisState {
 
 const API_BASE_URL = 'https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com';
 const WEBSOCKET_URL = 'wss://g2l57hb9ak.execute-api.us-east-1.amazonaws.com/prod';
+
+const isAuthenticated = (): boolean => {
+    const cookies = document.cookie.split(';');
+    for (const cookie of cookies) {
+        const [name, value] = cookie.trim().split('=');
+        if (name === 'lensy_access_token' && value) {
+            return true;
+        }
+    }
+    return false;
+};
 
 function App() {
     const [url, setUrl] = useState('');
@@ -1495,1128 +1508,1142 @@ function App() {
     };
 
     return (
-        <div className="App">
-            <AppBar position="static" elevation={0}>
-                <Toolbar>
-                    <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 1 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', mr: 2 }}>
-                            <Box sx={{
-                                height: 56,
-                                width: 56,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                overflow: 'hidden',
-                                borderRadius: '10px',
-                                border: '1px solid rgba(255,255,255,0.2)',
-                                bgcolor: 'rgba(255,255,255,0.1)',
-                                boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
-                            }}>
-                                <img src="/logo.png" alt="Perseverance AI Logo" style={{ height: '130%', width: 'auto', objectFit: 'cover' }} />
-                            </Box>
-                        </Box>
-                        <Typography variant="h6" component="div" sx={{ fontWeight: 700, letterSpacing: '-0.01em' }}>
-                            Perseverance AI
-                        </Typography>
-                    </Box>
-                </Toolbar>
-            </AppBar>
-
-            <Container maxWidth="lg" sx={{ py: 4 }}>
-                <Typography variant="h3" component="h1" gutterBottom align="center" className="hero-title" sx={{ fontWeight: 700, mb: 1 }}>
-                    Lensy Documentation Auditor
-                </Typography>
-                <Typography variant="body1" align="center" sx={{ color: 'text.secondary', mb: 4 }}>
-                    By Perseverance AI — Stop shipping stale docs. Keep your docs as fresh as your code.
-                </Typography>
-
-                <Paper sx={{ p: 4, mb: 4 }}>
-                    <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
-                        <Chip
-                            label="Doc mode"
-                            onClick={() => { setSelectedMode('doc'); setManualModeOverride('doc'); }}
-                            color={selectedMode === 'doc' ? 'primary' : 'default'}
-                            variant={selectedMode === 'doc' ? 'filled' : 'outlined'}
-                            sx={{ fontWeight: 600 }}
-                        />
-                    </Box>
-
-                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
-                        <Box sx={{ flexGrow: 1 }}>
-                            {selectedMode === 'issue-discovery' ? (
-                                <>
-                                    <TextField
-                                        fullWidth
-                                        label="Company Domain (e.g. stripe.com)"
-                                        variant="outlined"
-                                        value={companyDomain}
-                                        onChange={(e) => {
-                                            setCompanyDomain(e.target.value);
-                                            if (discoveredIssues.length > 0) {
-                                                setDiscoveredIssues([]);
-                                                setSelectedIssues([]);
-                                            }
-                                        }}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter' || e.key === 'Tab') {
-                                                if (companyDomain.trim().length > 3) {
-                                                    searchForDeveloperIssues(companyDomain.trim());
-                                                }
-                                            }
-                                        }}
-                                        onBlur={() => {
-                                            if (companyDomain.trim().length > 3) {
-                                                searchForDeveloperIssues(companyDomain.trim());
-                                            }
-                                        }}
-                                        placeholder="resend.com, liveblocks.io, or docs.knock.app"
-                                        disabled={analysisState.status === 'analyzing'}
-                                        helperText="Domain to investigate"
-                                    />
-
-                                    {isSearchingIssues && (
-                                        <Box sx={{ display: 'flex', alignItems: 'center', mt: 2, mb: 1 }}>
-                                            <CircularProgress size={16} sx={{ mr: 1.5 }} />
-                                            <Typography variant="caption" color="text.secondary">
-                                                Searching for developer complaints online...
-                                            </Typography>
-                                        </Box>
-                                    )}
-
-                                    {discoveredIssues.length > 0 && (
-                                        <Box sx={{ mt: 3, mb: 1 }}>
-                                            <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 700, color: 'var(--text-primary)' }}>
-                                                Top Issues Found ({discoveredIssues.length}) — Select to analyze:
-                                            </Typography>
-                                            <Box sx={{ border: '1px solid', borderColor: 'var(--border-subtle)', borderRadius: 2, overflow: 'hidden' }}>
-                                                {discoveredIssues.map((issue, index) => (
-                                                    <Box
-                                                        key={issue.id}
-                                                        sx={{
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            p: 1.5,
-                                                            borderBottom: index < discoveredIssues.length - 1 ? '1px solid' : 'none',
-                                                            borderBottomColor: 'var(--border-subtle)',
-                                                            bgcolor: selectedIssues.includes(issue.id) ? 'rgba(59, 130, 246, 0.05)' : 'transparent',
-                                                            '&:hover': {
-                                                                bgcolor: 'rgba(255, 255, 255, 0.02)',
-                                                            },
-                                                            cursor: 'pointer',
-                                                            transition: 'all 0.2s'
-                                                        }}
-                                                        onClick={() => {
-                                                            if (selectedIssues.includes(issue.id)) {
-                                                                setSelectedIssues(selectedIssues.filter(id => id !== issue.id));
-                                                            } else {
-                                                                setSelectedIssues([...selectedIssues, issue.id]);
-                                                            }
-                                                        }}
-                                                    >
-                                                        <Checkbox
-                                                            checked={selectedIssues.includes(issue.id)}
-                                                            disabled={analysisState.status === 'analyzing'}
-                                                            size="small"
-                                                            sx={{ mr: 1 }}
-                                                        />
-                                                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
-                                                                <Typography variant="body2" sx={{ fontWeight: 600, flex: 1, fontSize: '0.875rem' }}>
-                                                                    {issue.title}
-                                                                </Typography>
-                                                                <Chip
-                                                                    label={`${issue.frequency}`}
-                                                                    size="small"
-                                                                    sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }}
-                                                                />
-                                                            </Box>
-                                                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.75rem' }}>
-                                                                {issue.description}
-                                                            </Typography>
-                                                        </Box>
-                                                    </Box>
-                                                ))}
+        <BrowserRouter>
+            <Routes>
+                <Route path="/login" element={<Login />} />
+                <Route
+                    path="/*"
+                    element={
+                        isAuthenticated() ? (
+                            <div className="App">
+                                <AppBar position="static" elevation={0}>
+                                    <Toolbar>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 1 }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', mr: 2 }}>
+                                                <Box sx={{
+                                                    height: 56,
+                                                    width: 56,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    overflow: 'hidden',
+                                                    borderRadius: '10px',
+                                                    border: '1px solid rgba(255,255,255,0.2)',
+                                                    bgcolor: 'rgba(255,255,255,0.1)',
+                                                    boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+                                                }}>
+                                                    <img src="/logo.png" alt="Perseverance AI Logo" style={{ height: '130%', width: 'auto', objectFit: 'cover' }} />
+                                                </Box>
                                             </Box>
+                                            <Typography variant="h6" component="div" sx={{ fontWeight: 700, letterSpacing: '-0.01em' }}>
+                                                Perseverance AI
+                                            </Typography>
                                         </Box>
-                                    )}
-                                </>
-                            ) : (
-                                <TextField
-                                    fullWidth
-                                    label={selectedMode === 'sitemap' ? "Sitemap URL" : "Documentation URL"}
-                                    variant="outlined"
-                                    value={url}
-                                    onChange={(e) => setUrl(e.target.value)}
-                                    placeholder={selectedMode === 'sitemap' ? "https://example.com/sitemap.xml" : "https://docs.example.com/getting-started"}
-                                    disabled={analysisState.status === 'analyzing'}
-                                />
-                            )}
-                        </Box>
+                                    </Toolbar>
+                                </AppBar>
 
-                        <Button
-                            variant="contained"
-                            onClick={handleAnalyze}
-                            disabled={analysisState.status === 'analyzing'}
-                            sx={{
-                                height: 56,
-                                minWidth: 120,
-                                px: 4,
-                                boxShadow: '0 0 20px rgba(59, 130, 246, 0.15)',
-                                '&:hover': {
-                                    boxShadow: '0 0 30px rgba(59, 130, 246, 0.25)',
-                                }
-                            }}
-                        >
-                            {analysisState.status === 'analyzing' ? (
-                                <CircularProgress size={20} color="inherit" />
-                            ) : analysisState.status === 'generating' ? (
-                                'Generating...'
-                            ) : analysisState.status === 'applying' ? (
-                                'Applying...'
-                            ) : (fixSuccessMessage || (!analysisState.report && currentSessionId)) ? (
-                                'Re-scan'
-                            ) : (
-                                'Start'
-                            )}
-                        </Button>
-                    </Box>
+                                <Container maxWidth="lg" sx={{ py: 4 }}>
+                                    <Typography variant="h3" component="h1" gutterBottom align="center" className="hero-title" sx={{ fontWeight: 700, mb: 1 }}>
+                                        Lensy Documentation Auditor
+                                    </Typography>
+                                    <Typography variant="body1" align="center" sx={{ color: 'text.secondary', mb: 4 }}>
+                                        By Perseverance AI — Stop shipping stale docs. Keep your docs as fresh as your code.
+                                    </Typography>
 
-                    {/* AI Model Selection hidden per branding guidelines */}
-                    <input type="hidden" name="selectedModel" value={selectedModel} />
+                                    <Paper sx={{ p: 4, mb: 4 }}>
+                                        <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
+                                            <Chip
+                                                label="Doc mode"
+                                                onClick={() => { setSelectedMode('doc'); setManualModeOverride('doc'); }}
+                                                color={selectedMode === 'doc' ? 'primary' : 'default'}
+                                                variant={selectedMode === 'doc' ? 'filled' : 'outlined'}
+                                                sx={{ fontWeight: 600 }}
+                                            />
+                                        </Box>
 
-                    {analysisState.status === 'error' && (
-                        <Alert severity="error" sx={{ mt: 3 }}>
-                            {analysisState.error}
-                        </Alert>
-                    )}
-                </Paper>
+                                        <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+                                            <Box sx={{ flexGrow: 1 }}>
+                                                {selectedMode === 'issue-discovery' ? (
+                                                    <>
+                                                        <TextField
+                                                            fullWidth
+                                                            label="Company Domain (e.g. stripe.com)"
+                                                            variant="outlined"
+                                                            value={companyDomain}
+                                                            onChange={(e) => {
+                                                                setCompanyDomain(e.target.value);
+                                                                if (discoveredIssues.length > 0) {
+                                                                    setDiscoveredIssues([]);
+                                                                    setSelectedIssues([]);
+                                                                }
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter' || e.key === 'Tab') {
+                                                                    if (companyDomain.trim().length > 3) {
+                                                                        searchForDeveloperIssues(companyDomain.trim());
+                                                                    }
+                                                                }
+                                                            }}
+                                                            onBlur={() => {
+                                                                if (companyDomain.trim().length > 3) {
+                                                                    searchForDeveloperIssues(companyDomain.trim());
+                                                                }
+                                                            }}
+                                                            placeholder="resend.com, liveblocks.io, or docs.knock.app"
+                                                            disabled={analysisState.status === 'analyzing'}
+                                                            helperText="Domain to investigate"
+                                                        />
 
-                {/* Progress Messages */}
-                {analysisState.progressMessages.length > 0 && (
-                    <Paper elevation={3} sx={{ p: 3, mb: 4 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                            <Typography variant="h6">
-                                Real-time Progress ({analysisState.progressMessages.length} messages)
-                            </Typography>
-                            <IconButton
-                                onClick={() => setProgressExpanded(!progressExpanded)}
-                                size="small"
-                            >
-                                {progressExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                            </IconButton>
-                        </Box>
+                                                        {isSearchingIssues && (
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', mt: 2, mb: 1 }}>
+                                                                <CircularProgress size={16} sx={{ mr: 1.5 }} />
+                                                                <Typography variant="caption" color="text.secondary">
+                                                                    Searching for developer complaints online...
+                                                                </Typography>
+                                                            </Box>
+                                                        )}
 
-                        <Collapse in={progressExpanded}>
-                            <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
-                                <List>
-                                    {analysisState.progressMessages.map((msg, index) => (
-                                        <ListItem key={index} sx={{ py: 0.5 }}>
-                                            <ListItemIcon sx={{ minWidth: 40 }}>
-                                                {getProgressIcon(msg.type)}
-                                            </ListItemIcon>
-                                            <ListItemText
-                                                primary={msg.message}
-                                                secondary={new Date(msg.timestamp).toLocaleTimeString()}
-                                                primaryTypographyProps={{
-                                                    sx: {
-                                                        color: msg.type === 'error' ? 'error.main' :
-                                                            msg.type === 'success' ? 'success.main' :
-                                                                msg.type === 'cache-hit' ? 'success.main' :
-                                                                    msg.type === 'warning' ? 'warning.main' :
-                                                                        'text.primary'
+                                                        {discoveredIssues.length > 0 && (
+                                                            <Box sx={{ mt: 3, mb: 1 }}>
+                                                                <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 700, color: 'var(--text-primary)' }}>
+                                                                    Top Issues Found ({discoveredIssues.length}) — Select to analyze:
+                                                                </Typography>
+                                                                <Box sx={{ border: '1px solid', borderColor: 'var(--border-subtle)', borderRadius: 2, overflow: 'hidden' }}>
+                                                                    {discoveredIssues.map((issue, index) => (
+                                                                        <Box
+                                                                            key={issue.id}
+                                                                            sx={{
+                                                                                display: 'flex',
+                                                                                alignItems: 'center',
+                                                                                p: 1.5,
+                                                                                borderBottom: index < discoveredIssues.length - 1 ? '1px solid' : 'none',
+                                                                                borderBottomColor: 'var(--border-subtle)',
+                                                                                bgcolor: selectedIssues.includes(issue.id) ? 'rgba(59, 130, 246, 0.05)' : 'transparent',
+                                                                                '&:hover': {
+                                                                                    bgcolor: 'rgba(255, 255, 255, 0.02)',
+                                                                                },
+                                                                                cursor: 'pointer',
+                                                                                transition: 'all 0.2s'
+                                                                            }}
+                                                                            onClick={() => {
+                                                                                if (selectedIssues.includes(issue.id)) {
+                                                                                    setSelectedIssues(selectedIssues.filter(id => id !== issue.id));
+                                                                                } else {
+                                                                                    setSelectedIssues([...selectedIssues, issue.id]);
+                                                                                }
+                                                                            }}
+                                                                        >
+                                                                            <Checkbox
+                                                                                checked={selectedIssues.includes(issue.id)}
+                                                                                disabled={analysisState.status === 'analyzing'}
+                                                                                size="small"
+                                                                                sx={{ mr: 1 }}
+                                                                            />
+                                                                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
+                                                                                    <Typography variant="body2" sx={{ fontWeight: 600, flex: 1, fontSize: '0.875rem' }}>
+                                                                                        {issue.title}
+                                                                                    </Typography>
+                                                                                    <Chip
+                                                                                        label={`${issue.frequency}`}
+                                                                                        size="small"
+                                                                                        sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }}
+                                                                                    />
+                                                                                </Box>
+                                                                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.75rem' }}>
+                                                                                    {issue.description}
+                                                                                </Typography>
+                                                                            </Box>
+                                                                        </Box>
+                                                                    ))}
+                                                                </Box>
+                                                            </Box>
+                                                        )}
+                                                    </>
+                                                ) : (
+                                                    <TextField
+                                                        fullWidth
+                                                        label={selectedMode === 'sitemap' ? "Sitemap URL" : "Documentation URL"}
+                                                        variant="outlined"
+                                                        value={url}
+                                                        onChange={(e) => setUrl(e.target.value)}
+                                                        placeholder={selectedMode === 'sitemap' ? "https://example.com/sitemap.xml" : "https://docs.example.com/getting-started"}
+                                                        disabled={analysisState.status === 'analyzing'}
+                                                    />
+                                                )}
+                                            </Box>
+
+                                            <Button
+                                                variant="contained"
+                                                onClick={handleAnalyze}
+                                                disabled={analysisState.status === 'analyzing'}
+                                                sx={{
+                                                    height: 56,
+                                                    minWidth: 120,
+                                                    px: 4,
+                                                    boxShadow: '0 0 20px rgba(59, 130, 246, 0.15)',
+                                                    '&:hover': {
+                                                        boxShadow: '0 0 30px rgba(59, 130, 246, 0.25)',
                                                     }
                                                 }}
-                                            />
-                                        </ListItem>
-                                    ))}
-                                    <div ref={progressEndRef} />
-                                </List>
-                            </Box>
-                        </Collapse>
-                    </Paper>
-                )}
-
-                {/* Fix Success Message (Standalone) */}
-                {fixSuccessMessage && (
-                    <Alert
-                        severity="success"
-                        variant="standard"
-                        sx={{ mb: 4, '& .MuiAlert-message': { width: '100%' } }}
-                        icon={<CheckCircleIcon fontSize="inherit" />}
-                    >
-                        <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-                            Fixes Applied Successfully
-                        </Typography>
-                        <Typography variant="body2">
-                            {fixSuccessMessage}
-                        </Typography>
-                        {lastModifiedFile && (
-                            <Box sx={{ mt: 2 }}>
-                                <Button
-                                    variant="outlined"
-                                    color="success"
-                                    size="small"
-                                    endIcon={<OpenInNewIcon />}
-                                    href={`https://d9gphnvbmrso2.cloudfront.net/${lastModifiedFile.replace(/\.md$/, '.html')}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                >
-                                    View as HTML
-                                </Button>
-                            </Box>
-                        )}
-                    </Alert>
-                )}
-
-                {/* Results */}
-                {analysisState.status === 'completed' && validationResults && (
-                    <Paper elevation={3} sx={{ p: 4, mb: 3 }}>
-                        <Typography variant="h5" gutterBottom>
-                            Issue Validation Results
-                        </Typography>
-
-                        {/* Summary Cards */}
-                        <Grid container spacing={3} sx={{ mb: 4 }}>
-                            <Grid item xs={12} md={3}>
-                                <Card>
-                                    <CardContent sx={{ textAlign: 'center' }}>
-                                        <Typography variant="h3" color="success.main">
-                                            {validationResults.summary.resolved}
-                                        </Typography>
-                                        <Typography variant="h6">✅ Resolved</Typography>
-                                        <Typography variant="body2" color="text.secondary">
-                                            Documentation is complete
-                                        </Typography>
-                                    </CardContent>
-                                </Card>
-                            </Grid>
-                            <Grid item xs={12} md={3}>
-                                <Card>
-                                    <CardContent sx={{ textAlign: 'center' }}>
-                                        <Typography variant="h3" color="warning.main">
-                                            {validationResults.summary.potentialGaps}
-                                        </Typography>
-                                        <Typography variant="h6">⚠️ Potential Gaps</Typography>
-                                        <Typography variant="body2" color="text.secondary">
-                                            Pages exist but incomplete
-                                        </Typography>
-                                    </CardContent>
-                                </Card>
-                            </Grid>
-                            <Grid item xs={12} md={3}>
-                                <Card>
-                                    <CardContent sx={{ textAlign: 'center' }}>
-                                        <Typography variant="h3" color="error.main">
-                                            {validationResults.summary.criticalGaps}
-                                        </Typography>
-                                        <Typography variant="h6">❌ Critical Gaps</Typography>
-                                        <Typography variant="body2" color="text.secondary">
-                                            No relevant pages found
-                                        </Typography>
-                                    </CardContent>
-                                </Card>
-                            </Grid>
-                            <Grid item xs={12} md={3}>
-                                <Card>
-                                    <CardContent sx={{ textAlign: 'center' }}>
-                                        <Typography variant="h3" color="primary">
-                                            {validationResults.processingTime}ms
-                                        </Typography>
-                                        <Typography variant="h6">Processing Time</Typography>
-                                    </CardContent>
-                                </Card>
-                            </Grid>
-                        </Grid>
-
-                        {/* Sitemap Health Summary (if available) */}
-                        {validationResults.sitemapHealth && (
-                            <>
-                                <Typography variant="h6" gutterBottom sx={{ mt: 4 }}>
-                                    📊 Sitemap Health Analysis
-                                </Typography>
-                                <Grid container spacing={3} sx={{ mb: 4 }}>
-                                    <Grid item xs={12} md={3}>
-                                        <Card>
-                                            <CardContent sx={{ textAlign: 'center' }}>
-                                                <Typography variant="h3" color="primary">
-                                                    {validationResults.sitemapHealth.totalUrls}
-                                                </Typography>
-                                                <Typography variant="h6">Total URLs</Typography>
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                    <Grid item xs={12} md={3}>
-                                        <Card>
-                                            <CardContent sx={{ textAlign: 'center' }}>
-                                                <Typography variant="h3" color="success.main">
-                                                    {validationResults.sitemapHealth.healthyUrls}
-                                                </Typography>
-                                                <Typography variant="h6">Healthy</Typography>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    {validationResults.sitemapHealth.healthPercentage}%
-                                                </Typography>
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                    <Grid item xs={12} md={3}>
-                                        <Card>
-                                            <CardContent sx={{ textAlign: 'center' }}>
-                                                <Typography variant="h3" color="error.main">
-                                                    {validationResults.sitemapHealth.brokenUrls || 0}
-                                                </Typography>
-                                                <Typography variant="h6">Broken (404)</Typography>
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                    <Grid item xs={12} md={3}>
-                                        <Card>
-                                            <CardContent sx={{ textAlign: 'center' }}>
-                                                <Typography variant="h3" color="warning.main">
-                                                    {(validationResults.sitemapHealth.accessDeniedUrls || 0) +
-                                                        (validationResults.sitemapHealth.timeoutUrls || 0) +
-                                                        (validationResults.sitemapHealth.otherErrorUrls || 0)}
-                                                </Typography>
-                                                <Typography variant="h6">Other Issues</Typography>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    {validationResults.sitemapHealth.accessDeniedUrls || 0} access denied, {' '}
-                                                    {validationResults.sitemapHealth.timeoutUrls || 0} timeout, {' '}
-                                                    {validationResults.sitemapHealth.otherErrorUrls || 0} errors
-                                                </Typography>
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                </Grid>
-
-                                {/* Expandable Broken URLs List */}
-                                {validationResults.sitemapHealth.linkIssues.length > 0 && (
-                                    <Card sx={{ mb: 4 }}>
-                                        <CardContent>
-                                            <Typography variant="h6" gutterBottom>
-                                                🔗 Link Issues Details ({validationResults.sitemapHealth.linkIssues.length})
-                                            </Typography>
-                                            <Box sx={{ maxHeight: 300, overflow: 'auto' }}>
-                                                {validationResults.sitemapHealth.linkIssues.map((issue: any, index: number) => (
-                                                    <Box key={index} sx={{ mb: 1, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
-                                                        <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                                                            {issue.issueType === '404' ? '🔴' :
-                                                                issue.issueType === 'access-denied' ? '🟡' :
-                                                                    issue.issueType === 'timeout' ? '🟠' : '⚫'} {issue.url}
-                                                        </Typography>
-                                                        <Typography variant="body2" color="text.secondary">
-                                                            {issue.errorMessage}
-                                                        </Typography>
-                                                    </Box>
-                                                ))}
-                                            </Box>
-                                        </CardContent>
-                                    </Card>
-                                )}
-                            </>
-                        )}
-
-                        {/* Detailed Results */}
-                        <Typography variant="h6" gutterBottom sx={{ mt: 4 }}>
-                            Detailed Validation Results
-                        </Typography>
-                        {validationResults.validationResults.map((result: any, index: number) => (
-                            <Card key={result.issueId} sx={{ mb: 2 }}>
-                                <CardContent>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                        <Chip
-                                            label={result.status.toUpperCase()}
-                                            color={
-                                                result.status === 'resolved' ? 'success' :
-                                                    result.status === 'confirmed' ? 'info' :
-                                                        result.status === 'potential-gap' ? 'warning' :
-                                                            result.status === 'critical-gap' ? 'error' : 'default'
-                                            }
-                                            sx={{ mr: 2 }}
-                                        />
-                                        <Typography variant="h6" sx={{ flex: 1 }}>
-                                            {result.issueTitle}
-                                        </Typography>
-                                        <Chip label={`${result.confidence}% confidence`} variant="outlined" />
-                                    </Box>
-
-                                    {/* Evidence */}
-                                    {result.evidence && result.evidence.length > 0 && (
-                                        <Box sx={{ mt: 2 }}>
-                                            <Typography variant="subtitle2" gutterBottom>
-                                                📄 Evidence ({result.evidence.length} pages analyzed):
-                                            </Typography>
-                                            {result.evidence.map((evidence: any, idx: number) => (
-                                                <Box key={idx} sx={{ ml: 2, mb: 1, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
-                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                        <Typography variant="body2">
-                                                            <strong>{evidence.pageUrl}</strong> - {evidence.pageTitle}
-                                                        </Typography>
-                                                        {evidence.semanticScore !== undefined && (
-                                                            <Chip
-                                                                label={`${(evidence.semanticScore * 100).toFixed(0)}% match`}
-                                                                size="small"
-                                                                color={evidence.semanticScore > 0.7 ? 'success' : evidence.semanticScore > 0.5 ? 'warning' : 'default'}
-                                                                sx={{ ml: 1 }}
-                                                            />
-                                                        )}
-                                                    </Box>
-                                                    <Typography variant="caption" color="text.secondary">
-                                                        {evidence.codeExamples} code examples •
-                                                        {evidence.productionGuidance ? ' Production guidance ✓' : ' No production guidance'}
-                                                        {evidence.contentGaps.length > 0 && ` • Missing: ${evidence.contentGaps.join(', ')}`}
-                                                    </Typography>
-                                                </Box>
-                                            ))}
+                                            >
+                                                {analysisState.status === 'analyzing' ? (
+                                                    <CircularProgress size={20} color="inherit" />
+                                                ) : analysisState.status === 'generating' ? (
+                                                    'Generating...'
+                                                ) : analysisState.status === 'applying' ? (
+                                                    'Applying...'
+                                                ) : (fixSuccessMessage || (!analysisState.report && currentSessionId)) ? (
+                                                    'Re-scan'
+                                                ) : (
+                                                    'Start'
+                                                )}
+                                            </Button>
                                         </Box>
-                                    )}
 
-                                    {/* Recommendations for Best Match */}
-                                    {result.recommendations && result.recommendations.length > 0 && (
-                                        <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
-                                            <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 'bold', mb: 2 }}>
-                                                💡 Gap Recommendations for Best Match:
-                                            </Typography>
-                                            {result.recommendations.map((rec: string, idx: number) => (
-                                                <Box key={idx} sx={{ mb: 3, pb: 2, borderBottom: idx < result.recommendations.length - 1 ? '1px solid' : 'none', borderColor: 'divider' }}>
-                                                    <ReactMarkdown
-                                                        components={{
-                                                            code({ node, className, children, ...props }: any) {
-                                                                const match = /language-(\w+)/.exec(className || '');
-                                                                const inline = !match;
-                                                                return !inline && match ? (
-                                                                    <Box sx={{
-                                                                        maxHeight: '500px',
-                                                                        overflow: 'auto',
-                                                                        maxWidth: '100%',
-                                                                        my: 2,
-                                                                        border: '1px solid rgba(0, 0, 0, 0.1)',
-                                                                        borderRadius: '4px',
-                                                                        '& pre': {
-                                                                            margin: '0 !important',
-                                                                            maxWidth: '100%'
-                                                                        }
-                                                                    }}>
-                                                                        <SyntaxHighlighter
-                                                                            style={vscDarkPlus}
-                                                                            language={match[1]}
-                                                                            PreTag="div"
-                                                                            wrapLines={false}
-                                                                            wrapLongLines={false}
-                                                                            customStyle={{
-                                                                                margin: 0,
-                                                                                borderRadius: '4px',
-                                                                                fontSize: '0.875rem',
-                                                                                maxWidth: '100%'
-                                                                            }}
-                                                                            {...props}
-                                                                        >
-                                                                            {String(children).replace(/\n$/, '')}
-                                                                        </SyntaxHighlighter>
-                                                                    </Box>
-                                                                ) : (
-                                                                    <code className={className} {...props} style={{
-                                                                        backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                                                                        padding: '2px 6px',
-                                                                        borderRadius: '3px',
-                                                                        fontFamily: 'monospace',
-                                                                        fontSize: '0.9em',
-                                                                        color: '#60a5fa'
-                                                                    }}>
-                                                                        {children}
-                                                                    </code>
-                                                                );
-                                                            },
-                                                            p({ children }: any) {
-                                                                return <Typography variant="body2" sx={{ mb: 1, lineHeight: 1.6 }}>{children}</Typography>;
-                                                            },
-                                                            h1({ children }: any) {
-                                                                return <Typography variant="h6" sx={{ mt: 2, mb: 1, fontWeight: 'bold' }}>{children}</Typography>;
-                                                            },
-                                                            h2({ children }: any) {
-                                                                return <Typography variant="subtitle1" sx={{ mt: 2, mb: 1, fontWeight: 'bold' }}>{children}</Typography>;
-                                                            },
-                                                            h3({ children }: any) {
-                                                                return <Typography variant="subtitle2" sx={{ mt: 1, mb: 1, fontWeight: 'bold' }}>{children}</Typography>;
-                                                            },
-                                                            ul({ children }: any) {
-                                                                return <Box component="ul" sx={{ pl: 2, my: 1 }}>{children}</Box>;
-                                                            },
-                                                            li({ children }: any) {
-                                                                return <Typography component="li" variant="body2" sx={{ mb: 0.5 }}>{children}</Typography>;
-                                                            }
-                                                        }}
-                                                    >
-                                                        {rec}
-                                                    </ReactMarkdown>
-                                                </Box>
-                                            ))}
-                                        </Box>
-                                    )}
+                                        {/* AI Model Selection hidden per branding guidelines */}
+                                        <input type="hidden" name="selectedModel" value={selectedModel} />
 
-                                    {/* Potential Gaps */}
-                                    {result.potentialGaps && result.potentialGaps.length > 0 && (
-                                        <Box sx={{ mt: 2 }}>
-                                            <Typography variant="subtitle2" gutterBottom color="warning.main">
-                                                ⚠️ Potential Gaps:
-                                            </Typography>
-                                            {result.potentialGaps.map((gap: any, idx: number) => (
-                                                <Box key={idx} sx={{ ml: 2, mb: 1, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
-                                                    <Typography variant="body2">
-                                                        <strong>{gap.pageUrl}</strong>
-                                                    </Typography>
-                                                    <Typography variant="caption" color="text.secondary">
-                                                        {gap.reasoning}
-                                                    </Typography>
-                                                </Box>
-                                            ))}
-                                        </Box>
-                                    )}
-                                </CardContent>
-                            </Card>
-                        ))}
-
-                        {/* Export Button for Validation Results */}
-                        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 3 }}>
-                            <Button
-                                variant="contained"
-                                color="primary"
-                                onClick={() => exportValidationReport(validationResults)}
-                                sx={{ minWidth: 200 }}
-                            >
-                                📄 Export Report (Markdown)
-                            </Button>
-                        </Box>
-                    </Paper>
-                )}
-
-                {/* Results */}
-                {analysisState.status === 'completed' && analysisState.report && (
-                    <Paper elevation={3} sx={{ p: 4 }}>
-                        <Typography variant="h5" gutterBottom>
-                            Analysis Results
-                        </Typography>
-
-                        <Grid container spacing={3} sx={{ mb: 4 }}>
-                            <Grid item xs={12} md={4}>
-                                <Card>
-                                    <CardContent sx={{ textAlign: 'center' }}>
-                                        <Typography variant="h3" color={getScoreColor(analysisState.report.overallScore)}>
-                                            {analysisState.report.overallScore}
-                                        </Typography>
-                                        <Typography variant="h6">Overall Score</Typography>
-                                    </CardContent>
-                                </Card>
-                            </Grid>
-                            <Grid item xs={12} md={4}>
-                                <Card>
-                                    <CardContent sx={{ textAlign: 'center' }}>
-                                        <Typography variant="h4">
-                                            {analysisState.report.dimensionsAnalyzed}/{analysisState.report.dimensionsTotal}
-                                        </Typography>
-                                        <Typography variant="h6">Dimensions</Typography>
-                                    </CardContent>
-                                </Card>
-                            </Grid>
-                            <Grid item xs={12} md={4}>
-                                <Card>
-                                    <CardContent sx={{ textAlign: 'center' }}>
-                                        <Chip
-                                            label={analysisState.report.confidence.toUpperCase()}
-                                            color={getConfidenceColor(analysisState.report.confidence)}
-                                        />
-                                        <Typography variant="h6" sx={{ mt: 1 }}>Confidence</Typography>
-                                    </CardContent>
-                                </Card>
-                            </Grid>
-                        </Grid>
-
-                        {/* Sitemap Health Summary (only for sitemap mode) */}
-                        {analysisState.report.sitemapHealth && (
-                            <CollapsibleCard
-                                title="Sitemap Health Summary"
-                                defaultExpanded={true}
-                                color={analysisState.report.sitemapHealth.healthPercentage < 100 ? 'warning' : 'success'}
-                            >
-                                <Grid container spacing={3}>
-                                    <Grid item xs={12} md={3}>
-                                        <Card variant="outlined">
-                                            <CardContent sx={{ textAlign: 'center' }}>
-                                                <Typography variant="h3" color="primary">
-                                                    {analysisState.report.sitemapHealth.totalUrls}
-                                                </Typography>
-                                                <Typography variant="h6">Total URLs</Typography>
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                    <Grid item xs={12} md={3}>
-                                        <Card variant="outlined">
-                                            <CardContent sx={{ textAlign: 'center' }}>
-                                                <Typography variant="h3" color="success.main">
-                                                    {analysisState.report.sitemapHealth.healthyUrls}
-                                                </Typography>
-                                                <Typography variant="h6">Healthy</Typography>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    {analysisState.report.sitemapHealth.healthPercentage}%
-                                                </Typography>
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                    <Grid item xs={12} md={3}>
-                                        <Card variant="outlined">
-                                            <CardContent sx={{ textAlign: 'center' }}>
-                                                <Typography variant="h3" color="error.main">
-                                                    {analysisState.report.sitemapHealth.brokenUrls}
-                                                </Typography>
-                                                <Typography variant="h6">Broken (404)</Typography>
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                    <Grid item xs={12} md={3}>
-                                        <Card variant="outlined">
-                                            <CardContent sx={{ textAlign: 'center' }}>
-                                                <Typography variant="h3" color="warning.main">
-                                                    {analysisState.report.sitemapHealth.accessDeniedUrls +
-                                                        analysisState.report.sitemapHealth.timeoutUrls +
-                                                        analysisState.report.sitemapHealth.otherErrorUrls}
-                                                </Typography>
-                                                <Typography variant="h6">Other Issues</Typography>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    {analysisState.report.sitemapHealth.accessDeniedUrls} access denied, {' '}
-                                                    {analysisState.report.sitemapHealth.timeoutUrls} timeout, {' '}
-                                                    {analysisState.report.sitemapHealth.otherErrorUrls} errors
-                                                </Typography>
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                </Grid>
-                                {analysisState.report.sitemapHealth.linkIssues.length > 0 && (
-                                    <Box sx={{ mt: 3 }}>
-                                        <Divider sx={{ my: 2 }} />
-                                        <Typography variant="h6" gutterBottom>
-                                            Link Issues Details ({analysisState.report.sitemapHealth.linkIssues.length})
-                                        </Typography>
-                                        <Box sx={{ maxHeight: 300, overflow: 'auto', border: 1, borderColor: 'divider', borderRadius: 1, p: 2 }}>
-                                            {analysisState.report.sitemapHealth.linkIssues.map((issue, index) => (
-                                                <Box key={index} sx={{ mb: 1, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
-                                                    <Typography variant="body2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
-                                                        <span style={{ marginRight: '8px' }}>
-                                                            {issue.issueType === '404' ? '🔴' :
-                                                                issue.issueType === 'access-denied' ? '🟡' :
-                                                                    issue.issueType === 'timeout' ? '🟠' : '⚫'}
-                                                        </span>
-                                                        {issue.url}
-                                                    </Typography>
-                                                    <Typography variant="body2" color="text.secondary" sx={{ ml: 4 }}>
-                                                        {issue.errorMessage}
-                                                    </Typography>
-                                                </Box>
-                                            ))}
-                                        </Box>
-                                    </Box>
-                                )}
-                            </CollapsibleCard>
-                        )}
-
-
-                        {/* AI Readiness Section */}
-                        {analysisState.report.aiReadiness && (
-                            <CollapsibleCard
-                                title="AI Readiness Assessment"
-                                defaultExpanded={false}
-                                color={analysisState.report.aiReadiness.overallScore < 80 ? 'warning' : 'success'}
-                                count={analysisState.report.aiReadiness.overallScore + '/100'}
-                            >
-                                <Grid container spacing={2}>
-                                    <Grid item xs={12} md={6}>
-                                        <Card variant="outlined" sx={{ height: '100%' }}>
-                                            <CardContent>
-                                                <Typography variant="h6" gutterBottom>Configuration Checks</Typography>
-                                                <List dense>
-                                                    <ListItem>
-                                                        <ListItemIcon>
-                                                            {analysisState.report.aiReadiness.llmsTxt.found ? <CheckCircleIcon color="success" /> : <ErrorIcon color="error" />}
-                                                        </ListItemIcon>
-                                                        <ListItemText
-                                                            primary="llms.txt"
-                                                            secondary={analysisState.report.aiReadiness.llmsTxt.found ? "Found" : "Missing"}
-                                                        />
-                                                    </ListItem>
-                                                    <ListItem>
-                                                        <ListItemIcon>
-                                                            {analysisState.report.aiReadiness.llmsFullTxt.found ? <CheckCircleIcon color="success" /> : <ErrorIcon color="error" />}
-                                                        </ListItemIcon>
-                                                        <ListItemText
-                                                            primary="llms-full.txt"
-                                                            secondary={analysisState.report.aiReadiness.llmsFullTxt.found ? "Found" : "Missing"}
-                                                        />
-                                                    </ListItem>
-                                                    <ListItem>
-                                                        <ListItemIcon>
-                                                            {analysisState.report.aiReadiness.structuredData.hasJsonLd ? <CheckCircleIcon color="success" /> : <ErrorIcon color="error" />}
-                                                        </ListItemIcon>
-                                                        <ListItemText
-                                                            primary="JSON-LD Structured Data"
-                                                            secondary={analysisState.report.aiReadiness.structuredData.hasJsonLd ? "Found" : "Missing"}
-                                                        />
-                                                    </ListItem>
-                                                </List>
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                    <Grid item xs={12} md={6}>
-                                        <Card variant="outlined" sx={{ height: '100%' }}>
-                                            <CardContent>
-                                                <Typography variant="h6" gutterBottom>Robots & Access</Typography>
-                                                <List dense>
-                                                    <ListItem>
-                                                        <ListItemIcon>
-                                                            {analysisState.report.aiReadiness.robotsTxt.aiDirectives.length > 0 ? <CheckCircleIcon color="success" /> : <InfoIcon color="action" />}
-                                                        </ListItemIcon>
-                                                        <ListItemText
-                                                            primary="Robots.txt AI Rules"
-                                                            secondary={analysisState.report.aiReadiness.robotsTxt.aiDirectives.length > 0 ? `${analysisState.report.aiReadiness.robotsTxt.aiDirectives.length} rules found` : "No specific AI rules found"}
-                                                        />
-                                                    </ListItem>
-                                                    <ListItem>
-                                                        <ListItemIcon>
-                                                            {analysisState.report.aiReadiness.markdownExports.available ? <CheckCircleIcon color="success" /> : <InfoIcon color="action" />}
-                                                        </ListItemIcon>
-                                                        <ListItemText
-                                                            primary="Markdown Exports"
-                                                            secondary={analysisState.report.aiReadiness.markdownExports.available ? "Available" : "Not detected"}
-                                                        />
-                                                    </ListItem>
-                                                </List>
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                    {analysisState.report.aiReadiness.recommendations.length > 0 && (
-                                        <Grid item xs={12}>
-                                            <Alert severity="info">
-                                                <Typography variant="subtitle2">Recommendations:</Typography>
-                                                <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
-                                                    {analysisState.report.aiReadiness.recommendations.map((rec, i) => (
-                                                        <li key={i}>{rec}</li>
-                                                    ))}
-                                                </ul>
+                                        {analysisState.status === 'error' && (
+                                            <Alert severity="error" sx={{ mt: 3 }}>
+                                                {analysisState.error}
                                             </Alert>
-                                        </Grid>
-                                    )}
-                                </Grid>
-                            </CollapsibleCard>
-                        )}
+                                        )}
+                                    </Paper>
 
-                        {/* Dimension Analysis Section */}
-                        <CollapsibleCard
-                            title="Dimension Analysis"
-                            defaultExpanded={false}
-                        >
-                            <Grid container spacing={3}>
-                                {Object.entries(analysisState.report.dimensions).map(([dimension, result]: [string, any]) => (
-                                    <Grid item xs={12} md={6} key={dimension}>
-                                        <Card variant="outlined">
-                                            <CardContent>
-                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                                                    <Typography variant="h6" sx={{ textTransform: 'capitalize' }}>
-                                                        {dimension}
-                                                    </Typography>
-                                                    <Chip
-                                                        label={`${result.score}/10`}
-                                                        color={getScoreColor((result.score || 0) * 10)}
-                                                        variant="outlined"
-                                                        sx={{ fontWeight: 'bold' }}
-                                                    />
-                                                </Box>
-                                                {result.findings && result.findings.length > 0 ? (
-                                                    <List dense>
-                                                        {result.findings.slice(0, 3).map((finding: string, i: number) => (
-                                                            <ListItem key={i} disableGutters>
-                                                                <ListItemIcon sx={{ minWidth: 30 }}>
-                                                                    <InfoIcon fontSize="small" color="info" />
+                                    {/* Progress Messages */}
+                                    {analysisState.progressMessages.length > 0 && (
+                                        <Paper elevation={3} sx={{ p: 3, mb: 4 }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                                                <Typography variant="h6">
+                                                    Real-time Progress ({analysisState.progressMessages.length} messages)
+                                                </Typography>
+                                                <IconButton
+                                                    onClick={() => setProgressExpanded(!progressExpanded)}
+                                                    size="small"
+                                                >
+                                                    {progressExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                                                </IconButton>
+                                            </Box>
+
+                                            <Collapse in={progressExpanded}>
+                                                <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
+                                                    <List>
+                                                        {analysisState.progressMessages.map((msg, index) => (
+                                                            <ListItem key={index} sx={{ py: 0.5 }}>
+                                                                <ListItemIcon sx={{ minWidth: 40 }}>
+                                                                    {getProgressIcon(msg.type)}
                                                                 </ListItemIcon>
-                                                                <ListItemText primary={finding} primaryTypographyProps={{ variant: 'body2' }} />
+                                                                <ListItemText
+                                                                    primary={msg.message}
+                                                                    secondary={new Date(msg.timestamp).toLocaleTimeString()}
+                                                                    primaryTypographyProps={{
+                                                                        sx: {
+                                                                            color: msg.type === 'error' ? 'error.main' :
+                                                                                msg.type === 'success' ? 'success.main' :
+                                                                                    msg.type === 'cache-hit' ? 'success.main' :
+                                                                                        msg.type === 'warning' ? 'warning.main' :
+                                                                                            'text.primary'
+                                                                        }
+                                                                    }}
+                                                                />
                                                             </ListItem>
                                                         ))}
-                                                        {result.findings.length > 3 && (
-                                                            <Typography variant="caption" color="text.secondary" sx={{ ml: 4 }}>
-                                                                ...and {result.findings.length - 3} more
-                                                            </Typography>
-                                                        )}
+                                                        <div ref={progressEndRef} />
                                                     </List>
-                                                ) : (
-                                                    <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
-                                                        No major findings.
-                                                    </Typography>
-                                                )}
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                ))}
-                            </Grid>
-                        </CollapsibleCard>
-                        <CollapsibleCard
-                            title="Critical Findings (Top Issues)"
-                            defaultExpanded={true}
-                            color="error"
-                        >
-                            <Grid container spacing={2}>
-                                {/* Link Issues */}
-                                <Grid item xs={12} md={4}>
-                                    <Card>
-                                        <CardContent>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                                                {analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.length ? (
-                                                    <>
-                                                        <ErrorIcon sx={{ color: 'warning.main', mr: 1 }} />
-                                                        <Typography variant="h6">
-                                                            Link Issues: {analysisState.report.linkAnalysis.linkValidation.linkIssueFindings.length}
-                                                            {(() => {
-                                                                const broken = analysisState.report.linkAnalysis.linkValidation.linkIssueFindings.filter((l: any) => l.issueType === '404').length;
-                                                                return broken > 0 ? ` (${broken} broken)` : '';
-                                                            })()}
-                                                        </Typography>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <CheckCircleIcon sx={{ color: 'success.main', mr: 1 }} />
-                                                        <Typography variant="h6">
-                                                            Link Issues: None found
-                                                        </Typography>
-                                                    </>
-                                                )}
-                                            </Box>
-                                            {analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.slice(0, 2).map((link: any, i: number) => (
-                                                <Typography key={i} variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                                                    • {link.anchorText} → {link.issueType === '404' ? '404' : link.issueType === 'access-denied' ? '403' : link.status}
-                                                </Typography>
-                                            ))}
-                                            {(analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.length || 0) > 2 && (
-                                                <Typography variant="body2" color="text.secondary">
-                                                    ... and {(analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.length || 0) - 2} more
-                                                </Typography>
-                                            )}
-                                        </CardContent>
-                                    </Card>
-                                </Grid>
-
-                                {/* Deprecated Code */}
-                                <Grid item xs={12} md={4}>
-                                    <Card>
-                                        <CardContent>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                                                {analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length ? (
-                                                    <>
-                                                        <ErrorIcon sx={{ color: 'warning.main', mr: 1 }} />
-                                                        <Typography variant="h6">
-                                                            Deprecated Code: {analysisState.report.codeAnalysis.enhancedAnalysis.deprecatedFindings.length}
-                                                        </Typography>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <CheckCircleIcon sx={{ color: 'success.main', mr: 1 }} />
-                                                        <Typography variant="h6">
-                                                            Deprecated Code: None found
-                                                        </Typography>
-                                                    </>
-                                                )}
-                                            </Box>
-                                            {analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.slice(0, 2).map((finding, i) => (
-                                                <Typography key={i} variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                                                    • {finding.method} (deprecated in {finding.deprecatedIn})
-                                                </Typography>
-                                            ))}
-                                            {(analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length || 0) > 2 && (
-                                                <Typography variant="body2" color="text.secondary">
-                                                    ... and {(analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length || 0) - 2} more
-                                                </Typography>
-                                            )}
-                                        </CardContent>
-                                    </Card>
-                                </Grid>
-
-                                {/* Syntax Errors */}
-                                <Grid item xs={12} md={4}>
-                                    <Card>
-                                        <CardContent>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                                                {analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.length ? (
-                                                    <>
-                                                        <ErrorIcon sx={{ color: 'error.main', mr: 1 }} />
-                                                        <Typography variant="h6">
-                                                            Syntax Errors: {analysisState.report.codeAnalysis.enhancedAnalysis.syntaxErrorFindings.length}
-                                                        </Typography>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <CheckCircleIcon sx={{ color: 'success.main', mr: 1 }} />
-                                                        <Typography variant="h6">
-                                                            Syntax Errors: None found
-                                                        </Typography>
-                                                    </>
-                                                )}
-                                            </Box>
-                                            {analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.slice(0, 2).map((error, i) => (
-                                                <Typography key={i} variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                                                    • {error.errorType}: {error.description}
-                                                </Typography>
-                                            ))}
-                                            {(analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.length || 0) > 2 && (
-                                                <Typography variant="body2" color="text.secondary">
-                                                    ... and {(analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.length || 0) - 2} more
-                                                </Typography>
-                                            )}
-                                        </CardContent>
-                                    </Card>
-                                </Grid>
-
-                                {/* URL Slug Issues - NEW */}
-                                {(analysisState.report as any).urlSlugAnalysis && (
-                                    <Grid item xs={12} md={4}>
-                                        <Card>
-                                            <CardContent>
-                                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                                                    {(analysisState.report as any).urlSlugAnalysis.issues?.length ? (
-                                                        <>
-                                                            <ErrorIcon sx={{ color: 'warning.main', mr: 1 }} />
-                                                            <Typography variant="h6">
-                                                                URL Slug Issues: {(analysisState.report as any).urlSlugAnalysis.issues.length}
-                                                            </Typography>
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <CheckCircleIcon sx={{ color: 'success.main', mr: 1 }} />
-                                                            <Typography variant="h6">
-                                                                URL Slug Quality: Clean
-                                                            </Typography>
-                                                        </>
-                                                    )}
                                                 </Box>
-                                                {(analysisState.report as any).urlSlugAnalysis.issues?.slice(0, 2).map((issue: any, i: number) => (
-                                                    <Typography key={i} variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                                                        • "{issue.segment}" → "{issue.suggestion}"
-                                                    </Typography>
-                                                ))}
-                                                {((analysisState.report as any).urlSlugAnalysis.issues?.length || 0) > 2 && (
-                                                    <Typography variant="body2" color="text.secondary">
-                                                        ... and {((analysisState.report as any).urlSlugAnalysis.issues?.length || 0) - 2} more
-                                                    </Typography>
-                                                )}
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                )}
-                            </Grid>
+                                            </Collapse>
+                                        </Paper>
+                                    )}
 
-                            <Alert severity="info" sx={{ mb: 4 }}>
-                                See full report for complete details on all findings and recommendations.
-                            </Alert>
-                        </CollapsibleCard>
+                                    {/* Fix Success Message (Standalone) */}
+                                    {fixSuccessMessage && (
+                                        <Alert
+                                            severity="success"
+                                            variant="standard"
+                                            sx={{ mb: 4, '& .MuiAlert-message': { width: '100%' } }}
+                                            icon={<CheckCircleIcon fontSize="inherit" />}
+                                        >
+                                            <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                                                Fixes Applied Successfully
+                                            </Typography>
+                                            <Typography variant="body2">
+                                                {fixSuccessMessage}
+                                            </Typography>
+                                            {lastModifiedFile && (
+                                                <Box sx={{ mt: 2 }}>
+                                                    <Button
+                                                        variant="outlined"
+                                                        color="success"
+                                                        size="small"
+                                                        endIcon={<OpenInNewIcon />}
+                                                        href={`https://d9gphnvbmrso2.cloudfront.net/${lastModifiedFile.replace(/\.md$/, '.html')}`}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                    >
+                                                        View as HTML
+                                                    </Button>
+                                                </Box>
+                                            )}
+                                        </Alert>
+                                    )}
 
-                        {/* Simplified Recommendations - Top 5 */}
-                        <CollapsibleCard title="Select Fixes (Recommendations)" defaultExpanded={false} color="info">
-                            <Alert severity="info" sx={{ mb: 2 }}>
-                                Select the issues you would like Lensy to automatically fix for you.
-                            </Alert>
-                            <Grid container spacing={2}>
-                                {(() => {
-                                    // Flatten all recommendations from all dimensions
-                                    const allRecs = Object.entries(analysisState.report.dimensions)
-                                        .flatMap(([dim, result]) => (result.recommendations || []).map(rec => ({ ...rec, dimension: dim })));
+                                    {/* Results */}
+                                    {analysisState.status === 'completed' && validationResults && (
+                                        <Paper elevation={3} sx={{ p: 4, mb: 3 }}>
+                                            <Typography variant="h5" gutterBottom>
+                                                Issue Validation Results
+                                            </Typography>
 
-                                    // Take top 5
-                                    const top5 = allRecs.slice(0, 5);
-
-                                    return top5.map((rec: any, i: number) => {
-                                        const recId = `${rec.dimension}-${i}`;
-                                        const isSelected = selectedRecommendations.includes(recId);
-
-                                        return (
-                                            <Grid item xs={12} key={recId}>
-                                                <Paper
-                                                    variant="outlined"
-                                                    sx={{
-                                                        p: 2,
-                                                        bgcolor: isSelected ? 'rgba(33, 150, 243, 0.08)' : 'background.paper',
-                                                        borderColor: isSelected ? 'primary.main' : 'divider',
-                                                        borderRadius: 2,
-                                                        display: 'flex',
-                                                        alignItems: 'flex-start',
-                                                        cursor: 'pointer',
-                                                        '&:hover': { bgcolor: isSelected ? 'rgba(33, 150, 243, 0.12)' : 'rgba(255, 255, 255, 0.02)' }
-                                                    }}
-                                                    onClick={() => {
-                                                        if (isSelected) {
-                                                            setSelectedRecommendations(selectedRecommendations.filter(id => id !== recId));
-                                                        } else {
-                                                            setSelectedRecommendations([...selectedRecommendations, recId]);
-                                                        }
-                                                    }}
-                                                >
-                                                    <Checkbox
-                                                        checked={isSelected}
-                                                        sx={{ mt: -0.5, ml: -1 }}
-                                                    />
-                                                    <Box sx={{ ml: 1, flexGrow: 1 }}>
-                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
-                                                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                                                {rec.action}
+                                            {/* Summary Cards */}
+                                            <Grid container spacing={3} sx={{ mb: 4 }}>
+                                                <Grid item xs={12} md={3}>
+                                                    <Card>
+                                                        <CardContent sx={{ textAlign: 'center' }}>
+                                                            <Typography variant="h3" color="success.main">
+                                                                {validationResults.summary.resolved}
                                                             </Typography>
-                                                            <Chip
-                                                                label={rec.dimension}
-                                                                size="small"
-                                                                variant="outlined"
-                                                                sx={{ height: 20, fontSize: '0.65rem', textTransform: 'uppercase' }}
-                                                            />
-                                                        </Box>
-                                                        <Typography variant="caption" color="text.secondary">
-                                                            Priority: {rec.priority?.toUpperCase()} • Impact: {rec.impact}
-                                                        </Typography>
-                                                    </Box>
-                                                </Paper>
+                                                            <Typography variant="h6">✅ Resolved</Typography>
+                                                            <Typography variant="body2" color="text.secondary">
+                                                                Documentation is complete
+                                                            </Typography>
+                                                        </CardContent>
+                                                    </Card>
+                                                </Grid>
+                                                <Grid item xs={12} md={3}>
+                                                    <Card>
+                                                        <CardContent sx={{ textAlign: 'center' }}>
+                                                            <Typography variant="h3" color="warning.main">
+                                                                {validationResults.summary.potentialGaps}
+                                                            </Typography>
+                                                            <Typography variant="h6">⚠️ Potential Gaps</Typography>
+                                                            <Typography variant="body2" color="text.secondary">
+                                                                Pages exist but incomplete
+                                                            </Typography>
+                                                        </CardContent>
+                                                    </Card>
+                                                </Grid>
+                                                <Grid item xs={12} md={3}>
+                                                    <Card>
+                                                        <CardContent sx={{ textAlign: 'center' }}>
+                                                            <Typography variant="h3" color="error.main">
+                                                                {validationResults.summary.criticalGaps}
+                                                            </Typography>
+                                                            <Typography variant="h6">❌ Critical Gaps</Typography>
+                                                            <Typography variant="body2" color="text.secondary">
+                                                                No relevant pages found
+                                                            </Typography>
+                                                        </CardContent>
+                                                    </Card>
+                                                </Grid>
+                                                <Grid item xs={12} md={3}>
+                                                    <Card>
+                                                        <CardContent sx={{ textAlign: 'center' }}>
+                                                            <Typography variant="h3" color="primary">
+                                                                {validationResults.processingTime}ms
+                                                            </Typography>
+                                                            <Typography variant="h6">Processing Time</Typography>
+                                                        </CardContent>
+                                                    </Card>
+                                                </Grid>
                                             </Grid>
-                                        );
-                                    });
-                                })()}
-                            </Grid>
-                        </CollapsibleCard>
 
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 3 }}>
-                            <Typography variant="body2" color="text.secondary">
-                                Analysis completed in {(analysisState.report.analysisTime / 1000).toFixed(1)}s
-                                {analysisState.report.cacheStatus === 'hit' && ' ⚡ (cached)'}
-                            </Typography>
-                            <Button
-                                variant="outlined"
-                                onClick={() => exportMarkdownReport(analysisState.report!)}
-                                sx={{ ml: 2 }}
-                            >
-                                Export Report
-                            </Button>
+                                            {/* Sitemap Health Summary (if available) */}
+                                            {validationResults.sitemapHealth && (
+                                                <>
+                                                    <Typography variant="h6" gutterBottom sx={{ mt: 4 }}>
+                                                        📊 Sitemap Health Analysis
+                                                    </Typography>
+                                                    <Grid container spacing={3} sx={{ mb: 4 }}>
+                                                        <Grid item xs={12} md={3}>
+                                                            <Card>
+                                                                <CardContent sx={{ textAlign: 'center' }}>
+                                                                    <Typography variant="h3" color="primary">
+                                                                        {validationResults.sitemapHealth.totalUrls}
+                                                                    </Typography>
+                                                                    <Typography variant="h6">Total URLs</Typography>
+                                                                </CardContent>
+                                                            </Card>
+                                                        </Grid>
+                                                        <Grid item xs={12} md={3}>
+                                                            <Card>
+                                                                <CardContent sx={{ textAlign: 'center' }}>
+                                                                    <Typography variant="h3" color="success.main">
+                                                                        {validationResults.sitemapHealth.healthyUrls}
+                                                                    </Typography>
+                                                                    <Typography variant="h6">Healthy</Typography>
+                                                                    <Typography variant="body2" color="text.secondary">
+                                                                        {validationResults.sitemapHealth.healthPercentage}%
+                                                                    </Typography>
+                                                                </CardContent>
+                                                            </Card>
+                                                        </Grid>
+                                                        <Grid item xs={12} md={3}>
+                                                            <Card>
+                                                                <CardContent sx={{ textAlign: 'center' }}>
+                                                                    <Typography variant="h3" color="error.main">
+                                                                        {validationResults.sitemapHealth.brokenUrls || 0}
+                                                                    </Typography>
+                                                                    <Typography variant="h6">Broken (404)</Typography>
+                                                                </CardContent>
+                                                            </Card>
+                                                        </Grid>
+                                                        <Grid item xs={12} md={3}>
+                                                            <Card>
+                                                                <CardContent sx={{ textAlign: 'center' }}>
+                                                                    <Typography variant="h3" color="warning.main">
+                                                                        {(validationResults.sitemapHealth.accessDeniedUrls || 0) +
+                                                                            (validationResults.sitemapHealth.timeoutUrls || 0) +
+                                                                            (validationResults.sitemapHealth.otherErrorUrls || 0)}
+                                                                    </Typography>
+                                                                    <Typography variant="h6">Other Issues</Typography>
+                                                                    <Typography variant="body2" color="text.secondary">
+                                                                        {validationResults.sitemapHealth.accessDeniedUrls || 0} access denied, {' '}
+                                                                        {validationResults.sitemapHealth.timeoutUrls || 0} timeout, {' '}
+                                                                        {validationResults.sitemapHealth.otherErrorUrls || 0} errors
+                                                                    </Typography>
+                                                                </CardContent>
+                                                            </Card>
+                                                        </Grid>
+                                                    </Grid>
 
-                            {!analysisState.report.sitemapHealth && (
-                                <Button
-                                    variant="contained"
-                                    color="secondary"
-                                    onClick={handleGenerateFixes}
-                                    disabled={isGeneratingFixes || isApplyingFixes}
-                                    startIcon={isGeneratingFixes ? <CircularProgress size={20} color="inherit" /> : <AutoFixHighIcon />}
-                                    sx={{ ml: 2 }}
-                                >
-                                    {isGeneratingFixes ? 'Generating Fixes...' : 'Generate Auto-Fixes'}
-                                </Button>
-                            )}
-                        </Box>
+                                                    {/* Expandable Broken URLs List */}
+                                                    {validationResults.sitemapHealth.linkIssues.length > 0 && (
+                                                        <Card sx={{ mb: 4 }}>
+                                                            <CardContent>
+                                                                <Typography variant="h6" gutterBottom>
+                                                                    🔗 Link Issues Details ({validationResults.sitemapHealth.linkIssues.length})
+                                                                </Typography>
+                                                                <Box sx={{ maxHeight: 300, overflow: 'auto' }}>
+                                                                    {validationResults.sitemapHealth.linkIssues.map((issue: any, index: number) => (
+                                                                        <Box key={index} sx={{ mb: 1, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
+                                                                            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                                                                                {issue.issueType === '404' ? '🔴' :
+                                                                                    issue.issueType === 'access-denied' ? '🟡' :
+                                                                                        issue.issueType === 'timeout' ? '🟠' : '⚫'} {issue.url}
+                                                                            </Typography>
+                                                                            <Typography variant="body2" color="text.secondary">
+                                                                                {issue.errorMessage}
+                                                                            </Typography>
+                                                                        </Box>
+                                                                    ))}
+                                                                </Box>
+                                                            </CardContent>
+                                                        </Card>
+                                                    )}
+                                                </>
+                                            )}
 
-                        {showFixPanel && (
-                            <FixReviewPanel
-                                fixes={fixes}
-                                onApplyFixes={handleApplyFixes}
-                                isApplying={isApplyingFixes}
-                            />
-                        )}
-                    </Paper>
-                )}
-            </Container>
-        </div >
+                                            {/* Detailed Results */}
+                                            <Typography variant="h6" gutterBottom sx={{ mt: 4 }}>
+                                                Detailed Validation Results
+                                            </Typography>
+                                            {validationResults.validationResults.map((result: any, index: number) => (
+                                                <Card key={result.issueId} sx={{ mb: 2 }}>
+                                                    <CardContent>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                                                            <Chip
+                                                                label={result.status.toUpperCase()}
+                                                                color={
+                                                                    result.status === 'resolved' ? 'success' :
+                                                                        result.status === 'confirmed' ? 'info' :
+                                                                            result.status === 'potential-gap' ? 'warning' :
+                                                                                result.status === 'critical-gap' ? 'error' : 'default'
+                                                                }
+                                                                sx={{ mr: 2 }}
+                                                            />
+                                                            <Typography variant="h6" sx={{ flex: 1 }}>
+                                                                {result.issueTitle}
+                                                            </Typography>
+                                                            <Chip label={`${result.confidence}% confidence`} variant="outlined" />
+                                                        </Box>
+
+                                                        {/* Evidence */}
+                                                        {result.evidence && result.evidence.length > 0 && (
+                                                            <Box sx={{ mt: 2 }}>
+                                                                <Typography variant="subtitle2" gutterBottom>
+                                                                    📄 Evidence ({result.evidence.length} pages analyzed):
+                                                                </Typography>
+                                                                {result.evidence.map((evidence: any, idx: number) => (
+                                                                    <Box key={idx} sx={{ ml: 2, mb: 1, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
+                                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                                            <Typography variant="body2">
+                                                                                <strong>{evidence.pageUrl}</strong> - {evidence.pageTitle}
+                                                                            </Typography>
+                                                                            {evidence.semanticScore !== undefined && (
+                                                                                <Chip
+                                                                                    label={`${(evidence.semanticScore * 100).toFixed(0)}% match`}
+                                                                                    size="small"
+                                                                                    color={evidence.semanticScore > 0.7 ? 'success' : evidence.semanticScore > 0.5 ? 'warning' : 'default'}
+                                                                                    sx={{ ml: 1 }}
+                                                                                />
+                                                                            )}
+                                                                        </Box>
+                                                                        <Typography variant="caption" color="text.secondary">
+                                                                            {evidence.codeExamples} code examples •
+                                                                            {evidence.productionGuidance ? ' Production guidance ✓' : ' No production guidance'}
+                                                                            {evidence.contentGaps.length > 0 && ` • Missing: ${evidence.contentGaps.join(', ')}`}
+                                                                        </Typography>
+                                                                    </Box>
+                                                                ))}
+                                                            </Box>
+                                                        )}
+
+                                                        {/* Recommendations for Best Match */}
+                                                        {result.recommendations && result.recommendations.length > 0 && (
+                                                            <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+                                                                <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 'bold', mb: 2 }}>
+                                                                    💡 Gap Recommendations for Best Match:
+                                                                </Typography>
+                                                                {result.recommendations.map((rec: string, idx: number) => (
+                                                                    <Box key={idx} sx={{ mb: 3, pb: 2, borderBottom: idx < result.recommendations.length - 1 ? '1px solid' : 'none', borderColor: 'divider' }}>
+                                                                        <ReactMarkdown
+                                                                            components={{
+                                                                                code({ node, className, children, ...props }: any) {
+                                                                                    const match = /language-(\w+)/.exec(className || '');
+                                                                                    const inline = !match;
+                                                                                    return !inline && match ? (
+                                                                                        <Box sx={{
+                                                                                            maxHeight: '500px',
+                                                                                            overflow: 'auto',
+                                                                                            maxWidth: '100%',
+                                                                                            my: 2,
+                                                                                            border: '1px solid rgba(0, 0, 0, 0.1)',
+                                                                                            borderRadius: '4px',
+                                                                                            '& pre': {
+                                                                                                margin: '0 !important',
+                                                                                                maxWidth: '100%'
+                                                                                            }
+                                                                                        }}>
+                                                                                            <SyntaxHighlighter
+                                                                                                style={vscDarkPlus}
+                                                                                                language={match[1]}
+                                                                                                PreTag="div"
+                                                                                                wrapLines={false}
+                                                                                                wrapLongLines={false}
+                                                                                                customStyle={{
+                                                                                                    margin: 0,
+                                                                                                    borderRadius: '4px',
+                                                                                                    fontSize: '0.875rem',
+                                                                                                    maxWidth: '100%'
+                                                                                                }}
+                                                                                                {...props}
+                                                                                            >
+                                                                                                {String(children).replace(/\n$/, '')}
+                                                                                            </SyntaxHighlighter>
+                                                                                        </Box>
+                                                                                    ) : (
+                                                                                        <code className={className} {...props} style={{
+                                                                                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                                                                            padding: '2px 6px',
+                                                                                            borderRadius: '3px',
+                                                                                            fontFamily: 'monospace',
+                                                                                            fontSize: '0.9em',
+                                                                                            color: '#60a5fa'
+                                                                                        }}>
+                                                                                            {children}
+                                                                                        </code>
+                                                                                    );
+                                                                                },
+                                                                                p({ children }: any) {
+                                                                                    return <Typography variant="body2" sx={{ mb: 1, lineHeight: 1.6 }}>{children}</Typography>;
+                                                                                },
+                                                                                h1({ children }: any) {
+                                                                                    return <Typography variant="h6" sx={{ mt: 2, mb: 1, fontWeight: 'bold' }}>{children}</Typography>;
+                                                                                },
+                                                                                h2({ children }: any) {
+                                                                                    return <Typography variant="subtitle1" sx={{ mt: 2, mb: 1, fontWeight: 'bold' }}>{children}</Typography>;
+                                                                                },
+                                                                                h3({ children }: any) {
+                                                                                    return <Typography variant="subtitle2" sx={{ mt: 1, mb: 1, fontWeight: 'bold' }}>{children}</Typography>;
+                                                                                },
+                                                                                ul({ children }: any) {
+                                                                                    return <Box component="ul" sx={{ pl: 2, my: 1 }}>{children}</Box>;
+                                                                                },
+                                                                                li({ children }: any) {
+                                                                                    return <Typography component="li" variant="body2" sx={{ mb: 0.5 }}>{children}</Typography>;
+                                                                                }
+                                                                            }}
+                                                                        >
+                                                                            {rec}
+                                                                        </ReactMarkdown>
+                                                                    </Box>
+                                                                ))}
+                                                            </Box>
+                                                        )}
+
+                                                        {/* Potential Gaps */}
+                                                        {result.potentialGaps && result.potentialGaps.length > 0 && (
+                                                            <Box sx={{ mt: 2 }}>
+                                                                <Typography variant="subtitle2" gutterBottom color="warning.main">
+                                                                    ⚠️ Potential Gaps:
+                                                                </Typography>
+                                                                {result.potentialGaps.map((gap: any, idx: number) => (
+                                                                    <Box key={idx} sx={{ ml: 2, mb: 1, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
+                                                                        <Typography variant="body2">
+                                                                            <strong>{gap.pageUrl}</strong>
+                                                                        </Typography>
+                                                                        <Typography variant="caption" color="text.secondary">
+                                                                            {gap.reasoning}
+                                                                        </Typography>
+                                                                    </Box>
+                                                                ))}
+                                                            </Box>
+                                                        )}
+                                                    </CardContent>
+                                                </Card>
+                                            ))}
+
+                                            {/* Export Button for Validation Results */}
+                                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 3 }}>
+                                                <Button
+                                                    variant="contained"
+                                                    color="primary"
+                                                    onClick={() => exportValidationReport(validationResults)}
+                                                    sx={{ minWidth: 200 }}
+                                                >
+                                                    📄 Export Report (Markdown)
+                                                </Button>
+                                            </Box>
+                                        </Paper>
+                                    )}
+
+                                    {/* Results */}
+                                    {analysisState.status === 'completed' && analysisState.report && (
+                                        <Paper elevation={3} sx={{ p: 4 }}>
+                                            <Typography variant="h5" gutterBottom>
+                                                Analysis Results
+                                            </Typography>
+
+                                            <Grid container spacing={3} sx={{ mb: 4 }}>
+                                                <Grid item xs={12} md={4}>
+                                                    <Card>
+                                                        <CardContent sx={{ textAlign: 'center' }}>
+                                                            <Typography variant="h3" color={getScoreColor(analysisState.report.overallScore)}>
+                                                                {analysisState.report.overallScore}
+                                                            </Typography>
+                                                            <Typography variant="h6">Overall Score</Typography>
+                                                        </CardContent>
+                                                    </Card>
+                                                </Grid>
+                                                <Grid item xs={12} md={4}>
+                                                    <Card>
+                                                        <CardContent sx={{ textAlign: 'center' }}>
+                                                            <Typography variant="h4">
+                                                                {analysisState.report.dimensionsAnalyzed}/{analysisState.report.dimensionsTotal}
+                                                            </Typography>
+                                                            <Typography variant="h6">Dimensions</Typography>
+                                                        </CardContent>
+                                                    </Card>
+                                                </Grid>
+                                                <Grid item xs={12} md={4}>
+                                                    <Card>
+                                                        <CardContent sx={{ textAlign: 'center' }}>
+                                                            <Chip
+                                                                label={analysisState.report.confidence.toUpperCase()}
+                                                                color={getConfidenceColor(analysisState.report.confidence)}
+                                                            />
+                                                            <Typography variant="h6" sx={{ mt: 1 }}>Confidence</Typography>
+                                                        </CardContent>
+                                                    </Card>
+                                                </Grid>
+                                            </Grid>
+
+                                            {/* Sitemap Health Summary (only for sitemap mode) */}
+                                            {analysisState.report.sitemapHealth && (
+                                                <CollapsibleCard
+                                                    title="Sitemap Health Summary"
+                                                    defaultExpanded={true}
+                                                    color={analysisState.report.sitemapHealth.healthPercentage < 100 ? 'warning' : 'success'}
+                                                >
+                                                    <Grid container spacing={3}>
+                                                        <Grid item xs={12} md={3}>
+                                                            <Card variant="outlined">
+                                                                <CardContent sx={{ textAlign: 'center' }}>
+                                                                    <Typography variant="h3" color="primary">
+                                                                        {analysisState.report.sitemapHealth.totalUrls}
+                                                                    </Typography>
+                                                                    <Typography variant="h6">Total URLs</Typography>
+                                                                </CardContent>
+                                                            </Card>
+                                                        </Grid>
+                                                        <Grid item xs={12} md={3}>
+                                                            <Card variant="outlined">
+                                                                <CardContent sx={{ textAlign: 'center' }}>
+                                                                    <Typography variant="h3" color="success.main">
+                                                                        {analysisState.report.sitemapHealth.healthyUrls}
+                                                                    </Typography>
+                                                                    <Typography variant="h6">Healthy</Typography>
+                                                                    <Typography variant="body2" color="text.secondary">
+                                                                        {analysisState.report.sitemapHealth.healthPercentage}%
+                                                                    </Typography>
+                                                                </CardContent>
+                                                            </Card>
+                                                        </Grid>
+                                                        <Grid item xs={12} md={3}>
+                                                            <Card variant="outlined">
+                                                                <CardContent sx={{ textAlign: 'center' }}>
+                                                                    <Typography variant="h3" color="error.main">
+                                                                        {analysisState.report.sitemapHealth.brokenUrls}
+                                                                    </Typography>
+                                                                    <Typography variant="h6">Broken (404)</Typography>
+                                                                </CardContent>
+                                                            </Card>
+                                                        </Grid>
+                                                        <Grid item xs={12} md={3}>
+                                                            <Card variant="outlined">
+                                                                <CardContent sx={{ textAlign: 'center' }}>
+                                                                    <Typography variant="h3" color="warning.main">
+                                                                        {analysisState.report.sitemapHealth.accessDeniedUrls +
+                                                                            analysisState.report.sitemapHealth.timeoutUrls +
+                                                                            analysisState.report.sitemapHealth.otherErrorUrls}
+                                                                    </Typography>
+                                                                    <Typography variant="h6">Other Issues</Typography>
+                                                                    <Typography variant="body2" color="text.secondary">
+                                                                        {analysisState.report.sitemapHealth.accessDeniedUrls} access denied, {' '}
+                                                                        {analysisState.report.sitemapHealth.timeoutUrls} timeout, {' '}
+                                                                        {analysisState.report.sitemapHealth.otherErrorUrls} errors
+                                                                    </Typography>
+                                                                </CardContent>
+                                                            </Card>
+                                                        </Grid>
+                                                    </Grid>
+                                                    {analysisState.report.sitemapHealth.linkIssues.length > 0 && (
+                                                        <Box sx={{ mt: 3 }}>
+                                                            <Divider sx={{ my: 2 }} />
+                                                            <Typography variant="h6" gutterBottom>
+                                                                Link Issues Details ({analysisState.report.sitemapHealth.linkIssues.length})
+                                                            </Typography>
+                                                            <Box sx={{ maxHeight: 300, overflow: 'auto', border: 1, borderColor: 'divider', borderRadius: 1, p: 2 }}>
+                                                                {analysisState.report.sitemapHealth.linkIssues.map((issue, index) => (
+                                                                    <Box key={index} sx={{ mb: 1, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
+                                                                        <Typography variant="body2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
+                                                                            <span style={{ marginRight: '8px' }}>
+                                                                                {issue.issueType === '404' ? '🔴' :
+                                                                                    issue.issueType === 'access-denied' ? '🟡' :
+                                                                                        issue.issueType === 'timeout' ? '🟠' : '⚫'}
+                                                                            </span>
+                                                                            {issue.url}
+                                                                        </Typography>
+                                                                        <Typography variant="body2" color="text.secondary" sx={{ ml: 4 }}>
+                                                                            {issue.errorMessage}
+                                                                        </Typography>
+                                                                    </Box>
+                                                                ))}
+                                                            </Box>
+                                                        </Box>
+                                                    )}
+                                                </CollapsibleCard>
+                                            )}
+
+
+                                            {/* AI Readiness Section */}
+                                            {analysisState.report.aiReadiness && (
+                                                <CollapsibleCard
+                                                    title="AI Readiness Assessment"
+                                                    defaultExpanded={false}
+                                                    color={analysisState.report.aiReadiness.overallScore < 80 ? 'warning' : 'success'}
+                                                    count={analysisState.report.aiReadiness.overallScore + '/100'}
+                                                >
+                                                    <Grid container spacing={2}>
+                                                        <Grid item xs={12} md={6}>
+                                                            <Card variant="outlined" sx={{ height: '100%' }}>
+                                                                <CardContent>
+                                                                    <Typography variant="h6" gutterBottom>Configuration Checks</Typography>
+                                                                    <List dense>
+                                                                        <ListItem>
+                                                                            <ListItemIcon>
+                                                                                {analysisState.report.aiReadiness.llmsTxt.found ? <CheckCircleIcon color="success" /> : <ErrorIcon color="error" />}
+                                                                            </ListItemIcon>
+                                                                            <ListItemText
+                                                                                primary="llms.txt"
+                                                                                secondary={analysisState.report.aiReadiness.llmsTxt.found ? "Found" : "Missing"}
+                                                                            />
+                                                                        </ListItem>
+                                                                        <ListItem>
+                                                                            <ListItemIcon>
+                                                                                {analysisState.report.aiReadiness.llmsFullTxt.found ? <CheckCircleIcon color="success" /> : <ErrorIcon color="error" />}
+                                                                            </ListItemIcon>
+                                                                            <ListItemText
+                                                                                primary="llms-full.txt"
+                                                                                secondary={analysisState.report.aiReadiness.llmsFullTxt.found ? "Found" : "Missing"}
+                                                                            />
+                                                                        </ListItem>
+                                                                        <ListItem>
+                                                                            <ListItemIcon>
+                                                                                {analysisState.report.aiReadiness.structuredData.hasJsonLd ? <CheckCircleIcon color="success" /> : <ErrorIcon color="error" />}
+                                                                            </ListItemIcon>
+                                                                            <ListItemText
+                                                                                primary="JSON-LD Structured Data"
+                                                                                secondary={analysisState.report.aiReadiness.structuredData.hasJsonLd ? "Found" : "Missing"}
+                                                                            />
+                                                                        </ListItem>
+                                                                    </List>
+                                                                </CardContent>
+                                                            </Card>
+                                                        </Grid>
+                                                        <Grid item xs={12} md={6}>
+                                                            <Card variant="outlined" sx={{ height: '100%' }}>
+                                                                <CardContent>
+                                                                    <Typography variant="h6" gutterBottom>Robots & Access</Typography>
+                                                                    <List dense>
+                                                                        <ListItem>
+                                                                            <ListItemIcon>
+                                                                                {analysisState.report.aiReadiness.robotsTxt.aiDirectives.length > 0 ? <CheckCircleIcon color="success" /> : <InfoIcon color="action" />}
+                                                                            </ListItemIcon>
+                                                                            <ListItemText
+                                                                                primary="Robots.txt AI Rules"
+                                                                                secondary={analysisState.report.aiReadiness.robotsTxt.aiDirectives.length > 0 ? `${analysisState.report.aiReadiness.robotsTxt.aiDirectives.length} rules found` : "No specific AI rules found"}
+                                                                            />
+                                                                        </ListItem>
+                                                                        <ListItem>
+                                                                            <ListItemIcon>
+                                                                                {analysisState.report.aiReadiness.markdownExports.available ? <CheckCircleIcon color="success" /> : <InfoIcon color="action" />}
+                                                                            </ListItemIcon>
+                                                                            <ListItemText
+                                                                                primary="Markdown Exports"
+                                                                                secondary={analysisState.report.aiReadiness.markdownExports.available ? "Available" : "Not detected"}
+                                                                            />
+                                                                        </ListItem>
+                                                                    </List>
+                                                                </CardContent>
+                                                            </Card>
+                                                        </Grid>
+                                                        {analysisState.report.aiReadiness.recommendations.length > 0 && (
+                                                            <Grid item xs={12}>
+                                                                <Alert severity="info">
+                                                                    <Typography variant="subtitle2">Recommendations:</Typography>
+                                                                    <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
+                                                                        {analysisState.report.aiReadiness.recommendations.map((rec, i) => (
+                                                                            <li key={i}>{rec}</li>
+                                                                        ))}
+                                                                    </ul>
+                                                                </Alert>
+                                                            </Grid>
+                                                        )}
+                                                    </Grid>
+                                                </CollapsibleCard>
+                                            )}
+
+                                            {/* Dimension Analysis Section */}
+                                            <CollapsibleCard
+                                                title="Dimension Analysis"
+                                                defaultExpanded={false}
+                                            >
+                                                <Grid container spacing={3}>
+                                                    {Object.entries(analysisState.report.dimensions).map(([dimension, result]: [string, any]) => (
+                                                        <Grid item xs={12} md={6} key={dimension}>
+                                                            <Card variant="outlined">
+                                                                <CardContent>
+                                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                                                        <Typography variant="h6" sx={{ textTransform: 'capitalize' }}>
+                                                                            {dimension}
+                                                                        </Typography>
+                                                                        <Chip
+                                                                            label={`${result.score}/10`}
+                                                                            color={getScoreColor((result.score || 0) * 10)}
+                                                                            variant="outlined"
+                                                                            sx={{ fontWeight: 'bold' }}
+                                                                        />
+                                                                    </Box>
+                                                                    {result.findings && result.findings.length > 0 ? (
+                                                                        <List dense>
+                                                                            {result.findings.slice(0, 3).map((finding: string, i: number) => (
+                                                                                <ListItem key={i} disableGutters>
+                                                                                    <ListItemIcon sx={{ minWidth: 30 }}>
+                                                                                        <InfoIcon fontSize="small" color="info" />
+                                                                                    </ListItemIcon>
+                                                                                    <ListItemText primary={finding} primaryTypographyProps={{ variant: 'body2' }} />
+                                                                                </ListItem>
+                                                                            ))}
+                                                                            {result.findings.length > 3 && (
+                                                                                <Typography variant="caption" color="text.secondary" sx={{ ml: 4 }}>
+                                                                                    ...and {result.findings.length - 3} more
+                                                                                </Typography>
+                                                                            )}
+                                                                        </List>
+                                                                    ) : (
+                                                                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                                                                            No major findings.
+                                                                        </Typography>
+                                                                    )}
+                                                                </CardContent>
+                                                            </Card>
+                                                        </Grid>
+                                                    ))}
+                                                </Grid>
+                                            </CollapsibleCard>
+                                            <CollapsibleCard
+                                                title="Critical Findings (Top Issues)"
+                                                defaultExpanded={true}
+                                                color="error"
+                                            >
+                                                <Grid container spacing={2}>
+                                                    {/* Link Issues */}
+                                                    <Grid item xs={12} md={4}>
+                                                        <Card>
+                                                            <CardContent>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                                                                    {analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.length ? (
+                                                                        <>
+                                                                            <ErrorIcon sx={{ color: 'warning.main', mr: 1 }} />
+                                                                            <Typography variant="h6">
+                                                                                Link Issues: {analysisState.report.linkAnalysis.linkValidation.linkIssueFindings.length}
+                                                                                {(() => {
+                                                                                    const broken = analysisState.report.linkAnalysis.linkValidation.linkIssueFindings.filter((l: any) => l.issueType === '404').length;
+                                                                                    return broken > 0 ? ` (${broken} broken)` : '';
+                                                                                })()}
+                                                                            </Typography>
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <CheckCircleIcon sx={{ color: 'success.main', mr: 1 }} />
+                                                                            <Typography variant="h6">
+                                                                                Link Issues: None found
+                                                                            </Typography>
+                                                                        </>
+                                                                    )}
+                                                                </Box>
+                                                                {analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.slice(0, 2).map((link: any, i: number) => (
+                                                                    <Typography key={i} variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                                                                        • {link.anchorText} → {link.issueType === '404' ? '404' : link.issueType === 'access-denied' ? '403' : link.status}
+                                                                    </Typography>
+                                                                ))}
+                                                                {(analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.length || 0) > 2 && (
+                                                                    <Typography variant="body2" color="text.secondary">
+                                                                        ... and {(analysisState.report.linkAnalysis.linkValidation?.linkIssueFindings?.length || 0) - 2} more
+                                                                    </Typography>
+                                                                )}
+                                                            </CardContent>
+                                                        </Card>
+                                                    </Grid>
+
+                                                    {/* Deprecated Code */}
+                                                    <Grid item xs={12} md={4}>
+                                                        <Card>
+                                                            <CardContent>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                                                                    {analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length ? (
+                                                                        <>
+                                                                            <ErrorIcon sx={{ color: 'warning.main', mr: 1 }} />
+                                                                            <Typography variant="h6">
+                                                                                Deprecated Code: {analysisState.report.codeAnalysis.enhancedAnalysis.deprecatedFindings.length}
+                                                                            </Typography>
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <CheckCircleIcon sx={{ color: 'success.main', mr: 1 }} />
+                                                                            <Typography variant="h6">
+                                                                                Deprecated Code: None found
+                                                                            </Typography>
+                                                                        </>
+                                                                    )}
+                                                                </Box>
+                                                                {analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.slice(0, 2).map((finding, i) => (
+                                                                    <Typography key={i} variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                                                                        • {finding.method} (deprecated in {finding.deprecatedIn})
+                                                                    </Typography>
+                                                                ))}
+                                                                {(analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length || 0) > 2 && (
+                                                                    <Typography variant="body2" color="text.secondary">
+                                                                        ... and {(analysisState.report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length || 0) - 2} more
+                                                                    </Typography>
+                                                                )}
+                                                            </CardContent>
+                                                        </Card>
+                                                    </Grid>
+
+                                                    {/* Syntax Errors */}
+                                                    <Grid item xs={12} md={4}>
+                                                        <Card>
+                                                            <CardContent>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                                                                    {analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.length ? (
+                                                                        <>
+                                                                            <ErrorIcon sx={{ color: 'error.main', mr: 1 }} />
+                                                                            <Typography variant="h6">
+                                                                                Syntax Errors: {analysisState.report.codeAnalysis.enhancedAnalysis.syntaxErrorFindings.length}
+                                                                            </Typography>
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <CheckCircleIcon sx={{ color: 'success.main', mr: 1 }} />
+                                                                            <Typography variant="h6">
+                                                                                Syntax Errors: None found
+                                                                            </Typography>
+                                                                        </>
+                                                                    )}
+                                                                </Box>
+                                                                {analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.slice(0, 2).map((error, i) => (
+                                                                    <Typography key={i} variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                                                                        • {error.errorType}: {error.description}
+                                                                    </Typography>
+                                                                ))}
+                                                                {(analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.length || 0) > 2 && (
+                                                                    <Typography variant="body2" color="text.secondary">
+                                                                        ... and {(analysisState.report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.length || 0) - 2} more
+                                                                    </Typography>
+                                                                )}
+                                                            </CardContent>
+                                                        </Card>
+                                                    </Grid>
+
+                                                    {/* URL Slug Issues - NEW */}
+                                                    {(analysisState.report as any).urlSlugAnalysis && (
+                                                        <Grid item xs={12} md={4}>
+                                                            <Card>
+                                                                <CardContent>
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                                                                        {(analysisState.report as any).urlSlugAnalysis.issues?.length ? (
+                                                                            <>
+                                                                                <ErrorIcon sx={{ color: 'warning.main', mr: 1 }} />
+                                                                                <Typography variant="h6">
+                                                                                    URL Slug Issues: {(analysisState.report as any).urlSlugAnalysis.issues.length}
+                                                                                </Typography>
+                                                                            </>
+                                                                        ) : (
+                                                                            <>
+                                                                                <CheckCircleIcon sx={{ color: 'success.main', mr: 1 }} />
+                                                                                <Typography variant="h6">
+                                                                                    URL Slug Quality: Clean
+                                                                                </Typography>
+                                                                            </>
+                                                                        )}
+                                                                    </Box>
+                                                                    {(analysisState.report as any).urlSlugAnalysis.issues?.slice(0, 2).map((issue: any, i: number) => (
+                                                                        <Typography key={i} variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                                                                            • "{issue.segment}" → "{issue.suggestion}"
+                                                                        </Typography>
+                                                                    ))}
+                                                                    {((analysisState.report as any).urlSlugAnalysis.issues?.length || 0) > 2 && (
+                                                                        <Typography variant="body2" color="text.secondary">
+                                                                            ... and {((analysisState.report as any).urlSlugAnalysis.issues?.length || 0) - 2} more
+                                                                        </Typography>
+                                                                    )}
+                                                                </CardContent>
+                                                            </Card>
+                                                        </Grid>
+                                                    )}
+                                                </Grid>
+
+                                                <Alert severity="info" sx={{ mb: 4 }}>
+                                                    See full report for complete details on all findings and recommendations.
+                                                </Alert>
+                                            </CollapsibleCard>
+
+                                            {/* Simplified Recommendations - Top 5 */}
+                                            <CollapsibleCard title="Select Fixes (Recommendations)" defaultExpanded={false} color="info">
+                                                <Alert severity="info" sx={{ mb: 2 }}>
+                                                    Select the issues you would like Lensy to automatically fix for you.
+                                                </Alert>
+                                                <Grid container spacing={2}>
+                                                    {(() => {
+                                                        // Flatten all recommendations from all dimensions
+                                                        const allRecs = Object.entries(analysisState.report.dimensions)
+                                                            .flatMap(([dim, result]) => (result.recommendations || []).map(rec => ({ ...rec, dimension: dim })));
+
+                                                        // Take top 5
+                                                        const top5 = allRecs.slice(0, 5);
+
+                                                        return top5.map((rec: any, i: number) => {
+                                                            const recId = `${rec.dimension}-${i}`;
+                                                            const isSelected = selectedRecommendations.includes(recId);
+
+                                                            return (
+                                                                <Grid item xs={12} key={recId}>
+                                                                    <Paper
+                                                                        variant="outlined"
+                                                                        sx={{
+                                                                            p: 2,
+                                                                            bgcolor: isSelected ? 'rgba(33, 150, 243, 0.08)' : 'background.paper',
+                                                                            borderColor: isSelected ? 'primary.main' : 'divider',
+                                                                            borderRadius: 2,
+                                                                            display: 'flex',
+                                                                            alignItems: 'flex-start',
+                                                                            cursor: 'pointer',
+                                                                            '&:hover': { bgcolor: isSelected ? 'rgba(33, 150, 243, 0.12)' : 'rgba(255, 255, 255, 0.02)' }
+                                                                        }}
+                                                                        onClick={() => {
+                                                                            if (isSelected) {
+                                                                                setSelectedRecommendations(selectedRecommendations.filter(id => id !== recId));
+                                                                            } else {
+                                                                                setSelectedRecommendations([...selectedRecommendations, recId]);
+                                                                            }
+                                                                        }}
+                                                                    >
+                                                                        <Checkbox
+                                                                            checked={isSelected}
+                                                                            sx={{ mt: -0.5, ml: -1 }}
+                                                                        />
+                                                                        <Box sx={{ ml: 1, flexGrow: 1 }}>
+                                                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                                                                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                                                                    {rec.action}
+                                                                                </Typography>
+                                                                                <Chip
+                                                                                    label={rec.dimension}
+                                                                                    size="small"
+                                                                                    variant="outlined"
+                                                                                    sx={{ height: 20, fontSize: '0.65rem', textTransform: 'uppercase' }}
+                                                                                />
+                                                                            </Box>
+                                                                            <Typography variant="caption" color="text.secondary">
+                                                                                Priority: {rec.priority?.toUpperCase()} • Impact: {rec.impact}
+                                                                            </Typography>
+                                                                        </Box>
+                                                                    </Paper>
+                                                                </Grid>
+                                                            );
+                                                        });
+                                                    })()}
+                                                </Grid>
+                                            </CollapsibleCard>
+
+                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 3 }}>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    Analysis completed in {(analysisState.report.analysisTime / 1000).toFixed(1)}s
+                                                    {analysisState.report.cacheStatus === 'hit' && ' ⚡ (cached)'}
+                                                </Typography>
+                                                <Button
+                                                    variant="outlined"
+                                                    onClick={() => exportMarkdownReport(analysisState.report!)}
+                                                    sx={{ ml: 2 }}
+                                                >
+                                                    Export Report
+                                                </Button>
+
+                                                {!analysisState.report.sitemapHealth && (
+                                                    <Button
+                                                        variant="contained"
+                                                        color="secondary"
+                                                        onClick={handleGenerateFixes}
+                                                        disabled={isGeneratingFixes || isApplyingFixes}
+                                                        startIcon={isGeneratingFixes ? <CircularProgress size={20} color="inherit" /> : <AutoFixHighIcon />}
+                                                        sx={{ ml: 2 }}
+                                                    >
+                                                        {isGeneratingFixes ? 'Generating Fixes...' : 'Generate Auto-Fixes'}
+                                                    </Button>
+                                                )}
+                                            </Box>
+
+                                            {showFixPanel && (
+                                                <FixReviewPanel
+                                                    fixes={fixes}
+                                                    onApplyFixes={handleApplyFixes}
+                                                    isApplying={isApplyingFixes}
+                                                />
+                                            )}
+                                        </Paper>
+                                    )}
+                                </Container>
+                            </div>
+                        ) : (
+                            <Navigate to="/login" replace />
+                        )
+                    }
+                />
+            </Routes>
+        </BrowserRouter>
     );
 }
 
