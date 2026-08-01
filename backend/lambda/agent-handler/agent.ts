@@ -82,6 +82,33 @@ interface DocConfidence {
     signals: string[];   // human-readable signals that contributed
 }
 
+function detectSPAShell(html: string): { isSPA: boolean; markers: string[] } {
+    const markers: string[] = [];
+
+    const textContent = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    const wordCount = textContent.split(/\s+/).filter(w => w.length > 2).length;
+
+    if (html.length < 10000) markers.push(`small HTML shell (${html.length} bytes)`);
+    if (wordCount < 150) markers.push(`low word count (${wordCount} words)`);
+    if (/<div[^>]+id=["'](app|root|main|__nuxt|__next)["']/i.test(html)) markers.push('SPA mount point');
+    if (/data-reactroot|__NEXT_DATA__|__nuxt|__vue_ssr|emberjs/i.test(html)) markers.push('SPA framework marker');
+    if (/<noscript[\s\S]*?(javascript|browser|enable js)/i.test(html)) markers.push('noscript JS-required message');
+    // Script-heavy but content-light: many <script> tags but almost no <p>/<article>
+    const scriptCount = (html.match(/<script[\s>]/gi) || []).length;
+    const pCount = (html.match(/<p[\s>]/gi) || []).length;
+    if (scriptCount >= 3 && pCount <= 2) markers.push(`script-heavy/content-light (${scriptCount} scripts, ${pCount} paragraphs)`);
+    // JS redirect shell: tiny page whose only job is window.location redirect (e.g. Salesforce/sfdc portals)
+    if (html.length < 1500 && /window\.location\.(replace|href|assign)\s*[=(]/.test(html)) markers.push('JS redirect shell');
+
+    // Require at least size signal + one app marker to avoid false positives on genuinely sparse pages
+    const hasSizeSignal = html.length < 10000 || wordCount < 150;
+    const hasAppMarker = markers.some(m =>
+        m.includes('mount point') || m.includes('framework marker') ||
+        m.includes('noscript') || m.includes('script-heavy') || m.includes('JS redirect shell')
+    );
+    return { isSPA: hasSizeSignal && hasAppMarker, markers };
+}
+
 function scoreDocConfidence(html: string, url: string): DocConfidence {
     const signals: string[] = [];
     let score = 0;
@@ -391,9 +418,36 @@ export async function runAgent(input: AgentRunInput): Promise<string> {
             });
         }
 
+        // ── Step 1.6: SPA shell detection ──
+        // Must run before scoreDocConfidence — SPA shells have no content so the heuristic
+        // would silently classify them as non-doc pages, giving users a misleading error.
+        const spaCheck = detectSPAShell(prefetchedHtml);
+        if (spaCheck.isSPA) {
+            console.log(`[Pipeline] SPA shell detected — markers: ${spaCheck.markers.join(', ')}`);
+            const spaMessage = 'This page is rendered by JavaScript (React, Vue, Angular, etc.) and Lensy\'s scanner cannot read its content. Try submitting a direct link to a specific documentation page, or check if a static/server-rendered version is available.';
+            await progress.error(spaMessage);
+            await writeSessionArtifact(sessionId, 'status.json', {
+                status: 'rejected',
+                reason: 'javascript-rendered-page',
+                completedAt: new Date().toISOString(),
+            });
+            await writeAuditLog(sessionId, url, 'rejected', {
+                reason: 'javascript-rendered-page',
+                spaMarkers: spaCheck.markers.join(', '),
+            });
+            if (ipHash) await refundUsage(ipHash);
+            return JSON.stringify({
+                success: false,
+                error: 'javascript-rendered-page',
+                message: spaMessage,
+                spaMarkers: spaCheck.markers,
+            });
+        }
+
         // ── Step 1.7: Content gate + confidence scoring ──
         // Two-stage gate: (1) fast heuristic, (2) LLM verification for ambiguous cases
         let docConfidence: DocConfidence = { isDoc: true, confidence: 1, signals: [] };
+        let detectedCategory = 'UNKNOWN';
         if (prefetchedHtml) {
             docConfidence = scoreDocConfidence(prefetchedHtml, url);
             console.log(`[Pipeline] Doc confidence (heuristic): ${docConfidence.confidence} (${docConfidence.isDoc ? 'PASS' : 'REJECT'}) — signals: ${docConfidence.signals.join('; ')}`);
@@ -490,6 +544,7 @@ Respond with JSON only:
                     );
 
                     const llmCategory = llmResult.category || (llmResult.isDoc ? 'DOCUMENTATION' : 'UNKNOWN');
+                    detectedCategory = llmCategory;
                     console.log(`[Pipeline] LLM doc verification: isDoc=${llmResult.isDoc}, category=${llmCategory}, reason=${llmResult.reason}`);
 
                     if (!llmResult.isDoc) {
@@ -506,7 +561,14 @@ Respond with JSON only:
             }
 
             if (!docConfidence.isDoc) {
-                const rejectMessage = 'This page does not appear to be technical documentation. Lensy analyzes developer docs, API references, SDK guides, and technical tutorials. Try entering a specific documentation page URL instead.';
+                const rejectMessage =
+                    detectedCategory === 'INDEX/NAVIGATION'
+                        ? 'This looks like a documentation index or table of contents rather than a specific documentation page. Lensy works best on individual content pages — try navigating to a specific article, guide, or API reference page and submitting that URL.'
+                        : detectedCategory === 'MARKETING/PRODUCT'
+                        ? 'This looks like a marketing or product page rather than technical documentation. Lensy analyzes developer docs, API references, and technical guides. Try submitting your docs URL directly (e.g. docs.yoursite.com).'
+                        : detectedCategory === 'BLOG/ARTICLE'
+                        ? 'This looks like a blog post or article rather than technical documentation. Lensy analyzes developer docs, API references, and SDK guides.'
+                        : 'This page does not appear to be technical documentation. Lensy analyzes developer docs, API references, SDK guides, and technical tutorials. Try entering a specific documentation page URL instead.';
                 await progress.error(rejectMessage);
                 await writeSessionArtifact(sessionId, 'status.json', {
                     status: 'rejected',
@@ -516,6 +578,7 @@ Respond with JSON only:
                 await writeAuditLog(sessionId, url, 'rejected', {
                     reason: 'non-documentation-page',
                     docConfidence: String(docConfidence.confidence),
+                    detectedCategory,
                 });
                 // Refund usage — rejected scans should not count against daily limit
                 if (ipHash) await refundUsage(ipHash);
