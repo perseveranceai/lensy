@@ -23,7 +23,7 @@ const REF_CONFIG: Record<string, { heading: string; description: string; success
     },
     default: {
         heading: 'Join the Waitlist',
-        description: 'Get early access to higher audit limits and new features as we grow.',
+        description: 'Get early access to higher audit limits and upcoming features as we grow.',
         successMessage: 'We\'ll reach out when higher limits are available.',
         buttonLabel: 'Join Waitlist',
     },
