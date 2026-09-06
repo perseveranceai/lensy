@@ -4,6 +4,15 @@ Operator steps for the deploy pipeline. Run these in order — each unblocks the
 
 Everything here is a one-time setup action on identity, monitoring, or repo settings, which is why it lives in a runbook rather than in the pipeline itself.
 
+> **Run Steps 1–4 from the `feat/cicd-pipeline` branch, before merging it.**
+> The CDK changes only exist on that branch, and merging first would trigger a
+> `Deploy` run that fails at credential assumption because the OIDC roles do
+> not exist yet. Merge last, once Steps 1–4 are done.
+>
+> ```bash
+> git checkout feat/cicd-pipeline
+> ```
+
 ---
 
 ## Step 1 — Gamma monitoring cutover (do this before any deploy)
@@ -48,7 +57,22 @@ There is a monitoring gap of a few minutes between the delete and the deploy. On
 
 ## Step 2 — Prod monitoring (the actual gap)
 
-Prod has never had alarms, metric filters, or a `Lensy/Prod` namespace. Nothing to delete — just deploy:
+Prod has never had alarms, metric filters, or a `Lensy/Prod` namespace. Nothing to delete.
+
+**This deploy is not monitoring-only.** Prod has drifted from `main`, so `cdk diff` shows two application changes riding along. Both look intentional, but decide deliberately rather than discovering them after:
+
+| Change | Effect |
+|---|---|
+| `AgentHandlerFunction` code | Ships `dd78962` — JS-rendered SPA shell detection. Currently gamma-only. This is the fix for doc portals that returned an empty shell and got rejected as "not documentation". |
+| `ApiHandlerFunction` env `FREE_TIER_DAILY_LIMIT` | **100 → 3.** Prod is currently running the gamma testing value, so the free tier has been 33× looser than intended. Deploying restores the intended limit. |
+
+Re-check before running, since this drifts over time:
+
+```bash
+cd backend && LENSY_ENV=prod npx cdk diff
+```
+
+Then:
 
 ```bash
 cd backend && npm run deploy:prod

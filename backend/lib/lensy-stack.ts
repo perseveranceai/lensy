@@ -557,6 +557,14 @@ function handler(event) {
             `arn:aws:sns:${this.region}:${this.account}:lensy-alerts`
         );
 
+        // Import the log group by name rather than touching `fn.logGroup` —
+        // that getter makes CDK synthesize a LogRetention custom resource
+        // (a Lambda, a role, and logs:PutRetentionPolicy on "*") purely as a
+        // side effect of wanting to attach a filter. These log groups already
+        // exist, so importing is both cheaper and less privileged.
+        const logGroupFor = (fn: lambda.IFunction, id: string) =>
+            logs.LogGroup.fromLogGroupName(this, `${id}LogGroup`, `/aws/lambda/${fn.functionName}`);
+
         // Turn a log pattern into a custom metric, then alarm on it.
         const alarmOnLogPattern = (
             id: string,
@@ -594,9 +602,12 @@ function handler(event) {
             return alarm;
         };
 
-        alarmOnLogPattern('AgentErrors', agentHandler.logGroup, 'AgentErrors', 'ERROR', 3);
-        alarmOnLogPattern('ApiErrors', apiHandler.logGroup, 'ApiErrors', 'ERROR', 3);
-        alarmOnLogPattern('RateLimitHits', apiHandler.logGroup, 'RateLimitHits', 'Rate limit exceeded', 1);
+        const agentLogGroup = logGroupFor(agentHandler, 'Agent');
+        const apiLogGroup = logGroupFor(apiHandler, 'Api');
+
+        alarmOnLogPattern('AgentErrors', agentLogGroup, 'AgentErrors', 'ERROR', 3);
+        alarmOnLogPattern('ApiErrors', apiLogGroup, 'ApiErrors', 'ERROR', 3);
+        alarmOnLogPattern('RateLimitHits', apiLogGroup, 'RateLimitHits', 'Rate limit exceeded', 1);
 
         // Lambda runtime failures — crashes, timeouts, OOM — which never reach
         // the log-pattern filters above because the handler dies first.
