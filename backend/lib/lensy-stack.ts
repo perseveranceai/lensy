@@ -8,6 +8,10 @@ import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as cw_actions from 'aws-cdk-lib/aws-cloudwatch-actions';
+import * as sns from 'aws-cdk-lib/aws-sns';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as targets from 'aws-cdk-lib/aws-route53-targets';
@@ -515,6 +519,106 @@ function handler(event) {
         // ============================================
         // 8. Outputs
         // ============================================
+
+        // ── Deployment decision log ─────────────────────────────────────
+        // One row per deploy, written in three passes: features at deploy
+        // time, the approve/reject decision, then the outcome ~24h later.
+        // Deliberately a single table across environments — it records the
+        // pipeline's behaviour, not the application's — so it is created
+        // once, with the prod stack, and both gamma and prod runs write here.
+        if (isProd) {
+            const deploymentDecisionsTable = new dynamodb.Table(this, 'DeploymentDecisionsTable', {
+                tableName: 'LensyDeploymentDecisions',
+                partitionKey: { name: 'deployId', type: dynamodb.AttributeType.STRING },
+                billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+                // Never expire: the whole point is to accumulate history that
+                // a future promotion rule can be replayed against.
+                removalPolicy: cdk.RemovalPolicy.RETAIN,
+            });
+
+            new cdk.CfnOutput(this, 'DeploymentDecisionsTableName', {
+                value: deploymentDecisionsTable.tableName,
+                description: 'Deployment decision log table',
+            });
+        }
+
+        // ── Monitoring ──────────────────────────────────────────────────
+        // Log metric filters + alarms, per environment. Previously these were
+        // hand-built in the console for gamma only, pinned to the physical
+        // function names of the day — a function replacement would have
+        // orphaned them onto a dead log group while the alarm stayed green.
+        // Defining them here means they always follow the function.
+        const envTitle = lensyEnv.charAt(0).toUpperCase() + lensyEnv.slice(1);
+        const metricNamespace = `Lensy/${envTitle}`;
+
+        const alertTopic = sns.Topic.fromTopicArn(
+            this,
+            'LensyAlertsTopic',
+            `arn:aws:sns:${this.region}:${this.account}:lensy-alerts`
+        );
+
+        // Turn a log pattern into a custom metric, then alarm on it.
+        const alarmOnLogPattern = (
+            id: string,
+            logGroup: logs.ILogGroup,
+            metricName: string,
+            pattern: string,
+            threshold: number
+        ) => {
+            new logs.MetricFilter(this, `${id}Filter`, {
+                logGroup,
+                metricNamespace,
+                metricName,
+                filterPattern: logs.FilterPattern.literal(`"${pattern}"`),
+                metricValue: '1',
+                defaultValue: 0,
+            });
+
+            const alarm = new cloudwatch.Alarm(this, `${id}Alarm`, {
+                alarmName: `Lensy-${envTitle}-${metricName}`,
+                metric: new cloudwatch.Metric({
+                    namespace: metricNamespace,
+                    metricName,
+                    statistic: 'Sum',
+                    period: cdk.Duration.minutes(5),
+                }),
+                threshold,
+                evaluationPeriods: 1,
+                comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+                // No matching log lines means no errors, not missing coverage.
+                // Safe here only because the filter now tracks the live log group.
+                treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+                alarmDescription: `${metricName} on ${lensyEnv} crossed ${threshold} in 5 minutes`,
+            });
+            alarm.addAlarmAction(new cw_actions.SnsAction(alertTopic));
+            return alarm;
+        };
+
+        alarmOnLogPattern('AgentErrors', agentHandler.logGroup, 'AgentErrors', 'ERROR', 3);
+        alarmOnLogPattern('ApiErrors', apiHandler.logGroup, 'ApiErrors', 'ERROR', 3);
+        alarmOnLogPattern('RateLimitHits', apiHandler.logGroup, 'RateLimitHits', 'Rate limit exceeded', 1);
+
+        // Lambda runtime failures — crashes, timeouts, OOM — which never reach
+        // the log-pattern filters above because the handler dies first.
+        const alarmOnLambdaErrors = (id: string, fn: lambda.IFunction, label: string) => {
+            const alarm = new cloudwatch.Alarm(this, `${id}LambdaErrorsAlarm`, {
+                alarmName: `Lensy-${envTitle}-${label}LambdaErrors`,
+                metric: fn.metricErrors({
+                    statistic: 'Sum',
+                    period: cdk.Duration.minutes(5),
+                }),
+                threshold: 1,
+                evaluationPeriods: 1,
+                comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+                treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+                alarmDescription: `${label} Lambda on ${lensyEnv} threw an unhandled error`,
+            });
+            alarm.addAlarmAction(new cw_actions.SnsAction(alertTopic));
+            return alarm;
+        };
+
+        alarmOnLambdaErrors('Agent', agentHandler, 'Agent');
+        alarmOnLambdaErrors('Api', apiHandler, 'Api');
 
         new cdk.CfnOutput(this, 'HttpApiUrl', {
             value: httpApi.apiEndpoint,

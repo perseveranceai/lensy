@@ -1,0 +1,210 @@
+name: Deploy
+
+# Trunk-based: every merge to main ships gamma automatically, then the SAME
+# commit waits on an approval before it ships prod. Credentials come from OIDC
+# with one role per environment — the gamma role's trust policy admits only
+# refs/heads/main, the prod role's only environment:production, so a gamma run
+# cannot reach prod even if this file is wrong.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - 'LICENSE'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  actions: read
+
+concurrency:
+  # Never cancel in flight: an interrupted cdk deploy leaves CloudFormation
+  # mid-update, which is materially worse than waiting.
+  group: deploy-main
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  NODE_VERSION: '23.11.0'
+
+jobs:
+  gamma:
+    name: Deploy gamma
+    runs-on: ubuntu-latest
+    outputs:
+      target_env: ${{ steps.classify.outputs.target_env }}
+      verdict: ${{ steps.classify.outputs.verdict }}
+      reasons: ${{ steps.classify.outputs.reasons }}
+      deploy_id: ${{ steps.classify.outputs.deploy_id }}
+      gamma_finished_at: ${{ steps.finished.outputs.ts }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the classifier diffs against the previous commit
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: arn:aws:iam::951411676525:role/lensy-gha-gamma
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install backend
+        working-directory: backend
+        run: npm ci
+
+      - name: Build backend + lambdas
+        working-directory: backend
+        run: npm run build && npm run build:lambdas
+
+      - name: CDK diff
+        working-directory: backend
+        env:
+          LENSY_ENV: gamma
+        # Captured for the classifier: this is the only reliable read on blast
+        # radius. Never fail the build on a diff being present.
+        run: npx cdk diff 2>&1 | tee "${GITHUB_WORKSPACE}/cdk-diff.txt" || true
+
+      - name: CDK deploy gamma
+        working-directory: backend
+        env:
+          LENSY_ENV: gamma
+        run: npx cdk deploy --require-approval never
+
+      - name: Install frontend
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build + publish frontend
+        working-directory: frontend
+        run: |
+          npm run build:gamma
+          aws s3 sync build/ s3://lensy-console-951411676525-us-east-1-gamma --delete
+          aws cloudfront create-invalidation \
+            --distribution-id E1J3M0RUB5VA7F --paths "/*"
+
+      - name: Smoke test gamma
+        id: smoke
+        run: |
+          node scripts/smoke-test.js \
+            --base-url https://bnkzdze378.execute-api.us-east-1.amazonaws.com \
+            --out "${GITHUB_WORKSPACE}/smoke.json"
+
+      - name: Classify deploy risk
+        id: classify
+        if: always() # a red smoke test is itself a feature worth recording
+        run: |
+          node scripts/assess-deploy-risk.js \
+            --base "${{ github.event.before }}" \
+            --head "${{ github.sha }}" \
+            --author "${{ github.actor }}" \
+            --cdk-diff "${GITHUB_WORKSPACE}/cdk-diff.txt" \
+            --smoke "${GITHUB_WORKSPACE}/smoke.json" \
+            --env prod \
+            > "${GITHUB_WORKSPACE}/decision.json"
+          cat "${GITHUB_WORKSPACE}/decision.json"
+
+      - name: Record features
+        if: always()
+        run: node scripts/record-deploy.js --phase features --file "${GITHUB_WORKSPACE}/decision.json"
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo "### Gamma deployed — prod gate: \`${{ steps.classify.outputs.target_env }}\`"
+            echo ""
+            echo "**Classifier verdict:** \`${{ steps.classify.outputs.verdict }}\`  "
+            echo "**Reasons:** ${{ steps.classify.outputs.reasons }}  "
+            echo "**Shadow mode:** ${{ steps.classify.outputs.shadow_mode }}"
+            echo ""
+            echo "<details><summary>cdk diff</summary>"
+            echo ""
+            echo '```'
+            head -c 40000 "${GITHUB_WORKSPACE}/cdk-diff.txt" || true
+            echo '```'
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Mark finish time
+        id: finished
+        if: always()
+        run: echo "ts=$(date -u +%s)" >> "$GITHUB_OUTPUT"
+
+  prod:
+    name: Deploy prod
+    needs: gamma
+    runs-on: ubuntu-latest
+    # Resolves to 'production' (required reviewer) or, once the decision log has
+    # earned it in phase 5, 'production-auto' (no reviewer). Same deploy either
+    # way — only the protection rule differs.
+    environment: ${{ needs.gamma.outputs.target_env }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: arn:aws:iam::951411676525:role/lensy-gha-prod
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install backend
+        working-directory: backend
+        run: npm ci
+
+      - name: Build backend + lambdas
+        working-directory: backend
+        run: npm run build && npm run build:lambdas
+
+      - name: CDK deploy prod
+        working-directory: backend
+        env:
+          LENSY_ENV: prod
+        run: npx cdk deploy --require-approval never
+
+      - name: Install frontend
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build + publish frontend
+        working-directory: frontend
+        # NOTE: prod frontend is NOT the stack's ConsoleBucketName output
+        # (lensy-console-951411676525-us-east-1 redirects). The live site is
+        # served from www.perseveranceai.com behind E274OKID4GUQ1J. Wiring this
+        # to stack outputs would "succeed" and change nothing visible.
+        run: |
+          npm run build:prod
+          aws s3 sync build/ s3://www.perseveranceai.com --delete
+          aws cloudfront create-invalidation \
+            --distribution-id E274OKID4GUQ1J --paths "/*"
+
+      - name: Smoke test prod
+        run: |
+          node scripts/smoke-test.js \
+            --base-url https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com \
+            --out "${GITHUB_WORKSPACE}/smoke-prod.json"
+
+      - name: Record decision
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Who actually clicked Approve, and how long it sat waiting.
+          APPROVER=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/approvals" \
+            --jq '.[0].user.login' 2>/dev/null || echo unknown)
+          LATENCY=$(( $(date -u +%s) - ${{ needs.gamma.outputs.gamma_finished_at }} ))
+          MODE=$([ "${{ needs.gamma.outputs.target_env }}" = "production-auto" ] && echo auto || echo manual)
+
+          node scripts/record-deploy.js --phase decision \
+            --deploy-id "${{ needs.gamma.outputs.deploy_id }}" \
+            --mode "$MODE" \
+            --approved-by "$APPROVER" \
+            --latency "$LATENCY"
