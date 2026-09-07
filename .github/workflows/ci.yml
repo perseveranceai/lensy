@@ -55,6 +55,14 @@ jobs:
           # PR CI holds no secrets by design, so synth opts out of the
           # PERPLEXITY_API_KEY guard rather than tripping over it.
           LENSY_SYNTH_ONLY: 'true'
+          # cdk.context.json caches the perseveranceai.com hosted-zone lookup,
+          # but its key embeds the account id. Without credentials CDK_DEFAULT_
+          # ACCOUNT is unset, the key misses, and CDK attempts a live lookup it
+          # cannot perform. Pinning both makes the cache hit, so synth stays
+          # credential-free. Neither value is secret — both are already in
+          # deploy.yml and the runbook in this public repo.
+          CDK_DEFAULT_ACCOUNT: '951411676525'
+          CDK_DEFAULT_REGION: us-east-1
         # Synth needs no AWS credentials and catches the class of error that
         # only shows up at deploy time — bad construct wiring, invalid props.
         run: npx cdk synth --quiet
