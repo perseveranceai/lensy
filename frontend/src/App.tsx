@@ -1,3 +1,4 @@
+// CI/CD pipeline smoke test — non-behavioral change to verify the PR reviewer workflow runs.
 import React, { useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import ConsoleLayout from './ConsoleLayout';
