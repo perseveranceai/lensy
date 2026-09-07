@@ -34,6 +34,8 @@
         "node_modules",
         "cdk.out",
         "lib",
-        "lambda"
+        "lambda",
+        "lambda-layers",
+        "scripts"
     ]
 }
