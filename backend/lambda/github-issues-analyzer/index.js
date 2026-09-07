@@ -462,7 +462,7 @@ async function classifyWithLLM(issues, progressPublisher) {
         const issueList = batch.map(issue => ({
             number: issue.number,
             title: issue.title,
-            labels: issue.labels.map(l => l.name),
+            labels: (issue.labels || []).map(l => l.name),
             body: (issue.body || '').substring(0, 400) // truncate to keep token count reasonable
         }));
         const prompt = `You are analyzing GitHub issues to identify which ones reveal documentation problems or gaps.
@@ -580,7 +580,7 @@ async function analyzeIssueAgainstDocs(issue, docs) {
 
 ${issue.body?.substring(0, 3000) || 'No description provided.'}
 
-Labels: ${issue.labels.map(l => l.name).join(', ') || 'none'}
+Labels: ${(issue.labels || []).map(l => l.name).join(', ') || 'none'}
 
 ## Repository Documentation Context
 
