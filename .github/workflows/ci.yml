@@ -1,0 +1,76 @@
+name: CI
+
+# Pull-request checks. This workflow deliberately holds NO AWS credentials and
+# requests no id-token permission: the repo is public, anyone can open a PR from
+# a fork, and a fork-triggered job that can assume a deploy role is the single
+# worst failure mode available to us. Deploys happen post-merge, in deploy.yml.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend build + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '23.11.0'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install
+        working-directory: backend
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: backend
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Test
+        working-directory: backend
+        run: npm test --if-present
+
+      - name: CDK synth (gamma)
+        working-directory: backend
+        env:
+          LENSY_ENV: gamma
+        # Synth needs no AWS credentials and catches the class of error that
+        # only shows up at deploy time — bad construct wiring, invalid props.
+        run: npx cdk synth --quiet
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '23.11.0'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        working-directory: frontend
+        run: npm ci
+
+      - name: Test
+        working-directory: frontend
+        env:
+          CI: true
+        run: npm test -- --watchAll=false --passWithNoTests
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build:gamma

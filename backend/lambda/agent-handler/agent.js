@@ -77,33 +77,61 @@ async function writeAuditLog(sessionId, auditUrl, status, extras = {}) {
         console.warn('[AuditLog] Failed to write:', e.message);
     }
 }
+// Detects pages whose visible content is produced by JavaScript at runtime.
+//
+// The original version keyed off page size, assuming these portals return a
+// small empty shell. They don't. Amazon's SP-API docs return 1.6 MB, Palo Alto
+// 750 KB — the content is there, but as inline JSON hydration payload rather
+// than markup. Stripping tags counted that JSON as text, so the page looked
+// content-rich and the size gate never opened. The detector was unreachable on
+// exactly the sites it was written for.
+//
+// What actually separates them is how much of the apparent text lives in real
+// content elements. Measured against May 2026 traffic: genuine SPA portals sit
+// at 0.01–0.05, working doc pages and legitimate blog rejections at 0.6–0.99.
+const SPA_CONTENT_RATIO_MAX = 0.15; // below this, the text isn't in the markup
+const SPA_MIN_WORDS = 500; // below this it's a blocked or empty fetch, a different failure
+const SPA_SCRIPT_RATIO_MIN = 0.25;
 function detectSPAShell(html) {
     const markers = [];
-    const textContent = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    const wordCount = textContent.split(/\s+/).filter(w => w.length > 2).length;
-    if (html.length < 10000)
-        markers.push(`small HTML shell (${html.length} bytes)`);
-    if (wordCount < 150)
-        markers.push(`low word count (${wordCount} words)`);
-    if (/<div[^>]+id=["'](app|root|main|__nuxt|__next)["']/i.test(html))
+    const strip = (s) => s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    const countWords = (s) => strip(s).split(/\s+/).filter(w => w.length > 2).length;
+    // Everything the page appears to say, including JSON payloads.
+    const naiveWords = countWords(html);
+    // Only what sits inside elements that carry prose.
+    const contentBlocks = html.match(/<(p|li|h[1-6]|td|article|dd|pre)[\s>][\s\S]*?<\/\1>/gi) || [];
+    const contentWords = countWords(contentBlocks.join(' '));
+    const contentRatio = naiveWords > 0 ? contentWords / naiveWords : 1;
+    const scriptBytes = (html.match(/<script[\s>][\s\S]*?<\/script>/gi) || []).join('').length;
+    const scriptRatio = html.length > 0 ? scriptBytes / html.length : 0;
+    const hasMountPoint = /<div[^>]+id=["'](app|root|main|__nuxt|__next)["']/i.test(html);
+    const hasFramework = /data-reactroot|__NEXT_DATA__|__nuxt|__vue_ssr|emberjs/i.test(html);
+    const hasNoscriptNotice = /<noscript[\s\S]*?(javascript|browser|enable js)/i.test(html);
+    const isRedirectShell = html.length < 1500 && /window\.location\.(replace|href|assign)\s*[=(]/.test(html);
+    if (contentRatio <= SPA_CONTENT_RATIO_MAX) {
+        markers.push(`content not in markup (${contentWords}/${naiveWords} words, ratio ${contentRatio.toFixed(3)})`);
+    }
+    if (scriptRatio >= SPA_SCRIPT_RATIO_MIN)
+        markers.push(`script-dominated (${Math.round(scriptRatio * 100)}% of bytes)`);
+    if (hasMountPoint)
         markers.push('SPA mount point');
-    if (/data-reactroot|__NEXT_DATA__|__nuxt|__vue_ssr|emberjs/i.test(html))
+    if (hasFramework)
         markers.push('SPA framework marker');
-    if (/<noscript[\s\S]*?(javascript|browser|enable js)/i.test(html))
+    if (hasNoscriptNotice)
         markers.push('noscript JS-required message');
-    // Script-heavy but content-light: many <script> tags but almost no <p>/<article>
-    const scriptCount = (html.match(/<script[\s>]/gi) || []).length;
-    const pCount = (html.match(/<p[\s>]/gi) || []).length;
-    if (scriptCount >= 3 && pCount <= 2)
-        markers.push(`script-heavy/content-light (${scriptCount} scripts, ${pCount} paragraphs)`);
-    // JS redirect shell: tiny page whose only job is window.location redirect (e.g. Salesforce/sfdc portals)
-    if (html.length < 1500 && /window\.location\.(replace|href|assign)\s*[=(]/.test(html))
+    if (isRedirectShell)
         markers.push('JS redirect shell');
-    // Require at least size signal + one app marker to avoid false positives on genuinely sparse pages
-    const hasSizeSignal = html.length < 10000 || wordCount < 150;
-    const hasAppMarker = markers.some(m => m.includes('mount point') || m.includes('framework marker') ||
-        m.includes('noscript') || m.includes('script-heavy') || m.includes('JS redirect shell'));
-    return { isSPA: hasSizeSignal && hasAppMarker, markers };
+    // A tiny redirect stub is an SPA regardless of word counts.
+    if (isRedirectShell)
+        return { isSPA: true, markers };
+    // Otherwise: enough apparent text to judge, almost none of it in the markup,
+    // and corroboration that a framework is responsible. The corroboration
+    // requirement is what keeps plain-markdown pages (0 content tags, 0% script)
+    // out of this branch.
+    const enoughToJudge = naiveWords >= SPA_MIN_WORDS;
+    const contentMissing = contentRatio <= SPA_CONTENT_RATIO_MAX;
+    const jsResponsible = scriptRatio >= SPA_SCRIPT_RATIO_MIN || hasFramework || hasMountPoint || hasNoscriptNotice;
+    return { isSPA: enoughToJudge && contentMissing && jsResponsible, markers };
 }
 function scoreDocConfidence(html, url) {
     const signals = [];
