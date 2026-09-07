@@ -39,7 +39,14 @@ jobs:
 
       - name: Test
         working-directory: backend
-        run: npm test --if-present
+        # The repo currently has no runnable Jest tests. jest's testMatch points
+        # at **/__tests__/**, which does not exist, and the single .test.ts file
+        # (agent-handler/tools/detection-engine.test.ts) is a standalone script
+        # with no describe/it blocks that calls process.exit() — jest cannot run
+        # it. So this step is a placeholder that must not be read as "tests
+        # passed": it currently asserts nothing. Remove the flag as soon as real
+        # tests exist, so a green check starts meaning something.
+        run: npm test --if-present -- --passWithNoTests
 
       - name: CDK synth (gamma)
         working-directory: backend
