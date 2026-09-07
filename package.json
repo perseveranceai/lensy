@@ -13,7 +13,7 @@
         "test": "npm run test:frontend && npm run test:backend",
         "test:frontend": "cd frontend && npm test",
         "test:backend": "cd backend && npm test",
-        "setup": "npm install && cd frontend && npm install && cd ../backend && npm install"
+        "setup": "npm install && cd frontend && npm install && cd ../backend && npm install && npm run install:lambdas"
     },
     "keywords": [
         "documentation",

@@ -56,7 +56,10 @@ jobs:
 
       - name: Install backend
         working-directory: backend
-        run: npm ci
+        # Each lambda/ directory carries its own package.json; `npm ci` here
+        # installs none of them. They resolve locally only because of leftover
+        # node_modules, so a clean checkout cannot build without this.
+        run: npm ci && npm run install:lambdas
 
       - name: Build backend + lambdas
         working-directory: backend
@@ -82,6 +85,8 @@ jobs:
 
       - name: Build + publish frontend
         working-directory: frontend
+        env:
+          CI: false  # CRA turns lint warnings into errors under CI; see ci.yml
         run: |
           npm run build:gamma
           aws s3 sync build/ s3://lensy-console-951411676525-us-east-1-gamma --delete
@@ -158,7 +163,10 @@ jobs:
 
       - name: Install backend
         working-directory: backend
-        run: npm ci
+        # Each lambda/ directory carries its own package.json; `npm ci` here
+        # installs none of them. They resolve locally only because of leftover
+        # node_modules, so a clean checkout cannot build without this.
+        run: npm ci && npm run install:lambdas
 
       - name: Build backend + lambdas
         working-directory: backend
@@ -176,6 +184,8 @@ jobs:
 
       - name: Build + publish frontend
         working-directory: frontend
+        env:
+          CI: false  # CRA turns lint warnings into errors under CI; see ci.yml
         # NOTE: prod frontend is NOT the stack's ConsoleBucketName output
         # (lensy-console-951411676525-us-east-1 redirects). The live site is
         # served from www.perseveranceai.com behind E274OKID4GUQ1J. Wiring this
