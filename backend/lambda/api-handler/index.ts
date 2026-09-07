@@ -21,6 +21,25 @@ const WAITLIST_TABLE = process.env.WAITLIST_TABLE || '';
 const DAILY_LIMIT = parseInt(process.env.FREE_TIER_DAILY_LIMIT || '3', 10);
 const WAITLIST_BONUS = parseInt(process.env.WAITLIST_BONUS_CREDITS || '7', 10);
 
+/**
+ * Parse a request body without throwing.
+ *
+ * The handler used to call JSON.parse(body) directly while assembling log
+ * context, before reaching handleAnalyzeRequest — which does guard and returns
+ * a clean 400. So malformed input died in the wrong place: HTTP 500, plus an
+ * UNHANDLED_ERROR log line. That log line is what the ApiErrors metric filter
+ * matches, and its alarm trips at 3 in 5 minutes, so three junk POSTs to a
+ * public unauthenticated endpoint could page the on-call. A client sending bad
+ * JSON is a 400, and must not be able to raise an alarm.
+ */
+function safeParseBody(body: string | null | undefined): any {
+    try {
+        return JSON.parse(body || '{}');
+    } catch {
+        return {};
+    }
+}
+
 function getClientIp(event: any): string {
     // API Gateway V2 (HTTP API)
     const ip = event.requestContext?.http?.sourceIp
@@ -176,7 +195,7 @@ export const handler: Handler<any, any> = async (event: any) => {
             // Rate limit: free tier allows 3 audits/day per IP
             const rateLimit = await checkRateLimit(event);
             if (!rateLimit.allowed) {
-                const parsedBody = JSON.parse(body || '{}');
+                const parsedBody = safeParseBody(body);
                 console.log(JSON.stringify({
                     level: 'WARN',
                     event: 'RATE_LIMIT_EXCEEDED',
@@ -202,7 +221,7 @@ export const handler: Handler<any, any> = async (event: any) => {
                 };
             }
 
-            const parsedBody = JSON.parse(body || '{}');
+            const parsedBody = safeParseBody(body);
             const result = await handleAnalyzeRequest(body, corsHeaders, event);
 
             // Only count successful analysis starts (not validation errors)
@@ -279,7 +298,7 @@ export const handler: Handler<any, any> = async (event: any) => {
 
         // Run AI Citations check on-demand (no rate limit — readiness already counted)
         if (httpMethod === 'POST' && path === '/run-citations') {
-            const parsedBody = JSON.parse(body || '{}');
+            const parsedBody = safeParseBody(body);
             const { url: citationUrl, sessionId: citationSessionId } = parsedBody;
             if (!citationUrl || !citationSessionId) {
                 return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'url and sessionId required' }) };
@@ -364,7 +383,7 @@ export const handler: Handler<any, any> = async (event: any) => {
         };
 
     } catch (error) {
-        const parsedBody = (() => { try { return JSON.parse(body || '{}'); } catch { return {}; } })();
+        const parsedBody = safeParseBody(body);
         console.error(JSON.stringify({
             level: 'ERROR',
             event: 'UNHANDLED_ERROR',

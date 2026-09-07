@@ -20,11 +20,11 @@ permissions:
   id-token: write
   actions: read
 
-concurrency:
-  # Never cancel in flight: an interrupted cdk deploy leaves CloudFormation
-  # mid-update, which is materially worse than waiting.
-  group: deploy-main
-  cancel-in-progress: false
+# NOTE: concurrency is set per-job, not workflow-wide. A workflow-level group
+# meant a prod deployment sitting on a human approval held the lock and froze
+# the gamma lane behind it — the longer a considered prod decision took, the
+# longer automatic gamma deploys stopped. Separate groups let gamma keep
+# flowing while prod approvals queue among themselves.
 
 env:
   AWS_REGION: us-east-1
@@ -34,6 +34,11 @@ jobs:
   gamma:
     name: Deploy gamma
     runs-on: ubuntu-latest
+    concurrency:
+      # Never cancel in flight: an interrupted cdk deploy leaves CloudFormation
+      # mid-update, which is materially worse than waiting.
+      group: deploy-gamma-main
+      cancel-in-progress: false
     outputs:
       target_env: ${{ steps.classify.outputs.target_env }}
       verdict: ${{ steps.classify.outputs.verdict }}
@@ -147,6 +152,9 @@ jobs:
     name: Deploy prod
     needs: gamma
     runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-prod-main
+      cancel-in-progress: false
     # Resolves to 'production' (required reviewer) or, once the decision log has
     # earned it in phase 5, 'production-auto' (no reviewer). Same deploy either
     # way — only the protection rule differs.
