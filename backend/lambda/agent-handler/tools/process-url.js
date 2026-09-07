@@ -38,6 +38,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.processUrlTool = void 0;
 const tools_1 = require("@langchain/core/tools");
+const markdown_alternate_js_1 = require("../shared/markdown-alternate.js");
 const zod_1 = require("zod");
 const client_dynamodb_1 = require("@aws-sdk/client-dynamodb");
 const util_dynamodb_1 = require("@aws-sdk/util-dynamodb");
@@ -1419,10 +1420,35 @@ Return ONLY a JSON array of indices, e.g. [0, 3, 7, 12]. Return [] if none are r
         }
         // ── Markdown conversion ────────────────────────────
         const turndownService = configureTurndownService();
-        const markdownContent = turndownService.turndown(cleanHtml);
+        let markdownContent = turndownService.turndown(cleanHtml);
         console.log(`Final markdown size: ${markdownContent.length} chars`);
         // ── Content validation gate ────────────────────────
-        const contentValidation = validateContentReadability(markdownContent, input.url);
+        let contentValidation = validateContentReadability(markdownContent, input.url);
+        // Before giving up: many doc platforms publish a markdown twin of
+        // the page. On a JS-rendered portal the HTML we converted above has
+        // no prose in it, so validation fails even though a complete
+        // markdown version is one request away. Only attempted once the
+        // HTML path has already failed, so healthy pages pay nothing.
+        if (!contentValidation.valid) {
+            const fullHtml = document?.documentElement?.outerHTML || cleanHtml;
+            const mdAlt = await (0, markdown_alternate_js_1.findMarkdownAlternate)(input.url, fullHtml);
+            if (mdAlt) {
+                const revalidated = validateContentReadability(mdAlt.content, input.url);
+                if (revalidated.valid) {
+                    console.log(JSON.stringify({
+                        sessionId: input.sessionId,
+                        tool: 'process_url',
+                        event: 'markdown_alternate_used',
+                        markdownUrl: mdAlt.url,
+                        declared: mdAlt.declared,
+                        bytes: mdAlt.content.length,
+                        replacedReason: contentValidation.reason,
+                    }));
+                    markdownContent = mdAlt.content;
+                    contentValidation = revalidated;
+                }
+            }
+        }
         if (!contentValidation.valid) {
             console.log(`Content validation FAILED: ${contentValidation.reason}`);
             console.log(JSON.stringify({ sessionId: input.sessionId, tool: 'process_url', event: 'content_gate_failed', reason: contentValidation.reason, contentLength: markdownContent.trim().length }));
