@@ -336,7 +336,12 @@ export class LensyStack extends cdk.Stack {
             USE_AGENT: useAgent,
             AGENT_FUNCTION_NAME: agentHandler.functionName,
             USAGE_TRACKING_TABLE: usageTrackingTable.tableName,
-            FREE_TIER_DAILY_LIMIT: lensyEnv === 'prod' ? '3' : '100',
+            // 100/day per IP in both environments. Prod was originally 3, but
+            // that proved far too restrictive for the public free tier and was
+            // raised to 100 in the console — this line is the code catching up.
+            // Do not "correct" it back to 3: the free tier is the top of the
+            // funnel, and diagnosis is deliberately ungated.
+            FREE_TIER_DAILY_LIMIT: '100',
             FEEDBACK_TABLE: feedbackTable.tableName,
             FEEDBACK_EMAIL: 'hello@perseveranceai.com',
             WAITLIST_TABLE: waitlistTable.tableName,
