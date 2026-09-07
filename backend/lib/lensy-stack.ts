@@ -50,6 +50,28 @@ export class LensyStack extends cdk.Stack {
         const isProd = lensyEnv === 'prod';
         const envSuffix = isProd ? '' : `-${lensyEnv}`;
 
+        // PERPLEXITY_API_KEY drives the AI-citation check. It comes from
+        // backend/.env (gitignored) or the ambient environment. It used to be
+        // `process.env.PERPLEXITY_API_KEY || ''`, which meant a deploy that
+        // could not see the key silently shipped an empty string and
+        // overwrote a working one — exactly what the first CI run did to
+        // gamma, turning citations into "Engines not configured" with nothing
+        // failing. Fail the deploy instead: a loud failure gets fixed in
+        // minutes, a silently disabled feature goes unnoticed for weeks.
+        //
+        // PR CI synthesises without secrets on purpose (fork safety), so that
+        // path opts out explicitly rather than by accident.
+        const perplexityApiKey = process.env.PERPLEXITY_API_KEY || '';
+        if (!perplexityApiKey && process.env.LENSY_SYNTH_ONLY !== 'true') {
+            throw new Error(
+                'PERPLEXITY_API_KEY is not set. Deploying now would overwrite the live key '
+                + 'with an empty value and disable AI citation analysis.\n'
+                + '  Locally: add it to backend/.env\n'
+                + '  In CI:   add it as the PERPLEXITY_API_KEY GitHub Actions secret\n'
+                + '  Synth without deploying: LENSY_SYNTH_ONLY=true'
+            );
+        }
+
         // 1. S3 Bucket for Analysis
         const analysisBucket = new s3.Bucket(this, 'LensyAnalysisBucket', {
             bucketName: `lensy-analysis-${this.account}-${this.region}${envSuffix}`,
@@ -274,7 +296,7 @@ export class LensyStack extends cdk.Stack {
                 CACHE_TTL_DAYS: '7',
                 LENSY_ENV: lensyEnv,
                 LANGSMITH_API_KEY: process.env.LANGSMITH_API_KEY || '',
-                PERPLEXITY_API_KEY: process.env.PERPLEXITY_API_KEY || '',
+                PERPLEXITY_API_KEY: perplexityApiKey,
                 DEPLOY_VERSION: '2026-03-21-v10-ui-restructure',
             }
         });
