@@ -117,7 +117,7 @@ Don't grant broad `cloudformation:*` / `dynamodb:CreateTable` / etc. directly �
 
 This gives real `cdk deploy` ability for `LensyStack-gamma` without ever putting `iam:*`, `dynamodb:*`, etc. directly on his user. (`hnb659fds` is the default CDK bootstrap qualifier — confirm yours with `aws cloudformation describe-stacks --stack-name CDKToolkit`.)
 
-**Full `cdk deploy` to gamma stays a PR + your explicit go-ahead**, same as today — Tier 2 is about *being able to*, not *being expected to* run it unsupervised.
+**Since the CI/CD pipeline landed, you should rarely deploy by hand at all.** Merging to `main` deploys gamma automatically. Tier 2 exists for local `cdk diff` and the occasional break-glass deploy, not as the normal route — see §9.
 
 ---
 
@@ -174,9 +174,17 @@ Verify it's actually working: paste a real docs URL into the running UI (e.g. `h
 Run the test suites:
 
 ```bash
-cd backend && npm test     # jest — Lambda/unit tests
-cd frontend && npm test    # react-scripts test
+cd backend && npm test -- --passWithNoTests
+cd frontend && npm test -- --watchAll=false --passWithNoTests
 ```
+
+Be aware of what these actually assert: **the backend has no runnable Jest
+tests.** `testMatch` points at `**/__tests__/**`, which does not exist, and the
+one `.test.ts` file (`agent-handler/tools/detection-engine.test.ts`) is a
+standalone script with no `describe`/`it` blocks that calls `process.exit()` —
+Jest cannot execute it. So a green backend test step means "nothing ran", not
+"tests passed". Converting that script into real Jest tests is a genuinely
+useful first contribution.
 
 For backend Lambda code changes, iterate with the direct-deploy path (Tier 1 permissions cover this — no CDK needed):
 
@@ -195,7 +203,7 @@ aws lambda update-function-code \
 
 ## 7. Run & test — against gamma directly (no local frontend)
 
-Useful for confirming a backend change actually landed, independent of any local UI. The gamma API has **no auth** — it's public, rate-limited by IP (3 free scans/day, gamma's limit is raised to 100 for testing) — so a plain `curl` works:
+Useful for confirming a backend change actually landed, independent of any local UI. The gamma API has **no auth** — it's public and rate-limited by IP. Gamma is effectively unlimited (1,000,000/day) so testing never throttles itself; prod is 100/day. A plain `curl` works:
 
 ```bash
 # kick off an analysis
@@ -230,4 +238,82 @@ If `curl` and the logs agree, the deploy is verified — no need to also click t
 1. Get through §3–§7 above — working local frontend against gamma, AWS CLI configured, a completed smoke-test scan via curl, Kiro installed.
 2. Read the Notion **"Lensy — Start Here"** doc, then do its own "First week" exercises (run a scan, read the User Guide, break something on purpose).
 3. Follow the **"AI & LLM Onboarding Plan (v3)"** Week 1 curriculum for the LLM/AI foundations track in parallel.
-4. First real task: a small, contained bug fix or test in `backend/lambda/agent-handler/` or `frontend/src/components/`, shipped as a PR — reviewed by Rakesh before anything touches gamma via CDK.
+4. First real task: a small, contained bug fix or test in `backend/lambda/agent-handler/` or `frontend/src/components/`, shipped as a PR. Merging it deploys gamma automatically — see §9 for what happens next.
+
+---
+
+## 9. Shipping a change — the CI/CD pipeline
+
+`main` is protected. You cannot push to it directly, and neither can Rakesh.
+Every change goes through a pull request with green CI.
+
+```
+  branch → PR → CI (typecheck, build, cdk synth — no AWS credentials)
+                     ↓ merge to main
+              gamma deploys automatically
+                     ↓ smoke test + risk classifier
+              prod waits for Rakesh to approve
+                     ↓
+              prod deploys, runs its own smoke test
+```
+
+### What runs on your PR
+
+Two required checks, both must be green before the merge button works:
+
+| Check | What it does |
+|---|---|
+| `Backend build + tests` | `npm ci` + per-lambda installs, typecheck, tests, `cdk synth` |
+| `Frontend build` | `npm ci`, tests, production build |
+
+PR checks hold **no AWS credentials at all**. The repo is public, so a
+fork-triggered job that could assume a deploy role would be the worst failure
+mode available to us. Credentials only enter after merge.
+
+### If CI fails on your branch, rebase before debugging
+
+The most common cause is simply that your branch predates a fix on `main`:
+
+```bash
+git fetch origin && git rebase origin/main
+```
+
+This is not hypothetical. Four separate latent build failures were fixed on
+`main` in Sept 2026 — missing per-lambda dependency installs, tsconfig
+compiling directories whose deps live elsewhere, a Jest config matching no
+files, and `cdk synth` needing a pinned account to hit its cached hosted-zone
+lookup. Branches cut before those landed fail for reasons that have nothing to
+do with their own changes.
+
+### After merge
+
+Gamma deploys on its own — no approval, no manual step. Watch it in the
+Actions tab. The run then:
+
+1. Publishes the frontend and invalidates CloudFront
+2. Runs a real scan against gamma as a smoke test — a red smoke test fails the run
+3. Classifies the change's risk and writes a row to the `LensyDeploymentDecisions` table
+4. Parks, waiting on Rakesh to approve the production deployment
+
+The classifier currently runs in **shadow mode**: it records a verdict and its
+reasons but has no authority, so every prod promotion is a human decision.
+Expect `manual` with reasons listed — that is normal, not a failure.
+
+### Deploying by hand
+
+Rarely necessary now, but for a fast backend iteration loop the direct Lambda
+push in §6 still works and skips the whole pipeline. Note it creates drift: the
+next pipeline deploy overwrites whatever you pushed.
+
+A full local `cdk deploy` requires `PERPLEXITY_API_KEY` in `backend/.env`. The
+stack now **fails the deploy** if it is missing rather than shipping an empty
+value — an earlier CI deploy silently overwrote the live key with `''`, which
+disabled AI citation analysis with nothing failing. If you see that error, you
+need the key, not a workaround.
+
+### Monitoring
+
+Both environments have CloudWatch alarms defined in CDK (agent errors, API
+errors, rate-limit hits, Lambda failures), routing to `lensy-alerts` →
+hello@perseveranceai.com. If you break gamma, someone finds out. That is the
+intent.
