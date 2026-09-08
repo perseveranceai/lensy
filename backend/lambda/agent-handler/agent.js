@@ -17,6 +17,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.runAgent = runAgent;
 const progress_publisher_1 = require("./shared/progress-publisher");
+const markdown_alternate_js_1 = require("./shared/markdown-alternate.js");
 const s3_helpers_1 = require("./shared/s3-helpers");
 // Import tools for direct invocation
 const check_ai_readiness_1 = require("./tools/check-ai-readiness");
@@ -549,27 +550,50 @@ Respond with JSON only:
                         : detectedCategory === 'BLOG/ARTICLE'
                             ? 'This looks like a blog post or article rather than technical documentation. Lensy analyzes developer docs, API references, and SDK guides.'
                             : 'This page does not appear to be technical documentation. Lensy analyzes developer docs, API references, SDK guides, and technical tutorials. Try entering a specific documentation page URL instead.';
-                await progress.error(rejectMessage);
-                await (0, s3_helpers_1.writeSessionArtifact)(sessionId, 'status.json', {
-                    status: 'rejected',
-                    reason: 'non-documentation-page',
-                    completedAt: new Date().toISOString(),
-                });
-                await writeAuditLog(sessionId, url, 'rejected', {
-                    reason: 'non-documentation-page',
-                    docConfidence: String(docConfidence.confidence),
-                    detectedCategory,
-                });
-                // Refund usage — rejected scans should not count against daily limit
-                if (ipHash)
-                    await refundUsage(ipHash);
-                return JSON.stringify({
-                    success: false,
-                    error: 'non-documentation-page',
-                    message: rejectMessage,
-                    confidence: docConfidence.confidence,
-                    signals: docConfidence.signals,
-                });
+                // ── Last resort before rejecting: a markdown twin ──
+                // The gate scored raw HTML. On a JS-rendered portal that HTML
+                // carries no prose, so a page with a complete markdown version
+                // one request away still lands here. Try it before turning the
+                // user away. Only reached on the rejection path, so healthy
+                // scans pay nothing and there is no threshold to mis-tune.
+                const mdAlt = await (0, markdown_alternate_js_1.findMarkdownAlternate)(url, prefetchedHtml);
+                if (mdAlt) {
+                    console.log(JSON.stringify({
+                        sessionId,
+                        event: 'MARKDOWN_ALTERNATE_RESCUE',
+                        url,
+                        markdownUrl: mdAlt.url,
+                        declared: mdAlt.declared,
+                        bytes: mdAlt.content.length,
+                        wouldHaveRejected: detectedCategory,
+                    }));
+                    await progress.info('Found a markdown version of this page — analyzing that instead.');
+                    // Fall through to the normal pipeline; process_url performs
+                    // the same lookup and will use the markdown for extraction.
+                }
+                else {
+                    await progress.error(rejectMessage);
+                    await (0, s3_helpers_1.writeSessionArtifact)(sessionId, 'status.json', {
+                        status: 'rejected',
+                        reason: 'non-documentation-page',
+                        completedAt: new Date().toISOString(),
+                    });
+                    await writeAuditLog(sessionId, url, 'rejected', {
+                        reason: 'non-documentation-page',
+                        docConfidence: String(docConfidence.confidence),
+                        detectedCategory,
+                    });
+                    // Refund usage — rejected scans should not count against daily limit
+                    if (ipHash)
+                        await refundUsage(ipHash);
+                    return JSON.stringify({
+                        success: false,
+                        error: 'non-documentation-page',
+                        message: rejectMessage,
+                        confidence: docConfidence.confidence,
+                        signals: docConfidence.signals,
+                    });
+                }
             }
         }
         // ── Step 2: Run readiness (+ optionally discoverability) in PARALLEL ──

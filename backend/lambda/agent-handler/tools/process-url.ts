@@ -1,4 +1,5 @@
 import { tool } from '@langchain/core/tools';
+import { findMarkdownAlternate } from '../shared/markdown-alternate.js';
 import { z } from 'zod';
 import { DynamoDBClient, GetItemCommand, PutItemCommand } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
@@ -1643,11 +1644,38 @@ Return ONLY a JSON array of indices, e.g. [0, 3, 7, 12]. Return [] if none are r
 
             // ── Markdown conversion ────────────────────────────
             const turndownService = configureTurndownService();
-            const markdownContent = turndownService.turndown(cleanHtml);
+            let markdownContent = turndownService.turndown(cleanHtml);
             console.log(`Final markdown size: ${markdownContent.length} chars`);
 
             // ── Content validation gate ────────────────────────
-            const contentValidation = validateContentReadability(markdownContent, input.url);
+            let contentValidation = validateContentReadability(markdownContent, input.url);
+
+            // Before giving up: many doc platforms publish a markdown twin of
+            // the page. On a JS-rendered portal the HTML we converted above has
+            // no prose in it, so validation fails even though a complete
+            // markdown version is one request away. Only attempted once the
+            // HTML path has already failed, so healthy pages pay nothing.
+            if (!contentValidation.valid) {
+                const fullHtml = document?.documentElement?.outerHTML || cleanHtml;
+                const mdAlt = await findMarkdownAlternate(input.url, fullHtml);
+                if (mdAlt) {
+                    const revalidated = validateContentReadability(mdAlt.content, input.url);
+                    if (revalidated.valid) {
+                        console.log(JSON.stringify({
+                            sessionId: input.sessionId,
+                            tool: 'process_url',
+                            event: 'markdown_alternate_used',
+                            markdownUrl: mdAlt.url,
+                            declared: mdAlt.declared,
+                            bytes: mdAlt.content.length,
+                            replacedReason: contentValidation.reason,
+                        }));
+                        markdownContent = mdAlt.content;
+                        contentValidation = revalidated;
+                    }
+                }
+            }
+
             if (!contentValidation.valid) {
                 console.log(`Content validation FAILED: ${contentValidation.reason}`);
                 console.log(JSON.stringify({ sessionId: input.sessionId, tool: 'process_url', event: 'content_gate_failed', reason: contentValidation.reason, contentLength: markdownContent.trim().length }));

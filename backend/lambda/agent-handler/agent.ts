@@ -15,6 +15,7 @@
  */
 
 import { ProgressPublisher } from './shared/progress-publisher';
+import { findMarkdownAlternate } from './shared/markdown-alternate.js';
 import { writeSessionArtifact } from './shared/s3-helpers';
 
 // Import tools for direct invocation
@@ -569,6 +570,27 @@ Respond with JSON only:
                         : detectedCategory === 'BLOG/ARTICLE'
                         ? 'This looks like a blog post or article rather than technical documentation. Lensy analyzes developer docs, API references, and SDK guides.'
                         : 'This page does not appear to be technical documentation. Lensy analyzes developer docs, API references, SDK guides, and technical tutorials. Try entering a specific documentation page URL instead.';
+                // ── Last resort before rejecting: a markdown twin ──
+                // The gate scored raw HTML. On a JS-rendered portal that HTML
+                // carries no prose, so a page with a complete markdown version
+                // one request away still lands here. Try it before turning the
+                // user away. Only reached on the rejection path, so healthy
+                // scans pay nothing and there is no threshold to mis-tune.
+                const mdAlt = await findMarkdownAlternate(url, prefetchedHtml);
+                if (mdAlt) {
+                    console.log(JSON.stringify({
+                        sessionId,
+                        event: 'MARKDOWN_ALTERNATE_RESCUE',
+                        url,
+                        markdownUrl: mdAlt.url,
+                        declared: mdAlt.declared,
+                        bytes: mdAlt.content.length,
+                        wouldHaveRejected: detectedCategory,
+                    }));
+                    await progress.info('Found a markdown version of this page — analyzing that instead.');
+                    // Fall through to the normal pipeline; process_url performs
+                    // the same lookup and will use the markdown for extraction.
+                } else {
                 await progress.error(rejectMessage);
                 await writeSessionArtifact(sessionId, 'status.json', {
                     status: 'rejected',
@@ -589,6 +611,7 @@ Respond with JSON only:
                     confidence: docConfidence.confidence,
                     signals: docConfidence.signals,
                 });
+                }
             }
         }
 
