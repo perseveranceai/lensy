@@ -1,3 +1,4 @@
+// CI/CD verification — non-behavioral change to confirm the pipeline runs green on a PR.
 import React, { useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import ConsoleLayout from './ConsoleLayout';
