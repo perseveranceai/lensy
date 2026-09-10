@@ -297,6 +297,9 @@ export class LensyStack extends cdk.Stack {
                 LENSY_ENV: lensyEnv,
                 LANGSMITH_API_KEY: process.env.LANGSMITH_API_KEY || '',
                 PERPLEXITY_API_KEY: perplexityApiKey,
+                // The shared code is deployed to both environments, but only gamma
+                // reads and injects the credential into the AgentHandler runtime.
+                ...(lensyEnv === 'gamma' ? { JINA_API_KEY: process.env.JINA_API_KEY || '' } : {}),
                 DEPLOY_VERSION: '2026-03-21-v10-ui-restructure',
             }
         });
