@@ -425,24 +425,59 @@ export async function runAgent(input: AgentRunInput): Promise<string> {
         const spaCheck = detectSPAShell(prefetchedHtml);
         if (spaCheck.isSPA) {
             console.log(`[Pipeline] SPA shell detected — markers: ${spaCheck.markers.join(', ')}`);
-            const spaMessage = 'This page is rendered by JavaScript (React, Vue, Angular, etc.) and Lensy\'s scanner cannot read its content. Try submitting a direct link to a specific documentation page, or check if a static/server-rendered version is available.';
-            await progress.error(spaMessage);
-            await writeSessionArtifact(sessionId, 'status.json', {
-                status: 'rejected',
-                reason: 'javascript-rendered-page',
-                completedAt: new Date().toISOString(),
-            });
-            await writeAuditLog(sessionId, url, 'rejected', {
-                reason: 'javascript-rendered-page',
-                spaMarkers: spaCheck.markers.join(', '),
-            });
-            if (ipHash) await refundUsage(ipHash);
-            return JSON.stringify({
-                success: false,
-                error: 'javascript-rendered-page',
-                message: spaMessage,
-                spaMarkers: spaCheck.markers,
-            });
+
+            // ── JS-render fallback (gamma-only) ──
+            // Before rejecting a JS shell, try to recover it by rendering the page
+            // through Jina Reader. Double-gated: runtime LENSY_ENV==='gamma' AND a
+            // present JINA_API_KEY (only in the gamma stack's env). In production
+            // the gate is false, preserving the existing SPA rejection path.
+            //
+            // On a successful render we REPLACE prefetchedHtml and FALL THROUGH to
+            // Step 1.7 — we do NOT return. Hard invariant: recovered content must
+            // still pass scoreDocConfidence + the Haiku classifier, so a rendered
+            // non-doc SPA is still rejected as non-doc. The rendered HTML flows to
+            // check-ai-readiness / check-ai-discoverability (both already consume
+            // prefetchedHtml), so one render feeds every consumer.
+            let rescued = false;
+            if (process.env.LENSY_ENV === 'gamma' && !!process.env.JINA_API_KEY) {
+                await progress.info('This page is JavaScript-rendered — rendering it to read the content...');
+                const { renderWithJina } = await import('./shared/js-render-fallback.js');
+                const rendered = await renderWithJina(url);
+                if (rendered && rendered.html) {
+                    console.log(JSON.stringify({
+                        sessionId,
+                        event: 'JINA_FALLBACK_RESCUE',
+                        bytes: rendered.html.length,
+                        latencyMs: rendered.latencyMs,
+                        spaMarkers: spaCheck.markers.join(', '),
+                    }));
+                    prefetchedHtml = rendered.html;
+                    prefetchedHeaders = {}; // rendered content; original shell headers no longer describe it
+                    rescued = true;
+                    // fall through to Step 1.7 — do NOT return.
+                }
+            }
+
+            if (!rescued) {
+                const spaMessage = 'This page is rendered by JavaScript (React, Vue, Angular, etc.) and Lensy\'s scanner cannot read its content. Try submitting a direct link to a specific documentation page, or check if a static/server-rendered version is available.';
+                await progress.error(spaMessage);
+                await writeSessionArtifact(sessionId, 'status.json', {
+                    status: 'rejected',
+                    reason: 'javascript-rendered-page',
+                    completedAt: new Date().toISOString(),
+                });
+                await writeAuditLog(sessionId, url, 'rejected', {
+                    reason: 'javascript-rendered-page',
+                    spaMarkers: spaCheck.markers.join(', '),
+                });
+                if (ipHash) await refundUsage(ipHash);
+                return JSON.stringify({
+                    success: false,
+                    error: 'javascript-rendered-page',
+                    message: spaMessage,
+                    spaMarkers: spaCheck.markers,
+                });
+            }
         }
 
         // ── Step 1.7: Content gate + confidence scoring ──
