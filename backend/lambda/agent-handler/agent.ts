@@ -114,13 +114,28 @@ function scoreDocConfidence(html: string, url: string): DocConfidence {
     const signals: string[] = [];
     let score = 0;
 
+    // Positive: doc hosting platforms (+3) — expanded list
+    // These platforms exclusively host documentation, so strong signal
+    const docPlatforms: [RegExp, string][] = [
+        [/readme\.io/i, 'readme.io'], [/gitbook\.io/i, 'gitbook.io'],
+        [/readthedocs/i, 'readthedocs'], [/swagger/i, 'swagger'],
+        [/mintlify/i, 'mintlify'], [/docusaurus/i, 'docusaurus'],
+        [/stoplight\.io/i, 'stoplight.io'], [/redoc/i, 'redoc'],
+        [/apiary\.io/i, 'apiary.io'], [/postman\.com/i, 'postman'],
+    ];
+
     // 1. Root URLs (no path) → strong negative
     try {
         const parsed = new URL(url);
         const path = parsed.pathname.replace(/\/+$/, '');
         if (!path || path === '') {
-            signals.push('Root URL with no path (−4)');
-            return { isDoc: false, confidence: 0, signals };
+            const isDocSubdomain = /^https?:\/\/[^\/]*\b(developer|docs|dev|api|learn|support|help|reference|guide|wiki)\b\./i.test(url);
+            const isDocPlatform = docPlatforms.some(([pattern]) => pattern.test(url));
+
+            if (!isDocSubdomain && !isDocPlatform) {
+                signals.push('Root URL with no path (−4)');
+                return { isDoc: false, confidence: 0, signals };
+            }
         }
     } catch {
         return { isDoc: false, confidence: 0, signals: ['Invalid URL'] };
@@ -154,13 +169,6 @@ function scoreDocConfidence(html: string, url: string): DocConfidence {
 
     // Positive: doc hosting platforms (+3) — expanded list
     // These platforms exclusively host documentation, so strong signal
-    const docPlatforms: [RegExp, string][] = [
-        [/readme\.io/i, 'readme.io'], [/gitbook\.io/i, 'gitbook.io'],
-        [/readthedocs/i, 'readthedocs'], [/swagger/i, 'swagger'],
-        [/mintlify/i, 'mintlify'], [/docusaurus/i, 'docusaurus'],
-        [/stoplight\.io/i, 'stoplight.io'], [/redoc/i, 'redoc'],
-        [/apiary\.io/i, 'apiary.io'], [/postman\.com/i, 'postman'],
-    ];
     for (const [pattern, label] of docPlatforms) {
         if (pattern.test(lowerUrl)) { score += 3; signals.push(`Hosted on ${label} (+3)`); }
     }
@@ -177,8 +185,8 @@ function scoreDocConfidence(html: string, url: string): DocConfidence {
     }
 
     // Positive: doc subdomain (+2)
-    if (/^https?:\/\/(developer|docs|dev|api|learn|support)\./i.test(url)) {
-        score += 2; signals.push('Doc subdomain (developer./docs./dev.) (+2)');
+    if (/^https?:\/\/[^\/]*\b(developer|docs|dev|api|learn|support|help|reference|guide|wiki)\b\./i.test(url)) {
+        score += 2; signals.push('Doc subdomain (+2)');
     }
 
     // Negative: marketing/non-doc paths (−2 each)
