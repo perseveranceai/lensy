@@ -162,6 +162,8 @@ exports.generateReportTool = (0, tools_1.tool)(async (input) => {
                     markdownAvailable: { found: false, urls: [], discoverable: false },
                     textToHtmlRatio: { ratio: 0, textBytes: 0, htmlBytes: 0, status: 'very-low' },
                     jsRendered: false,
+                    originRequiresJavaScript: undefined,
+                    renderedContentRecovered: undefined,
                     headingHierarchy: { h1Count: 0, h2Count: 0, h3Count: 0, hasProperNesting: false, headings: [] },
                     codeBlocks: { count: 0, withLanguageHints: 0, hasCode: false },
                     internalLinkDensity: { count: 0, perKWords: 0, status: 'sparse' },
@@ -279,6 +281,8 @@ function getLetterGrade(score) {
 function determineBotAccessState(r) {
     if (!r)
         return 'accessible'; // No data = assume accessible
+    if (r.categories.consumability.originRequiresJavaScript)
+        return 'js_blocked';
     const { allowedCount, blockedCount } = r.categories.botAccess;
     const total = allowedCount + blockedCount;
     if (total === 0)
@@ -329,7 +333,9 @@ function calculateConsumabilityScore(r) {
     if (c.headingHierarchy.hasProperNesting)
         points += 8;
     // Not JS-rendered: 10 points
-    if (!c.jsRendered)
+    // (If the page was originally an SPA, deny these points even if Jina rendered it)
+    const requiresJs = c.originRequiresJavaScript ?? c.jsRendered;
+    if (!requiresJs)
         points += 10;
     // Word count: 6 points (research: 500-2000 words = 2-3x more AI citations)
     if (c.wordCount >= 500 && c.wordCount <= 2000)

@@ -40,7 +40,7 @@ const AI_CITATION_WEIGHT = 30;
 interface AIReadinessReport {
     overallScore: number;
     letterGrade: string;  // A+, A, B+, B, C, D, F
-    botAccessState: 'fully_blocked' | 'partially_blocked' | 'accessible';
+    botAccessState: 'js_blocked' | 'fully_blocked' | 'partially_blocked' | 'accessible';
     scoreBreakdown: {
         botAccess: number;          // always 0 — kept for backward compat, bot access is now a prerequisite
         discoverability: number;
@@ -228,6 +228,8 @@ export const generateReportTool = tool(
                         markdownAvailable: { found: false, urls: [], discoverable: false },
                         textToHtmlRatio: { ratio: 0, textBytes: 0, htmlBytes: 0, status: 'very-low' as const },
                         jsRendered: false,
+                        originRequiresJavaScript: undefined,
+                        renderedContentRecovered: undefined,
                         headingHierarchy: { h1Count: 0, h2Count: 0, h3Count: 0, hasProperNesting: false, headings: [] },
                         codeBlocks: { count: 0, withLanguageHints: 0, hasCode: false },
                         internalLinkDensity: { count: 0, perKWords: 0, status: 'sparse' as const },
@@ -360,6 +362,8 @@ function getLetterGrade(score: number): string {
 
 function determineBotAccessState(r: AIReadinessResult | null): AIReadinessReport['botAccessState'] {
     if (!r) return 'accessible';  // No data = assume accessible
+    if (r.categories.consumability.originRequiresJavaScript) return 'js_blocked';
+
     const { allowedCount, blockedCount } = r.categories.botAccess;
     const total = allowedCount + blockedCount;
     if (total === 0) return 'accessible';  // No robots.txt = bots allowed by default
@@ -403,7 +407,9 @@ function calculateConsumabilityScore(r: AIReadinessResult | null): number {
     if (c.headingHierarchy.hasProperNesting) points += 8;
 
     // Not JS-rendered: 10 points
-    if (!c.jsRendered) points += 10;
+    // (If the page was originally an SPA, deny these points even if Jina rendered it)
+    const requiresJs = c.originRequiresJavaScript ?? c.jsRendered;
+    if (!requiresJs) points += 10;
 
     // Word count: 6 points (research: 500-2000 words = 2-3x more AI citations)
     if (c.wordCount >= 500 && c.wordCount <= 2000) points += 6;

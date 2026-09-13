@@ -414,6 +414,8 @@ async function runAgent(input) {
         // Must run before scoreDocConfidence — SPA shells have no content so the heuristic
         // would silently classify them as non-doc pages, giving users a misleading error.
         const spaCheck = detectSPAShell(prefetchedHtml);
+        const originRequiresJavaScript = spaCheck.isSPA;
+        let rescued = false;
         if (spaCheck.isSPA) {
             console.log(`[Pipeline] SPA shell detected — markers: ${spaCheck.markers.join(', ')}`);
             // ── JS-render fallback (gamma-only) ──
@@ -426,10 +428,30 @@ async function runAgent(input) {
             // Step 1.7 — we do NOT return. Hard invariant: recovered content must
             // still pass scoreDocConfidence + the Haiku classifier, so a rendered
             // non-doc SPA is still rejected as non-doc. The rendered HTML flows to
-            // check-ai-readiness / check-ai-discoverability (both already consume
-            // prefetchedHtml), so one render feeds every consumer.
-            let rescued = false;
+            // fall through to Step 1.7 — do NOT return.
+            //
             if (process.env.LENSY_ENV === 'gamma' && !!process.env.JINA_API_KEY) {
+                if (!input.forceJsRender) {
+                    const jsMessage = 'This page is JS-rendered. Most AI bots (like GPTBot or ClaudeBot) do not execute JavaScript and cannot crawl your website. Consider Server-Side Rendering (SSR) for AI discoverability.';
+                    await progress.error(jsMessage);
+                    await (0, s3_helpers_1.writeSessionArtifact)(sessionId, 'status.json', {
+                        status: 'rejected',
+                        reason: 'js-render-required',
+                        completedAt: new Date().toISOString(),
+                    });
+                    await writeAuditLog(sessionId, url, 'rejected', {
+                        reason: 'js-render-required',
+                        spaMarkers: spaCheck.markers.join(', '),
+                    });
+                    if (ipHash)
+                        await refundUsage(ipHash);
+                    return JSON.stringify({
+                        success: false,
+                        error: 'js-render-required',
+                        message: jsMessage,
+                        spaMarkers: spaCheck.markers,
+                    });
+                }
                 await progress.info('This page is JavaScript-rendered — rendering it to read the content...');
                 const { renderWithJina } = await import('./shared/js-render-fallback.js');
                 const rendered = await renderWithJina(url);
@@ -634,8 +656,8 @@ Respond with JSON only:
             ? 'Analyzing AI readiness...'
             : 'Analyzing AI readiness and search discoverability in parallel...');
         const readinessInput = llmsTxtUrl
-            ? { url, sessionId, llmsTxtUrl, prefetchedHtml, prefetchedHeaders }
-            : { url, sessionId, prefetchedHtml, prefetchedHeaders };
+            ? { url, sessionId, llmsTxtUrl, prefetchedHtml, prefetchedHeaders, originRequiresJavaScript, rescued }
+            : { url, sessionId, prefetchedHtml, prefetchedHeaders, originRequiresJavaScript, rescued };
         const parallelTasks = [
             check_ai_readiness_1.checkAIReadinessTool.invoke(readinessInput),
         ];

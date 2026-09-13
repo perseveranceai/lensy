@@ -30,6 +30,7 @@ interface AgentHandlerEvent {
     ipHash?: string; // For refunding usage on content gate rejection
     skipCitations?: boolean;
     citationsOnly?: boolean; // Only run Perplexity citation check (on-demand from frontend)
+    forceJsRender?: boolean;
 }
 
 export const handler: Handler<AgentHandlerEvent, void> = async (event) => {
@@ -48,6 +49,7 @@ export const handler: Handler<AgentHandlerEvent, void> = async (event) => {
         ipHash,
         skipCitations,
         citationsOnly,
+        forceJsRender,
     } = event;
 
     // Validate required fields
@@ -110,6 +112,7 @@ export const handler: Handler<AgentHandlerEvent, void> = async (event) => {
             llmsTxtUrl,
             ipHash,
             skipCitations,
+            forceJsRender,
         };
 
         // Run the direct analysis pipeline
