@@ -114,13 +114,28 @@ function scoreDocConfidence(html: string, url: string): DocConfidence {
     const signals: string[] = [];
     let score = 0;
 
+    // Positive: doc hosting platforms (+3) — expanded list
+    // These platforms exclusively host documentation, so strong signal
+    const docPlatforms: [RegExp, string][] = [
+        [/readme\.io/i, 'readme.io'], [/gitbook\.io/i, 'gitbook.io'],
+        [/readthedocs/i, 'readthedocs'], [/swagger/i, 'swagger'],
+        [/mintlify/i, 'mintlify'], [/docusaurus/i, 'docusaurus'],
+        [/stoplight\.io/i, 'stoplight.io'], [/redoc/i, 'redoc'],
+        [/apiary\.io/i, 'apiary.io'], [/postman\.com/i, 'postman'],
+    ];
+
     // 1. Root URLs (no path) → strong negative
     try {
         const parsed = new URL(url);
         const path = parsed.pathname.replace(/\/+$/, '');
         if (!path || path === '') {
-            signals.push('Root URL with no path (−4)');
-            return { isDoc: false, confidence: 0, signals };
+            const isDocSubdomain = /^https?:\/\/[^\/]*\b(developer|docs|dev|api|learn|support|help|reference|guide|wiki)\b\./i.test(url);
+            const isDocPlatform = docPlatforms.some(([pattern]) => pattern.test(url));
+
+            if (!isDocSubdomain && !isDocPlatform) {
+                signals.push('Root URL with no path (−4)');
+                return { isDoc: false, confidence: 0, signals };
+            }
         }
     } catch {
         return { isDoc: false, confidence: 0, signals: ['Invalid URL'] };
@@ -154,13 +169,6 @@ function scoreDocConfidence(html: string, url: string): DocConfidence {
 
     // Positive: doc hosting platforms (+3) — expanded list
     // These platforms exclusively host documentation, so strong signal
-    const docPlatforms: [RegExp, string][] = [
-        [/readme\.io/i, 'readme.io'], [/gitbook\.io/i, 'gitbook.io'],
-        [/readthedocs/i, 'readthedocs'], [/swagger/i, 'swagger'],
-        [/mintlify/i, 'mintlify'], [/docusaurus/i, 'docusaurus'],
-        [/stoplight\.io/i, 'stoplight.io'], [/redoc/i, 'redoc'],
-        [/apiary\.io/i, 'apiary.io'], [/postman\.com/i, 'postman'],
-    ];
     for (const [pattern, label] of docPlatforms) {
         if (pattern.test(lowerUrl)) { score += 3; signals.push(`Hosted on ${label} (+3)`); }
     }
@@ -177,8 +185,8 @@ function scoreDocConfidence(html: string, url: string): DocConfidence {
     }
 
     // Positive: doc subdomain (+2)
-    if (/^https?:\/\/(developer|docs|dev|api|learn|support)\./i.test(url)) {
-        score += 2; signals.push('Doc subdomain (developer./docs./dev.) (+2)');
+    if (/^https?:\/\/[^\/]*\b(developer|docs|dev|api|learn|support|help|reference|guide|wiki)\b\./i.test(url)) {
+        score += 2; signals.push('Doc subdomain (+2)');
     }
 
     // Negative: marketing/non-doc paths (−2 each)
@@ -339,6 +347,7 @@ export interface AgentRunInput {
     llmsTxtUrl?: string;
     ipHash?: string; // For refunding usage on content gate rejection
     skipCitations?: boolean; // Skip Perplexity AI citation check (run on-demand from frontend)
+    forceJsRender?: boolean; // Override SPA rejection and force Jina render
 }
 
 /**
@@ -423,6 +432,9 @@ export async function runAgent(input: AgentRunInput): Promise<string> {
         // Must run before scoreDocConfidence — SPA shells have no content so the heuristic
         // would silently classify them as non-doc pages, giving users a misleading error.
         const spaCheck = detectSPAShell(prefetchedHtml);
+        const originRequiresJavaScript = spaCheck.isSPA;
+        let rescued = false;
+
         if (spaCheck.isSPA) {
             console.log(`[Pipeline] SPA shell detected — markers: ${spaCheck.markers.join(', ')}`);
 
@@ -436,10 +448,30 @@ export async function runAgent(input: AgentRunInput): Promise<string> {
             // Step 1.7 — we do NOT return. Hard invariant: recovered content must
             // still pass scoreDocConfidence + the Haiku classifier, so a rendered
             // non-doc SPA is still rejected as non-doc. The rendered HTML flows to
-            // check-ai-readiness / check-ai-discoverability (both already consume
-            // prefetchedHtml), so one render feeds every consumer.
-            let rescued = false;
+            // fall through to Step 1.7 — do NOT return.
+            //
             if (process.env.LENSY_ENV === 'gamma' && !!process.env.JINA_API_KEY) {
+                if (!input.forceJsRender) {
+                    const jsMessage = 'This page is JS-rendered. Most AI bots (like GPTBot or ClaudeBot) do not execute JavaScript and cannot crawl your website. Consider Server-Side Rendering (SSR) for AI discoverability.';
+                    await progress.error(jsMessage);
+                    await writeSessionArtifact(sessionId, 'status.json', {
+                        status: 'rejected',
+                        reason: 'js-render-required',
+                        completedAt: new Date().toISOString(),
+                    });
+                    await writeAuditLog(sessionId, url, 'rejected', {
+                        reason: 'js-render-required',
+                        spaMarkers: spaCheck.markers.join(', '),
+                    });
+                    if (ipHash) await refundUsage(ipHash);
+                    return JSON.stringify({
+                        success: false,
+                        error: 'js-render-required',
+                        message: jsMessage,
+                        spaMarkers: spaCheck.markers,
+                    });
+                }
+
                 await progress.info('This page is JavaScript-rendered — rendering it to read the content...');
                 const { renderWithJina } = await import('./shared/js-render-fallback.js');
                 const rendered = await renderWithJina(url);
@@ -656,8 +688,8 @@ Respond with JSON only:
             : 'Analyzing AI readiness and search discoverability in parallel...');
 
         const readinessInput = llmsTxtUrl
-            ? { url, sessionId, llmsTxtUrl, prefetchedHtml, prefetchedHeaders }
-            : { url, sessionId, prefetchedHtml, prefetchedHeaders };
+            ? { url, sessionId, llmsTxtUrl, prefetchedHtml, prefetchedHeaders, originRequiresJavaScript, rescued }
+            : { url, sessionId, prefetchedHtml, prefetchedHeaders, originRequiresJavaScript, rescued };
 
         const parallelTasks: Promise<any>[] = [
             checkAIReadinessTool.invoke(readinessInput),

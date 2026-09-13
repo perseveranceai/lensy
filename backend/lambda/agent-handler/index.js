@@ -7,7 +7,7 @@ const s3_helpers_1 = require("./shared/s3-helpers");
 const handler = async (event) => {
     console.log('[Handler] Received event:', JSON.stringify(event, null, 2));
     console.log('[Handler] Lensy Pipeline v2.0.0 — Direct Orchestration');
-    const { url, sessionId, selectedModel = 'claude', analysisStartTime = Date.now(), contextAnalysis, cacheControl, sitemapUrl, llmsTxtUrl, ipHash, skipCitations, citationsOnly, } = event;
+    const { url, sessionId, selectedModel = 'claude', analysisStartTime = Date.now(), contextAnalysis, cacheControl, sitemapUrl, llmsTxtUrl, ipHash, skipCitations, citationsOnly, forceJsRender, } = event;
     // Validate required fields
     if (!url || !sessionId) {
         console.error('[Handler] Missing required fields: url and sessionId');
@@ -62,6 +62,7 @@ const handler = async (event) => {
             llmsTxtUrl,
             ipHash,
             skipCitations,
+            forceJsRender,
         };
         // Run the direct analysis pipeline
         const result = await (0, agent_1.runAgent)(agentInput);

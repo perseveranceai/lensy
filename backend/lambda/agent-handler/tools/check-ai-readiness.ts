@@ -79,6 +79,8 @@ export interface AIReadinessResult {
             metaRobots: { found: boolean; content?: string; blocksIndexing: boolean };
         };
         consumability: {
+            originRequiresJavaScript?: boolean;
+            renderedContentRecovered?: boolean;
             markdownAvailable: {
                 found: boolean;
                 urls: string[];
@@ -118,7 +120,7 @@ export const checkAIReadinessTool = tool(
             const progress = createProgressHelper(input.sessionId);
             await progress.info('Analyzing AI readiness across 4 categories...');
 
-            const results = await checkAIReadiness(domain, input.url, input.sessionId, input.llmsTxtUrl, input.prefetchedHtml, input.prefetchedHeaders);
+            const results = await checkAIReadiness(domain, input.url, input.sessionId, input.llmsTxtUrl, input.prefetchedHtml, input.prefetchedHeaders, input.originRequiresJavaScript, input.rescued);
 
             // Store results in S3
             await writeSessionArtifact(input.sessionId, 'ai-readiness-results.json', results);
@@ -139,6 +141,8 @@ export const checkAIReadinessTool = tool(
                 hasJsonLd: structuredData.jsonLd.found,
                 textToHtmlRatio: consumability.textToHtmlRatio.ratio,
                 jsRendered: consumability.jsRendered,
+                originRequiresJavaScript: consumability.originRequiresJavaScript,
+                renderedContentRecovered: consumability.renderedContentRecovered,
                 recommendationCount: results.recommendations.length,
                 message: `AI readiness: ${botAccess.allowedCount}/10 bots allowed, ${results.recommendations.length} issues found`
             });
@@ -159,14 +163,16 @@ export const checkAIReadinessTool = tool(
             sessionId: z.string().describe('The analysis session ID'),
             llmsTxtUrl: z.string().optional().describe('User-provided llms.txt URL. If provided, check this URL directly instead of auto-discovering.'),
             prefetchedHtml: z.string().optional().describe('Pre-fetched HTML content of the target URL. If provided, skips the initial page fetch.'),
-            prefetchedHeaders: z.record(z.string()).optional().describe('Pre-fetched HTTP response headers from the target URL. Passed alongside prefetchedHtml to preserve Link headers for detection.')
+            prefetchedHeaders: z.record(z.string()).optional().describe('Pre-fetched HTTP response headers from the target URL. Passed alongside prefetchedHtml to preserve Link headers for detection.'),
+            originRequiresJavaScript: z.boolean().optional().describe('Flag indicating if the original page was an SPA before rendering fallback.'),
+            rescued: z.boolean().optional().describe('Flag indicating if Jina fallback successfully recovered the content.')
         })
     }
 );
 
 // ── Main Analysis Function ───────────────────────────────────────────────
 
-async function checkAIReadiness(domain: string, targetUrl: string, sessionId: string, explicitLlmsTxtUrl?: string, prefetchedHtml?: string, prefetchedHeaders?: Record<string, string>): Promise<AIReadinessResult> {
+async function checkAIReadiness(domain: string, targetUrl: string, sessionId: string, explicitLlmsTxtUrl?: string, prefetchedHtml?: string, prefetchedHeaders?: Record<string, string>, originRequiresJavaScript?: boolean, rescued?: boolean): Promise<AIReadinessResult> {
     let baseUrl = `https://${domain}`;
     const recommendations: Recommendation[] = [];
     const progress = createProgressHelper(sessionId);
@@ -237,7 +243,7 @@ async function checkAIReadiness(domain: string, targetUrl: string, sessionId: st
     console.log(`[AIReadiness v2] Phase 1 complete: ${signals.llmsTxtHintUrls.length} llms.txt hints, ${signals.blockedCrawlers.length} blocked crawlers`);
 
     // Phase 2 (v2 parallel probes) + existing categories run concurrently
-    const [probeResults, botAccess, discoverability, consumability] = await Promise.all([
+    const [probeResults, botAccess, discoverability, consumabilityData] = await Promise.all([
         // v2: All probes fire in parallel (~5s wall clock)
         executeProbes(baseUrl, targetUrl, signals, robotsCheck.content || null),
         // Existing Category 1: Bot Access (sync, no HTTP)
@@ -247,6 +253,12 @@ async function checkAIReadiness(domain: string, targetUrl: string, sessionId: st
         // Existing Category 3: Consumability
         analyzeConsumability(targetUrl, targetHtml, targetHeaders, baseUrl, false, recommendations),
     ]);
+
+    const consumability = {
+        ...consumabilityData,
+        originRequiresJavaScript,
+        renderedContentRecovered: rescued
+    };
 
     // Phase 3: Cross-Reference (0 HTTP calls, ~0ms)
     const detection = crossReference(signals, probeResults, targetUrl, baseUrl);
