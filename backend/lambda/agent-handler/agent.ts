@@ -86,7 +86,8 @@ interface DocConfidence {
 function detectSPAShell(html: string): { isSPA: boolean; markers: string[] } {
     const markers: string[] = [];
 
-    const textContent = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    const stripped = html.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, '');
+    const textContent = stripped.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
     const wordCount = textContent.split(/\s+/).filter(w => w.length > 2).length;
 
     if (html.length < 10000) markers.push(`small HTML shell (${html.length} bytes)`);
