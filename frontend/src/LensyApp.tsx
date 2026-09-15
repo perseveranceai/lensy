@@ -612,6 +612,10 @@ function LensyApp() {
     // to preserve state across hard reloads for the current session.
     useEffect(() => {
         try {
+            if (window.location.pathname === '/') {
+                sessionStorage.removeItem('lensy-audit-state');
+                return;
+            }
             const saved = sessionStorage.getItem('lensy-audit-state');
             if (saved) {
                 const parsed = JSON.parse(saved);
@@ -919,7 +923,10 @@ function LensyApp() {
                     // Check for explicit failure or rejection status from backend
                     if (statusData.status === 'failed' || statusData.status === 'rejected') {
                         console.log('Analysis failed/rejected (detected via polling):', statusData.error);
-                        const errorMsg = statusData.error || statusData.reason || 'Analysis failed. Check the progress messages for details.';
+                        let errorMsg = statusData.error || statusData.reason || 'Analysis failed. Check the progress messages for details.';
+                        if (errorMsg === 'unreachable-url') {
+                            errorMsg = 'Lensy was unable to access this URL. Please verify the URL is correct and publicly accessible.';
+                        }
                         const isDocRejection = errorMsg.includes('does not appear to be') || errorMsg.includes('not a documentation page') || errorMsg.includes('non-documentation-page');
                         if (isDocRejection && !rejectedUrl) {
                             setRejectedUrl(urlRef.current);
@@ -2496,16 +2503,11 @@ function LensyApp() {
 
     /** Quick-start user guide PDF */
     const exportUserGuidePdf = async () => {
-        const [{ default: jsPDF }, { JAKARTA_REGULAR, JAKARTA_BOLD }] = await Promise.all([
-            import('jspdf'),
-            import('./jakartaFonts'),
-        ]);
+        // @ts-ignore
+        const jspdfModule = await import('jspdf') as any;
+        const jsPDF = jspdfModule.default || jspdfModule.jsPDF;
         const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-        const fn = 'PlusJakartaSans';
-        doc.addFileToVFS('PlusJakartaSans-Regular.ttf', JAKARTA_REGULAR);
-        doc.addFont('PlusJakartaSans-Regular.ttf', fn, 'normal');
-        doc.addFileToVFS('PlusJakartaSans-Bold.ttf', JAKARTA_BOLD);
-        doc.addFont('PlusJakartaSans-Bold.ttf', fn, 'bold');
+        const fn = 'helvetica';
         doc.setFont(fn, 'normal');
 
         const pw = doc.internal.pageSize.getWidth();
@@ -2691,18 +2693,13 @@ function LensyApp() {
 
     /** Export report as branded Perseverance AI PDF â€” Amazon narrative style */
     const exportPdfReport = async (report: FinalReport) => {
-        const [{ default: jsPDF }, { JAKARTA_REGULAR, JAKARTA_BOLD }] = await Promise.all([
-            import('jspdf'),
-            import('./jakartaFonts'),
-        ]);
+        // @ts-ignore
+        const jspdfModule = await import('jspdf') as any;
+        const jsPDF = jspdfModule.default || jspdfModule.jsPDF;
         const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-        // Register Plus Jakarta Sans font
-        const fn = 'PlusJakartaSans';
-        doc.addFileToVFS('PlusJakartaSans-Regular.ttf', JAKARTA_REGULAR);
-        doc.addFont('PlusJakartaSans-Regular.ttf', fn, 'normal');
-        doc.addFileToVFS('PlusJakartaSans-Bold.ttf', JAKARTA_BOLD);
-        doc.addFont('PlusJakartaSans-Bold.ttf', fn, 'bold');
+        // Use default helvetica font
+        const fn = 'helvetica';
         doc.setFont(fn, 'normal');
 
         const pageWidth = doc.internal.pageSize.getWidth();
@@ -3444,7 +3441,7 @@ function LensyApp() {
         usageRemaining !== 0;
 
     const location = useLocation();
-    
+
     if (location.pathname === '/results' || location.pathname === '/scan') {
         return (
             <ScanReport

@@ -81,7 +81,8 @@ function App() {
                             <Route path="/privacy" element={<Privacy />} />
                         </Route>
 
-                        {/* Legacy console routes — redirect to new paths */}
+                        {/* Legacy routes — redirect to Lensy */}
+                        <Route path="/about" element={<Navigate to="/" replace />} />
                         <Route path="/console/lensy" element={<Navigate to="/" replace />} />
                         <Route path="/console" element={<Navigate to="/" replace />} />
 
