@@ -79,7 +79,7 @@ export default function FeedbackWidget({ auditUrl, scanMetrics }: FeedbackWidget
                 {state === 'sent' ? (
                     <>&#10003; Sent!</>
                 ) : (
-                    <>&#128172; Feedback</>
+                    'Feedback'
                 )}
             </button>
         );
@@ -184,7 +184,7 @@ export default function FeedbackWidget({ auditUrl, scanMetrics }: FeedbackWidget
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
                     }}>
-                        📎 Attached: {auditUrl}
+                        Attached: {auditUrl}
                     </p>
                 )}
 

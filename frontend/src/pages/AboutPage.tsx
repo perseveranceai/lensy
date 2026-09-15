@@ -1,25 +1,16 @@
 import React from 'react';
+import { Section, SectionHeading, Eyebrow, Button } from '../components/ui';
 
 function AboutPage() {
     return (
-        <div style={{
-            maxWidth: '680px',
-            margin: '0 auto',
-            padding: '3rem 1.5rem',
-            fontFamily: 'var(--font-sans, var(--font-ui))',
-        }}>
+        <Section width="prose" style={{ maxWidth: '720px' }}>
             {/* Hero */}
             <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
-                <h1 style={{
-                    fontSize: '2rem',
-                    fontWeight: 700,
-                    color: 'var(--text-primary)',
-                    marginBottom: '0.75rem',
-                }}>
+                <SectionHeading as="h1" style={{ marginBottom: 'var(--space-3)' }}>
                     Fixing broken documentation
-                </h1>
+                </SectionHeading>
                 <p style={{
-                    fontSize: '1.0625rem',
+                    fontSize: 'var(--text-body)',
                     color: 'var(--text-secondary)',
                     lineHeight: 1.7,
                     maxWidth: '500px',
@@ -53,7 +44,7 @@ function AboutPage() {
                 />
 
                 <h2 style={{
-                    fontSize: '1.375rem',
+                    fontSize: 'var(--text-h2)',
                     fontWeight: 700,
                     color: 'var(--text-primary)',
                     margin: '0 0 0.25rem 0',
@@ -61,7 +52,7 @@ function AboutPage() {
                     Rakesh Pasupuleti
                 </h2>
                 <p style={{
-                    fontSize: '0.9375rem',
+                    fontSize: 'var(--text-body)',
                     color: 'var(--text-muted)',
                     margin: '0 0 1.25rem 0',
                 }}>
@@ -69,7 +60,7 @@ function AboutPage() {
                 </p>
 
                 <p style={{
-                    fontSize: '0.9375rem',
+                    fontSize: 'var(--text-body)',
                     color: 'var(--text-secondary)',
                     lineHeight: 1.7,
                     marginBottom: '1.5rem',
@@ -86,30 +77,18 @@ function AboutPage() {
                     flexWrap: 'wrap',
                 }}>
                     <div>
-                        <p style={{
-                            fontSize: '0.6875rem',
-                            color: 'var(--text-muted)',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.05em',
-                            marginBottom: '0.375rem',
-                        }}>
+                        <Eyebrow style={{ display: 'block', marginBottom: '0.375rem' }}>
                             Recognition
-                        </p>
-                        <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', margin: 0 }}>
+                        </Eyebrow>
+                        <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', margin: 0 }}>
                             2025 Stevie Award Winner
                         </p>
                     </div>
                     <div>
-                        <p style={{
-                            fontSize: '0.6875rem',
-                            color: 'var(--text-muted)',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.05em',
-                            marginBottom: '0.375rem',
-                        }}>
+                        <Eyebrow style={{ display: 'block', marginBottom: '0.375rem' }}>
                             Background
-                        </p>
-                        <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', margin: 0 }}>
+                        </Eyebrow>
+                        <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', margin: 0 }}>
                             MS Computer Science + MBA
                         </p>
                     </div>
@@ -121,7 +100,7 @@ function AboutPage() {
                         target="_blank"
                         rel="noopener noreferrer"
                         style={{
-                            fontSize: '0.8125rem',
+                            fontSize: 'var(--text-sm)',
                             fontWeight: 600,
                             color: 'var(--text-primary)',
                             background: 'var(--bg-tertiary)',
@@ -129,7 +108,7 @@ function AboutPage() {
                             borderRadius: '8px',
                             padding: '0.5rem 1.25rem',
                             textDecoration: 'none',
-                            transition: 'border-color 0.2s',
+                            transition: 'border-color var(--transition-base)',
                         }}
                     >
                         LinkedIn
@@ -139,7 +118,7 @@ function AboutPage() {
                         target="_blank"
                         rel="noopener noreferrer"
                         style={{
-                            fontSize: '0.8125rem',
+                            fontSize: 'var(--text-sm)',
                             fontWeight: 600,
                             color: 'var(--text-primary)',
                             background: 'var(--bg-tertiary)',
@@ -147,7 +126,7 @@ function AboutPage() {
                             borderRadius: '8px',
                             padding: '0.5rem 1.25rem',
                             textDecoration: 'none',
-                            transition: 'border-color 0.2s',
+                            transition: 'border-color var(--transition-base)',
                         }}
                     >
                         Portfolio
@@ -161,40 +140,24 @@ function AboutPage() {
                 padding: '2rem 0',
             }}>
                 <h2 style={{
-                    fontSize: '1.25rem',
+                    fontSize: 'var(--text-h2)',
                     fontWeight: 700,
                     color: 'var(--text-primary)',
-                    marginBottom: '0.75rem',
+                    marginBottom: 'var(--space-3)',
                 }}>
                     We're just getting started
                 </h2>
                 <p style={{
-                    fontSize: '0.9375rem',
+                    fontSize: 'var(--text-body)',
                     color: 'var(--text-secondary)',
                     lineHeight: 1.7,
                     marginBottom: '1.5rem',
                 }}>
                     Lensy is in active development. We'd love to hear from you.
                 </p>
-                <a
-                    href="/contact"
-                    style={{
-                        display: 'inline-block',
-                        fontSize: '0.875rem',
-                        fontWeight: 600,
-                        color: '#fff',
-                        background: 'var(--accent-primary, #6366f1)',
-                        border: 'none',
-                        borderRadius: '8px',
-                        padding: '0.625rem 1.5rem',
-                        textDecoration: 'none',
-                        transition: 'opacity 0.2s',
-                    }}
-                >
-                    Get in Touch
-                </a>
+                <Button as="a" href="/contact">Get in Touch</Button>
             </div>
-        </div>
+        </Section>
     );
 }
 

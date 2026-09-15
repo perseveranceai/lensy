@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { trackEvent } from '../analytics';
+import { Section, SectionHeading, Eyebrow, Button } from '../components/ui';
 
 interface Reference {
     label: string;
@@ -229,14 +230,8 @@ function ArticlePage() {
 
     if (!article) {
         return (
-            <div style={{
-                maxWidth: '680px',
-                margin: '0 auto',
-                padding: '3rem 1.5rem',
-                textAlign: 'center',
-                fontFamily: 'var(--font-sans, var(--font-ui))',
-            }}>
-                <h1 style={{ color: 'var(--text-primary)', marginBottom: '1rem' }}>Article not found</h1>
+            <Section width="prose" style={{ maxWidth: '720px', textAlign: 'center', fontFamily: 'var(--font-sans, var(--font-ui))' }}>
+                <SectionHeading as="h1" style={{ marginBottom: '1rem' }}>Article not found</SectionHeading>
                 <button
                     onClick={() => navigate('/education')}
                     style={{
@@ -244,7 +239,7 @@ function ArticlePage() {
                         background: 'none',
                         border: 'none',
                         cursor: 'pointer',
-                        fontSize: '0.9375rem',
+                        fontSize: 'var(--text-body)',
                         fontWeight: 600,
                         textDecoration: 'underline',
                         textUnderlineOffset: '2px',
@@ -252,17 +247,12 @@ function ArticlePage() {
                 >
                     Back to Education
                 </button>
-            </div>
+            </Section>
         );
     }
 
     return (
-        <div style={{
-            maxWidth: '680px',
-            margin: '0 auto',
-            padding: '3rem 1.5rem',
-            fontFamily: 'var(--font-sans, var(--font-ui))',
-        }}>
+        <Section width="prose" style={{ maxWidth: '720px', fontFamily: 'var(--font-sans, var(--font-ui))' }}>
             {/* Back link */}
             <button
                 onClick={() => navigate('/education')}
@@ -271,13 +261,16 @@ function ArticlePage() {
                     background: 'none',
                     border: 'none',
                     cursor: 'pointer',
-                    fontSize: '0.8125rem',
+                    fontSize: 'var(--text-sm)',
                     fontWeight: 500,
                     padding: 0,
                     marginBottom: '1.5rem',
                     display: 'block',
                     fontFamily: 'var(--font-sans, var(--font-ui))',
+                    transition: 'color var(--transition-base)',
                 }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
+                onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
             >
                 ← Back to Education
             </button>
@@ -289,26 +282,20 @@ function ArticlePage() {
                 gap: '0.75rem',
                 marginBottom: '0.75rem',
             }}>
-                <span style={{
-                    fontSize: '0.6875rem',
-                    fontWeight: 700,
-                    color: 'var(--text-secondary)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                }}>
-                    {article.category}
-                </span>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                <Eyebrow>{article.category}</Eyebrow>
+                <span style={{ fontSize: 'var(--text-eyebrow)', color: 'var(--text-muted)' }}>
                     {article.readTime} read
                 </span>
             </div>
 
             {/* Title */}
             <h1 style={{
-                fontSize: '1.75rem',
+                fontFamily: 'var(--font-heading)',
+                fontSize: 'var(--text-h1)',
                 fontWeight: 700,
                 color: 'var(--text-primary)',
-                lineHeight: 1.3,
+                letterSpacing: 'var(--tracking-tight)',
+                lineHeight: 1.25,
                 marginBottom: '1.5rem',
             }}>
                 {article.title}
@@ -322,16 +309,9 @@ function ArticlePage() {
                 padding: '1.25rem 1.5rem',
                 marginBottom: '2rem',
             }}>
-                <div style={{
-                    fontSize: '0.6875rem',
-                    fontWeight: 700,
-                    color: 'var(--text-muted)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.08em',
-                    marginBottom: '0.75rem',
-                }}>
+                <Eyebrow style={{ display: 'block', marginBottom: '0.75rem' }}>
                     TL;DR
-                </div>
+                </Eyebrow>
                 <ul style={{
                     margin: 0,
                     paddingLeft: '1rem',
@@ -355,7 +335,7 @@ function ArticlePage() {
                 <div key={i} style={{ marginBottom: '1.75rem' }}>
                     {section.heading && (
                         <h2 style={{
-                            fontSize: '1.125rem',
+                            fontSize: 'var(--text-h2)',
                             fontWeight: 600,
                             color: 'var(--text-primary)',
                             marginBottom: '0.75rem',
@@ -365,7 +345,7 @@ function ArticlePage() {
                     )}
                     {section.paragraphs.map((p, j) => (
                         <p key={j} style={{
-                            fontSize: '0.9375rem',
+                            fontSize: 'var(--text-body)',
                             color: 'var(--text-secondary)',
                             lineHeight: 1.8,
                             marginBottom: '0.875rem',
@@ -380,7 +360,7 @@ function ArticlePage() {
                         }}>
                             {section.bulletPoints.map((bp, k) => (
                                 <li key={k} style={{
-                                    fontSize: '0.9375rem',
+                                    fontSize: 'var(--text-body)',
                                     color: 'var(--text-secondary)',
                                     lineHeight: 1.7,
                                     marginBottom: '0.5rem',
@@ -401,7 +381,7 @@ function ArticlePage() {
                     borderTop: '1px solid var(--border-subtle)',
                 }}>
                     <h2 style={{
-                        fontSize: '1.125rem',
+                        fontSize: 'var(--text-h2)',
                         fontWeight: 600,
                         color: 'var(--text-primary)',
                         marginBottom: '1rem',
@@ -411,7 +391,7 @@ function ArticlePage() {
                     <ol style={{ paddingLeft: '1.25rem', margin: 0 }}>
                         {article.references.map((ref, i) => (
                             <li key={i} style={{
-                                fontSize: '0.8125rem',
+                                fontSize: 'var(--text-sm)',
                                 color: 'var(--text-muted)',
                                 lineHeight: 1.7,
                                 marginBottom: '0.5rem',
@@ -447,30 +427,15 @@ function ArticlePage() {
                 textAlign: 'center',
             }}>
                 <p style={{
-                    fontSize: '0.9375rem',
+                    fontSize: 'var(--text-body)',
                     color: 'var(--text-secondary)',
                     marginBottom: '1rem',
                 }}>
                     Check your documentation's AI readiness.
                 </p>
-                <button
-                    onClick={() => navigate('/')}
-                    style={{
-                        fontSize: '0.875rem',
-                        fontWeight: 600,
-                        color: 'var(--bg-primary, #0a0a0a)',
-                        background: 'var(--text-primary, #fff)',
-                        border: '1px solid var(--border-default)',
-                        borderRadius: '8px',
-                        padding: '0.625rem 1.5rem',
-                        cursor: 'pointer',
-                        fontFamily: 'var(--font-sans, var(--font-ui))',
-                    }}
-                >
-                    Try Lensy Free
-                </button>
+                <Button onClick={() => navigate('/')}>Try Lensy Free</Button>
             </div>
-        </div>
+        </Section>
     );
 }
 

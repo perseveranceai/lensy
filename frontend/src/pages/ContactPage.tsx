@@ -42,11 +42,34 @@ function ContactPage() {
         message: '',
     });
     const [status, setStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
+    const [errors, setErrors] = useState<Record<string, string>>({});
 
     const showMessageField = ref === 'feedback';
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        // Client-side validation — presented inline instead of native browser bubbles.
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const newErrors: Record<string, string> = {};
+        if (!formData.name.trim()) {
+            newErrors.name = 'Please enter your name';
+        }
+        if (!formData.email.trim() || !emailRegex.test(formData.email.trim())) {
+            newErrors.email = 'Please enter a valid email';
+        }
+        if (!showMessageField && !formData.doc_url.trim()) {
+            newErrors.doc_url = 'Please enter your docs or website URL';
+        }
+        if (showMessageField && !formData.message.trim()) {
+            newErrors.message = 'Please share your feedback';
+        }
+        if (Object.keys(newErrors).length > 0) {
+            setErrors(newErrors);
+            return;
+        }
+        setErrors({});
+
         setStatus('sending');
         try {
             const res = await fetch('https://www.perseveranceai.com/api/contact', {
@@ -65,6 +88,17 @@ function ContactPage() {
         }
     };
 
+    // Shared focus/blur handlers — give inputs a visible focus ring using design tokens.
+    // Keyboard users previously had no clear focus indicator on these fields.
+    const handleFieldFocus = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        e.currentTarget.style.borderColor = 'var(--border-strong)';
+        e.currentTarget.style.boxShadow = '0 0 0 3px var(--bg-input-hover)';
+    };
+    const handleFieldBlur = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        e.currentTarget.style.borderColor = 'var(--border-default)';
+        e.currentTarget.style.boxShadow = 'none';
+    };
+
     const inputStyle: React.CSSProperties = {
         width: '100%',
         padding: '0.625rem 0.875rem',
@@ -76,7 +110,7 @@ function ContactPage() {
         borderRadius: '8px',
         outline: 'none',
         boxSizing: 'border-box',
-        transition: 'border-color 0.2s',
+        transition: 'border-color 0.2s, box-shadow 0.2s',
     };
 
     const labelStyle: React.CSSProperties = {
@@ -85,6 +119,20 @@ function ContactPage() {
         fontWeight: 600,
         color: 'var(--text-secondary)',
         marginBottom: '0.375rem',
+    };
+
+    // Apply a soft, neutral emphasized border when a field is invalid — no red glow.
+    const fieldStyle = (field: string): React.CSSProperties => ({
+        ...inputStyle,
+        borderColor: errors[field] ? 'var(--border-strong)' : 'var(--border-default)',
+    });
+
+    // Errors read as a calm, muted helper line rather than an alarm.
+    const errorTextStyle: React.CSSProperties = {
+        fontSize: 'var(--text-xs)',
+        color: 'var(--text-muted)',
+        marginTop: '0.375rem',
+        animation: 'field-error-in 200ms ease',
     };
 
     return (
@@ -128,7 +176,7 @@ function ContactPage() {
                     </p>
                 </div>
             ) : (
-                <form onSubmit={handleSubmit} style={{
+                <form onSubmit={handleSubmit} noValidate style={{
                     background: 'var(--bg-secondary)',
                     border: '1px solid var(--border-subtle)',
                     borderRadius: '12px',
@@ -142,10 +190,19 @@ function ContactPage() {
                                 type="text"
                                 placeholder="e.g., docs.yourcompany.com or yourcompany.com"
                                 value={formData.doc_url}
-                                onChange={(e) => setFormData({ ...formData, doc_url: e.target.value })}
-                                style={inputStyle}
-                                required
+                                onChange={(e) => {
+                                    setFormData({ ...formData, doc_url: e.target.value });
+                                    setErrors(prev => ({ ...prev, doc_url: '' }));
+                                }}
+                                onFocus={handleFieldFocus}
+                                onBlur={handleFieldBlur}
+                                style={fieldStyle('doc_url')}
+                                aria-invalid={!!errors.doc_url}
+                                aria-describedby={errors.doc_url ? 'err-doc-url' : undefined}
                             />
+                            {errors.doc_url && (
+                                <p id="err-doc-url" style={errorTextStyle}>{errors.doc_url}</p>
+                            )}
                         </div>
                     )}
                     <div style={{ marginBottom: '1rem' }}>
@@ -154,10 +211,19 @@ function ContactPage() {
                             id="contact-name"
                             type="text"
                             value={formData.name}
-                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                            style={inputStyle}
-                            required
+                            onChange={(e) => {
+                                setFormData({ ...formData, name: e.target.value });
+                                setErrors(prev => ({ ...prev, name: '' }));
+                            }}
+                            onFocus={handleFieldFocus}
+                            onBlur={handleFieldBlur}
+                            style={fieldStyle('name')}
+                            aria-invalid={!!errors.name}
+                            aria-describedby={errors.name ? 'err-name' : undefined}
                         />
+                        {errors.name && (
+                            <p id="err-name" style={errorTextStyle}>{errors.name}</p>
+                        )}
                     </div>
                     <div style={{ marginBottom: '1rem' }}>
                         <label htmlFor="contact-email" style={labelStyle}>Email</label>
@@ -165,10 +231,19 @@ function ContactPage() {
                             id="contact-email"
                             type="email"
                             value={formData.email}
-                            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                            style={inputStyle}
-                            required
+                            onChange={(e) => {
+                                setFormData({ ...formData, email: e.target.value });
+                                setErrors(prev => ({ ...prev, email: '' }));
+                            }}
+                            onFocus={handleFieldFocus}
+                            onBlur={handleFieldBlur}
+                            style={fieldStyle('email')}
+                            aria-invalid={!!errors.email}
+                            aria-describedby={errors.email ? 'err-email' : undefined}
                         />
+                        {errors.email && (
+                            <p id="err-email" style={errorTextStyle}>{errors.email}</p>
+                        )}
                     </div>
                     {!showMessageField && (
                         <div style={{ marginBottom: '1.25rem' }}>
@@ -178,6 +253,8 @@ function ContactPage() {
                                 type="text"
                                 value={formData.organization}
                                 onChange={(e) => setFormData({ ...formData, organization: e.target.value })}
+                                onFocus={handleFieldFocus}
+                                onBlur={handleFieldBlur}
                                 style={inputStyle}
                             />
                         </div>
@@ -189,15 +266,24 @@ function ContactPage() {
                                 id="contact-message"
                                 placeholder="What worked? What didn't? What would you like to see?"
                                 value={formData.message}
-                                onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-                                style={{ ...inputStyle, minHeight: '120px', resize: 'vertical' }}
-                                required
+                                onChange={(e) => {
+                                    setFormData({ ...formData, message: e.target.value });
+                                    setErrors(prev => ({ ...prev, message: '' }));
+                                }}
+                                onFocus={handleFieldFocus}
+                                onBlur={handleFieldBlur}
+                                style={{ ...fieldStyle('message'), minHeight: '120px', resize: 'vertical' }}
+                                aria-invalid={!!errors.message}
+                                aria-describedby={errors.message ? 'err-message' : undefined}
                             />
+                            {errors.message && (
+                                <p id="err-message" style={errorTextStyle}>{errors.message}</p>
+                            )}
                         </div>
                     )}
 
                     {status === 'error' && (
-                        <p style={{ color: '#ef4444', fontSize: '0.8125rem', marginBottom: '0.75rem' }}>
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem', marginBottom: '0.75rem' }}>
                             Something went wrong. Please try again.
                         </p>
                     )}
@@ -205,19 +291,21 @@ function ContactPage() {
                     <button
                         type="submit"
                         disabled={status === 'sending'}
+                        onMouseEnter={(e) => { if (status !== 'sending') e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; }}
                         style={{
                             width: '100%',
                             padding: '0.625rem',
                             fontSize: '0.875rem',
                             fontWeight: 600,
                             fontFamily: 'var(--font-sans, var(--font-ui))',
-                            color: '#fff',
-                            background: 'var(--accent-primary, #4f46e5)',
+                            color: 'var(--bg-primary)',
+                            background: 'var(--text-primary)',
                             border: 'none',
                             borderRadius: '8px',
                             cursor: status === 'sending' ? 'wait' : 'pointer',
                             opacity: status === 'sending' ? 0.7 : 1,
-                            transition: 'opacity 0.2s',
+                            transition: 'opacity 0.2s, transform 0.2s',
                         }}
                     >
                         {status === 'sending' ? 'Submitting...' : config.buttonLabel}
