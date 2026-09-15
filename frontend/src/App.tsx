@@ -1,47 +1,36 @@
-// CI/CD verification — non-behavioral change to confirm the pipeline runs green on a PR.
 import React, { useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import ConsoleLayout from './ConsoleLayout';
 import { trackPageView } from './analytics';
-
+import { ShellContent, AuditAllowanceProvider } from './AppRoutes';
+import { HowItWorks, Education, ArticlePage, Contact, Terms, Privacy, NotFound } from './AppRoutes';
 /* ── Code-split heavy routes ── */
 const LensyApp = lazy(() => import('./LensyApp'));
-const TermsOfUse = lazy(() => import('./TermsOfUse'));
-const PrivacyPolicy = lazy(() => import('./PrivacyPolicy'));
-const ContactPage = lazy(() => import('./pages/ContactPage'));
-const EducationPage = lazy(() => import('./pages/EducationPage'));
-const ArticlePage = lazy(() => import('./pages/ArticlePage'));
 
-/** Hero shell — renders instantly as LCP element while LensyApp chunk loads */
+/** Minimal, theme-correct loading fallback shown while a lazy route chunk loads. */
 const PageLoader = () => (
-    <div style={{ maxWidth: '900px', margin: '0 auto', padding: '3rem 1.5rem', textAlign: 'center' }}>
-        <h1 style={{
-            fontSize: 'clamp(1.75rem, 4vw, 2.75rem)',
-            fontWeight: 700,
-            letterSpacing: '-0.03em',
-            lineHeight: 1.15,
-            color: 'var(--text-primary)',
-            fontFamily: 'var(--font-sans, system-ui)',
-            margin: '0 0 1rem',
-        }}>
-            Is your documentation ready for AI search?
-        </h1>
-        <p style={{
-            fontSize: '1.0625rem',
-            lineHeight: 1.6,
-            color: 'var(--text-secondary)',
-            fontFamily: 'var(--font-sans, system-ui)',
-            maxWidth: '640px',
-            margin: '0 auto 2rem',
-        }}>
-            Developers are finding documentation through ChatGPT, Perplexity, Claude, and other AI tools. Lensy checks if they can find yours.
-        </p>
-        <div style={{
-            maxWidth: '640px', margin: '0 auto', height: '56px',
-            background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)',
-            borderRadius: '12px', animation: 'pulse 1.5s ease-in-out infinite',
-        }} />
-        <style>{`@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }`}</style>
+    <div
+        role="status"
+        aria-label="Loading"
+        style={{
+            minHeight: '100vh',
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'var(--bg)',
+        }}
+    >
+        <div
+            style={{
+                width: '28px',
+                height: '28px',
+                border: '2px solid var(--line)',
+                borderTopColor: 'var(--ink-soft)',
+                borderRadius: '50%',
+                animation: 'lensy-spin 0.7s linear infinite',
+            }}
+        />
+        <style>{`@keyframes lensy-spin { to { transform: rotate(360deg); } }`}</style>
     </div>
 );
 
@@ -54,36 +43,52 @@ function PageTracker() {
     return null;
 }
 
+/** Resets scroll to the top on route (pathname) change. */
+function ScrollToTop() {
+    const { pathname, hash } = useLocation();
+    React.useLayoutEffect(() => {
+        if (hash) return;
+        window.scrollTo(0, 0);
+    }, [pathname, hash]);
+    return null;
+}
+
 function App() {
     return (
         <BrowserRouter>
             <PageTracker />
+            <ScrollToTop />
             <Suspense fallback={<PageLoader />}>
-                <Routes>
-                    {/* Website shell with header + footer */}
-                    <Route element={<ConsoleLayout />}>
-                        {/* Homepage = Lensy scanner */}
-                        <Route path="/" element={<LensyApp />} />
+                <AuditAllowanceProvider>
+                    <Routes>
+                        {/* Website shell with header + footer */}
+                        <Route element={<ShellContent />}>
+                            {/* Homepage = Lensy scanner */}
+                            <Route path="/" element={<LensyApp />} />
+                            <Route path="/results" element={<LensyApp />} />
+                            <Route path="/scan" element={<LensyApp />} />
 
-                        {/* Education hub */}
-                        <Route path="/education" element={<EducationPage />} />
-                        <Route path="/education/:slug" element={<ArticlePage />} />
+                            {/* Static & Education Hub */}
+                            <Route path="/how-it-works" element={<HowItWorks />} />
+                            <Route path="/education" element={<Education />} />
+                            <Route path="/education/:slug" element={<ArticlePage />} />
 
-                        {/* Contact */}
-                        <Route path="/contact" element={<ContactPage />} />
+                            {/* Contact */}
+                            <Route path="/contact" element={<Contact />} />
 
-                        {/* Legal pages */}
-                        <Route path="/terms" element={<TermsOfUse />} />
-                        <Route path="/privacy" element={<PrivacyPolicy />} />
-                    </Route>
+                            {/* Legal pages */}
+                            <Route path="/terms" element={<Terms />} />
+                            <Route path="/privacy" element={<Privacy />} />
+                        </Route>
 
-                    {/* Legacy console routes — redirect to new paths */}
-                    <Route path="/console/lensy" element={<Navigate to="/" replace />} />
-                    <Route path="/console" element={<Navigate to="/" replace />} />
+                        {/* Legacy console routes — redirect to new paths */}
+                        <Route path="/console/lensy" element={<Navigate to="/" replace />} />
+                        <Route path="/console" element={<Navigate to="/" replace />} />
 
-                    {/* Catch-all */}
-                    <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
+                        {/* Catch-all */}
+                        <Route path="*" element={<NotFound />} />
+                    </Routes>
+                </AuditAllowanceProvider>
             </Suspense>
         </BrowserRouter>
     );

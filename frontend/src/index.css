@@ -1,436 +1,636 @@
-/* Font loaded via index.html: Plus Jakarta Sans + JetBrains Mono */
+@import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=Geist:wght@400;500;600;700&display=swap');
 
-:root {
-    /* Fonts — Perseverance AI brand: Plus Jakarta Sans (never Inter as primary) */
-    --font-sans: 'Plus Jakarta Sans', 'DM Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    --font-ui: var(--font-sans);
-    --font-heading: var(--font-sans);
-    --font-subheading: var(--font-sans);
-    --font-serif: var(--font-sans);
-    --font-mono: 'JetBrains Mono', 'Fira Code', 'Source Code Pro', monospace;
+@theme {
+  --font-sans: "Geist", Arial, sans-serif;
+  --font-mono: "Geist Mono", monospace;
 }
 
-/* Dark theme (default) */
-:root, [data-theme="dark"] {
-    --bg-primary: #0a0a0a;
-    --bg-secondary: #111111;
-    --bg-tertiary: #1a1a1a;
-    --text-primary: #fafafa;
-    --text-secondary: #e5e7eb;
-    --text-muted: #8b8b8b;
-    --text-code: #525252;
-    --border-subtle: #1f1f1f;
-    --border-default: #2a2a2a;
-    --border-strong: #3a3a3a;
-    --accent-primary: #e5e7eb;
-    --accent-hover: #fafafa;
-    --accent-success: #22c55e;
-    --accent-warning: #f59e0b;
-    --accent-error: #ef4444;
-    --header-bg: rgba(10, 10, 10, 0.8);
-    --grid-line: rgba(255, 255, 255, 0.02);
-    /* Code blocks */
-    --bg-code-block: rgba(0, 0, 0, 0.35);
-    --bg-code-inline: rgba(255, 255, 255, 0.08);
-    --border-code: rgba(255, 255, 255, 0.08);
-    --text-code-block: #e2e8f0;
-    --text-code-inline: #93c5fd;
-    --bg-card-dim: rgba(255, 255, 255, 0.03);
-    --border-card-dim: rgba(255, 255, 255, 0.06);
-    --bg-input-hover: rgba(255, 255, 255, 0.08);
-}
-
-/* Light theme */
+/* ---- theme tokens: black / white / logo cement ---- */
+:root,
 [data-theme="light"] {
-    --bg-primary: #ffffff;
-    --bg-secondary: #f8f9fa;
-    --bg-tertiary: #f0f1f3;
-    --text-primary: #111111;
-    --text-secondary: #374151;
-    --text-muted: #4b5563;
-    --text-code: #9ca3af;
-    --border-subtle: #e5e7eb;
-    --border-default: #d1d5db;
-    --border-strong: #9ca3af;
-    --accent-primary: #374151;
-    --accent-hover: #111111;
-    --accent-success: #16a34a;
-    --accent-warning: #d97706;
-    --accent-error: #dc2626;
-    --header-bg: rgba(255, 255, 255, 0.85);
-    --grid-line: rgba(0, 0, 0, 0.03);
-    /* Code blocks */
-    --bg-code-block: #1e293b;
-    --bg-code-inline: rgba(0, 0, 0, 0.06);
-    --border-code: rgba(0, 0, 0, 0.12);
-    --text-code-block: #e2e8f0;
-    --text-code-inline: #1e40af;
-    --bg-card-dim: rgba(0, 0, 0, 0.02);
-    --border-card-dim: rgba(0, 0, 0, 0.06);
-    --bg-input-hover: rgba(0, 0, 0, 0.04);
+  --bg: #ffffff;
+  --surface: #f6f6f5;
+  --surface-2: #ececeb;
+  --card-hover: #e8e8e6;
+  --tint: #eceff0;
+  --ink: #141414;
+  --ink-soft: #55585a;
+  --muted: #7a7d7f;
+  --placeholder: #a1a4a6;
+  --line: rgba(20, 20, 20, .20);
+  --line-soft: rgba(20, 20, 20, .14);
+  --line-strong: rgba(20, 20, 20, .30);
+  --accent: #697075;
+  --accent-hover: #4d5255;
+  --accent-contrast: #ffffff;
+  --panel-bg: #141414;
+  --panel-fg: #f4f4f3;
+  --panel-muted: #9aa0a2;
+  --panel-muted-2: #b9bdbe;
+  --panel-accent: #a9b1b3;
+  --shadow-soft: 0 10px 24px rgba(20, 20, 20, .05);
+  --shadow-raised: 0 12px 28px rgba(20, 20, 20, .07);
+  --shadow-float: 0 14px 35px rgba(20, 20, 20, .14);
+  --shadow-ink: rgba(20, 20, 20, .16);
+  --radius-xs: 4px;
+  --radius-sm: 7px;
+  --radius-md: 11px;
+  --radius-lg: 15px;
 }
 
-/* System preference: light mode when no data-theme is set */
-@media (prefers-color-scheme: light) {
-    [data-theme="system"] {
-        --bg-primary: #ffffff;
-        --bg-secondary: #f8f9fa;
-        --bg-tertiary: #f0f1f3;
-        --text-primary: #111111;
-        --text-secondary: #374151;
-        --text-muted: #4b5563;
-        --text-code: #9ca3af;
-        --border-subtle: #e5e7eb;
-        --border-default: #d1d5db;
-        --border-strong: #9ca3af;
-        --accent-primary: #374151;
-        --accent-hover: #111111;
-        --accent-success: #16a34a;
-        --accent-warning: #d97706;
-        --accent-error: #dc2626;
-        --header-bg: rgba(255, 255, 255, 0.85);
-        --grid-line: rgba(0, 0, 0, 0.03);
-        /* Code blocks */
-        --bg-code-block: #1e293b;
-        --bg-code-inline: rgba(0, 0, 0, 0.06);
-        --border-code: rgba(0, 0, 0, 0.12);
-        --text-code-block: #e2e8f0;
-        --text-code-inline: #1e40af;
-        --bg-card-dim: rgba(0, 0, 0, 0.02);
-        --border-card-dim: rgba(0, 0, 0, 0.06);
-        --bg-input-hover: rgba(0, 0, 0, 0.04);
-    }
+[data-theme="dark"] {
+  --bg: #0f1011;
+  --surface: #17181a;
+  --surface-2: #1c1d1f;
+  --card-hover: #242528;
+  --tint: #1b2123;
+  --ink: #ededec;
+  --ink-soft: #b0b3b5;
+  --muted: #8a8d8f;
+  --placeholder: #6b6e70;
+  --line: rgba(255, 255, 255, .16);
+  --line-soft: rgba(255, 255, 255, .10);
+  --line-strong: rgba(255, 255, 255, .26);
+  --accent: #9aa2a7;
+  --accent-hover: #b6bdc1;
+  --accent-contrast: #151617;
+  --panel-bg: #f4f4f3;
+  --panel-fg: #141414;
+  --panel-muted: #5b5e60;
+  --panel-muted-2: #55585a;
+  --panel-accent: #697075;
+  --shadow-soft: 0 10px 24px rgba(0, 0, 0, .20);
+  --shadow-raised: 0 12px 28px rgba(0, 0, 0, .26);
+  --shadow-float: 0 14px 35px rgba(0, 0, 0, .42);
+  --shadow-ink: rgba(0, 0, 0, .38);
 }
 
-* {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
+html {
+  min-height: 100%;
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+  background: var(--bg);
+}
+
+html::-webkit-scrollbar {
+  display: none;
 }
 
 body {
-    font-family: var(--font-ui);
-    background-color: var(--bg-primary) !important;
-    color: var(--text-secondary) !important;
-    line-height: 1.6;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    background-image:
-        linear-gradient(var(--grid-line) 1px, transparent 1px),
-        linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
-    background-size: 50px 50px;
-    transition: background-color 0.2s ease, color 0.2s ease;
+  min-height: 100%;
+  margin: 0;
+  overflow-x: clip;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Geist", Arial, sans-serif;
 }
 
-h1,
-h2 {
-    color: var(--text-primary);
-    font-family: var(--font-heading) !important;
-    font-weight: 700;
+html,
+body {
+  transition: background-color .3s var(--ease), color .3s var(--ease);
 }
 
-h3,
-h4,
-h5,
-h6 {
-    color: var(--text-primary);
-    font-family: var(--font-subheading);
-    font-weight: 600;
-    letter-spacing: -0.01em;
+html.theme-changing :is(header, footer, main, section, article, aside, form, button, input, textarea, div, span, a) {
+  transition-property: background-color, border-color, color, box-shadow, fill, stroke;
+  transition-duration: .28s;
+  transition-timing-function: var(--ease);
 }
 
-.hero-title {
-    font-family: var(--font-heading) !important;
-    font-weight: 700;
-    font-size: 3.5rem !important;
-    color: var(--text-primary);
+.surface-shadow {
+  box-shadow: var(--shadow-soft);
 }
 
-/* Material UI Overrides */
-.MuiAppBar-root {
-    background: var(--header-bg) !important;
-    backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--border-subtle) !important;
-    box-shadow: none !important;
+.raised-shadow {
+  box-shadow: var(--shadow-raised);
 }
 
-/* Cards and Papers - Rounded 12px */
-.MuiPaper-root {
-    background-color: var(--bg-secondary) !important;
-    border: 1px solid var(--border-subtle) !important;
-    border-radius: 12px !important;
+.popup-shadow {
+  box-shadow: var(--shadow-float);
 }
 
-/* Buttons - Rounded 6px */
-.MuiButton-root {
-    text-transform: none !important;
-    font-weight: 600 !important;
-    border-radius: 6px !important;
-    font-family: var(--font-ui) !important;
-    transition: all 0.2s ease !important;
+.feedback-panel {
+  transform-origin: bottom left;
+  animation: feedback-panel-in .24s var(--ease) both;
 }
 
-.MuiButton-contained {
-    background-color: var(--text-primary) !important;
-    color: var(--bg-primary) !important;
+.feedback-panel.is-closing {
+  animation: feedback-panel-out .18s ease both;
+  pointer-events: none;
 }
 
-.MuiButton-contained:hover {
-    background-color: var(--text-secondary) !important;
+.feedback-field {
+  font-size: 13px;
+  transition: border-color .18s var(--ease), background-color .18s var(--ease), box-shadow .18s var(--ease);
+}
+
+.feedback-field:focus {
+  background-color: var(--bg);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
+}
+
+.feedback-success {
+  animation: feedback-success-in .28s var(--ease) both;
+}
+
+.feedback-submit,
+.feedback-launch {
+  font-size: 13px;
+}
+
+.feedback-launch {
+  box-shadow: 0 2px 10px var(--shadow-ink);
+  transition: background-color .2s var(--ease), border-color .2s var(--ease), box-shadow .2s var(--ease), transform .2s var(--ease);
+}
+
+@media (hover: hover) {
+  .feedback-launch:hover {
+    border-color: var(--accent);
+    background-color: var(--surface);
+    box-shadow: var(--shadow-raised);
     transform: translateY(-1px);
+  }
 }
 
-.MuiButton-outlined {
-    border-color: var(--border-default) !important;
-    color: var(--text-secondary) !important;
+@keyframes feedback-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
-.MuiButton-outlined:hover {
-    background-color: var(--bg-tertiary) !important;
-    border-color: var(--border-strong) !important;
+@keyframes feedback-panel-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(5px) scale(.98);
+  }
 }
 
-/* Form Inputs - Rounded 8px */
-.MuiOutlinedInput-root {
-    background-color: var(--bg-secondary) !important;
-    border-radius: 8px !important;
+@keyframes feedback-success-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
-.MuiOutlinedInput-root .MuiInputBase-input {
-    color: var(--text-primary) !important;
+button,
+input,
+textarea {
+  font: inherit;
 }
 
-.MuiOutlinedInput-root .MuiInputBase-input::placeholder {
-    color: var(--text-muted) !important;
-    opacity: 1 !important;
+::selection {
+  background: var(--accent);
+  color: var(--accent-contrast);
 }
 
-.MuiInputLabel-root {
-    color: var(--text-muted) !important;
-}
-
-.MuiInputLabel-root.Mui-focused {
-    color: var(--accent-primary) !important;
-}
-
-.MuiOutlinedInput-notchedOutline {
-    border-color: var(--border-default) !important;
-}
-
-.MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline {
-    border-color: var(--border-strong) !important;
-}
-
-.MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
-    border-color: var(--border-strong) !important;
-    border-width: 1px !important;
-    box-shadow: none !important;
-}
-
-/* ============================================
-   GLOBAL MUI OVERRIDES — theme-aware colors
-   Forces MUI components to respect CSS custom properties
-   instead of hardcoded dark-mode palette values.
-   ============================================ */
-
-/* Alerts */
-.MuiAlert-root {
-    border-radius: 8px !important;
-    font-family: var(--font-ui) !important;
-}
-
-.MuiAlert-message {
-    color: var(--text-secondary) !important;
-}
-
-/* Chips */
-.MuiChip-root {
-    font-family: var(--font-ui) !important;
-    font-weight: 500 !important;
-    border-radius: 16px !important;
-}
-
-.MuiChip-colorDefault {
-    color: var(--text-secondary) !important;
-    background-color: var(--bg-tertiary) !important;
-}
-
-.MuiChip-colorSuccess {
-    background-color: rgba(34, 197, 94, 0.15) !important;
-    color: #22c55e !important;
-}
-
-.MuiChip-colorError {
-    background-color: rgba(239, 68, 68, 0.15) !important;
-    color: #ef4444 !important;
-}
-
-.MuiChip-colorWarning {
-    background-color: rgba(245, 158, 11, 0.15) !important;
-    color: #f59e0b !important;
-}
-
-.MuiChip-colorInfo {
-    background-color: rgba(59, 130, 246, 0.15) !important;
-    color: #3b82f6 !important;
-}
-
-.MuiChip-colorPrimary {
-    background-color: rgba(59, 130, 246, 0.15) !important;
-    color: var(--accent-primary) !important;
-}
-
-/* Typography — default text color for ALL variants */
-.MuiTypography-root {
-    font-family: var(--font-ui) !important;
-    color: var(--text-secondary) !important;
-}
-
-/* Typography heading variants — use primary text */
-.MuiTypography-h1,
-.MuiTypography-h2,
-.MuiTypography-h3,
-.MuiTypography-h4,
-.MuiTypography-h5,
-.MuiTypography-h6 {
-    color: var(--text-primary) !important;
-}
-
-/* Typography MUI color overrides — map MUI palette names to CSS vars */
-.MuiTypography-colorTextPrimary {
-    color: var(--text-primary) !important;
-}
-
-.MuiTypography-colorTextSecondary {
-    color: var(--text-muted) !important;
-}
-
-/* Status/accent colors — keep visible in both themes */
-.MuiTypography-colorSuccess,
-.MuiTypography-root[style*="success"] {
-    color: var(--accent-success) !important;
-}
-
-.MuiTypography-colorError,
-.MuiTypography-root[style*="error"] {
-    color: var(--accent-error) !important;
-}
-
-.MuiTypography-colorWarning,
-.MuiTypography-root[style*="warning"] {
-    color: var(--accent-warning) !important;
-}
-
-.MuiTypography-colorPrimary {
-    color: var(--accent-primary) !important;
-}
-
-/* List items */
-.MuiListItemText-primary {
-    color: var(--text-primary) !important;
-}
-
-.MuiListItemText-secondary {
-    color: var(--text-muted) !important;
-}
-
-/* Table cells */
-.MuiTableCell-root {
-    color: var(--text-secondary) !important;
-    border-bottom-color: var(--border-subtle) !important;
-}
-
-.MuiTableCell-head {
-    color: var(--text-muted) !important;
-    font-weight: 600 !important;
-}
-
-/* Checkbox */
-.MuiCheckbox-root {
-    color: var(--border-strong) !important;
-}
-
-.MuiCheckbox-root.Mui-checked {
-    color: var(--accent-primary) !important;
-}
-
-/* Card content */
-.MuiCardContent-root {
-    color: var(--text-secondary);
-}
-
-/* Collapse / expand icons */
-.MuiIconButton-root {
-    color: var(--text-muted) !important;
-}
-
-/* Dividers */
-.MuiDivider-root {
-    border-color: var(--border-subtle) !important;
-}
-
-/* Accordion / Collapse text */
-.MuiCollapse-root {
-    color: var(--text-secondary);
-}
-
-/* Tooltips */
-.MuiTooltip-tooltip {
-    font-family: var(--font-ui) !important;
-}
-
-/* Menus and Popover */
-.MuiMenu-paper,
-.MuiPopover-paper {
-    background-color: var(--bg-secondary) !important;
-    border: 1px solid var(--border-default) !important;
-}
-
-.MuiMenuItem-root {
-    color: var(--text-secondary) !important;
-}
-
-.MuiMenuItem-root:hover {
-    background-color: var(--bg-tertiary) !important;
-}
-
-/* Select dropdown */
-.MuiSelect-select {
-    color: var(--text-primary) !important;
-}
-
-/* Card content — ensure text inherits correctly */
-.MuiCardContent-root .MuiTypography-root {
-    color: var(--text-secondary) !important;
-}
-
-.MuiCardContent-root .MuiTypography-h1,
-.MuiCardContent-root .MuiTypography-h2,
-.MuiCardContent-root .MuiTypography-h3,
-.MuiCardContent-root .MuiTypography-h4,
-.MuiCardContent-root .MuiTypography-h5,
-.MuiCardContent-root .MuiTypography-h6 {
-    color: var(--text-primary) !important;
-}
-
-/* LinearProgress */
-.MuiLinearProgress-root {
-    background-color: var(--border-default) !important;
-}
-
-/* Anchor tags — monochrome + underlined */
 a {
-    color: var(--text-secondary);
-    text-decoration: underline;
+  text-decoration: none;
 }
 
-a:hover {
-    color: var(--text-primary);
+/* keep the metallic logo legible on dark surfaces */
+[data-theme="dark"] .logo-mark {
+  filter: brightness(1.7) contrast(1.05);
 }
 
-/* Code Blocks - Rounded 8px */
-pre,
-.code-block,
-.syntax-highlighter {
-    border-radius: 8px !important;
+/* ---- motion primitives: quiet, tactile, and reduced-motion safe ---- */
+:root {
+  --ease: cubic-bezier(.22, 1, .36, 1);
+}
+
+/* scroll reveal */
+[data-reveal] {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity .7s var(--ease), transform .7s var(--ease);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+
+[data-reveal].is-in {
+  opacity: 1;
+  transform: none;
+}
+
+/* animated underline that sweeps in from the left */
+.link-sweep {
+  position: relative;
+  transition: color .25s var(--ease);
+}
+
+.link-sweep::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -2px;
+  height: 1px;
+  width: 100%;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform .35s var(--ease);
+}
+
+.link-sweep:hover::after {
+  transform: scaleX(1);
+}
+
+/* arrow nudge on hover of the parent */
+.group:hover .arrow-nudge {
+  transform: translateX(4px);
+}
+
+.arrow-nudge {
+  transition: transform .3s var(--ease);
+}
+
+/* card that fills with ink on hover */
+.card-fill {
+  position: relative;
+  isolation: isolate;
+  transition: color .4s var(--ease);
+}
+
+.card-fill::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--ink);
+  transform: scaleY(0);
+  transform-origin: bottom;
+  transition: transform .4s var(--ease);
+  z-index: -1;
+}
+
+.card-fill:hover::before {
+  transform: scaleY(1);
+}
+
+/* Actions acknowledge intent through tone and a small, tactile shift. */
+.btn-ink {
+  border-radius: var(--radius-sm);
+  box-shadow: 0 1px 0 var(--shadow-ink);
+  transition: background-color .2s var(--ease), color .2s var(--ease), box-shadow .2s var(--ease), transform .2s var(--ease), opacity .2s ease;
+}
+
+@media (hover: hover) {
+  .btn-ink:hover {
+    background-color: var(--accent-hover);
+    box-shadow: var(--shadow-raised);
+    transform: translateY(-1px);
+  }
+}
+
+.btn-ink:active {
+  opacity: .88;
+  transform: translateY(0);
+}
+
+/* A small lift makes cards feel like sheets being picked up, not dashboard tiles. */
+.soft-card {
+  transition: transform .35s var(--ease), background-color .35s var(--ease), box-shadow .35s var(--ease);
+}
+
+@media (hover: hover) {
+  .soft-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-soft);
+  }
+}
+
+:is(a, button):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+input:focus-visible,
+textarea:focus-visible {
+  outline: none;
+}
+
+.field-shell:focus-within {
+  border-color: var(--accent);
+}
+
+.theme-choice {
+  border-radius: var(--radius-xs);
+}
+
+.nav-rail {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bg) 70%, transparent);
+  transition: border-color .22s var(--ease), background-color .22s var(--ease), box-shadow .22s var(--ease);
+}
+
+.nav-rail:hover {
+  border-color: var(--line-strong);
+}
+
+.nav-item {
+  position: relative;
+  transition: color .2s var(--ease), background-color .2s var(--ease), box-shadow .2s var(--ease);
+}
+
+.nav-item.is-active {
+  text-shadow: 0 1px 1px var(--shadow-ink);
+}
+
+.nav-item:not(.is-active):active {
+  color: var(--accent);
+}
+
+.nav-indicator {
+  position: absolute;
+  z-index: 0;
+  top: 4px;
+  bottom: 4px;
+  left: 0;
+  border-radius: var(--radius-xs);
+  background: var(--ink);
+  box-shadow: 0 1px 2px var(--shadow-ink);
+  opacity: 0;
+  transition: transform .3s var(--ease), width .3s var(--ease), opacity .15s ease;
+}
+
+.nav-indicator.is-ready {
+  opacity: 1;
+}
+
+.route-enter {
+  animation: route-enter .32s var(--ease) both;
+}
+
+@keyframes route-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.hero-intro {
+  animation: hero-intro .72s var(--ease) both;
+}
+
+@keyframes hero-intro {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+    filter: blur(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+
+.theme-trigger {
+  transition: border-color .2s var(--ease), color .2s var(--ease), background-color .2s var(--ease);
+}
+
+.theme-trigger.is-open {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.theme-menu {
+  transform-origin: top right;
+  animation: theme-menu-in .18s var(--ease) both;
+}
+
+@keyframes theme-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.mobile-nav-menu {
+  transform-origin: top right;
+  animation: theme-menu-in .18s var(--ease) both;
+}
+
+.theme-choice {
+  transition: background-color .16s var(--ease), color .16s var(--ease);
+}
+
+/* The scan button moves its icon, not the whole page. */
+.scan-action {
+  display: inline-flex;
+  align-items: center;
+  gap: .55rem;
+  box-shadow: 0 1px 0 var(--shadow-ink);
+  transition: background-color .2s var(--ease), box-shadow .2s var(--ease), opacity .2s ease;
+}
+
+.scan-action-icon {
+  transition: transform .2s var(--ease);
+}
+
+@media (hover: hover) {
+  .scan-action:hover:not(:disabled) {
+    box-shadow: var(--shadow-raised);
+  }
+
+  .scan-action:hover:not(:disabled) .scan-action-icon {
+    transform: scale(1.08);
+  }
+}
+
+.audit-notice {
+  animation: audit-notice-in .28s var(--ease) both;
+}
+
+@keyframes audit-notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.shell-header {
+  transition: background-color .35s var(--ease), backdrop-filter .35s var(--ease), box-shadow .35s var(--ease);
+}
+
+.shell-header.is-scrolled {
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 1px 0 var(--line-soft);
+}
+
+/* The answer enters after the question state has changed, without moving the trigger. */
+.acc {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows .24s var(--ease), opacity .16s ease;
+}
+
+.acc.open {
+  grid-template-rows: 1fr;
+}
+
+.acc.open {
+  opacity: 1;
+  transition-delay: 0s, .06s;
+}
+
+.acc>div {
+  overflow: hidden;
+}
+
+@keyframes scan-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* prose styles for article bodies */
+.prose-lensy {
+  color: var(--ink-soft);
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.prose-lensy>*+* {
+  margin-top: 1.25em;
+}
+
+.prose-lensy h2 {
+  margin-top: 2.5em;
+  margin-bottom: .6em;
+  font-size: 1.35rem;
+  font-weight: 500;
+  letter-spacing: -.04em;
+  color: var(--ink);
+  line-height: 1.15;
+}
+
+.prose-lensy p {
+  max-width: 65ch;
+}
+
+.prose-lensy ul,
+.prose-lensy ol {
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: .4em;
+}
+
+.prose-lensy li {
+  max-width: 60ch;
+}
+
+.prose-lensy code {
+  font-family: var(--font-mono);
+  font-size: .85em;
+  background: var(--surface-2);
+  padding: .1em .35em;
+  border-radius: var(--radius-xs);
+  color: var(--ink);
+}
+
+.prose-lensy strong {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.prose-lensy a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.prose-lensy a:hover {
+  color: var(--accent-hover);
+}
+
+.legal-prose>p:first-child {
+  max-width: 52ch;
+  color: var(--ink);
+  font-size: 1.05rem;
+  line-height: 1.6;
+  letter-spacing: -.02em;
+}
+
+.legal-prose h2 {
+  scroll-margin-top: 7rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1.45em;
+}
+
+.legal-prose h2:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.legal-prose ul {
+  list-style: none;
+  padding-left: 0;
+  gap: .65em;
+}
+
+.legal-prose li {
+  position: relative;
+  padding-left: 1.1rem;
+}
+
+.legal-prose li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: .68em;
+  width: .32rem;
+  height: .32rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  [data-reveal] {
+    opacity: 1;
+    transform: none;
+  }
 }

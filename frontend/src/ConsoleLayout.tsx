@@ -79,10 +79,10 @@ function ConsoleLayout() {
         setMobileMenuOpen(false);
     }, [location.pathname]);
 
-    const themeOptions: { mode: ThemeMode; icon: string; label: string }[] = [
-        { mode: 'system', icon: '\u{1F4BB}', label: 'System' },
-        { mode: 'light', icon: '\u2600\uFE0F', label: 'Light' },
-        { mode: 'dark', icon: '\u{1F319}', label: 'Dark' },
+    const themeOptions: { mode: ThemeMode; label: string }[] = [
+        { mode: 'system', label: 'System' },
+        { mode: 'light', label: 'Light' },
+        { mode: 'dark', label: 'Dark' },
     ];
     const currentTheme = themeOptions.find(t => t.mode === themeMode) || themeOptions[0];
 
@@ -119,7 +119,7 @@ function ConsoleLayout() {
                 boxSizing: 'border-box',
             }}>
                 <nav style={{
-                    maxWidth: '1400px',
+                    maxWidth: 'var(--width-wide)',
                     margin: '0 auto',
                     display: 'flex',
                     justifyContent: 'space-between',
@@ -239,7 +239,7 @@ function ConsoleLayout() {
                                     display: 'flex',
                                     alignItems: 'center',
                                     gap: '0.3rem',
-                                    transition: 'all 0.2s ease',
+                                    transition: 'background var(--transition-base), border-color var(--transition-base), color var(--transition-base)',
                                     fontSize: '0.75rem',
                                     color: 'var(--text-muted)',
                                     fontFamily: 'var(--font-sans, var(--font-ui))',
@@ -248,8 +248,7 @@ function ConsoleLayout() {
                                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-strong)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
                                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
                             >
-                                <span style={{ fontSize: '0.85rem' }}>{currentTheme.icon}</span>
-                                <span className="theme-toggle-label">{currentTheme.label}</span>
+                                <span className="theme-toggle-label" style={{ minWidth: '3.25rem', textAlign: 'left', display: 'inline-block' }}>{currentTheme.label}</span>
                                 <span className="theme-toggle-arrow" style={{ fontSize: '0.6rem', marginLeft: '0.15rem', opacity: 0.6 }}>{themeDropdownOpen ? '\u25B2' : '\u25BC'}</span>
                             </button>
                             {themeDropdownOpen && (
@@ -288,7 +287,6 @@ function ConsoleLayout() {
                                             onMouseEnter={(e) => { if (themeMode !== opt.mode) e.currentTarget.style.background = 'var(--bg-tertiary)'; }}
                                             onMouseLeave={(e) => { if (themeMode !== opt.mode) e.currentTarget.style.background = 'transparent'; }}
                                         >
-                                            <span style={{ fontSize: '1rem' }}>{opt.icon}</span>
                                             <span>{opt.label}</span>
                                             {themeMode === opt.mode && <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: 'var(--accent-primary)' }}>{'\u2713'}</span>}
                                         </button>
@@ -446,7 +444,7 @@ function ConsoleLayout() {
                 padding: '1.5rem 1rem',
             }}>
                 <div style={{
-                    maxWidth: '1400px',
+                    maxWidth: 'var(--width-wide)',
                     margin: '0 auto',
                     display: 'flex',
                     flexDirection: 'column',
@@ -487,19 +485,25 @@ function ConsoleLayout() {
                     <div style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '1rem',
+                        gap: '0.75rem',
                         flexWrap: 'wrap',
                         justifyContent: 'center',
                     }}>
                         <span style={{ fontFamily: 'var(--font-sans)', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                             &copy; {new Date().getFullYear()} Perseverance AI. All rights reserved.
                         </span>
+                        <span aria-hidden="true" style={{ color: 'var(--border-strong)' }}>·</span>
                         <a href="/terms" onClick={(e) => { e.preventDefault(); navigate('/terms'); }}
-                            style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)' }}>
+                            style={{ fontFamily: 'var(--font-sans)', fontSize: '0.75rem', color: 'var(--text-muted)', textDecoration: 'none', fontWeight: 500, transition: 'color var(--transition-base)' }}
+                            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; }}>
                             Terms
                         </a>
+                        <span aria-hidden="true" style={{ color: 'var(--border-strong)' }}>·</span>
                         <a href="/privacy" onClick={(e) => { e.preventDefault(); navigate('/privacy'); }}
-                            style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textDecoration: 'none', fontFamily: 'var(--font-sans)' }}>
+                            style={{ fontFamily: 'var(--font-sans)', fontSize: '0.75rem', color: 'var(--text-muted)', textDecoration: 'none', fontWeight: 500, transition: 'color var(--transition-base)' }}
+                            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; }}>
                             Privacy
                         </a>
                     </div>

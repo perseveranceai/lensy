@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import App from './App';
-import './index.css';
+import './tailwind.css';
 
 const theme = createTheme({
     palette: {
@@ -22,27 +22,27 @@ const theme = createTheme({
         divider: '#1f1f1f',
     },
     typography: {
-        fontFamily: '"Plus Jakarta Sans", "DM Sans", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        fontFamily: '"Geist", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         h1: {
-            fontWeight: 700,
+            fontWeight: 400,
             letterSpacing: '-0.02em',
         },
         h2: {
-            fontWeight: 700,
+            fontWeight: 400,
             letterSpacing: '-0.01em',
         },
         h3: {
-            fontWeight: 700,
+            fontWeight: 400,
             letterSpacing: '-0.01em',
         },
         h4: {
-            fontWeight: 600,
+            fontWeight: 400,
         },
         h5: {
-            fontWeight: 600,
+            fontWeight: 400,
         },
         h6: {
-            fontWeight: 600,
+            fontWeight: 400,
         },
         body1: {
             fontWeight: 400,
