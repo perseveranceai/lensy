@@ -487,7 +487,10 @@ export function ScanReport({
 
     <div className="flex flex-col gap-5 border-b border-[var(--line)] pb-7 sm:flex-row sm:items-end sm:justify-between">
       <div><p className="text-[12px] font-medium tracking-[-.025em] text-[var(--accent)]">Lensy scan / AI readiness report</p><h1 className="mt-3 text-[clamp(2.4rem,5.5vw,5rem)] font-medium leading-[.93] tracking-[-.07em]">{heading}</h1></div>
-      <div className="text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]"><span>Scanned </span><span className="text-[var(--ink)]">{hostname}</span></div>
+      <div className="flex flex-col items-start sm:items-end gap-1.5 text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">
+        <div><span>Scanned </span><span className="text-[var(--ink)]">{hostname}</span></div>
+        {report?.analysisTime && <div><span>Completed in </span><span className="text-[var(--ink)]">{(report.analysisTime / 1000).toFixed(1)}s</span></div>}
+      </div>
     </div>
 
     <div className="mt-8 grid gap-3 sm:grid-cols-2">

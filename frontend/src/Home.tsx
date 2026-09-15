@@ -6,16 +6,20 @@ import {
   Link2,
   Plus,
   ScanSearch,
+  ChevronDown,
+  ChevronRight
 } from "lucide-react"
 import { useAuditAllowance } from "./AppRoutes"
 
-type IconName = "arrow" | "plus" | "link" | "eye"
+type IconName = "arrow" | "plus" | "link" | "eye" | "chevronDown" | "chevronRight"
 function Icon({ name, className = "" }: { name: IconName; className?: string }) {
   const icons = {
     arrow: ArrowRight,
     plus: Plus,
     link: Link2,
     eye: Eye,
+    chevronDown: ChevronDown,
+    chevronRight: ChevronRight,
   }
   const Symbol = icons[name]
   return (
@@ -35,6 +39,7 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
   const [showAllowanceNotice, setShowAllowanceNotice] = useState(false)
   const [scanError, setScanError] = useState("")
   const [open, setOpen] = useState<number | null>(null)
+  const [progressOpen, setProgressOpen] = useState(false)
   const navigate = useNavigate()
   const { remaining } = useAuditAllowance()
   const scanSteps = [
@@ -103,7 +108,7 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
         </div>
         <div className="mt-10 flex flex-col justify-end lg:col-span-4 lg:mt-0">
           <p className="max-w-sm text-[15px] leading-[1.55] tracking-[-.02em] text-[var(--ink-soft)]">
-            Lensy checks if AI search engines can actually find, read, and cite your docs.
+            Lensy evaluates whether the documentation you already publish can be surfaced, understood, and cited by AI search.
           </p>
           <a
             href="#scan"
@@ -218,84 +223,102 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
             {loading && (
               <div
                 aria-live="polite"
-                className="mt-8 border-t border-[var(--line)] pt-5"
+                className="mt-8 pt-2"
               >
-                <div className="flex items-center justify-between text-[11px] font-medium tracking-[-.025em]">
-                  <span className="text-[var(--ink)]">
-                    Analysis in progress
-                  </span>
-                  <span className="text-[var(--muted)]">
-                    {analysisState?.progressMessages ? analysisState.progressMessages.length : (progressStep + 1)} steps
-                  </span>
-                </div>
-                <div className="mt-3 h-px w-full bg-[var(--line)]">
-                  <div
-                    className="h-px bg-[var(--accent)] transition-[width] duration-300"
-                    style={{
-                      width: analysisState?.progressMessages ? `${Math.min(100, analysisState.progressMessages.length * 15)}%` : `${((progressStep + 1) / scanSteps.length) * 100}%`,
-                    }}
-                  />
-                </div>
-                <ol className="mt-5 grid gap-3 max-h-[200px] overflow-y-auto">
-                  {analysisState?.progressMessages?.length > 0 ? (
-                    analysisState.progressMessages.map((msg: any, index: number) => {
-                      const isLast = index === analysisState.progressMessages.length - 1;
-                      return (
-                        <li
-                          key={index}
-                          className={`grid grid-cols-[18px_minmax(0,1fr)_auto] items-start gap-2 text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)]`}
-                        >
-                          <span
-                            className={`mt-px grid size-3.5 place-items-center rounded-full text-[8px] ${!isLast
-                              ? "bg-[var(--accent)] text-[var(--accent-contrast)]"
-                              : "border border-[var(--accent)] text-[var(--accent)]"
+                <div className="rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--bg)] overflow-hidden transition-all duration-300">
+                  <button 
+                    type="button"
+                    onClick={() => setProgressOpen(!progressOpen)}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3 hover:bg-[var(--tint)] transition-colors text-left"
+                  >
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      {/* Glowing indicator */}
+                      <span className="relative flex h-3 w-3 items-center justify-center shrink-0">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--accent)] opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--accent)]"></span>
+                      </span>
+                      <span className="text-[13px] font-medium text-[var(--ink)] truncate">
+                        {analysisState?.progressMessages?.length > 0 
+                          ? analysisState.progressMessages[analysisState.progressMessages.length - 1].message 
+                          : scanSteps[progressStep][0]}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[11px] text-[var(--muted)] font-medium">
+                        {analysisState?.progressMessages ? analysisState.progressMessages.length : (progressStep + 1)} steps
+                      </span>
+                      <Icon name={progressOpen ? "chevronDown" : "chevronRight"} className="text-[var(--muted)]" />
+                    </div>
+                  </button>
+                  
+                  <div 
+                    className={`transition-all duration-300 ease-in-out overflow-hidden ${progressOpen ? "opacity-100 border-t border-[var(--line)]" : "opacity-0 border-transparent"}`}
+                    style={{ maxHeight: progressOpen ? '300px' : '0px' }}
+                  >
+                    <div className="overflow-y-auto max-h-[300px]">
+                      <ol className="p-4 grid gap-3">
+                      {analysisState?.progressMessages?.length > 0 ? (
+                        analysisState.progressMessages.map((msg: any, index: number) => {
+                          const isLast = index === analysisState.progressMessages.length - 1;
+                          return (
+                            <li
+                              key={index}
+                              className="grid grid-cols-[18px_minmax(0,1fr)_auto] items-start gap-2 text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)]"
+                            >
+                              <span
+                                className={`mt-px grid size-3.5 place-items-center rounded-full text-[8px] ${!isLast
+                                  ? "bg-[var(--accent)] text-[var(--accent-contrast)]"
+                                  : "border border-[var(--accent)] text-[var(--accent)]"
+                                  }`}
+                              >
+                                {!isLast ? "✓" : "•"}
+                              </span>
+                              <span>
+                                <span className="block">{msg.message}</span>
+                              </span>
+                              <span className="pt-px text-[9px]">
+                                {!isLast ? "Done" : "Working"}
+                              </span>
+                            </li>
+                          )
+                        })
+                      ) : scanSteps.map(([step, detail], index) => {
+                        const complete = index < progressStep
+                        const active = index === progressStep
+                        return (
+                          <li
+                            key={step}
+                            className={`grid grid-cols-[18px_minmax(0,1fr)_auto] items-start gap-2 text-[11px] font-medium tracking-[-.025em] ${index > progressStep
+                              ? "text-[var(--placeholder)]"
+                              : "text-[var(--ink-soft)]"
                               }`}
                           >
-                            {!isLast ? "✓" : "•"}
-                          </span>
-                          <span>
-                            <span className="block">{msg.message}</span>
-                          </span>
-                          <span className="pt-px text-[9px]">
-                            {!isLast ? "Done" : "Working"}
-                          </span>
-                        </li>
-                      )
-                    })
-                  ) : scanSteps.map(([step, detail], index) => {
-                    const complete = index < progressStep
-                    const active = index === progressStep
-                    return (
-                      <li
-                        key={step}
-                        className={`grid grid-cols-[18px_minmax(0,1fr)_auto] items-start gap-2 text-[11px] font-medium tracking-[-.025em] ${index > progressStep
-                          ? "text-[var(--placeholder)]"
-                          : "text-[var(--ink-soft)]"
-                          }`}
-                      >
-                        <span
-                          className={`mt-px grid size-3.5 place-items-center rounded-full text-[8px] ${complete
-                            ? "bg-[var(--accent)] text-[var(--accent-contrast)]"
-                            : active
-                              ? "border border-[var(--accent)] text-[var(--accent)]"
-                              : "border border-[var(--line)]"
-                            }`}
-                        >
-                          {complete ? "✓" : active ? "•" : ""}
-                        </span>
-                        <span>
-                          <span className="block">{step}</span>
-                          <span className="mt-0.5 block text-[9px] opacity-70">
-                            {detail}
-                          </span>
-                        </span>
-                        <span className="pt-px text-[9px]">
-                          {complete ? "Done" : active ? "Working" : "Next"}
-                        </span>
-                      </li>
-                    )
-                  })}
-                </ol>
+                            <span
+                              className={`mt-px grid size-3.5 place-items-center rounded-full text-[8px] ${complete
+                                ? "bg-[var(--accent)] text-[var(--accent-contrast)]"
+                                : active
+                                  ? "border border-[var(--accent)] text-[var(--accent)]"
+                                  : "border border-[var(--line)]"
+                                }`}
+                            >
+                              {complete ? "✓" : active ? "•" : ""}
+                            </span>
+                            <span>
+                              <span className="block">{step}</span>
+                              <span className="mt-0.5 block text-[9px] opacity-70">
+                                {detail}
+                              </span>
+                            </span>
+                            <span className="pt-px text-[9px]">
+                              {complete ? "Done" : active ? "Working" : "Next"}
+                            </span>
+                          </li>
+                        )
+                      })}
+                        </ol>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </div>
