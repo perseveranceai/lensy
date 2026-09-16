@@ -815,12 +815,12 @@ export function ArticlePage() {
               <span className="text-[16px] leading-snug tracking-[-.03em]">{prev.title}</span>
             </Link>
           ) : <div />}
-          {next && (
+          {next ? (
             <Link to={`/education/${next.slug}`} className="group flex flex-col gap-2 border-t border-[var(--line)] py-6 pl-0 text-right transition-colors hover:text-[var(--accent)] sm:border-l sm:border-t-0 sm:pl-8">
               <span className="flex items-center justify-end gap-1.5 text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">Next<ArrowRight className="size-3" strokeWidth={1.8} aria-hidden="true" /></span>
               <span className="text-[16px] leading-snug tracking-[-.03em]">{next.title}</span>
             </Link>
-          )}
+          ) : <div className="sm:border-l border-[var(--line)]" />}
         </nav>
       )}
     </div>
