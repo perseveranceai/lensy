@@ -829,8 +829,8 @@ export function ArticlePage() {
 
 // ---- Contact ----
 
-export function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string; children: React.ReactNode }) {
-  return <label className="field-shell block border-b border-[var(--line)] px-3 py-5 transition-colors focus-within:border-[var(--accent)]">
+export function Field({ label, hint, error, noBorder, children }: { label: string; hint?: string; error?: string; noBorder?: boolean; children: React.ReactNode }) {
+  return <label className={`field-shell block px-3 py-5 transition-colors focus-within:border-[var(--accent)] ${noBorder ? '' : 'border-b border-[var(--line)]'}`}>
     <span className="flex items-baseline justify-between text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]"><span>{label}</span>{hint && <span className="text-[10px] text-[var(--placeholder)]">{hint}</span>}</span>
     {children}
     {error && <span role="alert" className="audit-notice mt-3 block rounded-[var(--radius-xs)] bg-[var(--tint)] px-2.5 py-2 text-[11px] font-medium leading-relaxed tracking-[-.02em] text-[var(--ink)]">{error}</span>}
@@ -851,10 +851,10 @@ export function Contact() {
   const isFeedback = ref === "feedback";
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!isFeedback && !website.trim()) return setFormError("Add your developer portal or website URL to continue.");
-    if (isFeedback && !message.trim()) return setFormError("Share your feedback to continue.");
-    if (!name.trim()) return setFormError("Add your name so we know who to contact.");
-    if (!email.trim() || !/^\S+@\S+\.\S+$/.test(email)) return setFormError("Enter a valid email address to join the waitlist.");
+    if ((!isFeedback && !website.trim()) || (isFeedback && !message.trim()) || !name.trim() || !email.trim() || !/^\S+@\S+\.\S+$/.test(email)) {
+      setFormError("validation");
+      return;
+    }
     setFormError("");
     setSending(true);
     try {
@@ -872,15 +872,17 @@ export function Contact() {
       setSending(false);
     }
   };
-  const websiteError = formError && !website.trim() ? formError : "";
-  const nameError = formError && !name.trim() ? formError : "";
-  const emailError = formError && (!email.trim() || !/^\S+@\S+\.\S+$/.test(email)) ? formError : "";
+  const websiteError = formError && !website.trim() ? "Add your developer portal or website URL to continue." : "";
+  const nameError = formError && !name.trim() ? "Add your name so we know who to contact." : "";
+  const emailError = formError && (!email.trim() || !/^\S+@\S+\.\S+$/.test(email)) ? "Enter a valid email address to join the waitlist." : "";
+  const messageError = formError && !message.trim() ? "Share your feedback to continue." : "";
+  const networkError = formError && formError !== "validation" ? formError : "";
   const inputCls = "mt-3 block w-full bg-transparent font-sans text-xl tracking-[-.035em] text-[var(--ink)] outline-none placeholder:text-[var(--placeholder)]";
 
   return <Page
     titleStyle={{ fontSize: "clamp(2rem, 4vw, 3.5rem)" }}
     title={<>Join the<br /><span className="text-[var(--accent)]">Waitlist.</span></>}
-    intro="Sign up to get higher audit limits and early access to new features."
+    intro="Join the waitlist to get higher limits and get access to upcoming products."
   >
     <div className="grid gap-12 py-20 lg:grid-cols-12 lg:gap-16">
       <aside data-reveal className="flex flex-col gap-10 lg:col-span-4">
@@ -906,16 +908,18 @@ export function Contact() {
           </div>
         ) : (
           <form noValidate onSubmit={submit}>
-            <div className="border-t border-[var(--line)]">
-              <Field label="Developer Portal or Website URL" error={websiteError}><input value={website} onChange={(event) => { setWebsite(event.target.value); setFormError(""); }} aria-invalid={Boolean(websiteError)} className={inputCls} placeholder="docs.yourcompany.com" /></Field>
+            <div>
+              {networkError && <p className="audit-notice mb-4 rounded-[var(--radius-xs)] bg-[var(--tint)] px-3 py-2.5 text-[12px] font-medium text-[var(--ink)]">{networkError}</p>}
+              {!isFeedback && <Field label="Developer Portal or Website URL" error={websiteError}><input value={website} onChange={(event) => { setWebsite(event.target.value); setFormError(""); }} aria-invalid={Boolean(websiteError)} className={inputCls} placeholder="docs.yourcompany.com" /></Field>}
               <div className="sm:grid sm:grid-cols-2 sm:gap-x-8">
                 <Field label="Name" error={nameError}><input value={name} onChange={(event) => { setName(event.target.value); setFormError(""); }} aria-invalid={Boolean(nameError)} className={inputCls} placeholder="Ada Lovelace" /></Field>
                 <Field label="Email" error={emailError}><input value={email} onChange={(event) => { setEmail(event.target.value); setFormError(""); }} aria-invalid={Boolean(emailError)} type="email" className={inputCls} placeholder="you@company.com" /></Field>
               </div>
-              <Field label="Organization / Company"><input value={organization} onChange={(event) => { setOrganization(event.target.value); setFormError(""); }} className={inputCls} placeholder="Acme Corp" /></Field>{isFeedback && <Field label="Your feedback"><textarea value={message} onChange={(event) => { setMessage(event.target.value); setFormError(""); }} aria-invalid={Boolean(formError)} className={`${inputCls} min-h-32 resize-y`} placeholder="What worked, what didn’t, or what should we build next?" /></Field>}
+              <Field label="Organization / Company" noBorder={!isFeedback}><input value={organization} onChange={(event) => { setOrganization(event.target.value); setFormError(""); }} className={inputCls} placeholder="Acme Corp" /></Field>
+              {isFeedback && <Field label="Your feedback" error={messageError} noBorder><textarea value={message} onChange={(event) => { setMessage(event.target.value); setFormError(""); }} aria-invalid={Boolean(messageError)} className={`${inputCls} min-h-32 resize-y`} placeholder="What worked, what didn’t, or what should we build next?" /></Field>}
             </div>
             <div className="mt-7 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="max-w-xs text-[11px] font-medium tracking-[-.025em] leading-relaxed text-[var(--muted)]">No newsletter. We only use this to reach out about access.</p>
+              <p className="max-w-xs text-[11px] font-medium tracking-[-.025em] leading-relaxed text-[var(--muted)]">Your inbox is safe with us. We only use this to get in touch.</p>
               <button disabled={sending} className="btn-ink group inline-flex items-center gap-2 bg-[var(--panel-bg)] px-5 py-3 text-[12px] font-medium tracking-[-.025em] text-[var(--panel-fg)] disabled:cursor-wait disabled:opacity-70">{sending ? "Joining…" : <>Join waitlist <ArrowRight className="arrow-nudge size-3.5" strokeWidth={1.8} aria-hidden="true" /></>}</button>
             </div>
           </form>
