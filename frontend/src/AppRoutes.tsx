@@ -516,9 +516,20 @@ export function ScanReport({
         <span className="mt-3 block text-[13px] leading-relaxed opacity-75">{hasReport ? `${failingSignalCount} signal${failingSignalCount === 1 ? "" : "s"} to improve across ${failingGroupCount} categor${failingGroupCount === 1 ? "y" : "ies"}` : "Waiting for the completed scan report"}</span>
       </button>
       <button onClick={startCitationTest} className={`rounded-[var(--radius-md)] border p-6 text-left transition-colors sm:p-7 ${view === "citations" || view === "citations-loading" ? "border-[var(--ink)] bg-[var(--panel-bg)] text-[var(--panel-fg)]" : "border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-2)]"}`}>
-        <span className="text-[11px] font-medium tracking-[-.025em] opacity-65">AI citations</span>
-        <span className="mt-6 block text-[clamp(2.7rem,5vw,4.4rem)] font-medium leading-none tracking-[-.08em]">{citationsLoading ? "—" : citationResults.length ? `${citedCount}/${citationResults.length}` : "—"}</span>
-        <span className="mt-3 block text-[13px] leading-relaxed opacity-75">{citationsLoading ? "Testing citations with AI search" : citationResults.length ? `Cited in ${citedCount} of ${citationResults.length} tested queries` : "Run a real citation check"}</span>
+        {citationResults.length ? (<>
+          <span className="text-[11px] font-medium tracking-[-.025em] opacity-65">AI citations</span>
+          <span className="mt-6 block text-[clamp(2.7rem,5vw,4.4rem)] font-medium leading-none tracking-[-.08em]">{citedCount}/{citationResults.length}</span>
+          <span className="mt-3 block text-[13px] leading-relaxed opacity-75">Cited in {citedCount} of {citationResults.length} tested queries</span>
+        </>) : (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, width: '100%', minHeight: 80 }}>
+            {citationsLoading ? <span style={{ display: 'inline-block', width: 28, height: 28, borderRadius: '50%', borderWidth: 3, borderStyle: 'solid', borderColor: 'var(--accent, #697075)', borderTopColor: 'transparent', animation: 'citationspin .8s linear infinite', flexShrink: 0 }} /> : <svg width="32" height="36" viewBox="0 0 24 24" style={{ flexShrink: 0, opacity: 0.5 }}><path d="M8 5.14v14l11-7-11-7z" fill="currentColor" /></svg>}
+            <div>
+              <span style={{ display: 'block', fontSize: 17, fontWeight: 500, letterSpacing: '-0.025em' }}>AI Citations</span>
+              <span style={{ display: 'block', marginTop: 4, fontSize: 13, opacity: 0.65 }}>{citationsLoading ? "Testing citations with AI search" : "Run citation check"}</span>
+            </div>
+          </div>
+        )}
+        <style>{`@keyframes citationspin{to{transform:rotate(360deg)}}`}</style>
       </button>
     </div>
 
@@ -579,7 +590,7 @@ export function ScanReport({
         </span>
       )}
 
-      {(view === "readiness" || view === "citations") && recommendations.length > 0 && (
+      {(view === "readiness" || view === "citations" || view === "citations-loading") && recommendations.length > 0 && (
         <button onClick={() => setView("recommendations")} className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--bg)] px-3 py-1.5 text-[var(--ink)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]">
           View all {recommendations.length} recommendations <ArrowRight className="size-3" strokeWidth={1.8} aria-hidden="true" />
         </button>
