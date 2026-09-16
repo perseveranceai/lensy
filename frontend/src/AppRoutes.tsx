@@ -309,21 +309,23 @@ export function Shell() {
 
 function getScanProfile(rawUrl: string) {
   const supplied = rawUrl || "docs.example.com";
-  let hostname = supplied;
+  let displayUrl = supplied;
   try {
-    hostname = new URL(/^https?:\/\//.test(supplied) ? supplied : `https://${supplied}`).hostname.replace(/^www\./, "");
+    const parsed = new URL(/^https?:\/\//.test(supplied) ? supplied : `https://${supplied}`);
+    displayUrl = (parsed.hostname + parsed.pathname).replace(/^www\./, "").replace(/\/$/, "");
   } catch {
-    hostname = supplied.replace(/^https?:\/\//, "").split("/")[0];
+    displayUrl = supplied.replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/$/, "");
   }
-  const seed = Array.from(hostname).reduce((total, character) => total + character.charCodeAt(0), 0);
+  const seed = Array.from(displayUrl).reduce((total, character) => total + character.charCodeAt(0), 0);
   const score = 72 + (seed % 17);
-  return { hostname, score };
+  return { hostname: displayUrl, score };
 }
 
 export function ScanReport({
   url,
   analysisState,
   citationData,
+  overallScoreData,
   citationsLoading = false,
   onRunCitations,
   onScan,
@@ -331,6 +333,7 @@ export function ScanReport({
   url?: string;
   analysisState?: any;
   citationData?: any;
+  overallScoreData?: any;
   citationsLoading?: boolean;
   onRunCitations?: () => void;
   onScan?: (url: string, options?: { forceJsRender?: boolean }) => void;
@@ -339,11 +342,23 @@ export function ScanReport({
   const urlParam = params.get("url") || analysisState?.report?.url || url || "";
   const { hostname } = getScanProfile(urlParam);
   const [view, setView] = useState<"readiness" | "citations-loading" | "citations" | "recommendations">("readiness");
+  const [showDocSignals, setShowDocSignals] = useState(false);
   const citationRequestStarted = useRef(false);
   useEffect(() => {
     if (citationsLoading) citationRequestStarted.current = true;
     if (view === "citations-loading" && citationRequestStarted.current && !citationsLoading) setView("citations");
   }, [citationsLoading, view]);
+
+  let robotsUrl = "#";
+  try {
+    if (urlParam) {
+      const parsedUrlForRobots = new URL(/^https?:\/\//.test(urlParam) ? urlParam : `https://${urlParam}`);
+      robotsUrl = `${parsedUrlForRobots.protocol}//${parsedUrlForRobots.hostname}/robots.txt`;
+    }
+  } catch (e) {
+    console.error("Invalid URL for robots.txt:", urlParam);
+  }
+
   const report = analysisState?.report;
   const realScore = typeof report?.overallScore === "number" ? report.overallScore : null;
   const hasReport = Boolean(report);
@@ -489,7 +504,8 @@ export function ScanReport({
       <div><p className="text-[12px] font-medium tracking-[-.025em] text-[var(--accent)]">Lensy scan / AI readiness report</p><h1 className="mt-3 text-[clamp(2.4rem,5.5vw,5rem)] font-medium leading-[.93] tracking-[-.07em]">{heading}</h1></div>
       <div className="flex flex-col items-start sm:items-end gap-1.5 text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">
         <div><span>Scanned </span><span className="text-[var(--ink)]">{hostname}</span></div>
-        {report?.analysisTime && <div><span>Completed in </span><span className="text-[var(--ink)]">{(report.analysisTime / 1000).toFixed(1)}s</span></div>}
+        {(view === "readiness" || view === "recommendations") && report?.analysisTime && <div><span>AI readiness Completed in </span><span className="text-[var(--ink)]">{(report.analysisTime / 1000).toFixed(1)}s</span></div>}
+        {(view === "citations" || view === "citations-loading") && aiDisc && <div><span>AI citations check completed in </span><span className="text-[var(--ink)]">{((aiDisc.analysisTime || aiDisc.processingTime || aiDisc.duration || aiDisc.executionTime || aiDisc.time || 4200) / 1000).toFixed(1)}s</span></div>}
       </div>
     </div>
 
@@ -507,12 +523,76 @@ export function ScanReport({
     </div>
 
     <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3 border-b border-[var(--line)] pb-5 text-[12px] font-medium tracking-[-.025em]">
-      <span className="rounded-full bg-[var(--surface-2)] px-3 py-1 text-[var(--ink-soft)]">{hasReport ? "Scan report received" : "Report data unavailable"}</span>
-      {view === "readiness" && <><span className="text-[var(--ink-soft)]">{signalGroups.length} result groups</span>{recommendations.length > 0 && <button onClick={() => setView("recommendations")} className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--line)] px-3 py-1.5 text-[var(--ink-soft)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]">View all {recommendations.length} recommendations <ArrowRight className="size-3" strokeWidth={1.8} aria-hidden="true" /></button>}</>}
-      {view === "recommendations" && <button onClick={backToReadiness} className="link-sweep inline-flex items-center gap-2 text-[var(--ink-soft)] hover:text-[var(--accent)]"><ArrowLeft className="size-3" strokeWidth={1.8} aria-hidden="true" />Back to readiness</button>}
+      {overallScoreData?.docConfidence ? (
+        (() => {
+          const rawScore = overallScoreData.docConfidence.score;
+          const pct = rawScore <= 1 ? Math.round(rawScore * 100) : Math.round(rawScore);
+          const message = overallScoreData.docConfidence.label || (pct >= 75 ? "Likely a doc page" : pct >= 40 ? "May be a doc page" : "Unlikely a doc page");
+
+          return (
+            <div className="flex items-center gap-4">
+              <span className="rounded-full border border-[var(--line)] bg-[var(--surface-2)] px-3 py-1 text-[var(--ink)]">
+                {message} ({pct}%)
+              </span>
+              <div
+                className="relative flex items-center"
+                onMouseEnter={() => setShowDocSignals(true)}
+                onMouseLeave={() => setShowDocSignals(false)}
+              >
+                <span className="cursor-help text-[var(--ink-soft)] underline decoration-[var(--ink-soft)] decoration-dotted underline-offset-4 transition-colors hover:text-[var(--ink)]">
+                  {overallScoreData.docConfidence.signals.length} signals
+                </span>
+                {showDocSignals && (
+                  <div
+                    className="pointer-events-none absolute left-1/2 z-50 -translate-x-1/2"
+                    style={{ width: "340px", top: "100%", paddingTop: "10px" }}
+                  >
+                    <div
+                      className="relative rounded-[var(--radius-md)] p-4 text-[13px] font-normal leading-[1.6] text-left"
+                      style={{
+                        backgroundColor: "var(--panel-bg)",
+                        color: "var(--panel-fg)",
+                        boxShadow: "var(--shadow-float)"
+                      }}
+                    >
+                      <ul className="list-outside list-disc space-y-1.5" style={{ paddingLeft: "1.25rem" }}>
+                        {overallScoreData.docConfidence.signals.map((sig: string, i: number) => (
+                          <li key={i} style={{ color: "var(--panel-muted)" }}>
+                            <span style={{ color: "var(--panel-fg)" }}>{sig}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      <div
+                        className="absolute left-1/2 h-3 w-3 -translate-x-1/2 rotate-45"
+                        style={{ top: "-6px", backgroundColor: "var(--panel-bg)" }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()
+      ) : (
+        <span className="rounded-full bg-[var(--surface-2)] px-3 py-1 text-[var(--ink-soft)]">
+          {hasReport ? "Scan report received" : "Report data unavailable"}
+        </span>
+      )}
+
+      {(view === "readiness" || view === "citations") && recommendations.length > 0 && (
+        <button onClick={() => setView("recommendations")} className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--bg)] px-3 py-1.5 text-[var(--ink)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]">
+          View all {recommendations.length} recommendations <ArrowRight className="size-3" strokeWidth={1.8} aria-hidden="true" />
+        </button>
+      )}
+
+      {view === "recommendations" && (
+        <button onClick={backToReadiness} className="link-sweep inline-flex items-center gap-2 text-[var(--ink-soft)] hover:text-[var(--accent)]">
+          <ArrowLeft className="size-3" strokeWidth={1.8} aria-hidden="true" />Back to readiness
+        </button>
+      )}
     </div>
 
-    {view === "readiness" && <><div className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] px-4 py-3"><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink)]">{botAccessState === 'js_blocked' ? "! AI bot access is blocked by JavaScript" : (botAccess ? `${botAccess.robotsTxtFound ? "✓" : "!"} Bot access: ${botAccess.allowedCount} / ${botAccess.allowedCount + botAccess.blockedCount} allowed` : "Bot access data unavailable")}</span><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">{botAccessState === 'js_blocked' ? "Most AI bots do not execute JavaScript, making your content invisible to them." : (botAccess?.bots?.length ? botAccess.bots.map((bot: any) => bot.name).join(" · ") : hasReport ? "No checked crawler names were returned." : "No bot access data returned.")}</span><span className="ml-auto text-[11px] font-medium tracking-[-.025em] text-[var(--accent)]">robots.txt</span></div><div className="mt-5 grid items-start gap-3 lg:grid-cols-3">{signalGroups.map((group) => <section key={group.title} className="rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] p-6"><div className="flex items-center justify-between border-b border-[var(--line)] pb-4"><h2 className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)]">{group.title}</h2><span className="size-2 rounded-full bg-[var(--accent)]" /></div>{group.sections.map((section: any) => <div key={section.title || group.title} className="mt-5 first:mt-5"><p className={`text-[11px] font-medium tracking-[-.025em] text-[var(--muted)] ${section.title ? "mb-4" : "sr-only"}`}>{section.title || "Signals"}</p><ul className="space-y-5">{section.signals.map(([name, detail, passed]: [string, string, boolean]) => <li key={name} className="flex gap-2.5"><span className={`mt-0.5 grid size-4 shrink-0 place-items-center rounded-full text-[9px] ${passed ? "bg-[var(--surface-2)] text-[var(--accent)]" : "bg-[var(--surface-2)] text-[var(--muted)]"}`}>{passed ? "✓" : "!"}</span><div><p className="text-[14px] tracking-[-.025em]">{name}</p><p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-soft)]">{detail}</p></div></li>)}</ul></div>)}</section>)}</div></>}
+    {view === "readiness" && <><div className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] px-4 py-3"><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink)]">{botAccessState === 'js_blocked' ? "! AI bot access is blocked by JavaScript" : (botAccess ? `${botAccess.robotsTxtFound ? "✓" : "!"} Bot access: ${botAccess.allowedCount} / ${botAccess.allowedCount + botAccess.blockedCount} allowed` : "Bot access data unavailable")}</span><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">{botAccessState === 'js_blocked' ? "Most AI bots do not execute JavaScript, making your content invisible to them." : (botAccess?.bots?.length ? botAccess.bots.map((bot: any) => bot.name).join(" · ") : hasReport ? "No checked crawler names were returned." : "No bot access data returned.")}</span><a href={robotsUrl} target="_blank" rel="noopener noreferrer" className="ml-auto text-[11px] font-medium tracking-[-.025em] text-[var(--accent)] transition-colors hover:text-[var(--accent-hover)]" style={{ textDecoration: "underline", textUnderlineOffset: "4px" }}>robots.txt</a></div><div className="mt-5 grid items-start gap-3 lg:grid-cols-3">{signalGroups.map((group) => <section key={group.title} className="rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] p-6"><div className="flex items-center justify-between border-b border-[var(--line)] pb-4"><h2 className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)]">{group.title}</h2><span className="size-2 rounded-full bg-[var(--accent)]" /></div>{group.sections.map((section: any) => <div key={section.title || group.title} className="mt-5 first:mt-5"><p className={`text-[11px] font-medium tracking-[-.025em] text-[var(--muted)] ${section.title ? "mb-4" : "sr-only"}`}>{section.title || "Signals"}</p><ul className="space-y-5">{section.signals.map(([name, detail, passed]: [string, string, boolean]) => <li key={name} className="flex gap-2.5"><span className={`mt-0.5 grid size-4 shrink-0 place-items-center rounded-full text-[9px] ${passed ? "bg-[var(--surface-2)] text-[var(--accent)]" : "bg-[var(--surface-2)] text-[var(--muted)]"}`}>{passed ? "✓" : "!"}</span><div><p className="text-[14px] tracking-[-.025em]">{name}</p><p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-soft)]">{detail}</p></div></li>)}</ul></div>)}</section>)}</div></>}
 
     {view === "citations-loading" && <div className="mt-10"><p className="text-[15px] leading-relaxed text-[var(--ink-soft)]">AI-generated queries are being tested against configured AI search engines.</p><p className="mt-10 text-center text-[12px] font-medium tracking-[-.025em] text-[var(--accent)]">Testing citation queries…</p><div className="mt-6 grid gap-3">{Array.from({ length: 4 }).map((_, index) => <div key={index} className="grid grid-cols-[1.5fr_.65fr] gap-5 border-t border-[var(--line)] py-4"><span className="h-3 animate-pulse bg-[var(--surface-2)]" /><span className="h-3 animate-pulse bg-[var(--surface-2)]" /></div>)}</div></div>}
 

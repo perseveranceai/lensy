@@ -3448,6 +3448,7 @@ function LensyApp() {
                 url={url}
                 analysisState={analysisState}
                 citationData={asyncCards.aiDiscoverability}
+                overallScoreData={asyncCards.overallScore}
                 citationsLoading={citationsLoading}
                 onRunCitations={handleRunCitations}
                 onScan={handleAnalyze}
