@@ -2,9 +2,183 @@ import { createBrowserRouter, Link, Outlet, useLocation, useParams, useSearchPar
 import { Home } from "./Home";
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import { ArrowDown, ArrowLeft, ArrowRight, Check, Menu, Send, Monitor, Moon, Sun, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, Check, Menu, Send, Monitor, Moon, Sun, X, CheckCircle2, AlertTriangle, Info, XCircle, MinusCircle } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import Tooltip from "@mui/material/Tooltip";
+import { trackEvent } from "./analytics";
 const logo = `${process.env.PUBLIC_URL}/logo.png`;
+
+// Report signal status → icon. Four distinct SHAPES so each state is legible on
+// its own, all drawn in the logo cement color (no warm green/amber/red):
+//   pass    → check-circle (verified / good)
+//   warn    → triangle     (present but needs improvement)
+//   neutral → minus-circle (informational / optional; absence is not a failure)
+//   fail    → x-circle     (missing / blocking)
+// Note: neutral deliberately does NOT use the Info (ⓘ) glyph — that glyph is
+// reserved for the tooltip trigger beside every row, so reusing it here would
+// read as "more info" rather than "optional / not applicable".
+type ReportSignalStatus = "pass" | "warn" | "neutral" | "fail";
+
+function SignalStatusIcon({ status, className }: { status: ReportSignalStatus; className?: string }) {
+  const cls = className ?? "size-4 shrink-0";
+  // Monochrome by design: every icon uses the logo cement color. Meaning is
+  // carried by the distinct SHAPE, not by color, to fit the site's
+  // black/white/cement palette.
+  switch (status) {
+    case "pass":
+      return <CheckCircle2 className={cls} style={{ color: "var(--accent)" }} strokeWidth={2} aria-label="Pass" />;
+    case "warn":
+      return <AlertTriangle className={cls} style={{ color: "var(--accent)" }} strokeWidth={2} aria-label="Needs improvement" />;
+    case "neutral":
+      return <MinusCircle className={cls} style={{ color: "var(--accent)" }} strokeWidth={2} aria-label="Optional" />;
+    default:
+      return <XCircle className={cls} style={{ color: "var(--accent)" }} strokeWidth={2} aria-label="Not found" />;
+  }
+}
+
+// A card's header icon aggregates the state of its signals: any warn/fail →
+// warning, otherwise all-clear → pass, otherwise informational only → info.
+function aggregateStatus(statuses: ReportSignalStatus[]): ReportSignalStatus {
+  if (statuses.some((s) => s === "warn" || s === "fail")) return "warn";
+  if (statuses.some((s) => s === "pass")) return "pass";
+  return "neutral";
+}
+
+// ── v2 evidence-aware detection model (mirrors backend detection-types.ts) ──
+// The backend's check_ai_readiness emits a `detection` report with evidence for
+// each signal. Restored here so the results page can show WHY Lensy believes a
+// signal (Verified / Advertised / Mapped / Not verified / Experimental) and who
+// benefits (AI search / Coding agents / Both) — the badges lost in the redesign.
+type EvidenceStatus = "verified" | "advertised" | "mapped" | "not_verified" | "experimental";
+
+interface DetectionSignal {
+  status: EvidenceStatus;
+  method?: string;
+  validatedUrl?: string | null;
+  audience?: "ai_search" | "coding_agents" | "both";
+  note?: string | null;
+}
+
+interface DetectionData {
+  site: {
+    llmsTxt: DetectionSignal;
+    llmsFullTxt: DetectionSignal;
+    sitemap: DetectionSignal;
+    agentsMd: DetectionSignal;
+    mcpJson: DetectionSignal;
+    blockedAiCrawlers?: string[];
+    allowedAiCrawlers?: string[];
+    openApiSpecs?: string[];
+  };
+  page: {
+    markdown: DetectionSignal;
+    llmsTxtMapping: DetectionSignal;
+    llmsTxtMarkdownMapping?: DetectionSignal;
+    contentNegotiation: DetectionSignal;
+  };
+  probeLog?: Array<{ url: string; statusCode: number; purpose: string; durationMs: number }>;
+}
+
+const EVIDENCE_LABELS: Record<EvidenceStatus, string> = {
+  verified: "Verified",
+  advertised: "Advertised",
+  mapped: "Mapped",
+  not_verified: "Not verified",
+  experimental: "Experimental",
+};
+
+const AUDIENCE_LABELS: Record<string, string> = {
+  ai_search: "AI search",
+  coding_agents: "Coding agents",
+  both: "Both",
+};
+
+// Shared pill treatment for signal metadata badges. Comfortable padding so the
+// label sits in the middle of the pill rather than feeling boxed-in.
+const BADGE_BASE =
+  "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--line-soft)] bg-[var(--surface-2)] px-2.5 py-1 text-[10px] font-medium leading-none tracking-[-.02em]";
+
+// Per-status glyph so each evidence state is visually distinct — "mapped" is a
+// weaker confirmation than "verified" (matched via llms.txt content rather than
+// a direct probe) and must not borrow the verified ✓.
+//   verified     → ✓  direct probe confirmed
+//   mapped       → ◉  circle-with-dot: matched via mapping, not a hard verify
+//   advertised   → ⚠  claimed (header/reference) but not validated
+//   experimental → ◇  emerging standard, not scored
+//   not_verified → ✗  not found on tested paths
+const EVIDENCE_GLYPHS: Record<EvidenceStatus, string> = {
+  verified: "✓",
+  mapped: "◉",
+  advertised: "⚠",
+  experimental: "◇",
+  not_verified: "✗",
+};
+
+// Small pill next to a signal label showing HOW it was detected. All-cement to
+// match the palette; meaning comes from the glyph + label, not color.
+function EvidenceBadge({ signal }: { signal?: DetectionSignal }) {
+  if (!signal) return null;
+  const affirmative = signal.status === "verified" || signal.status === "mapped" || signal.status === "advertised";
+  const color = affirmative ? "var(--accent)" : "var(--ink-soft)";
+  return (
+    <span className={BADGE_BASE} style={{ color }}>
+      <span aria-hidden="true">{EVIDENCE_GLYPHS[signal.status]}</span>
+      {EVIDENCE_LABELS[signal.status]}
+    </span>
+  );
+}
+
+// Small muted pill showing who benefits from a signal (AI search / Coding agents / Both).
+function AudienceBadge({ audience }: { audience?: string }) {
+  if (!audience) return null;
+  return <span className={`${BADGE_BASE} text-[var(--ink-soft)]`}>{AUDIENCE_LABELS[audience] || audience}</span>;
+}
+
+// Small muted pill showing how much a missing signal matters (e.g. "Low–medium
+// impact"). Restored from the pre-redesign UI, where it sat beside the audience
+// pill on failing structured-data signals.
+function ImpactBadge({ impact }: { impact?: string }) {
+  if (!impact) return null;
+  return <span className={`${BADGE_BASE} text-[var(--ink-soft)] opacity-80`}>{impact} impact</span>;
+}
+
+// The ⓘ beside every finding. Uses MUI Tooltip (same as the production UI) so it
+// renders in a portal above the item — never trapped in the flex row, never
+// collapsing to one word per line, never pushing sibling text.
+function InfoHint({ text }: { text?: string }) {
+  if (!text) return null;
+  return (
+    <Tooltip
+      title={text}
+      placement="top"
+      arrow
+      enterTouchDelay={0}
+      leaveTouchDelay={3000}
+      componentsProps={{
+        tooltip: {
+          sx: {
+            maxWidth: 260,
+            bgcolor: "var(--panel-bg)",
+            color: "var(--panel-fg)",
+            fontSize: "12px",
+            fontWeight: 400,
+            lineHeight: 1.5,
+            letterSpacing: "-0.01em",
+            px: 1.5,
+            py: 1,
+            borderRadius: "var(--radius-md)",
+            boxShadow: "var(--shadow-float)",
+          },
+        },
+        arrow: { sx: { color: "var(--panel-bg)" } },
+      }}
+    >
+      <span tabIndex={0} role="button" aria-label={text} className="inline-flex cursor-help text-[var(--muted)] outline-none transition-colors hover:text-[var(--ink)] focus-visible:text-[var(--ink)]">
+        <Info className="size-3" strokeWidth={2} aria-hidden="true" />
+      </span>
+    </Tooltip>
+  );
+}
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || "https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com";
 const AuditAllowanceContext = createContext<{ remaining: number | null } | null>(null);
@@ -269,7 +443,7 @@ export function ShellContent() {
   return <div className="flex min-h-full flex-col bg-[var(--bg)] text-[var(--ink)]">
     <header className={`shell-header sticky top-0 z-20 border-b border-[var(--line-soft)] ${scrolled ? "is-scrolled" : ""}`}>
       <nav className="relative mx-auto flex max-w-[1240px] items-center px-5 py-4 sm:px-8">
-        <Link to="/" className="flex items-center gap-2 text-[13px] font-medium tracking-[-.04em]"><img src={logo} alt="Perseverance AI" className="logo-mark size-6 object-contain transition-transform duration-300 hover:scale-110" />Perseverance AI</Link>
+        <Link to="/" className="flex items-center gap-2 text-[13px] font-medium tracking-[-.04em]"><img src={logo} alt="Perseverance AI" style={{ width: 42, height: 42 }} className="logo-mark object-contain transition-transform duration-300 hover:scale-110" />Perseverance AI</Link>
         <div className="absolute left-1/2 hidden -translate-x-1/2 text-[12px] font-medium tracking-[-.025em] md:flex">
           <NavRail />
         </div>
@@ -309,21 +483,24 @@ export function Shell() {
 
 function getScanProfile(rawUrl: string) {
   const supplied = rawUrl || "docs.example.com";
-  let hostname = supplied;
+  let displayUrl = supplied;
   try {
-    hostname = new URL(/^https?:\/\//.test(supplied) ? supplied : `https://${supplied}`).hostname.replace(/^www\./, "");
+    const parsed = new URL(/^https?:\/\//.test(supplied) ? supplied : `https://${supplied}`);
+    displayUrl = (parsed.hostname + parsed.pathname).replace(/^www\./, "").replace(/\/$/, "");
   } catch {
-    hostname = supplied.replace(/^https?:\/\//, "").split("/")[0];
+    displayUrl = supplied.replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/$/, "");
   }
-  const seed = Array.from(hostname).reduce((total, character) => total + character.charCodeAt(0), 0);
+  const seed = Array.from(displayUrl).reduce((total, character) => total + character.charCodeAt(0), 0);
   const score = 72 + (seed % 17);
-  return { hostname, score };
+  return { hostname: displayUrl, score };
 }
 
 export function ScanReport({
   url,
   analysisState,
   citationData,
+  overallScoreData,
+  detectionData,
   citationsLoading = false,
   onRunCitations,
   onScan,
@@ -331,6 +508,8 @@ export function ScanReport({
   url?: string;
   analysisState?: any;
   citationData?: any;
+  overallScoreData?: any;
+  detectionData?: DetectionData;
   citationsLoading?: boolean;
   onRunCitations?: () => void;
   onScan?: (url: string, options?: { forceJsRender?: boolean }) => void;
@@ -344,100 +523,442 @@ export function ScanReport({
     if (citationsLoading) citationRequestStarted.current = true;
     if (view === "citations-loading" && citationRequestStarted.current && !citationsLoading) setView("citations");
   }, [citationsLoading, view]);
+
+  // The scan hit a JS-rendered page: the backend returns an error naming the
+  // condition, and we surface the "Proceed with analysis anyway" consent step.
+  const isJsRenderPrompt =
+    analysisState?.status === "error" &&
+    (["js-render-required", "JavaScript-rendered", "JS-rendered"].some((token) => (analysisState.error || "").includes(token)));
+
+  // Fire `js_render_prompt_shown` once each time the consent prompt appears for
+  // a URL — this is the top of the JS-render consent funnel (prompt shown →
+  // consent given → results). New instrumentation: this flow was never tracked
+  // pre-redesign. Keyed on urlParam so a re-scan of the same URL re-arms it.
+  const jsRenderPromptTracked = useRef<string | null>(null);
+  useEffect(() => {
+    if (isJsRenderPrompt && jsRenderPromptTracked.current !== urlParam) {
+      jsRenderPromptTracked.current = urlParam;
+      trackEvent("js_render_prompt_shown", { url: urlParam });
+    }
+    if (!isJsRenderPrompt) jsRenderPromptTracked.current = null;
+  }, [isJsRenderPrompt, urlParam]);
+
+  let robotsUrl = "#";
+  try {
+    if (urlParam) {
+      const parsedUrlForRobots = new URL(/^https?:\/\//.test(urlParam) ? urlParam : `https://${urlParam}`);
+      robotsUrl = `${parsedUrlForRobots.protocol}//${parsedUrlForRobots.hostname}/robots.txt`;
+    }
+  } catch (e) {
+    console.error("Invalid URL for robots.txt:", urlParam);
+  }
+
   const report = analysisState?.report;
   const realScore = typeof report?.overallScore === "number" ? report.overallScore : null;
   const hasReport = Boolean(report);
 
   // Preserve the Figma three-card report layout. Every item below comes from
   // the completed agent report; omitted checks are never represented by mock rows.
-  const signalGroups: Array<{ title: string; sections: Array<{ title: string; signals: Array<[string, string, boolean]> }> }> = [];
+  // Signal status mirrors the pre-redesign report: a real 4-state model, not a
+  // pass/fail boolean. 'pass' = verified/good, 'warn' = present but sub-optimal,
+  // 'neutral' = informational/optional (absence is not a failure), 'fail' = missing.
+  type SignalStatus = ReportSignalStatus;
+  // A signal now carries the same rich metadata the old UI showed: an evidence
+  // signal (for the ✓ Verified / ✗ Not verified badge), an audience, an info
+  // tooltip, and an optional "we can help" waitlist link.
+  type Signal = {
+    label: string;
+    detail: string;
+    status: SignalStatus;
+    signal?: DetectionSignal;
+    info?: string;
+    waitlist?: "llmstxt" | "markdown";
+    // Static descriptors restored from the pre-redesign UI, shown only when the
+    // signal is not passing. `audience` says who benefits (e.g. "AI search");
+    // `impact` says how much a missing signal matters (e.g. "Low–medium").
+    // For structured-data signals these are definitional constants — the backend
+    // does not compute them per scan. Discoverability/content signals instead
+    // carry a live audience via `signal.audience` from the detection engine.
+    audience?: string;
+    impact?: string;
+  };
+  const signalGroups: Array<{ title: string; sections: Array<{ title: string; signals: Signal[] }> }> = [];
   const categories = report?.categories;
   const botAccess = categories?.botAccess;
-  const botAccessState = report?.overallScore?.botAccessState;
+  // Prefer the canonical report state, but fall back to deriving `js_blocked`
+  // from the JS-render signal. Restored from PR 20 (fix: correctly identify and
+  // handle JS-rendered SPAs): a JS-rendered SPA is effectively invisible to AI
+  // bots regardless of robots.txt, so the bot-access banner must NOT read
+  // "10/10 allowed". The redesign dropped this fallback, so when the backend
+  // didn't populate botAccessState=js_blocked (e.g. reloaded report), the banner
+  // wrongly showed full access for JS-rendered pages.
+  const isJsRendered =
+    categories?.consumability?.originRequiresJavaScript === true ||
+    categories?.consumability?.jsRendered === true;
+  const botAccessState =
+    report?.overallScore?.botAccessState ?? (isJsRendered ? "js_blocked" : undefined);
+
+  // Detection report: prefer the live category-result (asyncCards.detection,
+  // threaded as detectionData), fall back to report.detection when reloading a
+  // persisted report. Drives the evidence badges and detection-only signals.
+  const detection: DetectionData | undefined = detectionData || report?.detection;
+
+  // Card header aggregate icon uses the backend scoreBreakdown thresholds from
+  // the old UI (structuredData >= 15, discoverability >= 30, consumability >= 32),
+  // falling back to aggregating the child signal statuses when unavailable.
+  const scoreBreakdown = report?.scoreBreakdown || overallScoreData?.scoreBreakdown;
+  const headerStatus = (key: "structuredData" | "discoverability" | "consumability", threshold: number, signals: Signal[]): SignalStatus => {
+    const val = scoreBreakdown?.[key];
+    if (typeof val === "number") return val >= threshold ? "pass" : "warn";
+    return aggregateStatus(signals.map((s) => s.status));
+  };
 
   if (categories?.structuredData) {
-    const structuredData = categories.structuredData;
-    signalGroups.push({
-      title: "Structured data",
-      sections: [{
-        title: "", signals: [
-          ["JSON-LD", structuredData.jsonLd.found ? `Found${structuredData.jsonLd.types.length ? `: ${structuredData.jsonLd.types.join(", ")}` : "."}` : "No JSON-LD markup was found.", structuredData.jsonLd.found && structuredData.jsonLd.isValidSchemaType],
-          ["OpenGraph", structuredData.openGraphCompleteness.score === "complete" ? "All required tags are present." : structuredData.openGraphCompleteness.missingTags.length ? `Missing: ${structuredData.openGraphCompleteness.missingTags.join(", ")}.` : `Metadata is ${structuredData.openGraphCompleteness.score}.`, structuredData.openGraphCompleteness.score === "complete"],
-          ["Breadcrumbs", structuredData.breadcrumbs.found ? "BreadcrumbList schema found." : "No breadcrumb structured data was found.", structuredData.breadcrumbs.found],
-        ]
-      }],
-    });
+    const s = categories.structuredData;
+    const signals: Signal[] = [
+      {
+        label: "JSON-LD",
+        status: s.jsonLd.found ? "pass" : "fail",
+        detail: s.jsonLd.found
+          ? `Found ${s.jsonLd.types.length ? s.jsonLd.types.join(", ") + " markup" : "markup"}${s.schemaCompleteness?.status === "complete" ? ". Schema is complete." : s.schemaCompleteness?.status === "partial" ? " — some optional fields could be added." : "."}`
+          : "Structured data can improve machine understanding and rich-search eligibility. Helpful for discoverability, but not a major coding-agent blocker.",
+        info: "Secondary improvement for AI search — not a core coding-agent requirement.",
+        audience: "ai_search",
+        impact: "Low–medium",
+      },
+      {
+        label: "OpenGraph",
+        status: s.openGraphCompleteness.score === "complete" ? "pass" : "fail",
+        detail: s.openGraphCompleteness.score === "complete"
+          ? "All required tags are present."
+          : s.openGraphCompleteness.score === "partial"
+            ? `Found, but missing ${s.openGraphCompleteness.missingTags.slice(0, 2).join(", ")}.`
+            : "Not found.",
+        info: "Controls the preview card when your link is shared on social channels.",
+      },
+      {
+        label: "Breadcrumbs",
+        status: s.breadcrumbs.found ? "pass" : "fail",
+        detail: s.breadcrumbs.found
+          ? "BreadcrumbList schema found."
+          : "Breadcrumb markup helps search systems understand page hierarchy. Useful, but lower priority than crawlability and Markdown access.",
+        info: "Helps search systems display page hierarchy — secondary AI search signal.",
+        audience: "ai_search",
+        impact: "Low",
+      },
+    ];
+    signalGroups.push({ title: "Structured data", sections: [{ title: "", signals }] });
   }
 
   if (categories?.discoverability) {
-    const discoverability = categories.discoverability;
+    const d = categories.discoverability;
     const consumability = categories.consumability;
-    signalGroups.push({
-      title: "Discoverability",
-      sections: [
+
+    let siteSignals: Signal[];
+    let pageSignals: Signal[];
+
+    if (detection) {
+      // ── Evidence-aware signals from the v2 detection engine ──
+      const site = detection.site;
+      const page = detection.page;
+      siteSignals = [
         {
-          title: "Site-level", signals: [
-            ["llms.txt", discoverability.llmsTxt.found ? `Verified at ${discoverability.llmsTxt.url}.` : "No llms.txt file was found.", discoverability.llmsTxt.found],
-            ["llms-full.txt", discoverability.llmsFullTxt.found ? `Verified at ${discoverability.llmsFullTxt.url}.` : "No llms-full.txt file was found.", discoverability.llmsFullTxt.found],
-            ["Sitemap", discoverability.sitemapXml.found ? "Found. Crawlers can discover your pages." : "No sitemap XML was found.", discoverability.sitemapXml.found],
-            ["Canonical URL", discoverability.canonical.found ? "Set. Prevents duplicate indexing." : "No canonical URL was found.", discoverability.canonical.found],
-          ]
+          label: "llms.txt",
+          signal: site.llmsTxt,
+          status: site.llmsTxt.status === "verified" ? "pass" : site.llmsTxt.status === "advertised" ? "warn" : "fail",
+          detail: site.llmsTxt.status === "verified"
+            ? `Verified at ${site.llmsTxt.validatedUrl || "found URL"}. AI coding tools can consume your docs directly.`
+            : site.llmsTxt.status === "advertised"
+              ? `Advertised via ${site.llmsTxt.method || "header"} but not validated. ${site.llmsTxt.note || ""}`
+              : "Not verified from tested paths.",
+          info: "A markdown table of contents for your docs. Helps AI coding tools find and consume your content at inference time.",
+          waitlist: site.llmsTxt.status === "not_verified" ? "llmstxt" : undefined,
         },
         {
-          title: "Page-level", signals: [
-            ["Page Markdown", consumability?.markdownAvailable.found ? "A machine-readable Markdown version was found." : "No machine-readable Markdown version was found.", Boolean(consumability?.markdownAvailable.found)],
-            ["Indexing directive", discoverability.metaRobots.blocksIndexing ? "The returned meta robots directive blocks indexing." : "The returned meta robots directive does not block indexing.", !discoverability.metaRobots.blocksIndexing],
-          ]
+          label: "llms-full.txt",
+          signal: site.llmsFullTxt,
+          status: site.llmsFullTxt.status === "verified" ? "pass" : site.llmsFullTxt.status === "advertised" ? "warn" : "neutral",
+          detail: site.llmsFullTxt.status === "verified"
+            ? `Verified at ${site.llmsFullTxt.validatedUrl}. Full doc content available for coding agents.`
+            : site.llmsFullTxt.status === "advertised"
+              ? "Advertised but not validated."
+              : "Not found (optional for large doc sites).",
+          info: "The complete concatenation of all doc pages. Useful for coding agents that need full context.",
         },
-      ],
-    });
+        {
+          label: "Sitemap",
+          signal: site.sitemap,
+          status: site.sitemap.status === "verified" ? "pass" : "fail",
+          detail: site.sitemap.status === "verified" ? "Found. Crawlers can discover all your pages." : "Not found. Crawlers may miss deeper pages.",
+          info: "Lists every page on your site so crawlers don't have to guess.",
+        },
+        {
+          label: "Canonical URL",
+          status: d.canonical.found ? "pass" : "fail",
+          detail: d.canonical.found ? "Set. Prevents duplicate indexing." : "Not set. Search engines may index duplicate versions.",
+          info: "Tells search engines which URL is the authoritative version of this page.",
+        },
+        ...(d.metaRobots.blocksIndexing
+          ? [{ label: "Meta Robots", status: "fail" as SignalStatus, detail: `Set to "${d.metaRobots.content}". Blocks indexing.`, info: "Your meta robots tag is preventing indexing." }]
+          : []),
+      ];
+      pageSignals = [
+        {
+          label: "Page Markdown",
+          signal: page.markdown,
+          status: page.markdown.status === "verified" ? "pass" : page.markdown.status === "advertised" ? "warn" : "neutral",
+          detail: page.markdown.status === "verified"
+            ? `Verified via ${page.markdown.method || "probe"}. Coding agents can consume this page as markdown.`
+            : page.markdown.status === "advertised"
+              ? `Advertised but not validated. ${page.markdown.note || ""}`
+              : "Markdown was not verified for this page.",
+          info: "Whether this page can be served as markdown for AI coding tools.",
+        },
+        {
+          label: "Page in llms.txt",
+          signal: page.llmsTxtMapping,
+          status: page.llmsTxtMapping.status === "mapped" ? "pass" : "neutral",
+          detail: page.llmsTxtMapping.status === "mapped"
+            ? `This page is listed in llms.txt${page.llmsTxtMapping.validatedUrl ? ` as ${page.llmsTxtMapping.validatedUrl}` : ""}.`
+            : site.llmsTxt.status === "verified"
+              ? "Site has llms.txt but this page is not listed in it."
+              : "Cannot check — llms.txt not found.",
+          info: "Whether this specific page is listed in the site's llms.txt index.",
+        },
+        {
+          label: "Content Negotiation",
+          signal: page.contentNegotiation,
+          status: page.contentNegotiation.status === "verified" ? "pass" : "neutral",
+          detail: page.contentNegotiation.status === "verified"
+            ? "Server returns markdown when requested with Accept: text/markdown."
+            : "Server does not support content negotiation for this page.",
+          info: "Whether the server returns markdown when an AI agent sends Accept: text/markdown header.",
+        },
+      ];
+    } else {
+      // ── Fallback: v1 category signals when no detection report is present ──
+      siteSignals = [
+        {
+          label: "llms.txt",
+          status: d.llmsTxt.found ? "pass" : "fail",
+          detail: d.llmsTxt.found ? `Verified at ${d.llmsTxt.url}.` : "Not found. llms.txt helps AI coding tools consume your docs faster.",
+          info: "A markdown table of contents for your docs. Helps AI coding tools find and consume your content at inference time.",
+          waitlist: d.llmsTxt.found ? undefined : "llmstxt",
+        },
+        {
+          label: "llms-full.txt",
+          status: d.llmsFullTxt.found ? "pass" : "neutral",
+          detail: d.llmsFullTxt.found ? `Verified at ${d.llmsFullTxt.url}.` : "Not found (optional for large doc sites).",
+          info: "The complete concatenation of all doc pages. Useful for coding agents that need full context.",
+        },
+        {
+          label: "Sitemap",
+          status: d.sitemapXml.found ? "pass" : "fail",
+          detail: d.sitemapXml.found ? "Found. Crawlers can discover your pages." : "Not found. Crawlers may miss deeper pages.",
+          info: "Lists every page on your site so crawlers don't have to guess.",
+        },
+        {
+          label: "Canonical URL",
+          status: d.canonical.found ? "pass" : "fail",
+          detail: d.canonical.found ? "Set. Prevents duplicate indexing." : "Not set. Search engines may index duplicate versions.",
+          info: "Tells search engines which URL is the authoritative version of this page.",
+        },
+        ...(d.metaRobots.blocksIndexing
+          ? [{ label: "Meta Robots", status: "fail" as SignalStatus, detail: `Set to "${d.metaRobots.content}". Blocks indexing.`, info: "Your meta robots tag is preventing indexing." }]
+          : []),
+      ];
+      pageSignals = [
+        {
+          label: "Page Markdown",
+          status: consumability?.markdownAvailable.found ? "pass" : "neutral",
+          detail: consumability?.markdownAvailable.found
+            ? (consumability.markdownAvailable.discoverable ? "Available and discoverable by coding agents." : 'Available but not easily discoverable. Add a <link rel="alternate" type="text/markdown"> tag.')
+            : "No machine-readable Markdown version was found.",
+          info: "AI coding agents work better with markdown (up to 80% fewer tokens).",
+          waitlist: consumability?.markdownAvailable.found ? undefined : "markdown",
+        },
+        {
+          label: "Indexing directive",
+          status: d.metaRobots.blocksIndexing ? "fail" : "pass",
+          detail: d.metaRobots.blocksIndexing ? "The returned meta robots directive blocks indexing." : "The returned meta robots directive does not block indexing.",
+          info: "Whether a meta robots directive is preventing this page from being indexed.",
+        },
+      ];
+    }
+
+    // Experimental signals (AGENTS.md, MCP Config) — only when detected.
+    const experimentalSignals: Signal[] = [];
+    if (detection) {
+      if (detection.site.agentsMd.status === "experimental" && detection.site.agentsMd.validatedUrl) {
+        experimentalSignals.push({
+          label: "AGENTS.md",
+          signal: detection.site.agentsMd,
+          status: "neutral",
+          detail: `Found at ${detection.site.agentsMd.validatedUrl}. Emerging standard — not scored.`,
+          info: "Vercel convention for declaring agent-readiness. Not widely adopted yet.",
+        });
+      }
+      if (detection.site.mcpJson.status === "experimental" && detection.site.mcpJson.validatedUrl) {
+        experimentalSignals.push({
+          label: "MCP Config",
+          signal: detection.site.mcpJson,
+          status: "neutral",
+          detail: `Found at ${detection.site.mcpJson.validatedUrl}. Emerging standard — not scored.`,
+          info: "MCP server discovery file. Not widely adopted yet.",
+        });
+      }
+    }
+
+    const discSections: Array<{ title: string; signals: Signal[] }> = [
+      { title: "Site-level", signals: siteSignals },
+      { title: "Page-level", signals: pageSignals },
+    ];
+    if (experimentalSignals.length) discSections.push({ title: "Experimental", signals: experimentalSignals });
+    signalGroups.push({ title: "Discoverability", sections: discSections });
   }
 
   if (categories?.consumability) {
     const consumability = categories.consumability;
-    signalGroups.push({
-      title: "Content quality",
-      sections: [{
-        title: "", signals: [
-          ["Text-to-HTML", `${consumability.textToHtmlRatio.ratio.toFixed(2)} ratio (${consumability.textToHtmlRatio.status}).`, consumability.textToHtmlRatio.status === "good"],
-          ["Headings", `${consumability.headingHierarchy.h1Count} H1, ${consumability.headingHierarchy.h2Count} H2, ${consumability.headingHierarchy.h3Count} H3.`, consumability.headingHierarchy.hasProperNesting],
-          ["Word count", `${consumability.wordCount} words found on the scanned page.`, consumability.wordCount >= 500],
-          ["Links", `${consumability.internalLinkDensity.count} internal links (${consumability.internalLinkDensity.perKWords.toFixed(1)} per 1,000 words).`, consumability.internalLinkDensity.status === "good"],
-        ]
-      }],
+    const h1 = consumability.headingHierarchy.h1Count;
+    const h2 = consumability.headingHierarchy.h2Count || 0;
+    const h3 = consumability.headingHierarchy.h3Count || 0;
+    const wordCount = consumability.wordCount || 0;
+    const markdownFound = Boolean(consumability.markdownAvailable?.found);
+
+    // Content-quality signals follow the pre-redesign rules. A non-passing item
+    // here is a warning ("needs improvement"), not a hard failure.
+    const contentSignals: Signal[] = [];
+
+    // Client-side rendered: a hard problem — AI crawlers see a blank page.
+    if (consumability.jsRendered) {
+      contentSignals.push({
+        label: "Client-Side Rendered",
+        status: "fail",
+        detail: "Page relies on JavaScript to render. AI crawlers see a blank page.",
+        info: "Most AI bots don't run JavaScript. Client-side rendered pages appear empty to them.",
+      });
+    }
+
+    // Text-to-HTML: a good ratio, OR a markdown alternative, counts as a pass.
+    const textPass = consumability.textToHtmlRatio.status === "good" || markdownFound;
+    contentSignals.push({
+      label: `Text-to-HTML: ${(consumability.textToHtmlRatio.ratio * 100).toFixed(1)}%`,
+      status: textPass ? "pass" : "warn",
+      detail: textPass
+        ? (consumability.textToHtmlRatio.status === "good"
+            ? "Good ratio. AI crawlers can extract content efficiently."
+            : "Low ratio, but a markdown alternative is available for coding agents.")
+        : "AI crawlers may process mostly noise (scripts, CSS, nav).",
+      info: "Higher ratio means more content relative to markup. Below 5% is concerning unless a markdown alternative exists.",
     });
+
+    // Headings: exactly one H1 and at least one H2 is a well-structured page.
+    const headingsPass = h1 === 1 && h2 >= 1;
+    const headingsDetail = consumability.headingHierarchy.hasProperNesting
+      ? `Well-structured. AI can split into ${h2} chunks.`
+      : h1 === 0
+        ? "No H1 found."
+        : h1 > 1
+          ? `${h1} H1 tags. Use exactly one.`
+          : h2 === 0
+            ? "No H2s. Content is one big block."
+            : "Heading nesting is inconsistent.";
+    contentSignals.push({
+      label: `Headings: ${h1} H1, ${h2} H2, ${h3} H3`,
+      status: headingsPass ? "pass" : "warn",
+      detail: headingsDetail,
+      info: "AI splits pages at heading boundaries. Each H2 becomes a separately retrievable unit.",
+    });
+
+    // Word count: sweet spot is 500-2,000 words.
+    if (wordCount > 0) {
+      const wordPass = wordCount >= 500 && wordCount <= 2000;
+      const wordDetail = wordCount < 500
+        ? `Only ${wordCount.toLocaleString()} words. Pages under 500 often lack context for AI.`
+        : wordCount > 2000
+          ? `${wordCount.toLocaleString()} words. Consider splitting.`
+          : `${wordCount.toLocaleString()} words. Good depth.`;
+      contentSignals.push({
+        label: `Word count: ${wordCount.toLocaleString()}`,
+        status: wordPass ? "pass" : "warn",
+        detail: wordDetail,
+        info: "Sweet spot is 500-2,000 words.",
+      });
+    }
+
+    // Code blocks: only shown when the page actually has code.
+    if (consumability.codeBlocks.hasCode) {
+      const codePass = consumability.codeBlocks.withLanguageHints > 0;
+      const codeDetail = consumability.codeBlocks.withLanguageHints === consumability.codeBlocks.count
+        ? `All ${consumability.codeBlocks.count} blocks have language hints.`
+        : consumability.codeBlocks.withLanguageHints > 0
+          ? `${consumability.codeBlocks.withLanguageHints}/${consumability.codeBlocks.count} have language hints.`
+          : `${consumability.codeBlocks.count} blocks found, none have language hints.`;
+      contentSignals.push({
+        label: `Code blocks: ${consumability.codeBlocks.count}`,
+        status: codePass ? "pass" : "warn",
+        detail: codeDetail,
+        info: "Language hints help AI search engines and coding assistants understand code examples.",
+      });
+    }
+
+    // Links: internal link density.
+    const linksPass = consumability.internalLinkDensity.status === "good";
+    const linksDetail = consumability.internalLinkDensity.status === "good"
+      ? `${consumability.internalLinkDensity.count} internal links. Good cross-referencing.`
+      : consumability.internalLinkDensity.status === "sparse"
+        ? `Only ${consumability.internalLinkDensity.count} internal link${consumability.internalLinkDensity.count === 1 ? "" : "s"}. Add cross-references to related pages.`
+        : `${consumability.internalLinkDensity.count} internal links — high density relative to content length.`;
+    contentSignals.push({
+      label: `Links: ${consumability.internalLinkDensity.count}`,
+      status: linksPass ? "pass" : "warn",
+      detail: linksDetail,
+      info: "Internal links help AI understand how your pages relate.",
+    });
+
+    signalGroups.push({ title: "Content quality", sections: [{ title: "", signals: contentSignals }] });
   }
 
   if (!categories && report?.dimensions) {
     Object.entries(report.dimensions).forEach(([dimKey, dimData]: [string, any]) => {
-      const signals = (dimData.signals || []).map((signal: any): [string, string, boolean] => [
-        signal.name || "Check",
-        signal.message || "Completed",
-        signal.status === "pass",
-      ]);
+      const signals: Signal[] = (dimData.signals || []).map((signal: any): Signal => ({
+        label: signal.name || "Check",
+        detail: signal.message || "Completed",
+        status: signal.status === "pass" ? "pass" : signal.status === "warn" ? "warn" : signal.status === "neutral" || signal.status === "info" ? "neutral" : "fail",
+      }));
       if (signals.length > 0) signalGroups.push({ title: dimData.title || dimKey, sections: [{ title: "", signals }] });
     });
   }
 
-  const recommendationsRaw = report?.recommendations || [];
-  let recommendations: any[] = [];
-
-  if (recommendationsRaw.length > 0) {
-    recommendations = recommendationsRaw.map((r: any) => [
-      r.issue || r.title || r.category || "Improvement needed",
-      r.fix || r.description || "Review this area for potential improvements.",
-      r.priority === 'high' ? "Quick win" : "Deeper improvement"
-    ]);
-  } else if (report?.dimensions) {
-    const dimRecs = Object.values(report.dimensions).flatMap((d: any) => d.recommendations || []);
-    recommendations = dimRecs.map((r: any) => [
-      r.title || r.text || "Improvement",
-      r.description || "Consider improving this dimension.",
-      r.priority === 'high' ? "Quick win" : "Deeper improvement"
-    ]);
+  // ── Recommendations: keep the full objects and group them like the old UI ──
+  // Quick Wins = high priority; Deeper Improvements = medium/low; Things to Watch
+  // = best-practice (informational, non-scored). Each rec carries category, fix,
+  // an optional codeSnippet, and effort is derived from whether a snippet exists.
+  type Rec = { category?: string; priority?: string; issue?: string; title?: string; fix?: string; description?: string; codeSnippet?: string };
+  let allRecs: Rec[] = report?.recommendations || [];
+  if (allRecs.length === 0 && report?.dimensions) {
+    allRecs = Object.values(report.dimensions).flatMap((d: any) => (d.recommendations || []).map((r: any) => ({
+      category: d.title,
+      priority: r.priority,
+      issue: r.title || r.text || "Improvement",
+      fix: r.description || "Consider improving this dimension.",
+    })));
   }
-
-  // Recommendations are shown only when supplied by the completed scan.
+  const recIssue = (r: Rec) => r.issue || r.title || r.category || "Improvement needed";
+  const recFix = (r: Rec) => r.fix || r.description || "Review this area for potential improvements.";
+  const scoredRecs = allRecs.filter((r) => r.priority !== "best-practice");
+  const quickWins = scoredRecs.filter((r) => r.priority === "high");
+  const deeperImprovements = scoredRecs.filter((r) => r.priority !== "high");
+  const thingsToWatch = allRecs.filter((r) => r.priority === "best-practice");
+  const impactLabel = (r: Rec) => (r.priority === "high" ? "High impact" : r.priority === "medium" ? "Medium impact" : "Low impact");
+  const effortLabel = (r: Rec) => (r.codeSnippet ? "Medium effort" : "Low effort");
+  const actionLink = (r: Rec): { href: string; label: string } | null => {
+    const issue = recIssue(r).toLowerCase();
+    if (issue.includes("llms.txt")) return { href: "/contact?ref=llmstxt", label: "We can help you generate one" };
+    if (issue.includes("markdown")) return { href: "/contact?ref=markdown", label: "We can help you generate markdown" };
+    return null;
+  };
+  const totalRecCount = allRecs.length;
 
   const aiDisc = citationData || report?.aiDiscoverability;
   const citationEngines = Object.entries(aiDisc?.engines || {}) as Array<[string, any]>;
@@ -445,8 +966,11 @@ export function ScanReport({
   const citationResults = availableCitationEngines.flatMap(([, engine]) => engine.results || []);
   const citedCount = citationResults.filter((result: any) => result.cited).length;
   const citationsReturned = Boolean(aiDisc);
-  const failingSignalCount = signalGroups.flatMap((group) => group.sections).flatMap((section) => section.signals).filter(([, , passed]) => !passed).length;
-  const failingGroupCount = signalGroups.filter((group) => group.sections.some((section) => section.signals.some(([, , passed]) => !passed))).length;
+  // "To improve" counts actionable signals only — warnings and hard failures.
+  // 'neutral' (informational/optional) and 'pass' do not count against the user.
+  const isActionable = (status: SignalStatus) => status === "warn" || status === "fail";
+  const failingSignalCount = signalGroups.flatMap((group) => group.sections).flatMap((section) => section.signals).filter((s) => isActionable(s.status)).length;
+  const failingGroupCount = signalGroups.filter((group) => group.sections.some((section) => section.signals.some((s) => isActionable(s.status)))).length;
   const startCitationTest = () => {
     if (aiDisc) {
       setView("citations");
@@ -459,6 +983,26 @@ export function ScanReport({
   const backToReadiness = () => setView("readiness");
   const heading = view === "recommendations" ? "All recommendations" : view === "citations" || view === "citations-loading" ? "Where am I invisible?" : "What Lensy found";
 
+  // A single scored recommendation card: title, impact/effort/category chips,
+  // the fix text, an optional "we can help" link, and a code snippet when present.
+  const chipClass = "inline-flex items-center rounded-full border border-[var(--line-soft)] bg-[var(--surface-2)] px-2.5 py-1 text-[11px] font-medium leading-none tracking-[-.02em] text-[var(--ink-soft)]";
+  const renderRec = (rec: Rec, key: string) => {
+    const link = actionLink(rec);
+    return (
+      <article key={key} className="rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] p-5 transition-colors hover:border-[var(--line-strong)]">
+        <p className="text-[15px] font-medium leading-snug tracking-[-.03em] text-[var(--ink)]">{recIssue(rec)}</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <span className={chipClass}>{impactLabel(rec)}</span>
+          <span className={chipClass}>{effortLabel(rec)}</span>
+          {rec.category && <span className={chipClass}>{rec.category}</span>}
+        </div>
+        <p className="mt-3 text-[13px] leading-relaxed text-[var(--ink-soft)]">{recFix(rec)}</p>
+        {link && <a href={link.href} target="_blank" rel="noopener noreferrer" className="group mt-2.5 inline-flex items-center gap-1 text-[12px] font-medium tracking-[-.02em] text-[var(--accent)] hover:text-[var(--accent-hover)]"><span style={{ textDecoration: "underline", textUnderlineOffset: "3px" }}>{link.label}</span><ArrowRight className="arrow-nudge size-3" strokeWidth={1.8} aria-hidden="true" /></a>}
+        {rec.codeSnippet && <pre className="mt-4 overflow-x-auto rounded-[var(--radius-md)] text-[12px] leading-[1.7]" style={{ background: "var(--panel-bg)", color: "var(--panel-fg)", fontFamily: "var(--font-mono, ui-monospace, monospace)", whiteSpace: "pre-wrap", padding: "16px 18px" }}>{rec.codeSnippet}</pre>}
+      </article>
+    );
+  };
+
   return <section className="mx-auto max-w-[1240px] px-5 pb-20 pt-12 sm:px-8 sm:pb-28 sm:pt-16">
     <div className="mb-10">
       <Link to="/" className="inline-flex items-center gap-2 text-[12px] font-medium tracking-[-.025em] text-[var(--muted)] transition-colors hover:text-[var(--accent)]">
@@ -468,12 +1012,19 @@ export function ScanReport({
 
     {analysisState?.status === 'error' && (
       <div id="scan-error" role="alert" className="mb-8 mt-3 rounded-[var(--radius-sm)] border border-[var(--line-strong)] bg-[var(--tint)] px-5 py-4 text-[12px] font-medium tracking-[-.02em] text-[var(--ink)] flex flex-col items-start gap-2">
-        {((analysisState.error || '').includes('js-render-required') || (analysisState.error || '').includes('JavaScript-rendered') || (analysisState.error || '').includes('JS-rendered')) ? (
+        {isJsRenderPrompt ? (
           <>
             <div className="font-medium text-[15px] tracking-[-.02em] text-[var(--ink)]">This page is rendered by JavaScript</div>
             <div className="text-[13px] text-[var(--ink-soft)] font-normal leading-[1.55] tracking-[-.01em]">Most AI bots (like GPTBot or ClaudeBot) do not execute JavaScript and cannot crawl your website. Consider Server-Side Rendering (SSR) for AI discoverability.</div>
             <button
-              onClick={(e) => { e.preventDefault(); onScan?.(urlParam, { forceJsRender: true }); }}
+              onClick={(e) => {
+                e.preventDefault();
+                // Legacy event kept for continuity + the dedicated consent event
+                // that measures the JS-render funnel conversion.
+                trackEvent("try_another_url_clicked", { action: "js-render", error: "This page is rendered by JavaScript" });
+                trackEvent("js_render_consent_given", { url: urlParam });
+                onScan?.(urlParam, { forceJsRender: true });
+              }}
               className="mt-2 btn-ink shrink-0 bg-[var(--ink)] px-4 py-2 text-[12px] font-medium tracking-[-.025em] text-[var(--bg)]"
             >
               Proceed with analysis anyway
@@ -489,7 +1040,8 @@ export function ScanReport({
       <div><p className="text-[12px] font-medium tracking-[-.025em] text-[var(--accent)]">Lensy scan / AI readiness report</p><h1 className="mt-3 text-[clamp(2.4rem,5.5vw,5rem)] font-medium leading-[.93] tracking-[-.07em]">{heading}</h1></div>
       <div className="flex flex-col items-start sm:items-end gap-1.5 text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">
         <div><span>Scanned </span><span className="text-[var(--ink)]">{hostname}</span></div>
-        {report?.analysisTime && <div><span>Completed in </span><span className="text-[var(--ink)]">{(report.analysisTime / 1000).toFixed(1)}s</span></div>}
+        {(view === "readiness" || view === "recommendations") && report?.analysisTime && <div><span>AI readiness Completed in </span><span className="text-[var(--ink)]">{(report.analysisTime / 1000).toFixed(1)}s</span></div>}
+        {(view === "citations" || view === "citations-loading") && aiDisc && (aiDisc.analysisTime || aiDisc.processingTime || aiDisc.duration || aiDisc.executionTime || aiDisc.time) && <div><span>AI citations check completed in </span><span className="text-[var(--ink)]">{((aiDisc.analysisTime || aiDisc.processingTime || aiDisc.duration || aiDisc.executionTime || aiDisc.time) / 1000).toFixed(1)}s</span></div>}
       </div>
     </div>
 
@@ -500,27 +1052,136 @@ export function ScanReport({
         <span className="mt-3 block text-[13px] leading-relaxed opacity-75">{hasReport ? `${failingSignalCount} signal${failingSignalCount === 1 ? "" : "s"} to improve across ${failingGroupCount} categor${failingGroupCount === 1 ? "y" : "ies"}` : "Waiting for the completed scan report"}</span>
       </button>
       <button onClick={startCitationTest} className={`rounded-[var(--radius-md)] border p-6 text-left transition-colors sm:p-7 ${view === "citations" || view === "citations-loading" ? "border-[var(--ink)] bg-[var(--panel-bg)] text-[var(--panel-fg)]" : "border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-2)]"}`}>
-        <span className="text-[11px] font-medium tracking-[-.025em] opacity-65">AI citations</span>
-        <span className="mt-6 block text-[clamp(2.7rem,5vw,4.4rem)] font-medium leading-none tracking-[-.08em]">{citationsLoading ? "—" : citationResults.length ? `${citedCount}/${citationResults.length}` : "—"}</span>
-        <span className="mt-3 block text-[13px] leading-relaxed opacity-75">{citationsLoading ? "Testing citations with AI search" : citationResults.length ? `Cited in ${citedCount} of ${citationResults.length} tested queries` : "Run a real citation check"}</span>
+        {citationResults.length ? (<>
+          <span className="text-[11px] font-medium tracking-[-.025em] opacity-65">AI citations</span>
+          <span className="mt-6 block text-[clamp(2.7rem,5vw,4.4rem)] font-medium leading-none tracking-[-.08em]">{citedCount}/{citationResults.length}</span>
+          <span className="mt-3 block text-[13px] leading-relaxed opacity-75">Cited in {citedCount} of {citationResults.length} tested queries</span>
+        </>) : (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, width: '100%', minHeight: 80 }}>
+            {citationsLoading ? <span style={{ display: 'inline-block', width: 28, height: 28, borderRadius: '50%', borderWidth: 3, borderStyle: 'solid', borderColor: 'var(--accent, #697075)', borderTopColor: 'transparent', animation: 'citationspin .8s linear infinite', flexShrink: 0 }} /> : <svg width="32" height="36" viewBox="0 0 24 24" style={{ flexShrink: 0, opacity: 0.5 }}><path d="M8 5.14v14l11-7-11-7z" fill="currentColor" /></svg>}
+            <div>
+              <span style={{ display: 'block', fontSize: 17, fontWeight: 500, letterSpacing: '-0.025em' }}>AI Citations</span>
+              <span style={{ display: 'block', marginTop: 4, fontSize: 13, opacity: 0.65 }}>{citationsLoading ? "Testing citations with AI search" : "Run citation check"}</span>
+            </div>
+          </div>
+        )}
+        <style>{`@keyframes citationspin{to{transform:rotate(360deg)}}`}</style>
       </button>
     </div>
 
     <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3 border-b border-[var(--line)] pb-5 text-[12px] font-medium tracking-[-.025em]">
-      <span className="rounded-full bg-[var(--surface-2)] px-3 py-1 text-[var(--ink-soft)]">{hasReport ? "Scan report received" : "Report data unavailable"}</span>
-      {view === "readiness" && <><span className="text-[var(--ink-soft)]">{signalGroups.length} result groups</span>{recommendations.length > 0 && <button onClick={() => setView("recommendations")} className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--line)] px-3 py-1.5 text-[var(--ink-soft)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]">View all {recommendations.length} recommendations <ArrowRight className="size-3" strokeWidth={1.8} aria-hidden="true" /></button>}</>}
-      {view === "recommendations" && <button onClick={backToReadiness} className="link-sweep inline-flex items-center gap-2 text-[var(--ink-soft)] hover:text-[var(--accent)]"><ArrowLeft className="size-3" strokeWidth={1.8} aria-hidden="true" />Back to readiness</button>}
+      {overallScoreData?.docConfidence ? (
+        (() => {
+          const rawScore = overallScoreData.docConfidence.score;
+          const pct = rawScore <= 1 ? Math.round(rawScore * 100) : Math.round(rawScore);
+          const message = overallScoreData.docConfidence.label || (pct >= 75 ? "Likely a doc page" : pct >= 40 ? "May be a doc page" : "Unlikely a doc page");
+
+          return (
+            <div className="flex items-center gap-4">
+              <span className="rounded-full border border-[var(--line)] bg-[var(--surface-2)] px-3 py-1 text-[var(--ink)]">
+                {message} ({pct}%)
+              </span>
+              <Tooltip
+                placement="bottom"
+                arrow
+                enterTouchDelay={0}
+                leaveTouchDelay={3000}
+                title={
+                  <ul className="list-outside list-disc space-y-1.5" style={{ paddingLeft: "1.15rem", margin: 0 }}>
+                    {overallScoreData.docConfidence.signals.map((sig: string, i: number) => (
+                      <li key={i}>{sig}</li>
+                    ))}
+                  </ul>
+                }
+                componentsProps={{
+                  tooltip: {
+                    sx: {
+                      maxWidth: 340,
+                      bgcolor: "var(--panel-bg)",
+                      color: "var(--panel-fg)",
+                      fontSize: "13px",
+                      fontWeight: 400,
+                      lineHeight: 1.6,
+                      textAlign: "left",
+                      p: 2,
+                      borderRadius: "var(--radius-md)",
+                      boxShadow: "var(--shadow-float)",
+                    },
+                  },
+                  arrow: { sx: { color: "var(--panel-bg)" } },
+                }}
+              >
+                <span tabIndex={0} className="inline-flex cursor-help items-center text-[var(--ink-soft)] underline decoration-[var(--ink-soft)] decoration-dotted underline-offset-4 outline-none transition-colors hover:text-[var(--ink)] focus-visible:text-[var(--ink)]">
+                  {overallScoreData.docConfidence.signals.length} signals
+                </span>
+              </Tooltip>
+            </div>
+          );
+        })()
+      ) : (
+        <span className="rounded-full bg-[var(--surface-2)] px-3 py-1 text-[var(--ink-soft)]">
+          {hasReport ? "Scan report received" : "Report data unavailable"}
+        </span>
+      )}
+
+      {(view === "readiness" || view === "citations" || view === "citations-loading") && totalRecCount > 0 && (
+        <button onClick={() => { trackEvent("recommendations_viewed"); setView("recommendations"); }} className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--bg)] px-3 py-1.5 text-[var(--ink)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]">
+          View all {totalRecCount} recommendations <ArrowRight className="size-3" strokeWidth={1.8} aria-hidden="true" />
+        </button>
+      )}
+
+      {view === "recommendations" && (
+        <button onClick={backToReadiness} className="link-sweep inline-flex items-center gap-2 text-[var(--ink-soft)] hover:text-[var(--accent)]">
+          <ArrowLeft className="size-3" strokeWidth={1.8} aria-hidden="true" />Back to readiness
+        </button>
+      )}
     </div>
 
-    {view === "readiness" && <><div className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] px-4 py-3"><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink)]">{botAccessState === 'js_blocked' ? "! AI bot access is blocked by JavaScript" : (botAccess ? `${botAccess.robotsTxtFound ? "✓" : "!"} Bot access: ${botAccess.allowedCount} / ${botAccess.allowedCount + botAccess.blockedCount} allowed` : "Bot access data unavailable")}</span><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">{botAccessState === 'js_blocked' ? "Most AI bots do not execute JavaScript, making your content invisible to them." : (botAccess?.bots?.length ? botAccess.bots.map((bot: any) => bot.name).join(" · ") : hasReport ? "No checked crawler names were returned." : "No bot access data returned.")}</span><span className="ml-auto text-[11px] font-medium tracking-[-.025em] text-[var(--accent)]">robots.txt</span></div><div className="mt-5 grid items-start gap-3 lg:grid-cols-3">{signalGroups.map((group) => <section key={group.title} className="rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] p-6"><div className="flex items-center justify-between border-b border-[var(--line)] pb-4"><h2 className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)]">{group.title}</h2><span className="size-2 rounded-full bg-[var(--accent)]" /></div>{group.sections.map((section: any) => <div key={section.title || group.title} className="mt-5 first:mt-5"><p className={`text-[11px] font-medium tracking-[-.025em] text-[var(--muted)] ${section.title ? "mb-4" : "sr-only"}`}>{section.title || "Signals"}</p><ul className="space-y-5">{section.signals.map(([name, detail, passed]: [string, string, boolean]) => <li key={name} className="flex gap-2.5"><span className={`mt-0.5 grid size-4 shrink-0 place-items-center rounded-full text-[9px] ${passed ? "bg-[var(--surface-2)] text-[var(--accent)]" : "bg-[var(--surface-2)] text-[var(--muted)]"}`}>{passed ? "✓" : "!"}</span><div><p className="text-[14px] tracking-[-.025em]">{name}</p><p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-soft)]">{detail}</p></div></li>)}</ul></div>)}</section>)}</div></>}
+    {view === "readiness" && <><div className="mt-6 flex flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] px-4 py-3"><div className="flex flex-wrap items-center gap-x-3 gap-y-1"><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink)]">{botAccessState === 'js_blocked' ? "! AI bot access is blocked by JavaScript" : (botAccess ? `${botAccess.robotsTxtFound ? "✓" : "!"} Bot access: ${botAccess.allowedCount} / ${botAccess.allowedCount + botAccess.blockedCount} allowed` : "Bot access data unavailable")}</span>{botAccess?.robotsTxtFound ? <a href={robotsUrl} target="_blank" rel="noopener noreferrer" className="ml-auto text-[11px] font-medium tracking-[-.025em] text-[var(--accent)] transition-colors hover:text-[var(--accent-hover)]" style={{ textDecoration: "underline", textUnderlineOffset: "4px" }}>robots.txt</a> : <span className="ml-auto text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">No robots.txt found</span>}</div><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">{botAccessState === 'js_blocked' ? "This page is a JavaScript-rendered SPA. Most AI bots do not execute JavaScript, making your content invisible to them regardless of your robots.txt configuration. Lensy rendered this page for content analysis; most AI bots cannot." : (botAccess?.bots?.length ? botAccess.bots.map((bot: any) => bot.name).join(" · ") : hasReport ? "No checked crawler names were returned." : "No bot access data returned.")}</span>{botAccessState === 'js_blocked' && botAccess?.bots?.length > 0 && <div className="mt-1 flex flex-wrap gap-1.5">{botAccess.bots.map((bot: any, i: number) => <Tooltip key={i} title={`${bot.name}${bot.userAgent ? ` (${bot.userAgent})` : ""} — Blocked (JS Rendered)`} placement="top" arrow enterTouchDelay={0} leaveTouchDelay={3000}><span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--line-soft)] bg-[var(--surface-2)] px-2.5 py-1 text-[10px] font-medium leading-none tracking-[-.02em] text-[var(--ink-soft)]"><XCircle className="size-3 shrink-0" style={{ color: "var(--ink-soft)" }} strokeWidth={2} aria-hidden="true" />{bot.name}</span></Tooltip>)}</div>}</div><div className="mt-5 grid items-start gap-3 lg:grid-cols-3">{signalGroups.map((group) => <section key={group.title} className="rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] p-6"><div className="flex items-center justify-between border-b border-[var(--line)] pb-4"><h2 className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)]">{group.title}</h2><SignalStatusIcon status={(() => { const all = group.sections.flatMap((s: any) => s.signals as Signal[]); if (group.title === "Structured data") return headerStatus("structuredData", 15, all); if (group.title === "Discoverability") return headerStatus("discoverability", 30, all); if (group.title === "Content quality") return headerStatus("consumability", 32, all); return aggregateStatus(all.map((x) => x.status)); })()} className="size-4 shrink-0" /></div>{group.sections.map((section: any) => <div key={section.title || group.title} className="mt-5 first:mt-5"><p className={`text-[11px] font-medium uppercase tracking-[.08em] text-[var(--muted)] ${section.title ? "mb-4" : "sr-only"}`}>{section.title || "Signals"}</p><ul className="space-y-5">{section.signals.map((sig: Signal) => <li key={sig.label} className="flex gap-2.5"><SignalStatusIcon status={sig.status} className="mt-0.5 size-4 shrink-0" /><div className="min-w-0"><div className="flex flex-wrap items-center gap-x-3 gap-y-2"><p className="text-[14px] tracking-[-.025em]">{sig.label}</p><EvidenceBadge signal={sig.signal} /><AudienceBadge audience={sig.signal?.audience || (sig.status !== "pass" ? sig.audience : undefined)} />{sig.status !== "pass" && <ImpactBadge impact={sig.impact} />}<InfoHint text={sig.info} /></div><p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-soft)]">{sig.detail}</p>{sig.signal?.note && <p className="mt-1 text-[11px] italic leading-relaxed" style={{ color: "var(--ink-soft)" }}>{sig.signal.note}</p>}{sig.waitlist && <a href={`/contact?ref=${sig.waitlist}`} target="_blank" rel="noopener noreferrer" className="group mt-1.5 inline-flex items-center gap-1 text-[12px] font-medium tracking-[-.02em] text-[var(--accent)] hover:text-[var(--accent-hover)]"><span style={{ textDecoration: "underline", textUnderlineOffset: "3px" }}>{sig.waitlist === "llmstxt" ? "We can help you generate one" : "We can help you generate markdown"}</span><ArrowRight className="arrow-nudge size-3" strokeWidth={1.8} aria-hidden="true" /></a>}</div></li>)}</ul></div>)}</section>)}</div></>}
 
     {view === "citations-loading" && <div className="mt-10"><p className="text-[15px] leading-relaxed text-[var(--ink-soft)]">AI-generated queries are being tested against configured AI search engines.</p><p className="mt-10 text-center text-[12px] font-medium tracking-[-.025em] text-[var(--accent)]">Testing citation queries…</p><div className="mt-6 grid gap-3">{Array.from({ length: 4 }).map((_, index) => <div key={index} className="grid grid-cols-[1.5fr_.65fr] gap-5 border-t border-[var(--line)] py-4"><span className="h-3 animate-pulse bg-[var(--surface-2)]" /><span className="h-3 animate-pulse bg-[var(--surface-2)]" /></div>)}</div></div>}
 
     {view === "citations" && <div className="mt-10"><p className="text-[15px] leading-relaxed text-[var(--ink-soft)]">{citationsLoading ? "AI search is checking the generated queries. Results will appear here when the scan controller receives them." : citationResults.length ? "Citation results returned by the completed AI search check." : citationsReturned && availableCitationEngines.length === 0 ? "The citation check completed, but no configured AI search engine was available to test this documentation." : citationsReturned ? "The citation check completed but did not return query-level results." : "Start the citation check to test whether AI search can find and cite your documentation."}</p>{citationResults.length > 0 && <><div className="mt-6 inline-flex rounded-full bg-[var(--surface-2)] px-3 py-1 text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)]">Cited: {citedCount} / {citationResults.length} tested queries</div><div className="mt-6 overflow-hidden rounded-[var(--radius-md)] border border-[var(--line)]"><div className="grid grid-cols-[1fr_auto] border-b border-[var(--line)] px-4 py-3 text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]"><span>Query</span><span>Result</span></div>{citationResults.map((result: any) => <div key={result.query} className="grid grid-cols-[1fr_auto] gap-5 border-b border-[var(--line)] px-4 py-5 last:border-b-0"><div><p className="mt-1 text-[15px] tracking-[-.03em]">“{result.query}”</p>{result.citedUrl && <p className="mt-2 text-[12px] leading-relaxed text-[var(--ink-soft)]">Cited URL: {result.citedUrl}</p>}{result.competingDomains?.length > 0 && <p className="mt-2 text-[12px] leading-relaxed text-[var(--ink-soft)]">Cited instead: {result.competingDomains.join(", ")}</p>}</div><span className="self-center rounded-full border border-[var(--line)] px-3 py-1 text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)]">{result.cited ? "Cited" : "Not cited"}</span></div>)}</div></>}{citationsReturned && citationResults.length === 0 && aiDisc?.recommendations?.length > 0 && <div className="mt-6 divide-y divide-[var(--line)] border-y border-[var(--line)]">{aiDisc.recommendations.map((recommendation: any) => <div key={recommendation.issue} className="py-4"><p className="text-[14px] tracking-[-.025em]">{recommendation.issue}</p><p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-soft)]">{recommendation.fix}</p></div>)}</div>}</div>}
 
-    {view === "recommendations" && <div className="mt-10"><p className="max-w-2xl text-[15px] leading-relaxed text-[var(--ink-soft)]">Quick wins and deeper improvements affect your score. Things to watch are informational and do not impact scoring.</p><div className="mt-8 divide-y divide-[var(--line)] border-y border-[var(--line)]">{recommendations.map(([title, detail, kind], index) => <article key={title} className="grid gap-3 py-6 sm:grid-cols-[42px_minmax(0,1fr)_auto] sm:gap-6"><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--accent)]">0{index + 1}</span><div><p className="text-[17px] tracking-[-.04em]">{title}</p><p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-[var(--ink-soft)]">{detail}</p></div><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)] sm:pt-1">{kind}</span></article>)}</div></div>}
+    {view === "recommendations" && <div className="mt-10">
+      <h2 className="text-[19px] font-medium tracking-[-.04em]">All recommendations <span className="text-[var(--muted)]">({totalRecCount})</span></h2>
+      <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-[var(--ink-soft)]">Quick Wins and Deeper Improvements affect your score. Things to Watch are informational and don't impact scoring.</p>
 
-    <div className="mt-12 border-l-2 border-[var(--accent)] bg-[var(--surface)] px-5 py-4 text-[12px] leading-relaxed text-[var(--ink-soft)]">Results above are generated from the completed Lensy scan. Citation results appear only after the citation check returns data.</div>
+      {totalRecCount === 0 && <p className="mt-8 text-[14px] text-[var(--ink-soft)]">No recommendations — this page is well-optimized for AI tools.</p>}
+
+      {quickWins.length > 0 && <div className="mt-12">
+        <div className="flex items-baseline gap-2">
+          <h3 className="text-[11px] font-medium uppercase tracking-[.09em] text-[var(--ink)]">Quick Wins</h3>
+          <span className="text-[11px] font-medium tabular-nums text-[var(--muted)]">{quickWins.length}</span>
+        </div>
+        <div className="mt-5 grid gap-3">{quickWins.map((rec, i) => renderRec(rec, `qw-${i}`))}</div>
+      </div>}
+
+      {deeperImprovements.length > 0 && <div className="mt-12">
+        <div className="flex items-baseline gap-2">
+          <h3 className="text-[11px] font-medium uppercase tracking-[.09em] text-[var(--ink)]">Deeper Improvements</h3>
+          <span className="text-[11px] font-medium tabular-nums text-[var(--muted)]">{deeperImprovements.length}</span>
+        </div>
+        <div className="mt-5 grid gap-3">{deeperImprovements.map((rec, i) => renderRec(rec, `di-${i}`))}</div>
+      </div>}
+
+      {thingsToWatch.length > 0 && <div className="mt-12">
+        <div className="flex items-baseline gap-2">
+          <h3 className="text-[11px] font-medium uppercase tracking-[.09em] text-[var(--muted)]">Things to Watch</h3>
+          <span className="text-[11px] font-medium tabular-nums text-[var(--muted)]">{thingsToWatch.length}</span>
+        </div>
+        <p className="mt-1.5 text-[11px] text-[var(--muted)]">Emerging patterns that don't affect your score</p>
+        <div className="mt-5 grid gap-3">{thingsToWatch.map((rec, i) => <article key={`ttw-${i}`} className="rounded-[var(--radius-md)] border border-dashed border-[var(--line)] bg-[var(--surface)] p-5"><p className="text-[15px] font-medium leading-snug tracking-[-.03em] text-[var(--ink)]">{recIssue(rec)}</p>{rec.category && <div className="mt-3"><span className={chipClass}>{rec.category}</span></div>}<p className="mt-3 text-[13px] leading-relaxed text-[var(--ink-soft)]">{recFix(rec)}</p></article>)}</div>
+      </div>}
+    </div>}
+
+    {/* Shared footer note — shown on all three views (readiness, recommendations, citations),
+        carrying the standing scan note and a Share feedback link. */}
+    {(view === "readiness" || view === "recommendations" || view === "citations" || view === "citations-loading") && (
+      <div className="mt-12 border-l-2 border-[var(--accent)] bg-[var(--surface)] px-5 py-4 text-[12px] leading-relaxed text-[var(--ink-soft)]">
+        Results above are generated from the completed Lensy scan. Citation results appear only after the citation check returns data. <a href="/contact?ref=feedback" target="_blank" rel="noopener noreferrer" className="font-medium text-[var(--accent)] hover:text-[var(--accent-hover)]" style={{ textDecoration: "underline", textUnderlineOffset: "3px" }}>Share feedback</a>
+      </div>
+    )}
   </section>;
 }
 
@@ -780,6 +1441,26 @@ export function ArticlePage() {
   const { slug } = useParams<{ slug: string }>();
   const article = ARTICLES.find((a) => a.slug === slug);
 
+  // Fire the GA4 `article_read_complete` event once the reader scrolls the CTA
+  // into view. Ported from the pre-redesign frontend/src/pages/ArticlePage.tsx;
+  // the redesign rewrite of this component had dropped the observer, the CTA,
+  // and the analytics import, so the event never fired (PR 22 review).
+  const ctaRef = useRef<HTMLDivElement>(null);
+  const trackedRef = useRef(false);
+  useEffect(() => {
+    trackedRef.current = false;
+    const el = ctaRef.current;
+    if (!el || !slug) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting && !trackedRef.current) {
+        trackedRef.current = true;
+        trackEvent("article_read_complete", { article_slug: slug });
+      }
+    }, { threshold: 0.5 });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [slug]);
+
   if (!article) return <NotFound />;
 
   const idx = ARTICLES.indexOf(article);
@@ -807,6 +1488,14 @@ export function ArticlePage() {
         {article.body}
       </div>
 
+      {/* CTA — also the scroll target that fires `article_read_complete`. */}
+      <div ref={ctaRef} data-reveal className="rounded-[var(--radius-lg)] border border-[var(--line)] bg-[var(--surface)] px-6 py-10 text-center sm:px-10 sm:py-12">
+        <p className="mx-auto max-w-[440px] text-[clamp(1.35rem,2.6vw,1.9rem)] font-medium leading-tight tracking-[-.04em]">Check your documentation's AI readiness.</p>
+        <Link to="/" className="btn-ink mt-7 inline-flex items-center gap-2 bg-[var(--panel-bg)] px-5 py-3 text-[13px] font-medium tracking-[-.02em] text-[var(--panel-fg)]">
+          Try Lensy Free <ArrowRight className="arrow-nudge size-4" strokeWidth={1.8} aria-hidden="true" />
+        </Link>
+      </div>
+
       {(prev || next) && (
         <nav data-reveal className="grid gap-px border-t border-[var(--line)] py-10 sm:grid-cols-2">
           {prev ? (
@@ -815,12 +1504,12 @@ export function ArticlePage() {
               <span className="text-[16px] leading-snug tracking-[-.03em]">{prev.title}</span>
             </Link>
           ) : <div />}
-          {next && (
+          {next ? (
             <Link to={`/education/${next.slug}`} className="group flex flex-col gap-2 border-t border-[var(--line)] py-6 pl-0 text-right transition-colors hover:text-[var(--accent)] sm:border-l sm:border-t-0 sm:pl-8">
               <span className="flex items-center justify-end gap-1.5 text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">Next<ArrowRight className="size-3" strokeWidth={1.8} aria-hidden="true" /></span>
               <span className="text-[16px] leading-snug tracking-[-.03em]">{next.title}</span>
             </Link>
-          )}
+          ) : <div className="sm:border-l border-[var(--line)]" />}
         </nav>
       )}
     </div>
@@ -829,8 +1518,8 @@ export function ArticlePage() {
 
 // ---- Contact ----
 
-export function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string; children: React.ReactNode }) {
-  return <label className="field-shell block border-b border-[var(--line)] px-3 py-5 transition-colors focus-within:border-[var(--accent)]">
+export function Field({ label, hint, error, noBorder, children }: { label: string; hint?: string; error?: string; noBorder?: boolean; children: React.ReactNode }) {
+  return <label className={`field-shell block px-3 py-5 transition-colors focus-within:border-[var(--accent)] ${noBorder ? '' : 'border-b border-[var(--line)]'}`}>
     <span className="flex items-baseline justify-between text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]"><span>{label}</span>{hint && <span className="text-[10px] text-[var(--placeholder)]">{hint}</span>}</span>
     {children}
     {error && <span role="alert" className="audit-notice mt-3 block rounded-[var(--radius-xs)] bg-[var(--tint)] px-2.5 py-2 text-[11px] font-medium leading-relaxed tracking-[-.02em] text-[var(--ink)]">{error}</span>}
@@ -851,10 +1540,10 @@ export function Contact() {
   const isFeedback = ref === "feedback";
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!isFeedback && !website.trim()) return setFormError("Add your developer portal or website URL to continue.");
-    if (isFeedback && !message.trim()) return setFormError("Share your feedback to continue.");
-    if (!name.trim()) return setFormError("Add your name so we know who to contact.");
-    if (!email.trim() || !/^\S+@\S+\.\S+$/.test(email)) return setFormError("Enter a valid email address to join the waitlist.");
+    if ((!isFeedback && !website.trim()) || (isFeedback && !message.trim()) || !name.trim() || !email.trim() || !/^\S+@\S+\.\S+$/.test(email)) {
+      setFormError("validation");
+      return;
+    }
     setFormError("");
     setSending(true);
     try {
@@ -872,15 +1561,17 @@ export function Contact() {
       setSending(false);
     }
   };
-  const websiteError = formError && !website.trim() ? formError : "";
-  const nameError = formError && !name.trim() ? formError : "";
-  const emailError = formError && (!email.trim() || !/^\S+@\S+\.\S+$/.test(email)) ? formError : "";
+  const websiteError = formError && !website.trim() ? "Add your developer portal or website URL to continue." : "";
+  const nameError = formError && !name.trim() ? "Add your name so we know who to contact." : "";
+  const emailError = formError && (!email.trim() || !/^\S+@\S+\.\S+$/.test(email)) ? "Enter a valid email address to join the waitlist." : "";
+  const messageError = formError && !message.trim() ? "Share your feedback to continue." : "";
+  const networkError = formError && formError !== "validation" ? formError : "";
   const inputCls = "mt-3 block w-full bg-transparent font-sans text-xl tracking-[-.035em] text-[var(--ink)] outline-none placeholder:text-[var(--placeholder)]";
 
   return <Page
     titleStyle={{ fontSize: "clamp(2rem, 4vw, 3.5rem)" }}
     title={<>Join the<br /><span className="text-[var(--accent)]">Waitlist.</span></>}
-    intro="Sign up to get higher audit limits and early access to new features."
+    intro="Join the waitlist to get higher limits and get access to upcoming products."
   >
     <div className="grid gap-12 py-20 lg:grid-cols-12 lg:gap-16">
       <aside data-reveal className="flex flex-col gap-10 lg:col-span-4">
@@ -906,16 +1597,18 @@ export function Contact() {
           </div>
         ) : (
           <form noValidate onSubmit={submit}>
-            <div className="border-t border-[var(--line)]">
-              <Field label="Developer Portal or Website URL" error={websiteError}><input value={website} onChange={(event) => { setWebsite(event.target.value); setFormError(""); }} aria-invalid={Boolean(websiteError)} className={inputCls} placeholder="docs.yourcompany.com" /></Field>
+            <div>
+              {networkError && <p className="audit-notice mb-4 rounded-[var(--radius-xs)] bg-[var(--tint)] px-3 py-2.5 text-[12px] font-medium text-[var(--ink)]">{networkError}</p>}
+              {!isFeedback && <Field label="Developer Portal or Website URL" error={websiteError}><input value={website} onChange={(event) => { setWebsite(event.target.value); setFormError(""); }} aria-invalid={Boolean(websiteError)} className={inputCls} placeholder="docs.yourcompany.com" /></Field>}
               <div className="sm:grid sm:grid-cols-2 sm:gap-x-8">
                 <Field label="Name" error={nameError}><input value={name} onChange={(event) => { setName(event.target.value); setFormError(""); }} aria-invalid={Boolean(nameError)} className={inputCls} placeholder="Ada Lovelace" /></Field>
                 <Field label="Email" error={emailError}><input value={email} onChange={(event) => { setEmail(event.target.value); setFormError(""); }} aria-invalid={Boolean(emailError)} type="email" className={inputCls} placeholder="you@company.com" /></Field>
               </div>
-              <Field label="Organization / Company"><input value={organization} onChange={(event) => { setOrganization(event.target.value); setFormError(""); }} className={inputCls} placeholder="Acme Corp" /></Field>{isFeedback && <Field label="Your feedback"><textarea value={message} onChange={(event) => { setMessage(event.target.value); setFormError(""); }} aria-invalid={Boolean(formError)} className={`${inputCls} min-h-32 resize-y`} placeholder="What worked, what didn’t, or what should we build next?" /></Field>}
+              <Field label="Organization / Company" noBorder={!isFeedback}><input value={organization} onChange={(event) => { setOrganization(event.target.value); setFormError(""); }} className={inputCls} placeholder="Acme Corp" /></Field>
+              {isFeedback && <Field label="Your feedback" error={messageError} noBorder><textarea value={message} onChange={(event) => { setMessage(event.target.value); setFormError(""); }} aria-invalid={Boolean(messageError)} className={`${inputCls} min-h-32 resize-y`} placeholder="What worked, what didn’t, or what should we build next?" /></Field>}
             </div>
             <div className="mt-7 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="max-w-xs text-[11px] font-medium tracking-[-.025em] leading-relaxed text-[var(--muted)]">No newsletter. We only use this to reach out about access.</p>
+              <p className="max-w-xs text-[11px] font-medium tracking-[-.025em] leading-relaxed text-[var(--muted)]">Your inbox is safe with us. We only use this to get in touch.</p>
               <button disabled={sending} className="btn-ink group inline-flex items-center gap-2 bg-[var(--panel-bg)] px-5 py-3 text-[12px] font-medium tracking-[-.025em] text-[var(--panel-fg)] disabled:cursor-wait disabled:opacity-70">{sending ? "Joining…" : <>Join waitlist <ArrowRight className="arrow-nudge size-3.5" strokeWidth={1.8} aria-hidden="true" /></>}</button>
             </div>
           </form>

@@ -37,6 +37,9 @@ export interface AIDiscoverabilityResult {
     };
     overallDiscoverability: 'high' | 'partial' | 'low' | 'not-found';
     recommendations: Array<{ priority: string; issue: string; fix: string }>;
+    /** Wall-clock time (ms) this citations check took, so the UI can show a real
+     *  "completed in Xs" instead of a hardcoded placeholder. */
+    analysisTime: number;
 }
 
 interface EngineResult {
@@ -113,6 +116,7 @@ async function checkAIDiscoverability(
     progress: any,
     prefetchedHtml?: string
 ): Promise<AIDiscoverabilityResult> {
+    const startTime = Date.now();
     const domain = new URL(targetUrl).hostname;
     const recommendations: AIDiscoverabilityResult['recommendations'] = [];
 
@@ -129,6 +133,7 @@ async function checkAIDiscoverability(
                 issue: 'Could not extract page content for query generation — page may be JS-rendered or inaccessible.',
                 fix: 'Ensure the page returns HTML content with title, H1, and meta description tags.',
             }],
+            analysisTime: Date.now() - startTime,
         };
     }
 
@@ -149,6 +154,7 @@ async function checkAIDiscoverability(
                 issue: 'Could not generate search queries from page content.',
                 fix: 'Ensure the page has descriptive title, headings, and meta description.',
             }],
+            analysisTime: Date.now() - startTime,
         };
     }
 
@@ -204,7 +210,7 @@ async function checkAIDiscoverability(
         }
     }
 
-    return { queries, queryTypes, engines, overallDiscoverability, recommendations };
+    return { queries, queryTypes, engines, overallDiscoverability, recommendations, analysisTime: Date.now() - startTime };
 }
 
 // ── Page Info Extraction (MD-first) ──────────────────────────────────────

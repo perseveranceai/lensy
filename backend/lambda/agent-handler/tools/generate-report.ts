@@ -50,6 +50,8 @@ interface AIReadinessReport {
     };
     categories: AIReadinessResult['categories'];
     aiDiscoverability: AIDiscoverabilityResult | null;
+    /** v2 evidence-aware detection report (site-level + page-level signals) — powers the frontend evidence badges. */
+    detection?: AIReadinessResult['detection'];
     recommendations: Array<{
         category: string;
         priority: 'high' | 'medium' | 'low' | 'best-practice';
@@ -244,6 +246,11 @@ export const generateReportTool = tool(
                     },
                 },
                 aiDiscoverability: discoverabilityResults || null,
+                // Include the evidence-aware detection report so the frontend can
+                // render Verified/Not-verified badges, audience tags, and the
+                // detection-only signals (Content Negotiation, AGENTS.md, MCP, etc.)
+                // when a persisted report.json is reloaded — not just during a live scan.
+                detection: readinessResults?.detection,
                 recommendations,
                 contextualSuggestions,
                 scope: {
