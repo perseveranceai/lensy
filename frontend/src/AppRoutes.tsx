@@ -443,7 +443,7 @@ export function ShellContent() {
   return <div className="flex min-h-full flex-col bg-[var(--bg)] text-[var(--ink)]">
     <header className={`shell-header sticky top-0 z-20 border-b border-[var(--line-soft)] ${scrolled ? "is-scrolled" : ""}`}>
       <nav className="relative mx-auto flex max-w-[1240px] items-center px-5 py-4 sm:px-8">
-        <Link to="/" className="flex items-center gap-2 text-[13px] font-medium tracking-[-.04em]"><img src={logo} alt="Perseverance AI" className="logo-mark size-8 object-contain transition-transform duration-300 hover:scale-110" />Perseverance AI</Link>
+        <Link to="/" className="flex items-center gap-2 text-[13px] font-medium tracking-[-.04em]"><img src={logo} alt="Perseverance AI" style={{ width: 42, height: 42 }} className="logo-mark object-contain transition-transform duration-300 hover:scale-110" />Perseverance AI</Link>
         <div className="absolute left-1/2 hidden -translate-x-1/2 text-[12px] font-medium tracking-[-.025em] md:flex">
           <NavRail />
         </div>
@@ -524,6 +524,25 @@ export function ScanReport({
     if (view === "citations-loading" && citationRequestStarted.current && !citationsLoading) setView("citations");
   }, [citationsLoading, view]);
 
+  // The scan hit a JS-rendered page: the backend returns an error naming the
+  // condition, and we surface the "Proceed with analysis anyway" consent step.
+  const isJsRenderPrompt =
+    analysisState?.status === "error" &&
+    (["js-render-required", "JavaScript-rendered", "JS-rendered"].some((token) => (analysisState.error || "").includes(token)));
+
+  // Fire `js_render_prompt_shown` once each time the consent prompt appears for
+  // a URL — this is the top of the JS-render consent funnel (prompt shown →
+  // consent given → results). New instrumentation: this flow was never tracked
+  // pre-redesign. Keyed on urlParam so a re-scan of the same URL re-arms it.
+  const jsRenderPromptTracked = useRef<string | null>(null);
+  useEffect(() => {
+    if (isJsRenderPrompt && jsRenderPromptTracked.current !== urlParam) {
+      jsRenderPromptTracked.current = urlParam;
+      trackEvent("js_render_prompt_shown", { url: urlParam });
+    }
+    if (!isJsRenderPrompt) jsRenderPromptTracked.current = null;
+  }, [isJsRenderPrompt, urlParam]);
+
   let robotsUrl = "#";
   try {
     if (urlParam) {
@@ -566,7 +585,18 @@ export function ScanReport({
   const signalGroups: Array<{ title: string; sections: Array<{ title: string; signals: Signal[] }> }> = [];
   const categories = report?.categories;
   const botAccess = categories?.botAccess;
-  const botAccessState = report?.overallScore?.botAccessState;
+  // Prefer the canonical report state, but fall back to deriving `js_blocked`
+  // from the JS-render signal. Restored from PR 20 (fix: correctly identify and
+  // handle JS-rendered SPAs): a JS-rendered SPA is effectively invisible to AI
+  // bots regardless of robots.txt, so the bot-access banner must NOT read
+  // "10/10 allowed". The redesign dropped this fallback, so when the backend
+  // didn't populate botAccessState=js_blocked (e.g. reloaded report), the banner
+  // wrongly showed full access for JS-rendered pages.
+  const isJsRendered =
+    categories?.consumability?.originRequiresJavaScript === true ||
+    categories?.consumability?.jsRendered === true;
+  const botAccessState =
+    report?.overallScore?.botAccessState ?? (isJsRendered ? "js_blocked" : undefined);
 
   // Detection report: prefer the live category-result (asyncCards.detection,
   // threaded as detectionData), fall back to report.detection when reloading a
@@ -982,12 +1012,19 @@ export function ScanReport({
 
     {analysisState?.status === 'error' && (
       <div id="scan-error" role="alert" className="mb-8 mt-3 rounded-[var(--radius-sm)] border border-[var(--line-strong)] bg-[var(--tint)] px-5 py-4 text-[12px] font-medium tracking-[-.02em] text-[var(--ink)] flex flex-col items-start gap-2">
-        {((analysisState.error || '').includes('js-render-required') || (analysisState.error || '').includes('JavaScript-rendered') || (analysisState.error || '').includes('JS-rendered')) ? (
+        {isJsRenderPrompt ? (
           <>
             <div className="font-medium text-[15px] tracking-[-.02em] text-[var(--ink)]">This page is rendered by JavaScript</div>
             <div className="text-[13px] text-[var(--ink-soft)] font-normal leading-[1.55] tracking-[-.01em]">Most AI bots (like GPTBot or ClaudeBot) do not execute JavaScript and cannot crawl your website. Consider Server-Side Rendering (SSR) for AI discoverability.</div>
             <button
-              onClick={(e) => { e.preventDefault(); onScan?.(urlParam, { forceJsRender: true }); }}
+              onClick={(e) => {
+                e.preventDefault();
+                // Legacy event kept for continuity + the dedicated consent event
+                // that measures the JS-render funnel conversion.
+                trackEvent("try_another_url_clicked", { action: "js-render", error: "This page is rendered by JavaScript" });
+                trackEvent("js_render_consent_given", { url: urlParam });
+                onScan?.(urlParam, { forceJsRender: true });
+              }}
               className="mt-2 btn-ink shrink-0 bg-[var(--ink)] px-4 py-2 text-[12px] font-medium tracking-[-.025em] text-[var(--bg)]"
             >
               Proceed with analysis anyway
@@ -1088,7 +1125,7 @@ export function ScanReport({
       )}
 
       {(view === "readiness" || view === "citations" || view === "citations-loading") && totalRecCount > 0 && (
-        <button onClick={() => setView("recommendations")} className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--bg)] px-3 py-1.5 text-[var(--ink)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]">
+        <button onClick={() => { trackEvent("recommendations_viewed"); setView("recommendations"); }} className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--bg)] px-3 py-1.5 text-[var(--ink)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]">
           View all {totalRecCount} recommendations <ArrowRight className="size-3" strokeWidth={1.8} aria-hidden="true" />
         </button>
       )}
@@ -1100,7 +1137,7 @@ export function ScanReport({
       )}
     </div>
 
-    {view === "readiness" && <><div className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] px-4 py-3"><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink)]">{botAccessState === 'js_blocked' ? "! AI bot access is blocked by JavaScript" : (botAccess ? `${botAccess.robotsTxtFound ? "✓" : "!"} Bot access: ${botAccess.allowedCount} / ${botAccess.allowedCount + botAccess.blockedCount} allowed` : "Bot access data unavailable")}</span><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">{botAccessState === 'js_blocked' ? "Most AI bots do not execute JavaScript, making your content invisible to them." : (botAccess?.bots?.length ? botAccess.bots.map((bot: any) => bot.name).join(" · ") : hasReport ? "No checked crawler names were returned." : "No bot access data returned.")}</span><a href={robotsUrl} target="_blank" rel="noopener noreferrer" className="ml-auto text-[11px] font-medium tracking-[-.025em] text-[var(--accent)] transition-colors hover:text-[var(--accent-hover)]" style={{ textDecoration: "underline", textUnderlineOffset: "4px" }}>robots.txt</a></div><div className="mt-5 grid items-start gap-3 lg:grid-cols-3">{signalGroups.map((group) => <section key={group.title} className="rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] p-6"><div className="flex items-center justify-between border-b border-[var(--line)] pb-4"><h2 className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)]">{group.title}</h2><SignalStatusIcon status={(() => { const all = group.sections.flatMap((s: any) => s.signals as Signal[]); if (group.title === "Structured data") return headerStatus("structuredData", 15, all); if (group.title === "Discoverability") return headerStatus("discoverability", 30, all); if (group.title === "Content quality") return headerStatus("consumability", 32, all); return aggregateStatus(all.map((x) => x.status)); })()} className="size-4 shrink-0" /></div>{group.sections.map((section: any) => <div key={section.title || group.title} className="mt-5 first:mt-5"><p className={`text-[11px] font-medium uppercase tracking-[.08em] text-[var(--muted)] ${section.title ? "mb-4" : "sr-only"}`}>{section.title || "Signals"}</p><ul className="space-y-5">{section.signals.map((sig: Signal) => <li key={sig.label} className="flex gap-2.5"><SignalStatusIcon status={sig.status} className="mt-0.5 size-4 shrink-0" /><div className="min-w-0"><div className="flex flex-wrap items-center gap-x-3 gap-y-2"><p className="text-[14px] tracking-[-.025em]">{sig.label}</p><EvidenceBadge signal={sig.signal} /><AudienceBadge audience={sig.signal?.audience || (sig.status !== "pass" ? sig.audience : undefined)} />{sig.status !== "pass" && <ImpactBadge impact={sig.impact} />}<InfoHint text={sig.info} /></div><p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-soft)]">{sig.detail}</p>{sig.signal?.note && <p className="mt-1 text-[11px] italic leading-relaxed" style={{ color: "var(--ink-soft)" }}>{sig.signal.note}</p>}{sig.waitlist && <a href={`/contact?ref=${sig.waitlist}`} target="_blank" rel="noopener noreferrer" className="group mt-1.5 inline-flex items-center gap-1 text-[12px] font-medium tracking-[-.02em] text-[var(--accent)] hover:text-[var(--accent-hover)]"><span style={{ textDecoration: "underline", textUnderlineOffset: "3px" }}>{sig.waitlist === "llmstxt" ? "We can help you generate one" : "We can help you generate markdown"}</span><ArrowRight className="arrow-nudge size-3" strokeWidth={1.8} aria-hidden="true" /></a>}</div></li>)}</ul></div>)}</section>)}</div></>}
+    {view === "readiness" && <><div className="mt-6 flex flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] px-4 py-3"><div className="flex flex-wrap items-center gap-x-3 gap-y-1"><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink)]">{botAccessState === 'js_blocked' ? "! AI bot access is blocked by JavaScript" : (botAccess ? `${botAccess.robotsTxtFound ? "✓" : "!"} Bot access: ${botAccess.allowedCount} / ${botAccess.allowedCount + botAccess.blockedCount} allowed` : "Bot access data unavailable")}</span>{botAccess?.robotsTxtFound ? <a href={robotsUrl} target="_blank" rel="noopener noreferrer" className="ml-auto text-[11px] font-medium tracking-[-.025em] text-[var(--accent)] transition-colors hover:text-[var(--accent-hover)]" style={{ textDecoration: "underline", textUnderlineOffset: "4px" }}>robots.txt</a> : <span className="ml-auto text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">No robots.txt found</span>}</div><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">{botAccessState === 'js_blocked' ? "This page is a JavaScript-rendered SPA. Most AI bots do not execute JavaScript, making your content invisible to them regardless of your robots.txt configuration. Lensy rendered this page for content analysis; most AI bots cannot." : (botAccess?.bots?.length ? botAccess.bots.map((bot: any) => bot.name).join(" · ") : hasReport ? "No checked crawler names were returned." : "No bot access data returned.")}</span>{botAccessState === 'js_blocked' && botAccess?.bots?.length > 0 && <div className="mt-1 flex flex-wrap gap-1.5">{botAccess.bots.map((bot: any, i: number) => <Tooltip key={i} title={`${bot.name}${bot.userAgent ? ` (${bot.userAgent})` : ""} — Blocked (JS Rendered)`} placement="top" arrow enterTouchDelay={0} leaveTouchDelay={3000}><span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--line-soft)] bg-[var(--surface-2)] px-2.5 py-1 text-[10px] font-medium leading-none tracking-[-.02em] text-[var(--ink-soft)]"><XCircle className="size-3 shrink-0" style={{ color: "var(--ink-soft)" }} strokeWidth={2} aria-hidden="true" />{bot.name}</span></Tooltip>)}</div>}</div><div className="mt-5 grid items-start gap-3 lg:grid-cols-3">{signalGroups.map((group) => <section key={group.title} className="rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] p-6"><div className="flex items-center justify-between border-b border-[var(--line)] pb-4"><h2 className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)]">{group.title}</h2><SignalStatusIcon status={(() => { const all = group.sections.flatMap((s: any) => s.signals as Signal[]); if (group.title === "Structured data") return headerStatus("structuredData", 15, all); if (group.title === "Discoverability") return headerStatus("discoverability", 30, all); if (group.title === "Content quality") return headerStatus("consumability", 32, all); return aggregateStatus(all.map((x) => x.status)); })()} className="size-4 shrink-0" /></div>{group.sections.map((section: any) => <div key={section.title || group.title} className="mt-5 first:mt-5"><p className={`text-[11px] font-medium uppercase tracking-[.08em] text-[var(--muted)] ${section.title ? "mb-4" : "sr-only"}`}>{section.title || "Signals"}</p><ul className="space-y-5">{section.signals.map((sig: Signal) => <li key={sig.label} className="flex gap-2.5"><SignalStatusIcon status={sig.status} className="mt-0.5 size-4 shrink-0" /><div className="min-w-0"><div className="flex flex-wrap items-center gap-x-3 gap-y-2"><p className="text-[14px] tracking-[-.025em]">{sig.label}</p><EvidenceBadge signal={sig.signal} /><AudienceBadge audience={sig.signal?.audience || (sig.status !== "pass" ? sig.audience : undefined)} />{sig.status !== "pass" && <ImpactBadge impact={sig.impact} />}<InfoHint text={sig.info} /></div><p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-soft)]">{sig.detail}</p>{sig.signal?.note && <p className="mt-1 text-[11px] italic leading-relaxed" style={{ color: "var(--ink-soft)" }}>{sig.signal.note}</p>}{sig.waitlist && <a href={`/contact?ref=${sig.waitlist}`} target="_blank" rel="noopener noreferrer" className="group mt-1.5 inline-flex items-center gap-1 text-[12px] font-medium tracking-[-.02em] text-[var(--accent)] hover:text-[var(--accent-hover)]"><span style={{ textDecoration: "underline", textUnderlineOffset: "3px" }}>{sig.waitlist === "llmstxt" ? "We can help you generate one" : "We can help you generate markdown"}</span><ArrowRight className="arrow-nudge size-3" strokeWidth={1.8} aria-hidden="true" /></a>}</div></li>)}</ul></div>)}</section>)}</div></>}
 
     {view === "citations-loading" && <div className="mt-10"><p className="text-[15px] leading-relaxed text-[var(--ink-soft)]">AI-generated queries are being tested against configured AI search engines.</p><p className="mt-10 text-center text-[12px] font-medium tracking-[-.025em] text-[var(--accent)]">Testing citation queries…</p><div className="mt-6 grid gap-3">{Array.from({ length: 4 }).map((_, index) => <div key={index} className="grid grid-cols-[1.5fr_.65fr] gap-5 border-t border-[var(--line)] py-4"><span className="h-3 animate-pulse bg-[var(--surface-2)]" /><span className="h-3 animate-pulse bg-[var(--surface-2)]" /></div>)}</div></div>}
 
