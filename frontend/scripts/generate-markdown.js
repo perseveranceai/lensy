@@ -15,7 +15,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const ARTICLE_FILE = path.join(__dirname, '..', 'src', 'pages', 'ArticlePage.tsx');
+// N-11: the live articles now live in the ARTICLES array in AppRoutes.tsx (JSX
+// bodies), NOT the old src/pages/ArticlePage.tsx (which is dead/decoupled). Parse
+// the live source so generated .md / llms.txt / sitemap.xml can't drift.
+const ARTICLE_FILE = path.join(__dirname, '..', 'src', 'AppRoutes.tsx');
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const EDUCATION_DIR = path.join(PUBLIC_DIR, 'education');
 
@@ -23,80 +26,95 @@ const EDUCATION_DIR = path.join(PUBLIC_DIR, 'education');
 const baseUrl = (process.env.REACT_APP_BASE_URL || 'https://perseveranceai.com').replace(/\/$/, '');
 const today = new Date().toISOString().split('T')[0];
 
-// ── Parse article content from ArticlePage.tsx ──
+// Strip inline JSX tags (<code>, <a>, <em>, <strong>…) from prose, keeping text.
+function stripInlineTags(html) {
+    return html
+        .replace(/<[^>]+>/g, '')      // drop remaining tags
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+// ── Parse the live ARTICLES array from AppRoutes.tsx ──
+// The bodies are JSX (<Prose><p>…</p><h2>…</h2><TlDr items={[…]} />). We pull the
+// metadata fields and flatten the JSX body into markdown-friendly sections.
 function extractArticles() {
     const source = fs.readFileSync(ARTICLE_FILE, 'utf-8');
 
-    const startMarker = 'const articleContent: Record<string, ArticleContent> = {';
+    const startMarker = 'const ARTICLES: ArticleData[] = [';
     const startIdx = source.indexOf(startMarker);
     if (startIdx === -1) {
-        console.error('Could not find articleContent in ArticlePage.tsx');
+        console.error('Could not find ARTICLES array in AppRoutes.tsx');
         process.exit(1);
     }
 
-    let braceCount = 0;
-    let objStart = source.indexOf('{', startIdx);
-    let i = objStart;
+    // Walk the array with bracket matching so we grab exactly the ARTICLES literal.
+    // Start from the opening `[` of the array itself (the one at the end of the
+    // marker), NOT the `[]` inside the `ArticleData[]` type annotation.
+    let arrStart = startIdx + startMarker.length - 1;
+    let depth = 0;
+    let i = arrStart;
     for (; i < source.length; i++) {
-        if (source[i] === '{') braceCount++;
-        if (source[i] === '}') braceCount--;
-        if (braceCount === 0) break;
+        if (source[i] === '[') depth++;
+        if (source[i] === ']') { depth--; if (depth === 0) break; }
     }
+    const arrSource = source.substring(arrStart, i + 1);
 
-    const objSource = source.substring(objStart, i + 1);
-
-    const articles = {};
-    const slugRegex = /'([a-z0-9-]+)':\s*\{/g;
-    let match;
+    // Split into per-article blocks by the `slug:` field position.
+    const slugRegex = /slug:\s*"([a-z0-9-]+)"/g;
     const slugPositions = [];
-
-    while ((match = slugRegex.exec(objSource)) !== null) {
+    let match;
+    while ((match = slugRegex.exec(arrSource)) !== null) {
         slugPositions.push({ slug: match[1], pos: match.index });
     }
 
+    const articles = {};
     for (let s = 0; s < slugPositions.length; s++) {
         const { slug, pos } = slugPositions[s];
-        const endPos = s + 1 < slugPositions.length ? slugPositions[s + 1].pos : objSource.length;
-        const block = objSource.substring(pos, endPos);
+        const endPos = s + 1 < slugPositions.length ? slugPositions[s + 1].pos : arrSource.length;
+        const block = arrSource.substring(pos, endPos);
 
-        const titleMatch = block.match(/title:\s*'([^']+)'/);
-        const categoryMatch = block.match(/category:\s*'([^']+)'/);
-        const readTimeMatch = block.match(/readTime:\s*'([^']+)'/);
-        const dateMatch = block.match(/publishedDate:\s*'([^']+)'/);
+        const titleMatch = block.match(/title:\s*"((?:[^"\\]|\\.)*)"/);
+        const tagMatch = block.match(/tag:\s*"([^"]+)"/);
+        const readTimeMatch = block.match(/readTime:\s*"([^"]+)"/);
+        const descMatch = block.match(/description:\s*"((?:[^"\\]|\\.)*)"/);
 
+        // Body: everything after `body:` — extract headings, paragraphs, and TlDr bullets in order.
+        const bodyIdx = block.indexOf('body:');
+        const body = bodyIdx !== -1 ? block.substring(bodyIdx) : '';
         const sections = [];
-        const sectionRegex = /\{\s*(?:heading:\s*'([^']*)',\s*)?paragraphs:\s*\[([\s\S]*?)\](?:,\s*bulletPoints:\s*\[([\s\S]*?)\])?\s*,?\s*\}/g;
-        let secMatch;
+        let current = { heading: null, paragraphs: [], bulletPoints: [] };
+        const pushCurrent = () => {
+            if (current.heading || current.paragraphs.length || current.bulletPoints.length) sections.push(current);
+        };
 
-        while ((secMatch = sectionRegex.exec(block)) !== null) {
-            const heading = secMatch[1] || null;
-            const paragraphsRaw = secMatch[2];
-            const bulletsRaw = secMatch[3] || null;
-
-            const paragraphs = [];
-            const pRegex = /'((?:[^'\\]|\\.)*)'/g;
-            let pMatch;
-            while ((pMatch = pRegex.exec(paragraphsRaw)) !== null) {
-                paragraphs.push(pMatch[1].replace(/\\'/g, "'"));
-            }
-
-            const bulletPoints = [];
-            if (bulletsRaw) {
-                const bRegex = /'((?:[^'\\]|\\.)*)'/g;
-                let bMatch;
-                while ((bMatch = bRegex.exec(bulletsRaw)) !== null) {
-                    bulletPoints.push(bMatch[1].replace(/\\'/g, "'"));
+        // Tokenize <h2>, <p>, and TlDr items in document order.
+        const tokenRegex = /<h2>([\s\S]*?)<\/h2>|<p>([\s\S]*?)<\/p>|<TlDr\s+items=\{\[([\s\S]*?)\]\}/g;
+        let tok;
+        while ((tok = tokenRegex.exec(body)) !== null) {
+            if (tok[1] !== undefined) {
+                // New H2 — start a new section.
+                pushCurrent();
+                current = { heading: stripInlineTags(tok[1]), paragraphs: [], bulletPoints: [] };
+            } else if (tok[2] !== undefined) {
+                const text = stripInlineTags(tok[2]);
+                if (text) current.paragraphs.push(text);
+            } else if (tok[3] !== undefined) {
+                // TlDr bullet list — string items in an array.
+                const bRegex = /"((?:[^"\\]|\\.)*)"/g;
+                let b;
+                while ((b = bRegex.exec(tok[3])) !== null) {
+                    current.bulletPoints.push(b[1].replace(/\\"/g, '"'));
                 }
             }
-
-            sections.push({ heading, paragraphs, bulletPoints });
         }
+        pushCurrent();
 
         articles[slug] = {
-            title: titleMatch ? titleMatch[1].replace(/\\'/g, "'") : slug,
-            category: categoryMatch ? categoryMatch[1] : '',
-            readTime: readTimeMatch ? readTimeMatch[1] : '',
-            publishedDate: dateMatch ? dateMatch[1] : '',
+            title: titleMatch ? titleMatch[1].replace(/\\"/g, '"') : slug,
+            category: tagMatch ? tagMatch[1] : '',
+            readTime: (readTimeMatch ? readTimeMatch[1] : '').replace(/\s*read$/i, ''),
+            publishedDate: today,
+            description: descMatch ? descMatch[1].replace(/\\"/g, '"') : '',
             sections,
         };
     }

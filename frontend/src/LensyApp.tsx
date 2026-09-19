@@ -458,6 +458,15 @@ interface AnalysisState {
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com';
 const WEBSOCKET_URL = process.env.REACT_APP_WS_URL || 'wss://g2l57hb9ak.execute-api.us-east-1.amazonaws.com/prod';
 
+// N-06 (module-level, survives remounts): the scanner routes /, /results, /scan
+// each mount their OWN LensyApp, so navigating from Home to /results REMOUNTS
+// LensyApp. A per-instance useRef guard therefore resets on that navigation and
+// would let the same scan's terminal analytics event fire twice (once in the
+// Home-hosted instance, once again after the /results remount rehydrates
+// status:'completed'). Keying the dedupe at module scope makes it survive the
+// remount so each scan's completion/failure is logged exactly once.
+const trackedTerminalEvents = new Set<string>();
+
 function LensyApp() {
     const [url, setUrl] = useState('');
     const skipRateLimit = process.env.REACT_APP_SKIP_RATE_LIMIT === 'true';
@@ -683,18 +692,42 @@ function LensyApp() {
         return () => { el.removeEventListener('scroll', checkScroll); observer.disconnect(); };
     }, [githubIssues, analysisState.status, githubAnalysisResults]);
 
-    // Auto-collapse progress when analysis completes + GA tracking
+    // Auto-collapse progress when analysis completes + GA tracking.
+    // N-06: (1) fire each scan's terminal analytics event exactly once. We dedupe
+    // via a MODULE-LEVEL set (trackedTerminalEvents), NOT a per-instance ref,
+    // because navigating Home → /results remounts LensyApp and the restored
+    // status:'completed' would otherwise re-fire the event in the new instance.
+    // A new scan ('analyzing') clears the dedupe key for that URL so the next
+    // terminal state is tracked again. (2) The JS-render consent prompt surfaces
+    // as status:'error' with a JS-render message — that's a consent step, NOT a
+    // failure, so we must not log it as generate_report_failed.
     useEffect(() => {
-        if (analysisState.status === 'completed') {
+        const status = analysisState.status;
+        const scanUrl = urlRef.current;
+        if (status === 'completed') {
             setProgressExpanded(false);
-            trackEvent('generate_report_completed', { url: urlRef.current });
-        } else if (analysisState.status === 'error') {
+            const key = `completed:${scanUrl}`;
+            if (!trackedTerminalEvents.has(key)) {
+                trackedTerminalEvents.add(key);
+                trackEvent('generate_report_completed', { url: scanUrl });
+            }
+        } else if (status === 'error') {
             setProgressExpanded(false);
-            trackEvent('generate_report_failed', { error: analysisState.error, url: urlRef.current });
-        } else if (analysisState.status === 'analyzing') {
+            const err = analysisState.error || '';
+            const isJsRenderConsent = ['js-render-required', 'JavaScript-rendered', 'JS-rendered'].some(t => err.includes(t));
+            const key = `error:${scanUrl}:${err}`;
+            if (!isJsRenderConsent && !trackedTerminalEvents.has(key)) {
+                trackedTerminalEvents.add(key);
+                trackEvent('generate_report_failed', { error: err, url: scanUrl });
+            }
+        } else if (status === 'analyzing') {
             setProgressExpanded(false);
+            // New scan in flight — clear this URL's terminal keys so the next
+            // completion/failure for it is tracked again.
+            trackedTerminalEvents.delete(`completed:${scanUrl}`);
+            Array.from(trackedTerminalEvents).forEach((k) => { if (k.startsWith(`error:${scanUrl}:`)) trackedTerminalEvents.delete(k); });
         }
-    }, [analysisState.status]);
+    }, [analysisState.status, analysisState.error]);
 
     // Cleanup WebSocket on unmount
     useEffect(() => {

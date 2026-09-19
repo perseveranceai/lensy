@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react"
+import { FormEvent, useEffect, useRef, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import {
   ArrowRight,
@@ -10,6 +10,7 @@ import {
   ChevronRight
 } from "lucide-react"
 import { useAuditAllowance } from "./AppRoutes"
+import { trackEvent } from "./analytics"
 
 type IconName = "arrow" | "plus" | "link" | "eye" | "chevronDown" | "chevronRight"
 function Icon({ name, className = "" }: { name: IconName; className?: string }) {
@@ -62,6 +63,20 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
       setShowAllowanceNotice(analysisState.status === 'rate-limited');
     }
   }, [analysisState, loading, navigate, url]);
+
+  // N-05: track the JS-render consent funnel on the Home prompt too (it was only
+  // instrumented on the /results page). Fire js_render_prompt_shown once per
+  // distinct prompt; the "Proceed" button fires js_render_consent_given.
+  const jsRenderPromptTracked = useRef<string>("");
+  useEffect(() => {
+    const isJsRenderPrompt = ["js-render-required", "JavaScript-rendered", "JS-rendered"].some((t) => scanError.includes(t));
+    if (isJsRenderPrompt && jsRenderPromptTracked.current !== url) {
+      jsRenderPromptTracked.current = url;
+      trackEvent("js_render_prompt_shown", { url: url.trim() });
+    }
+    if (!isJsRenderPrompt) jsRenderPromptTracked.current = "";
+  }, [scanError, url]);
+
   useEffect(() => {
     const rememberIntro = window.setTimeout(() => {
       window.sessionStorage.setItem("lensy-home-intro-seen", "true")
@@ -95,7 +110,7 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
     <>
       <section
         id="top"
-        className="mx-auto grid max-w-[1240px] border-b border-[var(--line)] px-5 pb-14 pt-16 sm:px-8 sm:pb-20 sm:pt-24 lg:grid-cols-12 lg:gap-8"
+        className="mx-auto grid max-w-[1240px] px-5 py-16 sm:px-8 sm:py-24 lg:grid-cols-12 lg:gap-8"
       >
         <div className="lg:col-span-8">
           <h1 className={`max-w-[760px] text-[clamp(3.25rem,7.8vw,7.45rem)] font-medium leading-[.88] tracking-[-.075em] ${playHeroIntro ? "hero-intro" : ""}`}>
@@ -171,7 +186,7 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
                       <div className="font-medium text-[13px] tracking-[-.02em] text-[var(--ink)]">This page is rendered by JavaScript</div>
                       <div className="text-[12px] text-[var(--ink-soft)] font-normal leading-[1.55] tracking-[-.01em]">Most AI bots (like GPTBot or ClaudeBot) do not execute JavaScript and cannot crawl your website. Consider Server-Side Rendering (SSR) for AI discoverability.</div>
                       <button
-                        onClick={(e) => { e.preventDefault(); onScan && onScan(url.trim(), { forceJsRender: true }); setLoading(true); setScanError(""); }}
+                        onClick={(e) => { e.preventDefault(); trackEvent("try_another_url_clicked", { action: "js-render", error: "This page is rendered by JavaScript" }); trackEvent("js_render_consent_given", { url: url.trim() }); onScan && onScan(url.trim(), { forceJsRender: true }); setLoading(true); setScanError(""); }}
                         className="mt-1 btn-ink shrink-0 bg-[var(--ink)] px-3 py-1.5 text-[12px] font-medium tracking-[-.025em] text-[var(--bg)]"
                       >
                         Proceed with analysis anyway
@@ -232,11 +247,13 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
                     className="flex w-full items-center justify-between gap-3 px-4 py-3 hover:bg-[var(--tint)] transition-colors text-left"
                   >
                     <div className="flex items-center gap-3 overflow-hidden">
-                      {/* Glowing indicator */}
-                      <span className="relative flex h-3 w-3 items-center justify-center shrink-0">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--accent)] opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--accent)]"></span>
+                      {/* Glowing indicator (inline styles: the built tailwind.css lacks animate-ping/h-2/w-2/w-3, so these would collapse to 0x0).
+                          ml-1 gives the scaling ping ring room so its left edge isn't clipped by the parent's overflow-hidden. */}
+                      <span className="relative ml-1 flex items-center justify-center shrink-0" style={{ width: 8, height: 8 }}>
+                        <span className="absolute inline-flex rounded-full bg-[var(--accent)]" style={{ width: "100%", height: "100%", opacity: 0.75, animation: "scanping 1s cubic-bezier(0,0,0.2,1) infinite" }}></span>
+                        <span className="relative inline-flex rounded-full bg-[var(--accent)]" style={{ width: 8, height: 8 }}></span>
                       </span>
+                      <style>{`@keyframes scanping{75%,100%{transform:scale(1.8);opacity:0}}`}</style>
                       <span className="text-[13px] font-medium text-[var(--ink)] truncate">
                         {analysisState?.progressMessages?.length > 0 
                           ? analysisState.progressMessages[analysisState.progressMessages.length - 1].message 

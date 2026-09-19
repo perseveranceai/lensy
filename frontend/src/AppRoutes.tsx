@@ -1,4 +1,4 @@
-import { createBrowserRouter, Link, Outlet, useLocation, useParams, useSearchParams } from "react-router-dom";
+import { createBrowserRouter, Link, Outlet, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Home } from "./Home";
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
@@ -7,6 +7,21 @@ import type { LucideIcon } from "lucide-react";
 import Tooltip from "@mui/material/Tooltip";
 import { trackEvent } from "./analytics";
 const logo = `${process.env.PUBLIC_URL}/logo.png`;
+
+// N-08: keep transient / non-canonical pages (404, empty results) out of search
+// indexes. This is an SPA, so we can't set an HTTP header — instead we inject a
+// <meta name="robots" content="noindex"> while the page is mounted and remove it
+// on unmount so it never leaks onto indexable pages.
+export function useNoindex() {
+  useEffect(() => {
+    const meta = document.createElement("meta");
+    meta.name = "robots";
+    meta.content = "noindex";
+    meta.setAttribute("data-noindex-dynamic", "true");
+    document.head.appendChild(meta);
+    return () => { meta.remove(); };
+  }, []);
+}
 
 // Report signal status → icon. Four distinct SHAPES so each state is legible on
 // its own, all drawn in the logo cement color (no warm green/amber/red):
@@ -319,10 +334,10 @@ export function ThemeToggle() {
   </div>;
 }
 
-export function NavLink({ to, label }: { to: string; label: string }) {
+export function NavLink({ to, label, badge, onNavigate }: { to: string; label: string; badge?: string; onNavigate?: () => void }) {
   const { pathname } = useLocation();
   const active = pathname === to || pathname.startsWith(to + "/");
-  return <Link to={to} data-nav-active={active} className={`nav-item relative z-10 rounded-[var(--radius-xs)] px-2.5 py-1.5 ${active ? "is-active text-[var(--bg)]" : "text-[var(--ink-soft)] hover:text-[var(--ink)]"}`} aria-current={active ? "page" : undefined}>{label}</Link>;
+  return <Link to={to} onClick={onNavigate} data-nav-active={active} className={`nav-item relative z-10 inline-flex items-center gap-1.5 rounded-[var(--radius-xs)] px-2.5 py-1.5 ${active ? "is-active text-[var(--bg)]" : "text-[var(--ink-soft)] hover:text-[var(--ink)]"}`} aria-current={active ? "page" : undefined}>{label}{badge && <span className={`rounded-[var(--radius-sm)] px-1 py-0.5 text-[8px] font-semibold uppercase leading-none tracking-[.08em] ${active ? "bg-[var(--bg)]/20 text-[var(--bg)]" : "bg-[var(--surface-2)] text-[var(--accent)]"}`}>{badge}</span>}</Link>;
 }
 
 export function NavRail() {
@@ -346,10 +361,10 @@ export function NavRail() {
   }, [pathname]);
   return <div ref={railRef} className="nav-rail relative flex min-w-max items-center gap-0.5 rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] p-1">
     <span aria-hidden="true" className={`nav-indicator ${indicator.ready ? "is-ready" : ""}`} style={{ width: indicator.width, transform: `translateX(${indicator.left}px)` }} />
-    <NavLink to="/" label="Lensy" />
+    <NavLink to="/" label="Lensy" badge="Beta" />
     <NavLink to="/how-it-works" label="How it works" />
     <NavLink to="/education" label="Education" />
-    <NavLink to="/contact" label="Contact" />
+    <NavLink to="/contact" label="Contact" onNavigate={() => trackEvent("contact_link_clicked", { source: "header" })} />
   </div>;
 }
 
@@ -379,7 +394,7 @@ export function MobileNav({ remaining }: { remaining: number }) {
       <div className="space-y-0.5">
         {links.map(([to, label]) => {
           const active = pathname === to || (to !== "/" && pathname.startsWith(to + "/"));
-          return <Link key={to} to={to} className={`flex items-center justify-between rounded-[var(--radius-xs)] px-3 py-2.5 text-[13px] font-medium tracking-[-.025em] transition-colors ${active ? "bg-[var(--ink)] text-[var(--bg)]" : "text-[var(--ink-soft)] hover:bg-[var(--surface)] hover:text-[var(--ink)]"}`} aria-current={active ? "page" : undefined}>{label}{active && <Check className="size-3.5" strokeWidth={1.8} aria-hidden="true" />}</Link>;
+          return <Link key={to} to={to} onClick={to === "/contact" ? () => trackEvent("contact_link_clicked", { source: "mobile-nav" }) : undefined} className={`flex items-center justify-between rounded-[var(--radius-xs)] px-3 py-2.5 text-[13px] font-medium tracking-[-.025em] transition-colors ${active ? "bg-[var(--ink)] text-[var(--bg)]" : "text-[var(--ink-soft)] hover:bg-[var(--surface)] hover:text-[var(--ink)]"}`} aria-current={active ? "page" : undefined}>{label}{active && <Check className="size-3.5" strokeWidth={1.8} aria-hidden="true" />}</Link>;
         })}
       </div>
       <p className="mt-1.5 border-t border-[var(--line)] px-3 py-2.5 text-[11px] font-medium tracking-[-.02em] text-[var(--muted)]">Free tier — {remaining} audits left</p>
@@ -425,7 +440,7 @@ export function FeedbackWidget() {
       <div className="flex items-center justify-between border-b border-[var(--line)] px-3.5 py-2.5"><p className="text-[13px] font-medium tracking-[-.025em]">Share feedback</p><button type="button" onClick={close} aria-label="Close feedback" className="grid size-6 place-items-center rounded-[var(--radius-xs)] text-[var(--muted)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"><X className="size-3" strokeWidth={1.8} aria-hidden="true" /></button></div>
       {sent ? <div role="status" aria-live="polite" className="feedback-success flex items-center gap-3 px-4 py-5"><span className="grid size-7 place-items-center rounded-full bg-[var(--tint)] text-[var(--accent)]"><Check className="size-3.5" strokeWidth={1.9} aria-hidden="true" /></span><p className="text-[13px] font-medium tracking-[-.02em]">Feedback sent.</p></div> : <form onSubmit={submit} className="p-4"><label className="sr-only" htmlFor="feedback-message">Feedback</label><textarea id="feedback-message" value={message} onChange={(event) => setMessage(event.target.value)} placeholder="What would make Lensy more useful?" className="feedback-field min-h-28 w-full resize-y rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--surface)] px-3 py-2.5 text-[13px] leading-relaxed text-[var(--ink)] outline-none placeholder:text-[var(--placeholder)] focus:border-[var(--accent)]" /><label className="sr-only" htmlFor="feedback-email">Email address</label><input id="feedback-email" value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="Email (optional, for follow-up)" className="feedback-field mt-3 w-full rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--surface)] px-3 py-2.5 text-[13px] text-[var(--ink)] outline-none placeholder:text-[var(--placeholder)] focus:border-[var(--accent)]" /><button type="submit" disabled={!message.trim() || sending} className="feedback-submit btn-ink mt-3 flex w-full items-center justify-center gap-2 bg-[var(--panel-bg)] px-4 py-2.5 text-[13px] font-medium tracking-[-.02em] text-[var(--panel-fg)] disabled:cursor-not-allowed disabled:opacity-40">{sending ? "Sending…" : <>Send feedback <Send className="size-3" strokeWidth={1.8} aria-hidden="true" /></>}</button>{sendError && <p role="alert" className="mt-3 text-[12px] text-[var(--ink-soft)]">{sendError}</p>}</form>}
     </div>}
-    <button type="button" onClick={() => open ? close() : setOpen(true)} aria-expanded={open} aria-controls="feedback-panel" className="feedback-launch inline-flex rounded-[var(--radius-sm)] border border-[var(--line-strong)] bg-[var(--bg)] px-3 py-2 text-[13px] font-medium tracking-[-.02em] text-[var(--ink)]">Feedback</button>
+    <button type="button" onClick={() => { if (open) { close(); } else { trackEvent("feedback_widget_opened", { pageUrl: window.location.href }); setOpen(true); } }} aria-expanded={open} aria-controls="feedback-panel" className="feedback-launch inline-flex rounded-[var(--radius-sm)] border border-[var(--line-strong)] bg-[var(--bg)] px-3 py-2 text-[13px] font-medium tracking-[-.02em] text-[var(--ink)]">Feedback</button>
   </div>;
 }
 
@@ -442,8 +457,8 @@ export function ShellContent() {
   }, []);
   return <div className="flex min-h-full flex-col bg-[var(--bg)] text-[var(--ink)]">
     <header className={`shell-header sticky top-0 z-20 border-b border-[var(--line-soft)] ${scrolled ? "is-scrolled" : ""}`}>
-      <nav className="relative mx-auto flex max-w-[1240px] items-center px-5 py-4 sm:px-8">
-        <Link to="/" className="flex items-center gap-2 text-[13px] font-medium tracking-[-.04em]"><img src={logo} alt="Perseverance AI" style={{ width: 42, height: 42 }} className="logo-mark object-contain transition-transform duration-300 hover:scale-110" />Perseverance AI</Link>
+      <nav className="relative mx-auto flex max-w-[1240px] items-center px-5 py-2.5 sm:px-8">
+        <Link to="/" className="flex items-center gap-2 text-[15px] font-medium tracking-[-.04em]"><img src={logo} alt="Perseverance AI" style={{ width: "clamp(42px, 4.2vw, 55px)", height: "clamp(42px, 4.2vw, 55px)" }} className="logo-mark object-contain transition-transform duration-300 hover:scale-110" />Perseverance AI</Link>
         <div className="absolute left-1/2 hidden -translate-x-1/2 text-[12px] font-medium tracking-[-.025em] md:flex">
           <NavRail />
         </div>
@@ -464,8 +479,9 @@ export function ShellContent() {
         </div>
         <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[12px] text-[var(--muted)]">
           <span>© {new Date().getFullYear()} Perseverance AI. All rights reserved.</span>
-          <Link to="/terms" className="link-sweep text-[var(--ink-soft)] hover:text-[var(--accent)]">Term and Policy</Link>
+          <Link to="/terms" className="link-sweep text-[var(--ink-soft)] hover:text-[var(--accent)]">Terms and Policy</Link>
         </div>
+        <p className="max-w-[640px] text-[11px] leading-relaxed text-[var(--muted)]">Lensy is in beta. Results are generated automatically and may not always be accurate — treat them as guidance, not a definitive audit.</p>
       </div>
     </footer>
   </div>;
@@ -515,6 +531,7 @@ export function ScanReport({
   onScan?: (url: string, options?: { forceJsRender?: boolean }) => void;
 }) {
   const [params] = useSearchParams();
+  const navigate = useNavigate();
   const urlParam = params.get("url") || analysisState?.report?.url || url || "";
   const { hostname } = getScanProfile(urlParam);
   const [view, setView] = useState<"readiness" | "citations-loading" | "citations" | "recommendations">("readiness");
@@ -553,9 +570,57 @@ export function ScanReport({
     console.error("Invalid URL for robots.txt:", urlParam);
   }
 
+  // Map a raw scan error (which can be a bare "HTTP 400", an unreachable-host
+  // message, or a non-doc rejection) to a human-readable title + description so
+  // the error card never shows a raw status code. Falls back to the raw message.
+  const describeScanError = (raw?: string): { title: string; description: string } => {
+    const msg = (raw || "").trim();
+    if (/\b400\b/.test(msg)) {
+      return { title: "That doesn't look like a valid URL", description: "Please enter a valid documentation URL and try again." };
+    }
+    if (/\b(404)\b/.test(msg)) {
+      return { title: "We couldn't find that page", description: "The URL returned a 404. Double-check the address and try again." };
+    }
+    if (/\b(429)\b/.test(msg)) {
+      return { title: "Too many requests", description: "The site is rate-limiting our scanner. Wait a moment and try again." };
+    }
+    if (/\b5\d\d\b/.test(msg) || /unreachable|ENOTFOUND|ECONNREFUSED|timed? ?out|timeout/i.test(msg)) {
+      return { title: "We couldn't reach that site", description: "The server didn't respond. Check the URL is correct and reachable, then try again." };
+    }
+    if (/not a doc|non-doc|documentation/i.test(msg) && !/valid documentation URL/i.test(msg)) {
+      return { title: "This doesn't look like a documentation page", description: msg || "Try a URL that points at documentation content." };
+    }
+    return { title: "Something went wrong", description: msg || "The scan couldn't be completed. Please try again." };
+  };
+
   const report = analysisState?.report;
   const realScore = typeof report?.overallScore === "number" ? report.overallScore : null;
   const hasReport = Boolean(report);
+
+  // N-08: a direct visit to /results with no scan in flight and no report is a
+  // dead end that used to render placeholder data. Send those visitors home
+  // instead — but ONLY when there is genuinely nothing to show.
+  //
+  // Important: LensyApp restores analysisState from sessionStorage in a mount
+  // effect, so on the very first render after navigating to /results the status
+  // is still 'idle' and the report hasn't rehydrated yet. If we redirect on that
+  // transient state we bounce the user back home right after a scan completes.
+  // So we also treat a persisted 'lensy-audit-state' as "has something to show"
+  // and only redirect on a truly cold, direct visit.
+  const { pathname: currentPath } = useLocation();
+  const status = analysisState?.status;
+  const hasPersistedAudit = (() => {
+    try { return Boolean(window.sessionStorage.getItem("lensy-audit-state")); } catch { return false; }
+  })();
+  const isEmptyResults =
+    currentPath === "/results" &&
+    !hasReport &&
+    !hasPersistedAudit &&
+    (status === undefined || status === "idle");
+  useNoindex();
+  useEffect(() => {
+    if (isEmptyResults) navigate("/", { replace: true });
+  }, [isEmptyResults, navigate]);
 
   // Preserve the Figma three-card report layout. Every item below comes from
   // the completed agent report; omitted checks are never represented by mock rows.
@@ -579,9 +644,34 @@ export function ScanReport({
     // For structured-data signals these are definitional constants — the backend
     // does not compute them per scan. Discoverability/content signals instead
     // carry a live audience via `signal.audience` from the detection engine.
+    // `impact` is resolved centrally at render time via resolveImpact(label).
     audience?: string;
-    impact?: string;
   };
+
+  // ── Per-signal impact ──
+  // Primary source: the backend now emits `report.signalImpact`, a map of stable
+  // signal id -> 'high'|'medium'|'low', derived from the same scoring weights the
+  // backend uses (single source of truth). We read that first so every signal
+  // shows a consistent impact chip. A small local fallback map covers reports
+  // persisted before this field existed. Content-quality labels carry live values
+  // (e.g. "Text-to-HTML: 4.1%"), so we key by the label prefix, not the full label.
+  const IMPACT_LABEL: Record<string, string> = { high: "High", medium: "Medium", low: "Low" };
+  const impactKeyFor = (label: string) => label.toLowerCase().split(":")[0].trim();
+  // Fallback tiers for legacy reports without report.signalImpact.
+  const legacyImpact: Record<string, "high" | "medium" | "low"> = {
+    "llms.txt": "high", "llms-full.txt": "low", "sitemap": "medium", "canonical url": "medium",
+    "meta robots": "high", "indexing directive": "high", "page markdown": "high", "page in llms.txt": "low",
+    "content negotiation": "medium", "agents.md": "low", "mcp config": "low", "json-ld": "medium",
+    "opengraph": "high", "breadcrumbs": "low", "client-side rendered": "high", "text-to-html": "medium",
+    "headings": "high", "word count": "medium", "code blocks": "low", "links": "low",
+  };
+  const backendImpact: Record<string, "high" | "medium" | "low"> | undefined = report?.signalImpact;
+  const resolveImpact = (label: string): string | undefined => {
+    const key = impactKeyFor(label);
+    const tier = backendImpact?.[key] || legacyImpact[key];
+    return tier ? IMPACT_LABEL[tier] : undefined;
+  };
+
   const signalGroups: Array<{ title: string; sections: Array<{ title: string; signals: Signal[] }> }> = [];
   const categories = report?.categories;
   const botAccess = categories?.botAccess;
@@ -595,8 +685,34 @@ export function ScanReport({
   const isJsRendered =
     categories?.consumability?.originRequiresJavaScript === true ||
     categories?.consumability?.jsRendered === true;
+  // N-03: read the canonical top-level report.botAccessState (values:
+  // js_blocked | fully_blocked | partially_blocked | accessible). The old code
+  // read report.overallScore.botAccessState, but overallScore is a NUMBER, so
+  // that was always undefined — fully/partially-blocked sites fell through to a
+  // green "N/N allowed" banner. Keep the JS-render fallback for legacy reports
+  // that predate the field.
   const botAccessState =
-    report?.overallScore?.botAccessState ?? (isJsRendered ? "js_blocked" : undefined);
+    report?.botAccessState ?? (isJsRendered ? "js_blocked" : undefined);
+
+  // N-03: build the bot-access banner text from the canonical state + robots.txt
+  // presence. Rules: no robots.txt (404) => don't claim "N/N allowed" (there's
+  // nothing granting access); fully_blocked => all bots blocked; partially =>
+  // some blocked; js_blocked handled separately in the JSX.
+  const botAccessBannerText = (): string => {
+    if (!botAccess) return "Bot access data unavailable";
+    const total = (botAccess.allowedCount ?? 0) + (botAccess.blockedCount ?? 0);
+    if (!botAccess.robotsTxtFound) {
+      // Absent robots.txt: bots are allowed by default, but we don't assert a count.
+      return "! No robots.txt found — bot access is not explicitly configured";
+    }
+    if (botAccessState === "fully_blocked" || botAccess.allowedCount === 0) {
+      return `✗ Bot access: all ${total} checked crawlers are blocked`;
+    }
+    if (botAccessState === "partially_blocked" || botAccess.blockedCount > 0) {
+      return `! Bot access: ${botAccess.allowedCount} / ${total} allowed (${botAccess.blockedCount} blocked)`;
+    }
+    return `✓ Bot access: ${botAccess.allowedCount} / ${total} allowed`;
+  };
 
   // Detection report: prefer the live category-result (asyncCards.detection,
   // threaded as detectionData), fall back to report.detection when reloading a
@@ -624,7 +740,6 @@ export function ScanReport({
           : "Structured data can improve machine understanding and rich-search eligibility. Helpful for discoverability, but not a major coding-agent blocker.",
         info: "Secondary improvement for AI search — not a core coding-agent requirement.",
         audience: "ai_search",
-        impact: "Low–medium",
       },
       {
         label: "OpenGraph",
@@ -644,7 +759,6 @@ export function ScanReport({
           : "Breadcrumb markup helps search systems understand page hierarchy. Useful, but lower priority than crawlability and Markdown access.",
         info: "Helps search systems display page hierarchy — secondary AI search signal.",
         audience: "ai_search",
-        impact: "Low",
       },
     ];
     signalGroups.push({ title: "Structured data", sections: [{ title: "", signals }] });
@@ -836,6 +950,7 @@ export function ScanReport({
         status: "fail",
         detail: "Page relies on JavaScript to render. AI crawlers see a blank page.",
         info: "Most AI bots don't run JavaScript. Client-side rendered pages appear empty to them.",
+        audience: "both",
       });
     }
 
@@ -850,6 +965,7 @@ export function ScanReport({
             : "Low ratio, but a markdown alternative is available for coding agents.")
         : "AI crawlers may process mostly noise (scripts, CSS, nav).",
       info: "Higher ratio means more content relative to markup. Below 5% is concerning unless a markdown alternative exists.",
+      audience: "ai_search",
     });
 
     // Headings: exactly one H1 and at least one H2 is a well-structured page.
@@ -868,6 +984,7 @@ export function ScanReport({
       status: headingsPass ? "pass" : "warn",
       detail: headingsDetail,
       info: "AI splits pages at heading boundaries. Each H2 becomes a separately retrievable unit.",
+      audience: "both",
     });
 
     // Word count: sweet spot is 500-2,000 words.
@@ -883,6 +1000,7 @@ export function ScanReport({
         status: wordPass ? "pass" : "warn",
         detail: wordDetail,
         info: "Sweet spot is 500-2,000 words.",
+        audience: "ai_search",
       });
     }
 
@@ -899,6 +1017,7 @@ export function ScanReport({
         status: codePass ? "pass" : "warn",
         detail: codeDetail,
         info: "Language hints help AI search engines and coding assistants understand code examples.",
+        audience: "coding_agents",
       });
     }
 
@@ -914,6 +1033,7 @@ export function ScanReport({
       status: linksPass ? "pass" : "warn",
       detail: linksDetail,
       info: "Internal links help AI understand how your pages relate.",
+      audience: "both",
     });
 
     signalGroups.push({ title: "Content quality", sections: [{ title: "", signals: contentSignals }] });
@@ -960,10 +1080,50 @@ export function ScanReport({
   };
   const totalRecCount = allRecs.length;
 
+  // T-06: surface the real backend fix guidance directly under each failing/
+  // warning signal (previously it lived only in the "All recommendations" view).
+  // We match a signal to its recommendation by the same fuzzy identity used for
+  // impact, so the guidance stays in sync with the backend and is never hardcoded.
+  const fixForSignal = (label: string): string | undefined => {
+    const key = impactKeyFor(label);
+    const match = allRecs.find((r) => {
+      const hay = `${recIssue(r)} ${r.category || ""}`.toLowerCase();
+      return hay.includes(key)
+        || (key === "headings" && /heading|h1|h2/.test(hay))
+        || (key === "text-to-html" && hay.includes("text-to-html"))
+        || (key === "client-side rendered" && hay.includes("javascript"))
+        || (key === "word count" && hay.includes("word"))
+        || (key === "code blocks" && hay.includes("code block"))
+        || (key === "links" && hay.includes("internal link"))
+        || (key === "canonical url" && hay.includes("canonical"))
+        || (key === "meta robots" && hay.includes("noindex"))
+        || (key === "page markdown" && hay.includes("markdown"));
+    });
+    return match ? recFix(match) : undefined;
+  };
+
   const aiDisc = citationData || report?.aiDiscoverability;
   const citationEngines = Object.entries(aiDisc?.engines || {}) as Array<[string, any]>;
   const availableCitationEngines = citationEngines.filter(([, engine]) => engine?.available);
-  const citationResults = availableCitationEngines.flatMap(([, engine]) => engine.results || []);
+  // Human-readable engine name for attribution (T-09). e.g. "perplexity" -> "Perplexity".
+  const CITATION_ENGINE_LABELS: Record<string, string> = { perplexity: "Perplexity", chatgpt: "ChatGPT", gemini: "Gemini", claude: "Claude" };
+  const engineLabel = (name: string) => CITATION_ENGINE_LABELS[name.toLowerCase()] || name.charAt(0).toUpperCase() + name.slice(1);
+  // Intent tier per query (T-08): backend sends parallel arrays queries[] and
+  // queryTypes[]. Map a result back to its tier by matching the query string.
+  const queryTierByText: Record<string, "high" | "mid" | "low"> = {};
+  (aiDisc?.queries || []).forEach((q: string, i: number) => { const t = aiDisc?.queryTypes?.[i]; if (t) queryTierByText[q] = t; });
+  const TIER_LABELS: Record<string, string> = { high: "High intent", mid: "Mid intent", low: "Low intent" };
+  // Flatten results, tagging each with its engine name and intent tier.
+  const citationResults = availableCitationEngines.flatMap(([name, engine]) =>
+    (engine.results || []).map((r: any) => ({ ...r, engine: name, tier: queryTierByText[r.query] }))
+  );
+  // Group by intent tier for tiered display; keep engine attribution per row.
+  const citationsByTier = (["high", "mid", "low"] as const)
+    .map((tier) => ({ tier, rows: citationResults.filter((r: any) => r.tier === tier) }))
+    .filter((g) => g.rows.length > 0);
+  const citationsUntiered = citationResults.filter((r: any) => !r.tier);
+  // Distinct engine label(s) tested, for the results header.
+  const testedEngineLabel = availableCitationEngines.map(([name]) => engineLabel(name)).join(", ");
   const citedCount = citationResults.filter((result: any) => result.cited).length;
   const citationsReturned = Boolean(aiDisc);
   // "To improve" counts actionable signals only — warnings and hard failures.
@@ -1003,6 +1163,47 @@ export function ScanReport({
     );
   };
 
+  // Citations results as a semantic <table> (T-10): proper thead/th scope/tbody/
+  // tr/td for screen readers, an engine-named result column (T-09), and an
+  // intent-tier badge per row (T-08). `resultHeader` names the engine tested.
+  const renderCitationRow = (result: any) => (
+    <tr key={`${result.engine}-${result.query}`} className="border-b border-[var(--line)] align-top last:border-b-0">
+      <td className="px-4 py-5">
+        <p className="text-[15px] tracking-[-.03em]">“{result.query}”</p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {result.tier && <span className={chipClass}>{TIER_LABELS[result.tier]}</span>}
+        </div>
+        {result.citedUrl && <p className="mt-2 text-[12px] leading-relaxed text-[var(--ink-soft)]">Cited URL: {result.citedUrl}</p>}
+        {result.competingDomains?.length > 0 && <p className="mt-2 text-[12px] leading-relaxed text-[var(--ink-soft)]">Cited instead: {result.competingDomains.join(", ")}</p>}
+      </td>
+      <td className="px-4 py-5 text-right align-middle">
+        <span className="inline-flex rounded-full border border-[var(--line)] px-3 py-1 text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)]">{result.cited ? "Cited" : "Not cited"}</span>
+      </td>
+    </tr>
+  );
+  const renderCitationTable = () => (
+    <div className="mt-6 overflow-hidden rounded-[var(--radius-md)] border border-[var(--line)]">
+      <table className="w-full border-collapse text-left">
+        <thead>
+          <tr className="border-b border-[var(--line)] text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">
+            <th scope="col" className="px-4 py-3 font-medium">Query</th>
+            <th scope="col" className="px-4 py-3 text-right font-medium">{testedEngineLabel || "Result"}</th>
+          </tr>
+        </thead>
+        {/* Rows are ordered by intent (high → mid → low, then any untiered), but
+            the tier is shown per-row as a capsule — no group-header rows, which
+            were visually noisy alongside the capsules. */}
+        <tbody>
+          {[...citationsByTier.flatMap((g) => g.rows), ...citationsUntiered].map(renderCitationRow)}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  // Redirecting an empty /results (N-08) — render nothing to avoid flashing the
+  // placeholder report before the navigate effect runs.
+  if (isEmptyResults) return null;
+
   return <section className="mx-auto max-w-[1240px] px-5 pb-20 pt-12 sm:px-8 sm:pb-28 sm:pt-16">
     <div className="mb-10">
       <Link to="/" className="inline-flex items-center gap-2 text-[12px] font-medium tracking-[-.025em] text-[var(--muted)] transition-colors hover:text-[var(--accent)]">
@@ -1031,7 +1232,47 @@ export function ScanReport({
             </button>
           </>
         ) : (
-          analysisState.error
+          (() => {
+            const { title, description } = describeScanError(analysisState.error);
+            return (
+              <>
+                <div className="font-medium text-[15px] tracking-[-.02em] text-[var(--ink)]">{title}</div>
+                <div className="text-[13px] text-[var(--ink-soft)] font-normal leading-[1.55] tracking-[-.01em]">{description}</div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      trackEvent("try_again_clicked", { url: urlParam, error: analysisState.error });
+                      onScan?.(urlParam);
+                    }}
+                    className="btn-ink shrink-0 bg-[var(--ink)] px-4 py-2 text-[12px] font-medium tracking-[-.025em] text-[var(--bg)]"
+                  >
+                    Try again
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      // "Try another URL" clears the input by returning home (Home clears session on mount).
+                      trackEvent("try_another_url_clicked", { action: "error-recovery", error: analysisState.error });
+                      navigate("/");
+                    }}
+                    className="shrink-0 rounded-[var(--radius-sm)] border border-[var(--line-strong)] bg-[var(--surface)] px-4 py-2 text-[12px] font-medium tracking-[-.025em] text-[var(--ink)] transition-colors hover:bg-[var(--tint)]"
+                  >
+                    Try another URL
+                  </button>
+                  <a
+                    href="/contact?ref=feedback"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => trackEvent("report_issue_clicked", { url: urlParam, error: analysisState.error })}
+                    className="shrink-0 rounded-[var(--radius-sm)] border border-[var(--line-strong)] bg-[var(--surface)] px-4 py-2 text-[12px] font-medium tracking-[-.025em] text-[var(--ink)] transition-colors hover:bg-[var(--tint)]"
+                  >
+                    Report an issue
+                  </a>
+                </div>
+              </>
+            );
+          })()
         )}
       </div>
     )}
@@ -1075,11 +1316,15 @@ export function ScanReport({
           const rawScore = overallScoreData.docConfidence.score;
           const pct = rawScore <= 1 ? Math.round(rawScore * 100) : Math.round(rawScore);
           const message = overallScoreData.docConfidence.label || (pct >= 75 ? "Likely a doc page" : pct >= 40 ? "May be a doc page" : "Unlikely a doc page");
+          // N-12: when the page failed the HTML confidence gate but was rescued
+          // via its markdown twin, the percentage is meaningless (it scored empty
+          // SPA HTML). Show a qualitative note instead of a contradictory "0%".
+          const markdownRescued = Boolean(overallScoreData.docConfidence.markdownRescued);
 
           return (
             <div className="flex items-center gap-4">
               <span className="rounded-full border border-[var(--line)] bg-[var(--surface-2)] px-3 py-1 text-[var(--ink)]">
-                {message} ({pct}%)
+                {markdownRescued ? "Recovered via markdown alternate" : `${message} (${pct}%)`}
               </span>
               <Tooltip
                 placement="bottom"
@@ -1137,15 +1382,15 @@ export function ScanReport({
       )}
     </div>
 
-    {view === "readiness" && <><div className="mt-6 flex flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] px-4 py-3"><div className="flex flex-wrap items-center gap-x-3 gap-y-1"><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink)]">{botAccessState === 'js_blocked' ? "! AI bot access is blocked by JavaScript" : (botAccess ? `${botAccess.robotsTxtFound ? "✓" : "!"} Bot access: ${botAccess.allowedCount} / ${botAccess.allowedCount + botAccess.blockedCount} allowed` : "Bot access data unavailable")}</span>{botAccess?.robotsTxtFound ? <a href={robotsUrl} target="_blank" rel="noopener noreferrer" className="ml-auto text-[11px] font-medium tracking-[-.025em] text-[var(--accent)] transition-colors hover:text-[var(--accent-hover)]" style={{ textDecoration: "underline", textUnderlineOffset: "4px" }}>robots.txt</a> : <span className="ml-auto text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">No robots.txt found</span>}</div>{(botAccessState === 'js_blocked' || !botAccess?.bots?.length) && <span className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">{botAccessState === 'js_blocked' ? "This page is a JavaScript-rendered SPA. Most AI bots do not execute JavaScript, making your content invisible to them regardless of your robots.txt configuration. Lensy rendered this page for content analysis; most AI bots cannot." : hasReport ? "No checked crawler names were returned." : "No bot access data returned."}</span>}{botAccess?.bots?.length > 0 && <div className="mt-1 flex flex-wrap gap-1.5">{botAccess.bots.map((bot: any, i: number) => { const blocked = botAccessState === 'js_blocked' || !(bot.status === 'allowed' || bot.status === 'not-mentioned'); return <span key={i} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--line-soft)] bg-[var(--surface-2)] px-2.5 py-1 text-[10px] font-medium leading-none tracking-[-.02em] text-[var(--ink-soft)]">{blocked ? <XCircle className="size-3 shrink-0" style={{ color: "var(--ink-soft)" }} strokeWidth={2} aria-hidden="true" /> : <CheckCircle2 className="size-3 shrink-0" style={{ color: "var(--accent)" }} strokeWidth={2} aria-hidden="true" />}{bot.name}</span>; })}</div>}</div><div className="mt-5 grid items-start gap-3 lg:grid-cols-3">{signalGroups.map((group) => <section key={group.title} className="rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] p-6"><div className="flex items-center justify-between border-b border-[var(--line)] pb-4"><h2 className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)]">{group.title}</h2><SignalStatusIcon status={(() => { const all = group.sections.flatMap((s: any) => s.signals as Signal[]); if (group.title === "Structured data") return headerStatus("structuredData", 15, all); if (group.title === "Discoverability") return headerStatus("discoverability", 30, all); if (group.title === "Content quality") return headerStatus("consumability", 32, all); return aggregateStatus(all.map((x) => x.status)); })()} className="size-4 shrink-0" /></div>{group.sections.map((section: any) => <div key={section.title || group.title} className="mt-5 first:mt-5"><p className={`text-[11px] font-medium uppercase tracking-[.08em] text-[var(--muted)] ${section.title ? "mb-4" : "sr-only"}`}>{section.title || "Signals"}</p><ul className="space-y-5">{section.signals.map((sig: Signal) => <li key={sig.label} className="flex gap-2.5"><SignalStatusIcon status={sig.status} className="mt-0.5 size-4 shrink-0" /><div className="min-w-0"><div className="flex flex-wrap items-center gap-x-3 gap-y-2"><p className="text-[14px] tracking-[-.025em]">{sig.label}</p><EvidenceBadge signal={sig.signal} /><AudienceBadge audience={sig.signal?.audience || (sig.status !== "pass" ? sig.audience : undefined)} />{sig.status !== "pass" && <ImpactBadge impact={sig.impact} />}<InfoHint text={sig.info} /></div><p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-soft)]">{sig.detail}</p>{sig.signal?.note && <p className="mt-1 text-[11px] italic leading-relaxed" style={{ color: "var(--ink-soft)" }}>{sig.signal.note}</p>}{sig.waitlist && <a href={`/contact?ref=${sig.waitlist}`} target="_blank" rel="noopener noreferrer" className="group mt-1.5 inline-flex items-center gap-1 text-[12px] font-medium tracking-[-.02em] text-[var(--accent)] hover:text-[var(--accent-hover)]"><span style={{ textDecoration: "underline", textUnderlineOffset: "3px" }}>{sig.waitlist === "llmstxt" ? "We can help you generate one" : "We can help you generate markdown"}</span><ArrowRight className="arrow-nudge size-3" strokeWidth={1.8} aria-hidden="true" /></a>}</div></li>)}</ul></div>)}</section>)}</div></>}
+    {view === "readiness" && <><div className="mt-6 flex flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] px-4 py-3"><div className="flex flex-wrap items-center gap-x-3 gap-y-1"><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink)]">{botAccessState === 'js_blocked' ? "! AI bot access is blocked by JavaScript" : botAccessBannerText()}</span>{botAccess?.robotsTxtFound ? <a href={robotsUrl} target="_blank" rel="noopener noreferrer" className="ml-auto text-[11px] font-medium tracking-[-.025em] text-[var(--accent)] transition-colors hover:text-[var(--accent-hover)]" style={{ textDecoration: "underline", textUnderlineOffset: "4px" }}>robots.txt</a> : <span className="ml-auto text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">No robots.txt found</span>}</div>{(botAccessState === 'js_blocked' || !botAccess?.bots?.length) && <span className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">{botAccessState === 'js_blocked' ? "This page is a JavaScript-rendered SPA. Most AI bots do not execute JavaScript, making your content invisible to them regardless of your robots.txt configuration. Lensy rendered this page for content analysis; most AI bots cannot." : hasReport ? "No checked crawler names were returned." : "No bot access data returned."}</span>}{botAccess?.bots?.length > 0 && <div className="mt-1 flex flex-wrap gap-1.5">{botAccess.bots.map((bot: any, i: number) => { const blocked = botAccessState === 'js_blocked' || !(bot.status === 'allowed' || bot.status === 'not-mentioned'); return <span key={i} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--line-soft)] bg-[var(--surface-2)] px-2.5 py-1 text-[10px] font-medium leading-none tracking-[-.02em] text-[var(--ink-soft)]">{blocked ? <XCircle className="size-3 shrink-0" style={{ color: "var(--ink-soft)" }} strokeWidth={2} aria-hidden="true" /> : <CheckCircle2 className="size-3 shrink-0" style={{ color: "var(--accent)" }} strokeWidth={2} aria-hidden="true" />}{bot.name}</span>; })}</div>}</div><div className="mt-5 grid items-start gap-3 lg:grid-cols-3">{signalGroups.map((group) => <section key={group.title} className="rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] p-6"><div className="flex items-center justify-between border-b border-[var(--line)] pb-4"><h2 className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)]">{group.title}</h2><SignalStatusIcon status={(() => { const all = group.sections.flatMap((s: any) => s.signals as Signal[]); if (group.title === "Structured data") return headerStatus("structuredData", 15, all); if (group.title === "Discoverability") return headerStatus("discoverability", 30, all); if (group.title === "Content quality") return headerStatus("consumability", 32, all); return aggregateStatus(all.map((x) => x.status)); })()} className="size-4 shrink-0" /></div>{group.sections.map((section: any) => <div key={section.title || group.title} className="mt-5 first:mt-5"><p className={`text-[11px] font-medium uppercase tracking-[.08em] text-[var(--muted)] ${section.title ? "mb-4" : "sr-only"}`}>{section.title || "Signals"}</p><ul className="space-y-5">{section.signals.map((sig: Signal) => <li key={sig.label} className="flex gap-2.5"><SignalStatusIcon status={sig.status} className="mt-0.5 size-4 shrink-0" /><div className="min-w-0"><div className="flex flex-wrap items-center gap-x-3 gap-y-2"><p className="text-[14px] tracking-[-.025em]">{sig.label}</p><EvidenceBadge signal={sig.signal} /><AudienceBadge audience={sig.signal?.audience || sig.audience} />{sig.status !== "pass" && <ImpactBadge impact={resolveImpact(sig.label)} />}<InfoHint text={sig.info} /></div><p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-soft)]">{sig.detail}</p>{sig.status !== "pass" && (() => { const fix = fixForSignal(sig.label); return fix ? <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--ink)]"><span className="font-medium">Fix: </span>{fix}</p> : null; })()}{sig.signal?.note && <p className="mt-1 text-[11px] italic leading-relaxed" style={{ color: "var(--ink-soft)" }}>{sig.signal.note}</p>}{sig.waitlist && <a href={`/contact?ref=${sig.waitlist}`} target="_blank" rel="noopener noreferrer" className="group mt-1.5 inline-flex items-center gap-1 text-[12px] font-medium tracking-[-.02em] text-[var(--accent)] hover:text-[var(--accent-hover)]"><span style={{ textDecoration: "underline", textUnderlineOffset: "3px" }}>{sig.waitlist === "llmstxt" ? "We can help you generate one" : "We can help you generate markdown"}</span><ArrowRight className="arrow-nudge size-3" strokeWidth={1.8} aria-hidden="true" /></a>}</div></li>)}</ul></div>)}</section>)}</div></>}
 
     {view === "citations-loading" && <div className="mt-10"><p className="text-[15px] leading-relaxed text-[var(--ink-soft)]">AI-generated queries are being tested against configured AI search engines.</p><p className="mt-10 text-center text-[12px] font-medium tracking-[-.025em] text-[var(--accent)]">Testing citation queries…</p><div className="mt-6 grid gap-3">{Array.from({ length: 4 }).map((_, index) => <div key={index} className="grid grid-cols-[1.5fr_.65fr] gap-5 border-t border-[var(--line)] py-4"><span className="h-3 animate-pulse bg-[var(--surface-2)]" /><span className="h-3 animate-pulse bg-[var(--surface-2)]" /></div>)}</div></div>}
 
-    {view === "citations" && <div className="mt-10"><p className="text-[15px] leading-relaxed text-[var(--ink-soft)]">{citationsLoading ? "AI search is checking the generated queries. Results will appear here when the scan controller receives them." : citationResults.length ? "Citation results returned by the completed AI search check." : citationsReturned && availableCitationEngines.length === 0 ? "The citation check completed, but no configured AI search engine was available to test this documentation." : citationsReturned ? "The citation check completed but did not return query-level results." : "Start the citation check to test whether AI search can find and cite your documentation."}</p>{citationResults.length > 0 && <><div className="mt-6 inline-flex rounded-full bg-[var(--surface-2)] px-3 py-1 text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)]">Cited: {citedCount} / {citationResults.length} tested queries</div><div className="mt-6 overflow-hidden rounded-[var(--radius-md)] border border-[var(--line)]"><div className="grid grid-cols-[1fr_auto] border-b border-[var(--line)] px-4 py-3 text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]"><span>Query</span><span>Result</span></div>{citationResults.map((result: any) => <div key={result.query} className="grid grid-cols-[1fr_auto] gap-5 border-b border-[var(--line)] px-4 py-5 last:border-b-0"><div><p className="mt-1 text-[15px] tracking-[-.03em]">“{result.query}”</p>{result.citedUrl && <p className="mt-2 text-[12px] leading-relaxed text-[var(--ink-soft)]">Cited URL: {result.citedUrl}</p>}{result.competingDomains?.length > 0 && <p className="mt-2 text-[12px] leading-relaxed text-[var(--ink-soft)]">Cited instead: {result.competingDomains.join(", ")}</p>}</div><span className="self-center rounded-full border border-[var(--line)] px-3 py-1 text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)]">{result.cited ? "Cited" : "Not cited"}</span></div>)}</div></>}{citationsReturned && citationResults.length === 0 && aiDisc?.recommendations?.length > 0 && <div className="mt-6 divide-y divide-[var(--line)] border-y border-[var(--line)]">{aiDisc.recommendations.map((recommendation: any) => <div key={recommendation.issue} className="py-4"><p className="text-[14px] tracking-[-.025em]">{recommendation.issue}</p><p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-soft)]">{recommendation.fix}</p></div>)}</div>}</div>}
+    {view === "citations" && <div className="mt-10"><p className="text-[15px] leading-relaxed text-[var(--ink-soft)]">{citationsLoading ? "AI search is checking the generated queries. Results will appear here when the scan controller receives them." : citationResults.length ? "Citation results returned by the completed AI search check." : citationsReturned && availableCitationEngines.length === 0 ? "The citation check completed, but no configured AI search engine was available to test this documentation." : citationsReturned ? "The citation check completed but did not return query-level results." : "Start the citation check to test whether AI search can find and cite your documentation."}</p>{citationResults.length > 0 && <><div className="mt-6 inline-flex rounded-full bg-[var(--surface-2)] px-3 py-1 text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)]">Cited: {citedCount} / {citationResults.length} tested queries</div>{renderCitationTable()}</>}{citationsReturned && citationResults.length === 0 && aiDisc?.recommendations?.length > 0 && <div className="mt-6 divide-y divide-[var(--line)] border-y border-[var(--line)]">{aiDisc.recommendations.map((recommendation: any) => <div key={recommendation.issue} className="py-4"><p className="text-[14px] tracking-[-.025em]">{recommendation.issue}</p><p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-soft)]">{recommendation.fix}</p></div>)}</div>}</div>}
 
     {view === "recommendations" && <div className="mt-10">
       <h2 className="text-[19px] font-medium tracking-[-.04em]">All recommendations <span className="text-[var(--muted)]">({totalRecCount})</span></h2>
-      <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-[var(--ink-soft)]">Quick Wins and Deeper Improvements affect your score. Things to Watch are informational and don't impact scoring.</p>
+      <p className="mt-2 text-[13px] leading-relaxed text-[var(--ink-soft)]" style={{ maxWidth: "none" }}>Quick Wins and Deeper Improvements affect your score. Things to Watch are informational and don't impact scoring.</p>
 
       {totalRecCount === 0 && <p className="mt-8 text-[14px] text-[var(--ink-soft)]">No recommendations — this page is well-optimized for AI tools.</p>}
 
@@ -1261,31 +1506,44 @@ const ARTICLES: ArticleData[] = [
     title: "What Changed in Lensy After Re-checking AI-Ready Docs Signals",
     tag: "AI Readiness",
     readTime: "4 min read",
-    description: "Markdown discoverability goes beyond .md files. How llms.txt, content negotiation, Link headers, and page-level mapping changed what Lensy checks.",
+    description: "Some documentation sites already expose machine-readable content in ways a simpler audit can miss. Why we re-checked Lensy's detection model — and what changed.",
     body: <>
       <Prose>
-        <p>When we shipped the first version of Lensy, the discoverability checks were straightforward: does the page render in a headless browser, is it accessible to known AI crawlers, does it have a robots.txt that permits indexing. Those checks are necessary, but they aren't enough.</p>
-        <p>A second pass at the signals that actually predict AI citation rates revealed a gap. The original checks treated Markdown support as binary: either the page serves a <code>.md</code> file or it does not. That framing is wrong.</p>
+        <TlDr items={[
+          "Markdown discoverability is no longer just a .md file check. The current ecosystem now includes same-URL Markdown negotiation through the Accept header, llms.txt, llms-full.txt, and page-level discovery headers [1, 2, 3].",
+          "The llms.txt proposal allows /llms.txt at the root or in a subpath, which means a docs audit can produce false negatives if it only checks one location [3].",
+          "WebSRC showed that machine understanding of web pages depends on structure, not just text, which is why AI-readiness detection has to account for how documentation is actually exposed to machines [4].",
+        ]} />
 
-        <h2>llms.txt and the explicit declaration pattern</h2>
-        <p>The <a href="https://llmstxt.org" target="_blank" rel="noopener noreferrer">llms.txt proposal</a> formalizes a pattern used by Anthropic, Cloudflare, Vercel, and Stripe. It's a plain text manifest at the root of a site that lists which pages exist, what they contain, and what order to read them in.</p>
-        <p>The file does two things. For retrieval-augmented systems, it provides a curated index that a model can read before deciding which pages to fetch. For citation systems, it establishes a canonical hierarchy that helps a model explain <em>where</em> it found something. Lensy now checks for <code>/llms.txt</code> and <code>/llms-full.txt</code> at the domain root and scores their completeness.</p>
+        <h2>Why We Revisited This</h2>
+        <p>Lensy's detection model was re-checked after new feedback exposed an important pattern: some documentation sites already expose machine-readable content in ways a simpler audit can miss.</p>
+        <p>That matters because an AI-readiness audit is not just asking whether a page exists. It is asking whether AI systems can find it, fetch it in a machine-friendly format, and map it back to the broader docs structure.</p>
+        <p>The original llms.txt proposal focused on a plain Markdown index and linked Markdown pages [3]. Since then, the implementation surface has expanded. Docs platforms now expose full-site context files, same-URL Markdown negotiation, and per-page headers that point agents to the right index or representation [1, 2].</p>
 
-        <h2>Content negotiation and the Accept header</h2>
-        <p>Some documentation platforms — notably those built on Mintlify, Nextra, and Docusaurus with the right plugins — will return Markdown when a request includes <code>Accept: text/markdown</code> in the header. This is simple content negotiation. It helps an AI agent ingest clean, structured content without parsing HTML.</p>
-        <p>Lensy now sends a content-negotiation request alongside its standard HTML fetch and reports whether the server honours it. Sites that do tend to score significantly higher on the context dimension of the audit.</p>
+        <h2>Markdown Is Broader Than .md</h2>
+        <p>The original proposal recommends serving Markdown pages with <code>.md</code> appended to the original URL [3]. That remains a useful convention. But it is no longer the only one that matters.</p>
+        <p>Cloudflare's Markdown for Agents serves Markdown from the same URL when a client sends an Accept request for Markdown [2]. That can materially change how much useful context an agent can consume: Cloudflare shows one page dropping from 16,180 tokens in HTML to 3,150 tokens in Markdown, roughly an 80% reduction [2].</p>
+        <p>That means a docs audit cannot stop at probing <code>page.md</code>. It also needs to test whether the page itself returns Markdown through content negotiation.</p>
 
-        <h2>Link headers for structured navigation</h2>
-        <p>HTTP <code>Link</code> headers can declare relationships between pages: <code>rel="next"</code>, <code>rel="prev"</code>, <code>rel="up"</code>. These are standard mechanisms for communicating document structure at the protocol layer — before any HTML is parsed. Documentation sites that emit these headers make it straightforward for a crawler to discover a full guide by following links rather than parsing a sidebar.</p>
-        <p>We added a Link header check after noticing that documentation sites with clear structural navigation were consistently cited more accurately — even when their on-page HTML structure was ambiguous.</p>
+        <h2>llms.txt Discovery Is Broader Than One Path</h2>
+        <p>The proposal explicitly allows llms.txt in the root or in a subpath [3]. That matters because many docs live under <code>/docs/</code>, <code>/developer/</code>, or another scoped path.</p>
+        <p>Current implementations also go beyond llms.txt alone. Mintlify documents llms-full.txt, Link and X-Llms-Txt headers, and .md page links inside llms.txt itself [1]. Those change what a high-quality docs audit should verify.</p>
+        <p>In practice, that means checking more than whether <code>/llms.txt</code> exists. It also means checking whether the site exposes llms-full.txt [1], the page advertises docs indexes through headers [1], the page returns Markdown directly through an Accept request [1, 2], and the exact page is mapped inside llms.txt as a Markdown URL [1].</p>
 
-        <h2>Page-level topic mapping</h2>
-        <p>The original audit scored metadata at the page level in a binary way: either there is a <code>description</code> meta tag or there is not. The updated check goes further. Lensy now extracts the declared topic from <code>og:description</code>, Schema.org <code>TechArticle</code> markup, and any explicit <code>keywords</code> meta field, and then compares those declared topics against the actual heading structure and first-paragraph content of the page.</p>
-        <p>Pages where the declared topic and the content diverge — a common symptom of boilerplate meta descriptions — score lower on the context dimension. This turned out to explain a meaningful fraction of the variance between sites that get cited and sites that do not.</p>
+        <h2>What Changed in Lensy</h2>
+        <p>Lensy's current audit model now reflects that broader pattern. The AI Readiness view reports discrete signals rather than collapsing everything into a single grade, and it separates site-level and page-level checks such as llms.txt, llms-full.txt, page Markdown, content negotiation, and page-level mapping in llms.txt.</p>
+        <p>It also treats some signals more carefully than before. A Link header is treated as a hint that still needs validation, not proof. A best-practice signal like <code>rel="alternate"</code> for a Markdown version is still worth surfacing, but it is no longer treated as the strongest evidence of machine-readable support when llms.txt, direct Markdown URLs, or content negotiation already exist [1, 2, 3].</p>
 
-        <h2>What stayed the same</h2>
-        <p>Bot access comes first. It must pass before we evaluate anything else. If ClaudeBot, OAI-SearchBot, or Google-Extended are blocked by <code>robots.txt</code> or rate-limiting, the rest of the audit is moot. The access check is unchanged. The structure and citation dimensions retain their original logic; the new checks sit within the context dimension.</p>
-        <p>The scoring weights shifted to reflect the updated signals. Access remains necessary but not weighted heavily once it passes. Context — which now includes llms.txt, content negotiation, Link headers, and topic mapping — carries more weight than before. Citation readiness, which measures whether a page provides a clear, directly quotable answer to the question a page title implies, remains the highest-weighted dimension.</p>
+        <h2>What This Means</h2>
+        <p>The broader lesson is simple. AI-ready documentation is no longer just about whether a page is crawlable or well written. It is also about whether the site exposes machine-readable paths in the ways modern agents actually use them.</p>
+        <p>Research still supports the underlying principle. WebSRC found that answering questions about web pages requires understanding page structure, not just the text on the page [4]. The more documentation platforms expose agent-friendly structure directly, the more accurate an AI-readiness audit also has to become.</p>
+
+        <References items={[
+          { n: 1, text: 'Mintlify. "llms.txt — AI-ready documentation." Mintlify Docs.', href: "https://mintlify.com/docs/ai/llmstxt" },
+          { n: 2, text: 'Cloudflare. "Markdown for Agents." Cloudflare Docs.', href: "https://developers.cloudflare.com/agents/" },
+          { n: 3, text: 'Howard, Jeremy. "The /llms.txt file proposal." llmstxt.org, 2024.', href: "https://llmstxt.org" },
+          { n: 4, text: 'Chen et al. "WebSRC: A Dataset for Web-Based Structural Reading Comprehension." EMNLP 2021.', href: "https://arxiv.org/abs/2101.09465" },
+        ]} />
       </Prose>
     </>,
   },
@@ -1461,6 +1719,57 @@ export function ArticlePage() {
     return () => observer.disconnect();
   }, [slug]);
 
+  // N-01: per-article SEO. The redesign left every article with a generic title,
+  // description, and a canonical pointing at the homepage, and dropped the
+  // markdown-alternate link. Set them per article here and restore them on
+  // unmount so they don't leak onto other routes. The .md path mirrors what
+  // scripts/generate-markdown.js writes: /education/{slug}.md.
+  useEffect(() => {
+    if (!article) return;
+    const origin = window.location.origin;
+    const canonicalUrl = `${origin}/education/${article.slug}`;
+    const mdUrl = `${origin}/education/${article.slug}.md`;
+    const prevTitle = document.title;
+    document.title = `${article.title} — Lensy`;
+
+    // Helper to upsert a <meta>/<link> and remember whether we created it.
+    const upsert = (selector: string, create: () => HTMLElement, apply: (el: HTMLElement) => void) => {
+      let el = document.head.querySelector<HTMLElement>(selector);
+      const created = !el;
+      if (!el) { el = create(); document.head.appendChild(el); }
+      const prev = el.getAttribute(el instanceof HTMLLinkElement ? "href" : "content");
+      apply(el);
+      return { el, created, prev };
+    };
+
+    const desc = upsert(
+      'meta[name="description"]',
+      () => { const m = document.createElement("meta"); m.setAttribute("name", "description"); return m; },
+      (el) => el.setAttribute("content", article.description),
+    );
+    const canonical = upsert(
+      'link[rel="canonical"]',
+      () => { const l = document.createElement("link"); l.setAttribute("rel", "canonical"); return l; },
+      (el) => el.setAttribute("href", canonicalUrl),
+    );
+    // The markdown-alternate link is article-specific, so always create a fresh
+    // one tagged for cleanup rather than mutating a shared tag.
+    const mdLink = document.createElement("link");
+    mdLink.setAttribute("rel", "alternate");
+    mdLink.setAttribute("type", "text/markdown");
+    mdLink.setAttribute("href", mdUrl);
+    mdLink.setAttribute("data-article-md", "true");
+    document.head.appendChild(mdLink);
+
+    return () => {
+      document.title = prevTitle;
+      // Restore or remove the meta/link tags we touched.
+      if (desc.created) desc.el.remove(); else if (desc.prev !== null) desc.el.setAttribute("content", desc.prev);
+      if (canonical.created) canonical.el.remove(); else if (canonical.prev !== null) canonical.el.setAttribute("href", canonical.prev);
+      mdLink.remove();
+    };
+  }, [article]);
+
   if (!article) return <NotFound />;
 
   const idx = ARTICLES.indexOf(article);
@@ -1529,6 +1838,36 @@ export function Field({ label, hint, error, noBorder, children }: { label: strin
 export function Contact() {
   const [searchParams] = useSearchParams();
   const ref = searchParams.get("ref") || "default";
+  // N-07: per-ref contact copy (restored from the old routed-out ContactPage).
+  // ?ref=llmstxt / ?ref=markdown / ?ref=feedback each get their own heading,
+  // intro, button and success text; anything else falls back to the waitlist.
+  const REF_COPY: Record<string, { titleLead: string; titleAccent: string; intro: string; button: string; successTitle: string; successBody: string }> = {
+    llmstxt: {
+      titleLead: "Get your", titleAccent: "llms.txt.",
+      intro: "We'll create a structured llms.txt file for your documentation so AI coding assistants like Cursor, Copilot, and Claude can discover and consume your docs faster.",
+      button: "Request llms.txt", successTitle: "Request received.",
+      successBody: "We'll review your docs and get back to you with a generated llms.txt file.",
+    },
+    markdown: {
+      titleLead: "Get markdown", titleAccent: "versions.",
+      intro: "We'll help you serve markdown alongside your HTML docs. AI agents consume markdown far more efficiently — fewer tokens, cleaner code generation.",
+      button: "Request markdown", successTitle: "Request received.",
+      successBody: "We'll review your docs and reach out about markdown generation.",
+    },
+    feedback: {
+      titleLead: "Share your", titleAccent: "feedback.",
+      intro: "Lensy is in beta and your input helps us improve. Tell us what worked, what didn't, or what you'd like to see next.",
+      button: "Send feedback", successTitle: "Thank you.",
+      successBody: "We read every submission and it directly shapes what we build.",
+    },
+    default: {
+      titleLead: "Join the", titleAccent: "Waitlist.",
+      intro: "Join the waitlist to get higher limits and get access to upcoming products.",
+      button: "Join waitlist", successTitle: "You're on the list.",
+      successBody: "We'll be in touch with early access details at the address you shared.",
+    },
+  };
+  const refCopy = REF_COPY[ref] || REF_COPY.default;
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
   const [website, setWebsite] = useState("");
@@ -1570,8 +1909,8 @@ export function Contact() {
 
   return <Page
     titleStyle={{ fontSize: "clamp(2rem, 4vw, 3.5rem)" }}
-    title={<>Join the<br /><span className="text-[var(--accent)]">Waitlist.</span></>}
-    intro="Join the waitlist to get higher limits and get access to upcoming products."
+    title={<>{refCopy.titleLead}<br /><span className="text-[var(--accent)]">{refCopy.titleAccent}</span></>}
+    intro={refCopy.intro}
   >
     <div className="grid gap-12 py-20 lg:grid-cols-12 lg:gap-16">
       <aside data-reveal className="flex flex-col gap-10 lg:col-span-4">
@@ -1591,8 +1930,8 @@ export function Contact() {
         {sent ? (
           <div className="raised-shadow rounded-[var(--radius-lg)] border border-[var(--line)] bg-[var(--surface)] p-8 [animation:scan-in_.45s_var(--ease)] sm:p-10">
             <span className="grid size-8 place-items-center rounded-[var(--radius-sm)] bg-[var(--accent)] text-[var(--accent-contrast)]"><Check className="size-4" strokeWidth={1.8} aria-hidden="true" /></span>
-            <h2 className="mt-8 text-[28px] font-medium leading-tight tracking-[-.045em]">You&apos;re on the list.</h2>
-            <p className="mt-3 max-w-md text-[14px] leading-relaxed text-[var(--ink-soft)]">We&apos;ll be in touch with early access details at the address you shared.</p>
+            <h2 className="mt-8 text-[28px] font-medium leading-tight tracking-[-.045em]">{refCopy.successTitle}</h2>
+            <p className="mt-3 max-w-md text-[14px] leading-relaxed text-[var(--ink-soft)]">{refCopy.successBody}</p>
             <button onClick={() => setSent(false)} className="mt-8 inline-flex items-center gap-2 border-b border-[var(--ink)] pb-1 text-[12px] font-medium tracking-[-.025em] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]">Submit another</button>
           </div>
         ) : (
@@ -1609,7 +1948,7 @@ export function Contact() {
             </div>
             <div className="mt-7 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="max-w-xs text-[11px] font-medium tracking-[-.025em] leading-relaxed text-[var(--muted)]">Your inbox is safe with us. We only use this to get in touch.</p>
-              <button disabled={sending} className="btn-ink group inline-flex items-center gap-2 bg-[var(--panel-bg)] px-5 py-3 text-[12px] font-medium tracking-[-.025em] text-[var(--panel-fg)] disabled:cursor-wait disabled:opacity-70">{sending ? "Joining…" : <>Join waitlist <ArrowRight className="arrow-nudge size-3.5" strokeWidth={1.8} aria-hidden="true" /></>}</button>
+              <button disabled={sending} className="btn-ink group inline-flex items-center gap-2 bg-[var(--panel-bg)] px-5 py-3 text-[12px] font-medium tracking-[-.025em] text-[var(--panel-fg)] disabled:cursor-wait disabled:opacity-70">{sending ? "Sending…" : <>{refCopy.button} <ArrowRight className="arrow-nudge size-3.5" strokeWidth={1.8} aria-hidden="true" /></>}</button>
             </div>
           </form>
         )}
@@ -1774,6 +2113,7 @@ export function Page({ title, intro, children, titleSize = "", titleStyle = { fo
 }
 
 export function NotFound() {
+  useNoindex();
   return <Page title={<>Nothing<br /><span className="text-[var(--accent)]">here.</span></>} intro="This page does not exist.">
     <Link className="btn-ink my-16 inline-block bg-[var(--panel-bg)] px-4 py-3 text-[12px] font-medium tracking-[-.025em] text-[var(--panel-fg)]" to="/">Back to Lensy</Link>
   </Page>;
