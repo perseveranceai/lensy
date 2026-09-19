@@ -35,6 +35,41 @@ const WEIGHTS = {
 // AI Citations weight (separate from readiness score)
 const AI_CITATION_WEIGHT = 30;
 
+/**
+ * Per-signal impact tiers, derived from the point weights used by the
+ * calculate*Score functions below. This is the single source of truth for how
+ * much each signal matters, emitted in the report so the frontend renders a
+ * consistent impact chip on every signal (not just a hardcoded couple).
+ *
+ * Tiering rule (by scoring weight): >= 10 pts -> high, 5-9 -> medium, < 5 -> low.
+ * Keys are stable signal ids the frontend maps its rows to (see signalImpactId).
+ */
+const SIGNAL_IMPACT: Record<string, 'high' | 'medium' | 'low'> = {
+    // Discoverability (out of 40)
+    'llms.txt': 'high',            // 15 pts
+    'llms-full.txt': 'low',        // not individually scored / optional
+    'sitemap': 'medium',           // 8 pts
+    'canonical url': 'medium',     // 5 pts
+    'meta robots': 'high',         // blocking penalty
+    'indexing directive': 'high',  // blocking penalty
+    'page markdown': 'high',       // 12 pts (markdown availability)
+    'page in llms.txt': 'low',     // mapping-only, not separately scored
+    'content negotiation': 'medium',
+    'agents.md': 'low',            // experimental, not scored
+    'mcp config': 'low',           // experimental, not scored
+    // Structured data (out of 20)
+    'json-ld': 'medium',           // 5 pts
+    'opengraph': 'high',           // 10 pts (heaviest structured-data signal)
+    'breadcrumbs': 'low',          // 3 pts
+    // Content quality / consumability (out of 40)
+    'client-side rendered': 'high', // 10 pts (JS-render)
+    'text-to-html': 'medium',
+    'headings': 'high',            // up to 20 pts combined
+    'word count': 'medium',        // 6 pts
+    'code blocks': 'low',
+    'links': 'low',                // 4 pts
+};
+
 // ── Report Types ──────────────────────────────────────────────────────────
 
 interface AIReadinessReport {
@@ -59,6 +94,13 @@ interface AIReadinessReport {
         fix: string;
         codeSnippet?: string;
     }>;
+    /**
+     * Per-signal impact rating, keyed by a stable signal id, derived from the
+     * same point weights the scoring functions use (see SIGNAL_IMPACT). Lets the
+     * frontend show a consistent impact chip on EVERY signal instead of
+     * hardcoding it for a couple. High/medium/low mirror the scoring weight tiers.
+     */
+    signalImpact: Record<string, 'high' | 'medium' | 'low'>;
     contextualSuggestions: string[];  // LLM-generated improvement suggestions
     scope: {
         url: string;
@@ -252,6 +294,7 @@ export const generateReportTool = tool(
                 // when a persisted report.json is reloaded — not just during a live scan.
                 detection: readinessResults?.detection,
                 recommendations,
+                signalImpact: SIGNAL_IMPACT,
                 contextualSuggestions,
                 scope: {
                     url,

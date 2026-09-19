@@ -232,11 +232,13 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
                     className="flex w-full items-center justify-between gap-3 px-4 py-3 hover:bg-[var(--tint)] transition-colors text-left"
                   >
                     <div className="flex items-center gap-3 overflow-hidden">
-                      {/* Glowing indicator */}
-                      <span className="relative flex h-3 w-3 items-center justify-center shrink-0">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--accent)] opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--accent)]"></span>
+                      {/* Glowing indicator (inline styles: the built tailwind.css lacks animate-ping/h-2/w-2/w-3, so these would collapse to 0x0).
+                          ml-1 gives the scaling ping ring room so its left edge isn't clipped by the parent's overflow-hidden. */}
+                      <span className="relative ml-1 flex items-center justify-center shrink-0" style={{ width: 8, height: 8 }}>
+                        <span className="absolute inline-flex rounded-full bg-[var(--accent)]" style={{ width: "100%", height: "100%", opacity: 0.75, animation: "scanping 1s cubic-bezier(0,0,0.2,1) infinite" }}></span>
+                        <span className="relative inline-flex rounded-full bg-[var(--accent)]" style={{ width: 8, height: 8 }}></span>
                       </span>
+                      <style>{`@keyframes scanping{75%,100%{transform:scale(1.8);opacity:0}}`}</style>
                       <span className="text-[13px] font-medium text-[var(--ink)] truncate">
                         {analysisState?.progressMessages?.length > 0 
                           ? analysisState.progressMessages[analysisState.progressMessages.length - 1].message 
