@@ -516,6 +516,10 @@ export async function runAgent(input: AgentRunInput): Promise<string> {
         // ── Step 1.7: Content gate + confidence scoring ──
         // Two-stage gate: (1) fast heuristic, (2) LLM verification for ambiguous cases
         let docConfidence: DocConfidence = { isDoc: true, confidence: 1, signals: [] };
+        // N-12: set when a page fails the confidence gate but is rescued via its
+        // markdown twin — the confidence score no longer describes it, so the UI
+        // renders a qualitative note instead of a misleading percentage.
+        let markdownRescued = false;
         let detectedCategory = 'UNKNOWN';
         if (prefetchedHtml) {
             docConfidence = scoreDocConfidence(prefetchedHtml, url);
@@ -656,6 +660,13 @@ Respond with JSON only:
                         wouldHaveRejected: detectedCategory,
                     }));
                     await progress.info('Found a markdown version of this page — analyzing that instead.');
+                    // N-12: this page failed the HTML confidence gate but has a
+                    // valid markdown twin, so we rescue and score it anyway. The
+                    // gate's confidence number is now meaningless for it (it was
+                    // scoring empty SPA HTML), so mark it rescued. The frontend
+                    // shows "Recovered via markdown alternate" instead of the
+                    // misleading "Unlikely a doc page (0%)" next to a real score.
+                    markdownRescued = true;
                     // Fall through to the normal pipeline; process_url performs
                     // the same lookup and will use the markdown for extraction.
                 } else {
@@ -744,10 +755,13 @@ Respond with JSON only:
         try {
             const parsed = JSON.parse(reportResult);
             overallScore = parsed.overallScore || 0;
-            // Inject doc confidence into the result
+            // Inject doc confidence into the result. When the page was rescued
+            // via its markdown twin (N-12), the score is meaningless for it, so
+            // flag it and let the frontend show a note instead of the percentage.
             parsed.docConfidence = {
                 score: docConfidence.confidence,
                 signals: docConfidence.signals,
+                markdownRescued,
             };
             finalResult = JSON.stringify(parsed);
 
