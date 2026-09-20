@@ -765,6 +765,19 @@ Respond with JSON only:
             };
             finalResult = JSON.stringify(parsed);
 
+            // N-12: generateReportTool wrote report.json BEFORE we injected
+            // docConfidence, so the persisted report lacked it — the
+            // "Recovered via markdown alternate" label (and the confidence
+            // signals) only survived in the live progress message / same-tab
+            // sessionStorage, and vanished when the report was reopened
+            // elsewhere or reloaded from S3. Re-persist the enriched report so
+            // docConfidence + markdownRescued live in report.json itself.
+            try {
+                await writeSessionArtifact(sessionId, 'report.json', parsed);
+            } catch (persistErr) {
+                console.warn('[Pipeline] Failed to re-persist report.json with docConfidence:', (persistErr as Error).message);
+            }
+
             // Re-publish overallScore category with docConfidence so frontend cards pick it up
             await progress.categoryResult('overallScore', {
                 overallScore: parsed.overallScore,

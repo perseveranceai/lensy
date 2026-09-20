@@ -62,7 +62,11 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
       setScanError(analysisState.error || (analysisState.status === 'rate-limited' ? "You’ve used today’s free audits. Please try again tomorrow." : "Scan failed."));
       setShowAllowanceNotice(analysisState.status === 'rate-limited');
     }
-  }, [analysisState, loading, navigate, url]);
+    // NOTE: `url` is intentionally NOT a dependency. It's not read here, and
+    // including it made every keystroke re-run this effect — which re-set
+    // scanError right after onChange cleared it, so the error card flickered
+    // back on each character while typing a new URL after a failed scan.
+  }, [analysisState, loading, navigate]);
 
   // N-05: track the JS-render consent funnel on the Home prompt too (it was only
   // instrumented on the /results page). Fire js_render_prompt_shown once per
@@ -193,7 +197,57 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
                       </button>
                     </>
                   ) : (
-                    scanError
+                    (() => {
+                      // T-12: give Home the same friendly error card the /results
+                      // page has (scans actually start and fail HERE). Map the
+                      // raw backend error to a human title + description, then
+                      // offer Try again / Try another URL / Report an issue.
+                      const raw = (scanError || "").trim();
+                      let title = "Something went wrong";
+                      let description = raw || "The scan couldn't be completed. Please try again.";
+                      if (/\b400\b/.test(raw) || /not a valid url/i.test(raw)) {
+                        title = "That doesn't look like a valid URL";
+                        description = "Please enter a valid documentation URL and try again.";
+                      } else if (/\b404\b/.test(raw) || /unable to access|could not (?:be )?reach|unreachable|ENOTFOUND|ECONNREFUSED/i.test(raw)) {
+                        title = "We couldn't reach that page";
+                        description = "Double-check the URL is correct and publicly reachable, then try again.";
+                      } else if (/\b429\b/.test(raw) || /rate.?limit/i.test(raw)) {
+                        title = "Too many requests";
+                        description = "The site is rate-limiting our scanner. Wait a moment and try again.";
+                      } else if (/does not appear to be|not (?:a )?(?:technical )?doc|non-doc/i.test(raw)) {
+                        title = "This doesn't look like a documentation page";
+                        description = raw || "Try a URL that points at documentation content.";
+                      }
+                      return (
+                        <>
+                          <div className="font-medium text-[13px] tracking-[-.02em] text-[var(--ink)]">{title}</div>
+                          <div className="text-[12px] text-[var(--ink-soft)] font-normal leading-[1.55] tracking-[-.01em]">{description}</div>
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            <button
+                              onClick={(e) => { e.preventDefault(); trackEvent("try_again_clicked", { url: url.trim(), error: raw }); setScanError(""); setLoading(true); onScan && onScan(url.trim()); }}
+                              className="btn-ink shrink-0 bg-[var(--ink)] px-3 py-1.5 text-[12px] font-medium tracking-[-.025em] text-[var(--bg)]"
+                            >
+                              Try again
+                            </button>
+                            <button
+                              onClick={(e) => { e.preventDefault(); trackEvent("try_another_url_clicked", { action: "error-recovery", error: raw }); setScanError(""); setUrl(""); }}
+                              className="shrink-0 rounded-[var(--radius-sm)] border border-[var(--line-strong)] bg-[var(--surface)] px-3 py-1.5 text-[12px] font-medium tracking-[-.025em] text-[var(--ink)] transition-colors hover:bg-[var(--tint)]"
+                            >
+                              Try another URL
+                            </button>
+                            <a
+                              href="/contact?ref=feedback"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={() => trackEvent("report_issue_clicked", { url: url.trim(), error: raw })}
+                              className="shrink-0 rounded-[var(--radius-sm)] border border-[var(--line-strong)] bg-[var(--surface)] px-3 py-1.5 text-[12px] font-medium tracking-[-.025em] text-[var(--ink)] transition-colors hover:bg-[var(--tint)]"
+                            >
+                              Report an issue
+                            </a>
+                          </div>
+                        </>
+                      );
+                    })()
                   )}
                 </div>
               )}

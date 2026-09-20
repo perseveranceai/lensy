@@ -643,10 +643,19 @@ function LensyApp() {
     useEffect(() => {
         if (analysisState.status === 'idle' && Object.keys(asyncCards).length === 0) return;
         try {
+            // N-13: do NOT coerce an in-flight 'analyzing' scan to 'completed'
+            // on persist. That coercion produced a "completed but no report"
+            // ghost: navigating away mid-scan saved status:'completed' with no
+            // report, so a later /results visit rendered "Waiting for the
+            // completed scan report" forever and fired a false
+            // generate_report_completed. Persist the real status; the restore
+            // effect already refuses to rehydrate 'analyzing', so an interrupted
+            // scan simply won't restore and the empty-results guard sends the
+            // user home.
             sessionStorage.setItem('lensy-audit-state', JSON.stringify({
                 url,
                 asyncCards,
-                analysisState: analysisState.status === 'analyzing' ? { ...analysisState, status: 'completed' } : analysisState,
+                analysisState,
                 heroTab,
                 currentSessionId,
             }));
@@ -706,8 +715,11 @@ function LensyApp() {
         const scanUrl = urlRef.current;
         if (status === 'completed') {
             setProgressExpanded(false);
+            // N-13: only count a completion when a report actually exists. An
+            // interrupted scan can momentarily read 'completed' with no report;
+            // logging that would be a false completion.
             const key = `completed:${scanUrl}`;
-            if (!trackedTerminalEvents.has(key)) {
+            if (analysisState.report && !trackedTerminalEvents.has(key)) {
                 trackedTerminalEvents.add(key);
                 trackEvent('generate_report_completed', { url: scanUrl });
             }
