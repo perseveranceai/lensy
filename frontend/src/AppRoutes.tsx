@@ -578,14 +578,12 @@ export function ScanReport({
     if (/\b400\b/.test(msg)) {
       return { title: "That doesn't look like a valid URL", description: "Please enter a valid documentation URL and try again." };
     }
-    if (/\b(404)\b/.test(msg)) {
-      return { title: "We couldn't find that page", description: "The URL returned a 404. Double-check the address and try again." };
-    }
-    if (/\b(429)\b/.test(msg)) {
+    if (/\b(429)\b/.test(msg) || /rate.?limit/i.test(msg)) {
       return { title: "Too many requests", description: "The site is rate-limiting our scanner. Wait a moment and try again." };
     }
-    if (/\b5\d\d\b/.test(msg) || /unreachable|ENOTFOUND|ECONNREFUSED|timed? ?out|timeout/i.test(msg)) {
-      return { title: "We couldn't reach that site", description: "The server didn't respond. Check the URL is correct and reachable, then try again." };
+    // 404 / unreachable / the backend's real "unable to access this URL" message.
+    if (/\b(404)\b/.test(msg) || /\b5\d\d\b/.test(msg) || /unable to access|could not (?:be )?reach|unreachable|ENOTFOUND|ECONNREFUSED|timed? ?out|timeout/i.test(msg)) {
+      return { title: "We couldn't reach that page", description: "Double-check the URL is correct and publicly reachable, then try again." };
     }
     if (/not a doc|non-doc|documentation/i.test(msg) && !/valid documentation URL/i.test(msg)) {
       return { title: "This doesn't look like a documentation page", description: msg || "Try a URL that points at documentation content." };
@@ -597,26 +595,36 @@ export function ScanReport({
   const realScore = typeof report?.overallScore === "number" ? report.overallScore : null;
   const hasReport = Boolean(report);
 
-  // N-08: a direct visit to /results with no scan in flight and no report is a
-  // dead end that used to render placeholder data. Send those visitors home
-  // instead — but ONLY when there is genuinely nothing to show.
+  // N-08 / N-13 / N-14: a visit to /results or /scan with nothing real to show
+  // is a dead end (it used to render placeholder/fake data or hang on "Waiting
+  // for the completed scan report"). Send those visitors home instead.
   //
-  // Important: LensyApp restores analysisState from sessionStorage in a mount
-  // effect, so on the very first render after navigating to /results the status
-  // is still 'idle' and the report hasn't rehydrated yet. If we redirect on that
-  // transient state we bounce the user back home right after a scan completes.
-  // So we also treat a persisted 'lensy-audit-state' as "has something to show"
-  // and only redirect on a truly cold, direct visit.
+  // Timing: LensyApp restores analysisState from sessionStorage in a mount
+  // effect, so on the first render after navigating here the status is still
+  // 'idle' and the report hasn't rehydrated yet. We must not bounce a
+  // just-completed scan during that window. The reliable signal is whether the
+  // PERSISTED payload actually carries a report — so we inspect it directly:
+  //   - persisted state with a report  -> real scan, let it rehydrate/render
+  //   - persisted 'completed' with NO report (interrupted mid-scan, N-13) -> empty
+  //   - no persisted state, idle       -> cold direct visit -> empty
   const { pathname: currentPath } = useLocation();
   const status = analysisState?.status;
-  const hasPersistedAudit = (() => {
-    try { return Boolean(window.sessionStorage.getItem("lensy-audit-state")); } catch { return false; }
+  const persistedHasReport = (() => {
+    try {
+      const raw = window.sessionStorage.getItem("lensy-audit-state");
+      if (!raw) return false;
+      const parsed = JSON.parse(raw);
+      return Boolean(parsed?.analysisState?.report);
+    } catch { return false; }
   })();
+  // On these scan-report routes, once we're not actively analyzing and there's
+  // no report in memory and none persisted, there is nothing to show.
   const isEmptyResults =
-    currentPath === "/results" &&
+    (currentPath === "/results" || currentPath === "/scan") &&
     !hasReport &&
-    !hasPersistedAudit &&
-    (status === undefined || status === "idle");
+    !persistedHasReport &&
+    status !== "analyzing" &&
+    status !== "error"; // an error shows the recovery card, not a redirect
   useNoindex();
   useEffect(() => {
     if (isEmptyResults) navigate("/", { replace: true });
@@ -1074,8 +1082,19 @@ export function ScanReport({
   const effortLabel = (r: Rec) => (r.codeSnippet ? "Medium effort" : "Low effort");
   const actionLink = (r: Rec): { href: string; label: string } | null => {
     const issue = recIssue(r).toLowerCase();
+    const category = (r.category || "").toLowerCase();
     if (issue.includes("llms.txt")) return { href: "/contact?ref=llmstxt", label: "We can help you generate one" };
-    if (issue.includes("markdown")) return { href: "/contact?ref=markdown", label: "We can help you generate markdown" };
+    // N-10: only offer "generate markdown" for recommendations genuinely about
+    // serving a markdown version of the docs — not any rec that happens to
+    // contain the word "markdown". The Breadcrumbs / structured-data recs
+    // mention it incidentally and were getting a bogus markdown link. Gate on
+    // markdown-serving phrasing and exclude structured-data recs.
+    const isMarkdownServingRec =
+      /markdown version|serve a \.md|\.md version|rel="alternate"|markdown alternate|no markdown/.test(issue) &&
+      !category.includes("structured") &&
+      !issue.includes("breadcrumb") &&
+      !issue.includes("json-ld");
+    if (isMarkdownServingRec) return { href: "/contact?ref=markdown", label: "We can help you generate markdown" };
     return null;
   };
   const totalRecCount = allRecs.length;
@@ -1311,15 +1330,19 @@ export function ScanReport({
     </div>
 
     <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3 border-b border-[var(--line)] pb-5 text-[12px] font-medium tracking-[-.025em]">
-      {overallScoreData?.docConfidence ? (
+      {(overallScoreData?.docConfidence || report?.docConfidence) ? (
         (() => {
-          const rawScore = overallScoreData.docConfidence.score;
+          // N-12: prefer the live overallScore card, but fall back to the
+          // persisted report.docConfidence so the chip (and the "Recovered via
+          // markdown alternate" note) survives a reload / reopen from report.json.
+          const docConf = overallScoreData?.docConfidence || report?.docConfidence;
+          const rawScore = docConf.score;
           const pct = rawScore <= 1 ? Math.round(rawScore * 100) : Math.round(rawScore);
-          const message = overallScoreData.docConfidence.label || (pct >= 75 ? "Likely a doc page" : pct >= 40 ? "May be a doc page" : "Unlikely a doc page");
-          // N-12: when the page failed the HTML confidence gate but was rescued
-          // via its markdown twin, the percentage is meaningless (it scored empty
-          // SPA HTML). Show a qualitative note instead of a contradictory "0%".
-          const markdownRescued = Boolean(overallScoreData.docConfidence.markdownRescued);
+          const message = docConf.label || (pct >= 75 ? "Likely a doc page" : pct >= 40 ? "May be a doc page" : "Unlikely a doc page");
+          // When the page failed the HTML confidence gate but was rescued via its
+          // markdown twin, the percentage is meaningless (it scored empty SPA
+          // HTML). Show a qualitative note instead of a contradictory "0%".
+          const markdownRescued = Boolean(docConf.markdownRescued);
 
           return (
             <div className="flex items-center gap-4">
@@ -1333,7 +1356,7 @@ export function ScanReport({
                 leaveTouchDelay={3000}
                 title={
                   <ul className="list-outside list-disc space-y-1.5" style={{ paddingLeft: "1.15rem", margin: 0 }}>
-                    {overallScoreData.docConfidence.signals.map((sig: string, i: number) => (
+                    {(docConf.signals || []).map((sig: string, i: number) => (
                       <li key={i}>{sig}</li>
                     ))}
                   </ul>
@@ -1357,7 +1380,7 @@ export function ScanReport({
                 }}
               >
                 <span tabIndex={0} className="inline-flex cursor-help items-center text-[var(--ink-soft)] underline decoration-[var(--ink-soft)] decoration-dotted underline-offset-4 outline-none transition-colors hover:text-[var(--ink)] focus-visible:text-[var(--ink)]">
-                  {overallScoreData.docConfidence.signals.length} signals
+                  {(docConf.signals || []).length} signals
                 </span>
               </Tooltip>
             </div>
@@ -1539,10 +1562,10 @@ const ARTICLES: ArticleData[] = [
         <p>Research still supports the underlying principle. WebSRC found that answering questions about web pages requires understanding page structure, not just the text on the page [4]. The more documentation platforms expose agent-friendly structure directly, the more accurate an AI-readiness audit also has to become.</p>
 
         <References items={[
-          { n: 1, text: 'Mintlify. "llms.txt — AI-ready documentation." Mintlify Docs.', href: "https://mintlify.com/docs/ai/llmstxt" },
-          { n: 2, text: 'Cloudflare. "Markdown for Agents." Cloudflare Docs.', href: "https://developers.cloudflare.com/agents/" },
-          { n: 3, text: 'Howard, Jeremy. "The /llms.txt file proposal." llmstxt.org, 2024.', href: "https://llmstxt.org" },
-          { n: 4, text: 'Chen et al. "WebSRC: A Dataset for Web-Based Structural Reading Comprehension." EMNLP 2021.', href: "https://arxiv.org/abs/2101.09465" },
+          { n: 1, text: 'Mintlify. "llms.txt." Documentation, 2025.', href: "https://www.mintlify.com/docs/ai/llmstxt" },
+          { n: 2, text: 'Cloudflare. "Introducing Markdown for Agents." Cloudflare Blog, 2026.', href: "https://blog.cloudflare.com/markdown-for-agents/" },
+          { n: 3, text: 'Howard, Jeremy. "The /llms.txt file." llmstxt.org, 2024.', href: "https://llmstxt.org" },
+          { n: 4, text: 'Chen et al. "WebSRC: A Dataset for Web-Based Structural Reading Comprehension." EMNLP, 2021.', href: "https://aclanthology.org/2021.emnlp-main.343/" },
         ]} />
       </Prose>
     </>,

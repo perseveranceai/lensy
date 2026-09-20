@@ -213,11 +213,17 @@ export const generateReportTool = tool(
                     });
                 }
 
-                // Experimental signals found (AGENTS.md, MCP)
+                // Experimental signals actually FOUND (AGENTS.md, MCP).
+                // N-10: classifyExperimental returns status:'experimental' even
+                // when the probe 404'd (no file), so filtering on status alone
+                // produced false "AGENTS.md detected / MCP Config detected"
+                // recommendations on sites that have neither. Require a
+                // validatedUrl (the URL that returned HTTP 200) — the same gate
+                // the frontend already uses to decide whether to render them.
                 const experimentalSignals = [
                     { name: 'AGENTS.md', signal: detection.site.agentsMd },
                     { name: 'MCP Config', signal: detection.site.mcpJson },
-                ].filter(s => s.signal.status === 'experimental');
+                ].filter(s => s.signal.status === 'experimental' && Boolean(s.signal.validatedUrl));
 
                 for (const exp of experimentalSignals) {
                     bestPractices.push({
