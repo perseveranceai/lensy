@@ -16,7 +16,7 @@
 
 import { ProgressPublisher } from './shared/progress-publisher';
 import { findMarkdownAlternate } from './shared/markdown-alternate.js';
-import { writeSessionArtifact } from './shared/s3-helpers';
+import { writeSessionArtifact, readSessionArtifact } from './shared/s3-helpers';
 
 // Import tools for direct invocation
 import { checkAIReadinessTool } from './tools/check-ai-readiness';
@@ -770,12 +770,29 @@ Respond with JSON only:
             // "Recovered via markdown alternate" label (and the confidence
             // signals) only survived in the live progress message / same-tab
             // sessionStorage, and vanished when the report was reopened
-            // elsewhere or reloaded from S3. Re-persist the enriched report so
-            // docConfidence + markdownRescued live in report.json itself.
+            // elsewhere or reloaded from S3. Patch docConfidence INTO the
+            // already-persisted report.
+            //
+            // CRITICAL: `parsed` is generate_report's RETURN value, which is
+            // only a small summary (overallScore, scoreBreakdown, counts) — it
+            // does NOT contain categories, detection, recommendations, etc.
+            // Writing `parsed` straight to report.json clobbered the full
+            // report, which is why reloaded reports showed a score but
+            // "0 signals across 0 categories" and no bot-access/robots data.
+            // Always read the persisted report and merge into THAT.
             try {
-                await writeSessionArtifact(sessionId, 'report.json', parsed);
+                const persistedReport = await readSessionArtifact<Record<string, any>>(sessionId, 'report.json');
+                if (persistedReport && persistedReport.categories) {
+                    persistedReport.docConfidence = parsed.docConfidence;
+                    await writeSessionArtifact(sessionId, 'report.json', persistedReport);
+                    console.log('[Pipeline] Patched docConfidence into persisted report.json');
+                } else {
+                    // Never overwrite report.json with the summary — losing the
+                    // full report is far worse than losing the confidence label.
+                    console.warn('[Pipeline] Skipping docConfidence patch: persisted report.json missing or incomplete');
+                }
             } catch (persistErr) {
-                console.warn('[Pipeline] Failed to re-persist report.json with docConfidence:', (persistErr as Error).message);
+                console.warn('[Pipeline] Failed to patch report.json with docConfidence:', (persistErr as Error).message);
             }
 
             // Re-publish overallScore category with docConfidence so frontend cards pick it up
