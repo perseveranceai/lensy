@@ -111,6 +111,26 @@ function detectSPAShell(html: string): { isSPA: boolean; markers: string[] } {
     return { isSPA: hasSizeSignal && hasAppMarker, markers };
 }
 
+// DITA/AEM doc platforms render body prose as <div class="p"> instead of <p>.
+// Matches the class token exactly so "list-p" / "para" don't count.
+const DIV_PARAGRAPH_RE = /<div[^>]*class=["'](?:[^"']*\s)?p(?:\s[^"']*)?["']/gi;
+const DIV_PARAGRAPH_BLOCK_RE = /<div[^>]*class=["'](?:[^"']*\s)?p(?:\s[^"']*)?["'][^>]*>([\s\S]*?)<\/div>/gi;
+
+/**
+ * Extract paragraph-like prose blocks as plain text, covering both <p> and the
+ * <div class="p"> convention used by DITA/AEM-generated documentation.
+ */
+function extractProseBlocks(htmlFragment: string): string[] {
+    const blocks: string[] = [];
+    for (const match of htmlFragment.match(/<p[\s>][\s\S]*?<\/p>/gi) || []) {
+        blocks.push(match.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
+    }
+    for (const match of htmlFragment.match(DIV_PARAGRAPH_BLOCK_RE) || []) {
+        blocks.push(match.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
+    }
+    return blocks;
+}
+
 function scoreDocConfidence(html: string, url: string): DocConfidence {
     const signals: string[] = [];
     let score = 0;
@@ -143,14 +163,29 @@ function scoreDocConfidence(html: string, url: string): DocConfidence {
     }
 
     const lowerUrl = url.toLowerCase();
-    const lowerHtml = html.toLowerCase();
+
+    // ── Visible content only ──
+    // Every content-text signal below must be matched against markup the reader
+    // actually sees, NOT against inline <script>/<style> source. On enterprise doc
+    // platforms (DITA/AEM, Salesforce portals) inline JS can be >70% of the byte
+    // size, and matching against it produces false "this is a catalog page"
+    // verdicts: a `facetSearchTags` analytics variable reads as faceted-search UI,
+    // a `usecase||Use Case` taxonomy string reads as a marketing feature grid.
+    // detectSPAShell already strips script/style; this keeps the two gates consistent.
+    const visibleHtml = html.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, '');
+    const lowerHtml = visibleHtml.toLowerCase();
 
     // ── Structural counts (shared across signals) ──
-    const preCount = (html.match(/<pre[\s>]/gi) || []).length;
-    const codeCount = (html.match(/<code[\s>]/gi) || []).length;
-    const imgCount = (html.match(/<img[\s>]/gi) || []).length;
-    const pCount = (html.match(/<p[\s>]/gi) || []).length;
-    const buttonCount = (html.match(/<button[\s>]/gi) || []).length;
+    const preCount = (visibleHtml.match(/<pre[\s>]/gi) || []).length;
+    const codeCount = (visibleHtml.match(/<code[\s>]/gi) || []).length;
+    const imgCount = (visibleHtml.match(/<img[\s>]/gi) || []).length;
+    const buttonCount = (visibleHtml.match(/<button[\s>]/gi) || []).length;
+
+    // Paragraph count: some doc platforms (DITA/AEM FrameMaker output) emit body
+    // prose as <div class="p"> and never use a <p> tag at all, so counting only <p>
+    // reports zero prose on a page full of instructional text.
+    const pCount = (visibleHtml.match(/<p[\s>]/gi) || []).length
+        + (visibleHtml.match(DIV_PARAGRAPH_RE) || []).length;
 
     // ── URL-level signals ──
 
@@ -218,7 +253,7 @@ function scoreDocConfidence(html: string, url: string): DocConfidence {
 
     // Positive: same-page anchor links in CONTENT area (TOC pattern) (+3)
     // Strip nav/header/footer before counting — only count anchors in actual page body
-    const contentHtml = html
+    const contentHtml = visibleHtml
         .replace(/<nav[\s\S]*?<\/nav>/gi, '')
         .replace(/<header[\s\S]*?<\/header>/gi, '')
         .replace(/<footer[\s\S]*?<\/footer>/gi, '')
@@ -227,11 +262,11 @@ function scoreDocConfidence(html: string, url: string): DocConfidence {
     if (contentAnchorLinks >= 5) { score += 3; signals.push(`${contentAnchorLinks} in-content anchor links (TOC) (+3)`); }
 
     // Positive: <main> or role="main" (+1)
-    if (/<main[\s>]|role=["']main["']/i.test(html)) { score += 1; signals.push('<main> element found (+1)'); }
+    if (/<main[\s>]|role=["']main["']/i.test(visibleHtml)) { score += 1; signals.push('<main> element found (+1)'); }
 
     // Positive: doc-style meta tags (+2)
-    if (/<meta[^>]*name=["']docsearch/i.test(html)) { score += 2; signals.push('DocSearch meta tag (+2)'); }
-    if (/data-docs/i.test(html)) { score += 1; signals.push('data-docs attribute (+1)'); }
+    if (/<meta[^>]*name=["']docsearch/i.test(visibleHtml)) { score += 2; signals.push('DocSearch meta tag (+2)'); }
+    if (/data-docs/i.test(visibleHtml)) { score += 1; signals.push('data-docs attribute (+1)'); }
 
     // Positive: install commands (+2)
     if (/npm install|pip install|yarn add|cargo add|gem install|brew install/i.test(lowerHtml)) {
@@ -245,7 +280,7 @@ function scoreDocConfidence(html: string, url: string): DocConfidence {
     if (ctaCount >= 2) { score -= 2; signals.push(`${ctaCount} marketing CTAs found (−2)`); }
 
     // Negative: pricing tables (−2)
-    if (/<table[^>]*>[\s\S]*?(price|\/month|\/year|enterprise|starter|pro plan)/i.test(html)) {
+    if (/<table[^>]*>[\s\S]*?(price|\/month|\/year|enterprise|starter|pro plan)/i.test(visibleHtml)) {
         score -= 2; signals.push('Pricing table detected (−2)');
     }
 
@@ -261,14 +296,19 @@ function scoreDocConfidence(html: string, url: string): DocConfidence {
     // Negative: card/grid listing layout (−3) — catalog/gallery/index pages
     // These are browsable listings, not instructional content
     const cardGridSignals = (lowerHtml.match(/card[-_]?grid|card[-_]?container|card[-_]?list|grid[-_]?container|item[-_]?grid|sample[-_]?card|resource[-_]?card/gi) || []).length;
-    const repeatingCards = (html.match(/<div[^>]*class=["'][^"']*card["'][^>]*>/gi) || []).length;
+    const repeatingCards = (visibleHtml.match(/<div[^>]*class=["'][^"']*card["'][^>]*>/gi) || []).length;
     if (cardGridSignals >= 2 || repeatingCards >= 6) {
         score -= 3; signals.push(`Card/grid listing layout (${cardGridSignals} grid patterns, ${repeatingCards} cards) (−3)`);
     }
 
-    // Negative: pagination (−2) — index/listing pages have pagination, docs don't
-    const hasPagination = /class=["'][^"']*pagination["']|aria-label=["']pagination["']|page\s+\d+\s+of\s+\d+|<nav[^>]*>[\s\S]*?<a[^>]*>\d+<\/a>[\s\S]*?<a[^>]*>\d+<\/a>/i.test(html);
-    if (hasPagination) {
+    // Negative: pagination (−2) — index/listing pages have pagination, docs don't.
+    // Exception: book-style docs put a "previous topic / next topic" footer on every
+    // page and name those controls "pagination" (DITA/AEM emits btm-pagination,
+    // dita-pagination, book-detail-pagination). That is sequential reading order
+    // through a manual — a documentation signal, not a paginated listing.
+    const hasPagination = /class=["'][^"']*pagination["']|aria-label=["']pagination["']|page\s+\d+\s+of\s+\d+|<nav[^>]*>[\s\S]*?<a[^>]*>\d+<\/a>[\s\S]*?<a[^>]*>\d+<\/a>/i.test(visibleHtml);
+    const isDocSequenceNav = /dita-pagination|btm-pagination|book-detail-pagination|rel=["'](prev|next)["']/i.test(visibleHtml);
+    if (hasPagination && !isDocSequenceNav) {
         score -= 2; signals.push('Pagination detected — listing/index page (−2)');
     }
 
@@ -296,14 +336,14 @@ function scoreDocConfidence(html: string, url: string): DocConfidence {
 
     // Negative: link-dominated pages with minimal prose (−3) — index/hub pages
     // Pages that are mostly lists of links to other pages are navigation, not documentation
-    const contentAreaForLinks = html
+    const contentAreaForLinks = visibleHtml
         .replace(/<nav[\s\S]*?<\/nav>/gi, '')
         .replace(/<header[\s\S]*?<\/header>/gi, '')
         .replace(/<footer[\s\S]*?<\/footer>/gi, '')
         .replace(/<aside[\s\S]*?<\/aside>/gi, '');
     const outboundLinks = (contentAreaForLinks.match(/<a\s[^>]*href=["']https?:\/\//gi) || []).length;
-    const proseParagraphs = (contentAreaForLinks.match(/<p[\s>][\s\S]*?<\/p>/gi) || [])
-        .filter(p => p.replace(/<[^>]+>/g, '').trim().length > 80).length;
+    const proseParagraphs = extractProseBlocks(contentAreaForLinks)
+        .filter(text => text.length > 80).length;
     const isLinkHeavy = outboundLinks >= 8 && proseParagraphs <= 2;
     if (isLinkHeavy) {
         score -= 3; signals.push(`Link-heavy index page (${outboundLinks} outbound links, ${proseParagraphs} prose paragraphs) (−3)`);
@@ -560,6 +600,8 @@ export async function runAgent(input: AgentRunInput): Promise<string> {
                         .replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, (_, code) => `\`${code.replace(/<[^>]+>/g, '').trim()}\``)
                         // List items → bullets
                         .replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_, text) => `  • ${text.replace(/<[^>]+>/g, '').trim()}\n`)
+                        // DITA/AEM paragraphs (<div class="p">) → newline-separated text
+                        .replace(DIV_PARAGRAPH_BLOCK_RE, (_, text) => `${text.replace(/<[^>]+>/g, '').trim()}\n`)
                         // Paragraphs → newline-separated text
                         .replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, (_, text) => `${text.replace(/<[^>]+>/g, '').trim()}\n`)
                         // Images
@@ -573,8 +615,10 @@ export async function runAgent(input: AgentRunInput): Promise<string> {
 
                     // ── Quick content stats for the LLM ──
                     const llmLinkCount = (mainContent.match(/<a[\s>]/gi) || []).length;
-                    const llmParagraphs = (mainContent.match(/<p[\s>][\s\S]*?<\/p>/gi) || [])
-                        .map(p => p.replace(/<[^>]+>/g, '').trim());
+                    // Use extractProseBlocks, not a <p>-only match: DITA/AEM doc pages
+                    // wrap prose in <div class="p">, which would report 0 paragraphs and
+                    // push the classifier toward INDEX/NAVIGATION on a real guide.
+                    const llmParagraphs = extractProseBlocks(mainContent);
                     const llmProseWordCount = llmParagraphs.join(' ').split(/\s+/).filter(w => w.length > 0).length;
                     const llmCodeBlockCount = (mainContent.match(/<pre[\s>]/gi) || []).length;
 
