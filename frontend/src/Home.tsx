@@ -40,7 +40,10 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
   const [showAllowanceNotice, setShowAllowanceNotice] = useState(false)
   const [scanError, setScanError] = useState("")
   const [open, setOpen] = useState<number | null>(null)
-  const [progressOpen, setProgressOpen] = useState(false)
+  // D-04: open by default so people actually see the scan messages; they can
+  // still collapse it (and the open/closed state above isn't persisted, so it
+  // resets to open again on the next scan by design).
+  const [progressOpen, setProgressOpen] = useState(true)
   const navigate = useNavigate()
   const { remaining } = useAuditAllowance()
   const scanSteps = [
@@ -259,7 +262,10 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
                   type="submit"
                   disabled={loading}
                   aria-busy={loading}
-                  className="scan-action btn-ink shrink-0 bg-[var(--accent)] px-4 py-2.5 text-[12px] font-medium tracking-[-.025em] text-[var(--accent-contrast)] disabled:cursor-wait disabled:opacity-75"
+                  // D-03: match the inverse --panel-bg/--panel-fg treatment "Run a free check"
+                  // already uses, instead of the muted --accent grey that made Start scan look
+                  // identical whether idle, filled, or loading.
+                  className="scan-action btn-ink shrink-0 bg-[var(--panel-bg)] px-4 py-2.5 text-[12px] font-medium tracking-[-.025em] text-[var(--panel-fg)] disabled:cursor-wait disabled:opacity-75"
                 >
                   <span>{loading ? "Checking…" : "Start scan"}</span>
                   {!loading && (
@@ -417,9 +423,10 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
             knowledge in your docs is hard to reach—and what makes it clearer
             for a system trying to give someone a trustworthy answer.
           </p>
+          {/* D-05: ink, not the muted --accent grey, so an active link actually reads as active. */}
           <Link
             to="/how-it-works"
-            className="group mt-2 inline-flex w-fit items-center gap-2 border-b border-[var(--accent)] pb-1 text-[12px] font-medium tracking-[-.025em] text-[var(--accent)]"
+            className="group mt-2 inline-flex w-fit items-center gap-2 border-b border-[var(--ink)] pb-1 text-[12px] font-medium tracking-[-.025em] text-[var(--ink)]"
           >
             See how Lensy checks{" "}
             <Icon name="arrow" className="arrow-nudge size-3" />
