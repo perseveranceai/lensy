@@ -1,6 +1,8 @@
 # What Changed in Lensy After Re-checking AI-Ready Docs Signals
 
-> AI Readiness | 4 min read | Published 2026-09-20
+> AI Readiness | 4 min read | Published 2026-09-16
+
+## TL;DR
 
 - Markdown discoverability is no longer just a .md file check. The current ecosystem now includes same-URL Markdown negotiation through the Accept header, llms.txt, llms-full.txt, and page-level discovery headers [1, 2, 3].
 - The llms.txt proposal allows /llms.txt at the root or in a subpath, which means a docs audit can produce false negatives if it only checks one location [3].
@@ -42,6 +44,13 @@ The broader lesson is simple. AI-ready documentation is no longer just about whe
 
 Research still supports the underlying principle. WebSRC found that answering questions about web pages requires understanding page structure, not just the text on the page [4]. The more documentation platforms expose agent-friendly structure directly, the more accurate an AI-readiness audit also has to become.
 
+## References
+
+1. [Mintlify. "llms.txt." Documentation, 2025.](https://www.mintlify.com/docs/ai/llmstxt)
+2. [Cloudflare. "Introducing Markdown for Agents." Cloudflare Blog, 2026.](https://blog.cloudflare.com/markdown-for-agents/)
+3. [Howard, Jeremy. "The /llms.txt file." llmstxt.org, 2024.](https://llmstxt.org)
+4. [Chen et al. "WebSRC: A Dataset for Web-Based Structural Reading Comprehension." EMNLP, 2021.](https://aclanthology.org/2021.emnlp-main.343/)
+
 ---
 
-Check your documentation's AI readiness at [https://perseveranceai.com](https://perseveranceai.com)
+Check your documentation's AI readiness at [https://gamma.perseveranceai.com](https://gamma.perseveranceai.com)

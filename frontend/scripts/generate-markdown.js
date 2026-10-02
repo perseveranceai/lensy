@@ -77,6 +77,9 @@ function extractArticles() {
         const tagMatch = block.match(/tag:\s*"([^"]+)"/);
         const readTimeMatch = block.match(/readTime:\s*"([^"]+)"/);
         const descMatch = block.match(/description:\s*"((?:[^"\\]|\\.)*)"/);
+        // N-11: use the article's real publishedDate field (added alongside this
+        // fix) instead of always stamping today's build date.
+        const publishedDateMatch = block.match(/publishedDate:\s*"([^"]+)"/);
 
         // Body: everything after `body:` — extract headings, paragraphs, and TlDr bullets in order.
         const bodyIdx = block.indexOf('body:');
@@ -87,8 +90,11 @@ function extractArticles() {
             if (current.heading || current.paragraphs.length || current.bulletPoints.length) sections.push(current);
         };
 
-        // Tokenize <h2>, <p>, and TlDr items in document order.
-        const tokenRegex = /<h2>([\s\S]*?)<\/h2>|<p>([\s\S]*?)<\/p>|<TlDr\s+items=\{\[([\s\S]*?)\]\}/g;
+        // Tokenize <h2>, <p>, TlDr items, and plain <ul> lists in document order.
+        // N-11: a raw <ul><li>...</li></ul> list (used in one article for
+        // adoption examples) matched none of the original three patterns and
+        // was silently dropped from the generated markdown.
+        const tokenRegex = /<h2>([\s\S]*?)<\/h2>|<p>([\s\S]*?)<\/p>|<TlDr\s+items=\{\[([\s\S]*?)\]\}|<ul>([\s\S]*?)<\/ul>/g;
         let tok;
         while ((tok = tokenRegex.exec(body)) !== null) {
             if (tok[1] !== undefined) {
@@ -99,23 +105,57 @@ function extractArticles() {
                 const text = stripInlineTags(tok[2]);
                 if (text) current.paragraphs.push(text);
             } else if (tok[3] !== undefined) {
-                // TlDr bullet list — string items in an array.
+                // TlDr bullet list — string items in an array. N-11: this is
+                // always the first thing in the body, before any <h2>, so it
+                // rendered as an unlabelled bullet list; label it explicitly.
+                if (!current.heading && !current.paragraphs.length && !current.bulletPoints.length) {
+                    current.heading = 'TL;DR';
+                }
                 const bRegex = /"((?:[^"\\]|\\.)*)"/g;
                 let b;
                 while ((b = bRegex.exec(tok[3])) !== null) {
                     current.bulletPoints.push(b[1].replace(/\\"/g, '"'));
                 }
+            } else if (tok[4] !== undefined) {
+                const liRegex = /<li>([\s\S]*?)<\/li>/g;
+                let li;
+                while ((li = liRegex.exec(tok[4])) !== null) {
+                    const text = stripInlineTags(li[1]);
+                    if (text) current.bulletPoints.push(text);
+                }
             }
         }
         pushCurrent();
+
+        // N-11: the tokenizer above only ever captured <h2>, <p> and <TlDr> —
+        // the <References items={[...]} /> block at the end of every article
+        // was silently dropped, so every generated .md file had dangling
+        // [1][2][3] inline markers with no list to resolve them against.
+        const references = [];
+        const referencesBlockMatch = block.match(/<References\s+items=\{\[([\s\S]*?)\]\}\s*\/>/);
+        if (referencesBlockMatch) {
+            // `text` is single-quoted in source (its content often contains
+            // double-quoted titles, e.g. 'Howard. "The /llms.txt file."'),
+            // `href` is double-quoted.
+            const itemRegex = /\{\s*n:\s*(\d+)\s*,\s*text:\s*'((?:[^'\\]|\\.)*)'\s*,\s*href:\s*"((?:[^"\\]|\\.)*)"\s*\}/g;
+            let refMatch;
+            while ((refMatch = itemRegex.exec(referencesBlockMatch[1])) !== null) {
+                references.push({
+                    n: Number(refMatch[1]),
+                    text: refMatch[2].replace(/\\'/g, "'"),
+                    href: refMatch[3].replace(/\\"/g, '"'),
+                });
+            }
+        }
 
         articles[slug] = {
             title: titleMatch ? titleMatch[1].replace(/\\"/g, '"') : slug,
             category: tagMatch ? tagMatch[1] : '',
             readTime: (readTimeMatch ? readTimeMatch[1] : '').replace(/\s*read$/i, ''),
-            publishedDate: today,
+            publishedDate: publishedDateMatch ? publishedDateMatch[1] : today,
             description: descMatch ? descMatch[1].replace(/\\"/g, '"') : '',
             sections,
+            references,
         };
     }
 
@@ -150,6 +190,16 @@ function articleToMarkdown(slug, article) {
         }
     }
 
+    // N-11: resolve the inline [1][2][3] markers used throughout the prose.
+    if (article.references && article.references.length > 0) {
+        lines.push('## References');
+        lines.push('');
+        for (const ref of article.references) {
+            lines.push(`${ref.n}. [${ref.text}](${ref.href})`);
+        }
+        lines.push('');
+    }
+
     lines.push('---');
     lines.push('');
     lines.push(`Check your documentation's AI readiness at [${baseUrl}](${baseUrl})`);
@@ -169,8 +219,8 @@ function generateLlmsTxt(articles) {
     lines.push('## Main Pages');
     lines.push('');
     lines.push(`- [Home](${baseUrl}/): AI readiness scanner for documentation pages`);
+    lines.push(`- [How it works](${baseUrl}/how-it-works): How Lensy checks bot access, content structure, and discoverability`);
     lines.push(`- [Education](${baseUrl}/education): Guides on optimizing docs for AI search`);
-    lines.push(`- [About](${baseUrl}/about): About Perseverance AI`);
     lines.push(`- [Contact / Waitlist](${baseUrl}/contact): Join the waitlist for early access`);
     lines.push('');
     lines.push('## Education Articles');
@@ -187,10 +237,13 @@ function generateLlmsTxt(articles) {
 
 // ── Generate sitemap.xml ──
 function generateSitemap(articles) {
+    // N-11: /about is a client-side redirect to / (App.tsx), not a real page —
+    // it had no business being in the sitemap. /how-it-works is a real route
+    // that was missing instead.
     const staticPages = [
         { loc: '/', priority: '1.0', changefreq: 'weekly' },
+        { loc: '/how-it-works', priority: '0.9', changefreq: 'monthly' },
         { loc: '/education', priority: '0.9', changefreq: 'weekly' },
-        { loc: '/about', priority: '0.8', changefreq: 'monthly' },
         { loc: '/contact', priority: '0.8', changefreq: 'monthly' },
         { loc: '/terms', priority: '0.3', changefreq: 'yearly' },
         { loc: '/privacy', priority: '0.3', changefreq: 'yearly' },

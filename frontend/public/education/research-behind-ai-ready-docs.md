@@ -1,6 +1,8 @@
 # The Research Behind AI-Ready Documentation
 
-> AI Readiness | 3 min read | Published 2026-09-19
+> AI Readiness | 3 min read | Published 2026-03-22
+
+## TL;DR
 
 - Document structure directly affects AI retrieval quality. DeepRead showed 10.3% improvement and RAPTOR showed 20% improvement with structure-aware processing.
 - ClaudeBot is blocked by 69% of websites and GPTBot by 62%. 71% of sites that block training bots also block search crawlers, removing themselves from AI results entirely.
@@ -30,6 +32,19 @@ OpenGraph meta tags influence how AI-powered preview systems and content aggrega
 
 84% of developers now use or plan to use AI tools [11]. Documentation that meets structural, access, and metadata standards gets cited. Documentation that does not is invisible to this growing majority.
 
+## References
+
+1. [Li et al. "DeepRead: Document Structure-Aware Reasoning." arXiv:2602.05014, 2026.](https://arxiv.org/abs/2602.05014)
+2. [Sarthi et al. "RAPTOR: Recursive Abstractive Processing for Tree-Organized Retrieval." ICLR 2024.](https://arxiv.org/abs/2401.18059)
+3. [Borchmann et al. "DUE: End-to-End Document Understanding Benchmark." NeurIPS 2021.](https://datasets-benchmarks-proceedings.neurips.cc/paper/2021/hash/069059b7ef840f0c74a814ec9237b6ec-Abstract-round2.html)
+4. [Snowflake. "How Retrieval & Chunking Impact Finance RAG." 2024.](https://www.snowflake.com/en/engineering-blog/impact-retrieval-chunking-finance-rag/)
+5. [ALM Corp. "ClaudeBot, Claude-User & Claude-SearchBot: Anthropic's Three-Bot Framework." 2025.](https://almcorp.com/blog/anthropic-claude-bots-robots-txt-strategy/)
+6. [Search Engine Journal. "Anthropic's Claude Bots Make Robots.txt Decisions More Granular." 2025.](https://www.searchenginejournal.com/anthropics-claude-bots-make-robots-txt-decisions-more-granular/568253/)
+8. [BrightEdge. "Structured Data in the AI Search Era." 2025.](https://www.brightedge.com/blog/structured-data-ai-search-era)
+9. [Google. "Introduction to Structured Data." Search Central.](https://developers.google.com/search/docs/appearance/structured-data/intro-structured-data)
+10. [Google. "Canonicalisation." Search Central.](https://developers.google.com/search/docs/crawling-indexing/canonicalization)
+11. [Stack Overflow. "2025 Developer Survey Results." 2025.](https://survey.stackoverflow.co/2025/)
+
 ---
 
-Check your documentation's AI readiness at [https://perseveranceai.com](https://perseveranceai.com)
+Check your documentation's AI readiness at [https://gamma.perseveranceai.com](https://gamma.perseveranceai.com)
