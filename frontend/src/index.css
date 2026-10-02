@@ -1,4 +1,14 @@
+@import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
+/* D-08: this file is the real Tailwind v4 input (CSS-first config + base
+   styles). The compiled src/tailwind.css below was, until this fix, hand-run
+   and committed with no build step wiring it to this source — so it silently
+   drifted out of sync with the classNames actually used in AppRoutes.tsx /
+   Home.tsx (confirmed missing: px-1, py-0.5, truncate, transition-all,
+   whitespace-nowrap, mb-8, and more). `npm run build`/`build:gamma`/
+   `build:prod` now regenerate src/tailwind.css from this file first, so it
+   can't drift again. Do not edit src/tailwind.css by hand. */
 
 @theme {
   --font-sans: "Plus Jakarta Sans", Arial, sans-serif;
@@ -15,7 +25,9 @@
   --tint: #eceff0;
   --ink: #141414;
   --ink-soft: #55585a;
-  --muted: #7a7d7f;
+  /* D-09: darkened from #7a7d7f (4.14:1 on white, failed WCAG AA) to clear
+     4.5:1 against both --bg and --surface. */
+  --muted: #6b6e70;
   --placeholder: #a1a4a6;
   --line: rgba(20, 20, 20, .20);
   --line-soft: rgba(20, 20, 20, .14);
@@ -321,8 +333,12 @@ textarea:focus-visible {
   outline: none;
 }
 
+/* D-10: a border-color swap alone is too subtle to count as a focus
+   indicator; add a visible ring since the input itself suppresses its
+   native outline above. */
 .field-shell:focus-within {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 .theme-choice {
@@ -570,8 +586,10 @@ textarea:focus-visible {
   color: var(--ink);
 }
 
+/* D-05: ink, not the muted --accent grey, so an in-article reference link
+   reads as active rather than decorative. */
 .prose-lensy a {
-  color: var(--accent);
+  color: var(--ink);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
