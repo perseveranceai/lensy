@@ -14,12 +14,29 @@ const logo = `${process.env.PUBLIC_URL}/logo.png`;
 // on unmount so it never leaks onto indexable pages.
 export function useNoindex() {
   useEffect(() => {
-    const meta = document.createElement("meta");
-    meta.name = "robots";
-    meta.content = "noindex";
-    meta.setAttribute("data-noindex-dynamic", "true");
-    document.head.appendChild(meta);
-    return () => { meta.remove(); };
+    // N-15: index.html ships a static <meta name="robots" content="index,
+    // follow">. This used to just append a second, conflicting meta tag
+    // instead of replacing it, so every /results and /scan page carried both
+    // "index, follow" and "noindex" at once. Update the existing tag in
+    // place (and restore its original value on unmount) instead.
+    const existing = document.querySelector('meta[name="robots"]') as HTMLMetaElement | null;
+    const previousContent = existing?.content;
+    let created: HTMLMetaElement | null = null;
+    if (existing) {
+      existing.content = "noindex";
+    } else {
+      created = document.createElement("meta");
+      created.name = "robots";
+      created.content = "noindex";
+      document.head.appendChild(created);
+    }
+    return () => {
+      if (created) {
+        created.remove();
+      } else if (existing && previousContent !== undefined) {
+        existing.content = previousContent;
+      }
+    };
   }, []);
 }
 
@@ -379,8 +396,10 @@ export function MobileNav({ remaining }: { remaining: number }) {
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, []);
-  const links = [
-    ["/", "Lensy"],
+  // T-11: the desktop NavRail shows a "Beta" badge on Lensy; the mobile menu
+  // never carried one at all, so mobile users saw no beta indicator.
+  const links: [string, string, string?][] = [
+    ["/", "Lensy", "Beta"],
     ["/how-it-works", "How it works"],
     ["/education", "Education"],
     ["/contact", "Contact"],
@@ -392,9 +411,9 @@ export function MobileNav({ remaining }: { remaining: number }) {
     </button>
     {open && <div id="mobile-navigation" className="popup-shadow mobile-nav-menu absolute right-0 top-[calc(100%+10px)] z-30 w-52 overflow-hidden rounded-[var(--radius-md)] border border-[var(--line-strong)] bg-[var(--bg)] p-1.5">
       <div className="space-y-0.5">
-        {links.map(([to, label]) => {
+        {links.map(([to, label, badge]) => {
           const active = pathname === to || (to !== "/" && pathname.startsWith(to + "/"));
-          return <Link key={to} to={to} onClick={to === "/contact" ? () => trackEvent("contact_link_clicked", { source: "mobile-nav" }) : undefined} className={`flex items-center justify-between rounded-[var(--radius-xs)] px-3 py-2.5 text-[13px] font-medium tracking-[-.025em] transition-colors ${active ? "bg-[var(--ink)] text-[var(--bg)]" : "text-[var(--ink-soft)] hover:bg-[var(--surface)] hover:text-[var(--ink)]"}`} aria-current={active ? "page" : undefined}>{label}{active && <Check className="size-3.5" strokeWidth={1.8} aria-hidden="true" />}</Link>;
+          return <Link key={to} to={to} onClick={to === "/contact" ? () => trackEvent("contact_link_clicked", { source: "mobile-nav" }) : undefined} className={`flex items-center justify-between rounded-[var(--radius-xs)] px-3 py-2.5 text-[13px] font-medium tracking-[-.025em] transition-colors ${active ? "bg-[var(--ink)] text-[var(--bg)]" : "text-[var(--ink-soft)] hover:bg-[var(--surface)] hover:text-[var(--ink)]"}`} aria-current={active ? "page" : undefined}><span className="inline-flex items-center gap-1.5">{label}{badge && <span className={`rounded-[var(--radius-sm)] px-1 py-0.5 text-[8px] font-semibold uppercase leading-none tracking-[.08em] ${active ? "bg-[var(--bg)]/20 text-[var(--bg)]" : "bg-[var(--surface-2)] text-[var(--accent)]"}`}>{badge}</span>}</span>{active && <Check className="size-3.5" strokeWidth={1.8} aria-hidden="true" />}</Link>;
         })}
       </div>
       <p className="mt-1.5 border-t border-[var(--line)] px-3 py-2.5 text-[11px] font-medium tracking-[-.02em] text-[var(--muted)]">Free tier — {remaining} audits left</p>
@@ -472,14 +491,19 @@ export function ShellContent() {
         <Link to="/" aria-label="Perseverance AI home" className="inline-flex w-full justify-center opacity-80 transition-opacity hover:opacity-100">
           <img src={logo} alt="Perseverance AI" className="logo-mark size-[60px] translate-x-1 object-contain" />
         </Link>
+        {/* D-05/D-06: active links read as ink (high-contrast), not the muted --accent
+            grey, and hover deepens rather than dims. */}
         <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-[13px] font-medium text-[var(--ink-soft)]">
-          <a href="https://www.linkedin.com/company/getperseverance/" target="_blank" rel="noopener noreferrer" className="link-sweep hover:text-[var(--accent)]">LinkedIn</a>
-          <a href="https://x.com/getperseverance" target="_blank" rel="noopener noreferrer" className="link-sweep hover:text-[var(--accent)]">X</a>
-          <a href="https://calendly.com/getperseverance" target="_blank" rel="noopener noreferrer" className="link-sweep hover:text-[var(--accent)]">Schedule a conversation</a>
+          <a href="https://www.linkedin.com/company/getperseverance/" target="_blank" rel="noopener noreferrer" className="link-sweep hover:text-[var(--ink)]">LinkedIn</a>
+          <a href="https://x.com/getperseverance" target="_blank" rel="noopener noreferrer" className="link-sweep hover:text-[var(--ink)]">X</a>
+          <a href="https://calendly.com/getperseverance" target="_blank" rel="noopener noreferrer" className="link-sweep hover:text-[var(--ink)]">Schedule a conversation</a>
         </div>
         <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[12px] text-[var(--muted)]">
           <span>© {new Date().getFullYear()} Perseverance AI. All rights reserved.</span>
-          <Link to="/terms" className="link-sweep text-[var(--ink-soft)] hover:text-[var(--accent)]">Terms and Policy</Link>
+          <Link to="/terms" className="link-sweep text-[var(--ink-soft)] hover:text-[var(--ink)]">Terms and Policy</Link>
+          {/* T-13: a Privacy Policy link existed only inside the legal page's own
+              side nav, never in the public footer. */}
+          <Link to="/privacy" className="link-sweep text-[var(--ink-soft)] hover:text-[var(--ink)]">Privacy</Link>
         </div>
         <p className="max-w-[640px] text-[11px] leading-relaxed text-[var(--muted)]">Lensy is in beta. Results are generated automatically and may not always be accurate — treat them as guidance, not a definitive audit.</p>
       </div>
@@ -1116,7 +1140,12 @@ export function ScanReport({
         || (key === "links" && hay.includes("internal link"))
         || (key === "canonical url" && hay.includes("canonical"))
         || (key === "meta robots" && hay.includes("noindex"))
-        || (key === "page markdown" && hay.includes("markdown"));
+        || (key === "page markdown" && hay.includes("markdown"))
+        // T-06: the signal label is plural ("Breadcrumbs") but the backend's
+        // recommendation text says "breadcrumb" (singular, e.g. "No
+        // BreadcrumbList schema found"), so the plain hay.includes(key) above
+        // never matched and this signal silently got no Fix line.
+        || (key === "breadcrumbs" && hay.includes("breadcrumb"));
     });
     return match ? recFix(match) : undefined;
   };
@@ -1176,7 +1205,7 @@ export function ScanReport({
           {rec.category && <span className={chipClass}>{rec.category}</span>}
         </div>
         <p className="mt-3 text-[13px] leading-relaxed text-[var(--ink-soft)]">{recFix(rec)}</p>
-        {link && <a href={link.href} target="_blank" rel="noopener noreferrer" className="group mt-2.5 inline-flex items-center gap-1 text-[12px] font-medium tracking-[-.02em] text-[var(--accent)] hover:text-[var(--accent-hover)]"><span style={{ textDecoration: "underline", textUnderlineOffset: "3px" }}>{link.label}</span><ArrowRight className="arrow-nudge size-3" strokeWidth={1.8} aria-hidden="true" /></a>}
+        {link && <a href={link.href} target="_blank" rel="noopener noreferrer" onClick={() => trackEvent("generate_markdown_link_clicked", { ref: link.href })} className="group mt-2.5 inline-flex items-center gap-1 text-[12px] font-medium tracking-[-.02em] text-[var(--ink)]"><span style={{ textDecoration: "underline", textUnderlineOffset: "3px" }}>{link.label}</span><ArrowRight className="arrow-nudge size-3" strokeWidth={1.8} aria-hidden="true" /></a>}
         {rec.codeSnippet && <pre className="mt-4 overflow-x-auto rounded-[var(--radius-md)] text-[12px] leading-[1.7]" style={{ background: "var(--panel-bg)", color: "var(--panel-fg)", fontFamily: "var(--font-mono, ui-monospace, monospace)", whiteSpace: "pre-wrap", padding: "16px 18px" }}>{rec.codeSnippet}</pre>}
       </article>
     );
@@ -1192,7 +1221,10 @@ export function ScanReport({
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {result.tier && <span className={chipClass}>{TIER_LABELS[result.tier]}</span>}
         </div>
-        {result.citedUrl && <p className="mt-2 text-[12px] leading-relaxed text-[var(--ink-soft)]">Cited URL: {result.citedUrl}</p>}
+        {/* N-16: a long, unbroken citedUrl could push the table wider than its
+            overflow-hidden wrapper, silently clipping the Cited pill in the
+            next column. Let the URL wrap instead of forcing table width. */}
+        {result.citedUrl && <p className="mt-2 break-all text-[12px] leading-relaxed text-[var(--ink-soft)]">Cited URL: {result.citedUrl}</p>}
         {result.competingDomains?.length > 0 && <p className="mt-2 text-[12px] leading-relaxed text-[var(--ink-soft)]">Cited instead: {result.competingDomains.join(", ")}</p>}
       </td>
       <td className="px-4 py-5 text-right align-middle">
@@ -1201,7 +1233,10 @@ export function ScanReport({
     </tr>
   );
   const renderCitationTable = () => (
-    <div className="mt-6 overflow-hidden rounded-[var(--radius-md)] border border-[var(--line)]">
+    // N-16: overflow-hidden silently clipped the Cited pill at narrow widths
+    // instead of letting the table scroll; overflow-x-auto is the safety net
+    // on top of the break-all fix above.
+    <div className="mt-6 overflow-x-auto rounded-[var(--radius-md)] border border-[var(--line)]">
       <table className="w-full border-collapse text-left">
         <thead>
           <tr className="border-b border-[var(--line)] text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">
@@ -1405,7 +1440,7 @@ export function ScanReport({
       )}
     </div>
 
-    {view === "readiness" && <><div className="mt-6 flex flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] px-4 py-3"><div className="flex flex-wrap items-center gap-x-3 gap-y-1"><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink)]">{botAccessState === 'js_blocked' ? "! AI bot access is blocked by JavaScript" : botAccessBannerText()}</span>{botAccess?.robotsTxtFound ? <a href={robotsUrl} target="_blank" rel="noopener noreferrer" className="ml-auto text-[11px] font-medium tracking-[-.025em] text-[var(--accent)] transition-colors hover:text-[var(--accent-hover)]" style={{ textDecoration: "underline", textUnderlineOffset: "4px" }}>robots.txt</a> : <span className="ml-auto text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">No robots.txt found</span>}</div>{(botAccessState === 'js_blocked' || !botAccess?.bots?.length) && <span className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">{botAccessState === 'js_blocked' ? "This page is a JavaScript-rendered SPA. Most AI bots do not execute JavaScript, making your content invisible to them regardless of your robots.txt configuration. Lensy rendered this page for content analysis; most AI bots cannot." : hasReport ? "No checked crawler names were returned." : "No bot access data returned."}</span>}{botAccess?.bots?.length > 0 && <div className="mt-1 flex flex-wrap gap-1.5">{botAccess.bots.map((bot: any, i: number) => { const blocked = botAccessState === 'js_blocked' || !(bot.status === 'allowed' || bot.status === 'not-mentioned'); return <span key={i} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--line-soft)] bg-[var(--surface-2)] px-2.5 py-1 text-[10px] font-medium leading-none tracking-[-.02em] text-[var(--ink-soft)]">{blocked ? <XCircle className="size-3 shrink-0" style={{ color: "var(--ink-soft)" }} strokeWidth={2} aria-hidden="true" /> : <CheckCircle2 className="size-3 shrink-0" style={{ color: "var(--accent)" }} strokeWidth={2} aria-hidden="true" />}{bot.name}</span>; })}</div>}</div><div className="mt-5 grid items-start gap-3 lg:grid-cols-3">{signalGroups.map((group) => <section key={group.title} className="rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] p-6"><div className="flex items-center justify-between border-b border-[var(--line)] pb-4"><h2 className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)]">{group.title}</h2><SignalStatusIcon status={(() => { const all = group.sections.flatMap((s: any) => s.signals as Signal[]); if (group.title === "Structured data") return headerStatus("structuredData", 15, all); if (group.title === "Discoverability") return headerStatus("discoverability", 30, all); if (group.title === "Content quality") return headerStatus("consumability", 32, all); return aggregateStatus(all.map((x) => x.status)); })()} className="size-4 shrink-0" /></div>{group.sections.map((section: any) => <div key={section.title || group.title} className="mt-5 first:mt-5"><p className={`text-[11px] font-medium uppercase tracking-[.08em] text-[var(--muted)] ${section.title ? "mb-4" : "sr-only"}`}>{section.title || "Signals"}</p><ul className="space-y-5">{section.signals.map((sig: Signal) => <li key={sig.label} className="flex gap-2.5"><SignalStatusIcon status={sig.status} className="mt-0.5 size-4 shrink-0" /><div className="min-w-0"><div className="flex flex-wrap items-center gap-x-3 gap-y-2"><p className="text-[14px] tracking-[-.025em]">{sig.label}</p><EvidenceBadge signal={sig.signal} /><AudienceBadge audience={sig.signal?.audience || sig.audience} />{sig.status !== "pass" && <ImpactBadge impact={resolveImpact(sig.label)} />}<InfoHint text={sig.info} /></div><p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-soft)]">{sig.detail}</p>{sig.status !== "pass" && (() => { const fix = fixForSignal(sig.label); return fix ? <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--ink)]"><span className="font-medium">Fix: </span>{fix}</p> : null; })()}{sig.signal?.note && <p className="mt-1 text-[11px] italic leading-relaxed" style={{ color: "var(--ink-soft)" }}>{sig.signal.note}</p>}{sig.waitlist && <a href={`/contact?ref=${sig.waitlist}`} target="_blank" rel="noopener noreferrer" className="group mt-1.5 inline-flex items-center gap-1 text-[12px] font-medium tracking-[-.02em] text-[var(--accent)] hover:text-[var(--accent-hover)]"><span style={{ textDecoration: "underline", textUnderlineOffset: "3px" }}>{sig.waitlist === "llmstxt" ? "We can help you generate one" : "We can help you generate markdown"}</span><ArrowRight className="arrow-nudge size-3" strokeWidth={1.8} aria-hidden="true" /></a>}</div></li>)}</ul></div>)}</section>)}</div></>}
+    {view === "readiness" && <><div className="mt-6 flex flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] px-4 py-3"><div className="flex flex-wrap items-center gap-x-3 gap-y-1"><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink)]">{botAccessState === 'js_blocked' ? "! AI bot access is blocked by JavaScript" : botAccessBannerText()}</span>{botAccess?.robotsTxtFound ? <a href={robotsUrl} target="_blank" rel="noopener noreferrer" className="ml-auto text-[11px] font-medium tracking-[-.025em] text-[var(--ink)] transition-colors" style={{ textDecoration: "underline", textUnderlineOffset: "4px" }}>robots.txt</a> : <span className="ml-auto text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">No robots.txt found</span>}</div>{(botAccessState === 'js_blocked' || !botAccess?.bots?.length) && <span className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">{botAccessState === 'js_blocked' ? "This page is a JavaScript-rendered SPA. Most AI bots do not execute JavaScript, making your content invisible to them regardless of your robots.txt configuration. Lensy rendered this page for content analysis; most AI bots cannot." : hasReport ? "No checked crawler names were returned." : "No bot access data returned."}</span>}{botAccess?.bots?.length > 0 && <div className="mt-1 flex flex-wrap gap-1.5">{botAccess.bots.map((bot: any, i: number) => { const blocked = botAccessState === 'js_blocked' || !(bot.status === 'allowed' || bot.status === 'not-mentioned'); /* T-07: the icon alone carried the allowed/blocked state and was aria-hidden, so screen readers only heard the bot name. */ return <span key={i} aria-label={`${bot.name}: ${blocked ? "blocked" : "allowed"}`} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--line-soft)] bg-[var(--surface-2)] px-2.5 py-1 text-[10px] font-medium leading-none tracking-[-.02em] text-[var(--ink-soft)]">{blocked ? <XCircle className="size-3 shrink-0" style={{ color: "var(--ink-soft)" }} strokeWidth={2} aria-hidden="true" /> : <CheckCircle2 className="size-3 shrink-0" style={{ color: "var(--accent)" }} strokeWidth={2} aria-hidden="true" />}<span aria-hidden="true">{bot.name}</span></span>; })}</div>}</div><div className="mt-5 grid items-start gap-3 lg:grid-cols-3">{signalGroups.map((group) => <section key={group.title} className="rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] p-6"><div className="flex items-center justify-between border-b border-[var(--line)] pb-4"><h2 className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)]">{group.title}</h2><SignalStatusIcon status={(() => { const all = group.sections.flatMap((s: any) => s.signals as Signal[]); if (group.title === "Structured data") return headerStatus("structuredData", 15, all); if (group.title === "Discoverability") return headerStatus("discoverability", 30, all); if (group.title === "Content quality") return headerStatus("consumability", 32, all); return aggregateStatus(all.map((x) => x.status)); })()} className="size-4 shrink-0" /></div>{group.sections.map((section: any) => <div key={section.title || group.title} className="mt-5 first:mt-5"><p className={`text-[11px] font-medium uppercase tracking-[.08em] text-[var(--muted)] ${section.title ? "mb-4" : "sr-only"}`}>{section.title || "Signals"}</p><ul className="space-y-5">{section.signals.map((sig: Signal) => <li key={sig.label} className="flex gap-2.5"><SignalStatusIcon status={sig.status} className="mt-0.5 size-4 shrink-0" /><div className="min-w-0"><div className="flex flex-wrap items-center gap-x-3 gap-y-2"><p className="text-[14px] tracking-[-.025em]">{sig.label}</p><EvidenceBadge signal={sig.signal} /><AudienceBadge audience={sig.signal?.audience || sig.audience} />{sig.status !== "pass" && <ImpactBadge impact={resolveImpact(sig.label)} />}<InfoHint text={sig.info} /></div><p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-soft)]">{sig.detail}</p>{sig.status !== "pass" && (() => { const fix = fixForSignal(sig.label); return fix ? <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--ink)]"><span className="font-medium">Fix: </span>{fix}</p> : null; })()}{sig.signal?.note && <p className="mt-1 text-[11px] italic leading-relaxed" style={{ color: "var(--ink-soft)" }}>{sig.signal.note}</p>}{sig.waitlist && <a href={`/contact?ref=${sig.waitlist}`} target="_blank" rel="noopener noreferrer" onClick={() => trackEvent("generate_markdown_link_clicked", { ref: sig.waitlist })} className="group mt-1.5 inline-flex items-center gap-1 text-[12px] font-medium tracking-[-.02em] text-[var(--ink)]"><span style={{ textDecoration: "underline", textUnderlineOffset: "3px" }}>{sig.waitlist === "llmstxt" ? "We can help you generate one" : "We can help you generate markdown"}</span><ArrowRight className="arrow-nudge size-3" strokeWidth={1.8} aria-hidden="true" /></a>}</div></li>)}</ul></div>)}</section>)}</div></>}
 
     {view === "citations-loading" && <div className="mt-10"><p className="text-[15px] leading-relaxed text-[var(--ink-soft)]">AI-generated queries are being tested against configured AI search engines.</p><p className="mt-10 text-center text-[12px] font-medium tracking-[-.025em] text-[var(--accent)]">Testing citation queries…</p><div className="mt-6 grid gap-3">{Array.from({ length: 4 }).map((_, index) => <div key={index} className="grid grid-cols-[1.5fr_.65fr] gap-5 border-t border-[var(--line)] py-4"><span className="h-3 animate-pulse bg-[var(--surface-2)]" /><span className="h-3 animate-pulse bg-[var(--surface-2)]" /></div>)}</div></div>}
 
@@ -1447,7 +1482,7 @@ export function ScanReport({
         carrying the standing scan note and a Share feedback link. */}
     {(view === "readiness" || view === "recommendations" || view === "citations" || view === "citations-loading") && (
       <div className="mt-12 border-l-2 border-[var(--accent)] bg-[var(--surface)] px-5 py-4 text-[12px] leading-relaxed text-[var(--ink-soft)]">
-        Results above are generated from the completed Lensy scan. Citation results appear only after the citation check returns data. <a href="/contact?ref=feedback" target="_blank" rel="noopener noreferrer" className="font-medium text-[var(--accent)] hover:text-[var(--accent-hover)]" style={{ textDecoration: "underline", textUnderlineOffset: "3px" }}>Share feedback</a>
+        Results above are generated from the completed Lensy scan. Citation results appear only after the citation check returns data. <a href="/contact?ref=feedback" target="_blank" rel="noopener noreferrer" onClick={() => trackEvent("contact_link_clicked", { source: "results-share-feedback" })} className="font-medium text-[var(--ink)]" style={{ textDecoration: "underline", textUnderlineOffset: "3px" }}>Share feedback</a>
       </div>
     )}
   </section>;
@@ -1520,6 +1555,9 @@ type ArticleData = {
   tag: string;
   readTime: string;
   description: string;
+  // N-11: the real date each article was first published, so the generated
+  // .md/sitemap.xml lastmod stops being stamped to today's build date.
+  publishedDate: string;
   body: React.ReactNode;
 };
 
@@ -1527,6 +1565,7 @@ const ARTICLES: ArticleData[] = [
   {
     slug: "what-changed-in-lensy-after-rechecking-ai-ready-docs-signals",
     title: "What Changed in Lensy After Re-checking AI-Ready Docs Signals",
+    publishedDate: "2026-09-16",
     tag: "AI Readiness",
     readTime: "4 min read",
     description: "Some documentation sites already expose machine-readable content in ways a simpler audit can miss. Why we re-checked Lensy's detection model — and what changed.",
@@ -1573,6 +1612,7 @@ const ARTICLES: ArticleData[] = [
   {
     slug: "research-behind-ai-ready-docs",
     title: "The Research Behind AI-Ready Documentation",
+    publishedDate: "2026-03-22",
     tag: "AI Readiness",
     readTime: "3 min read",
     description: "The research behind the four things Lensy measures: bot access, content structure, structured data, and discoverability.",
@@ -1619,6 +1659,7 @@ const ARTICLES: ArticleData[] = [
   {
     slug: "how-ai-search-finds-and-cites-docs",
     title: "How AI Search Finds, Processes, and Cites Your Docs",
+    publishedDate: "2026-03-22",
     tag: "AI Discoverability",
     readTime: "3 min read",
     description: "Inside the RAG pipeline: crawling, chunking, retrieval, and citation. What llms.txt changes, and how platforms like Perplexity and ChatGPT decide what to cite.",

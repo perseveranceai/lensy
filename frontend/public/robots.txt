@@ -19,8 +19,8 @@ Allow: /
 User-agent: Google-Extended
 Allow: /
 
-Sitemap: https://perseveranceai.com/sitemap.xml
+Sitemap: https://gamma.perseveranceai.com/sitemap.xml
 
 # LLM-readable company information
 # See https://llmstxt.org for specification
-# LLMs-Txt: https://perseveranceai.com/llms.txt
+# LLMs-Txt: https://gamma.perseveranceai.com/llms.txt

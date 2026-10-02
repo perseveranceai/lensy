@@ -79,15 +79,16 @@ function App() {
                             {/* Legal pages */}
                             <Route path="/terms" element={<Terms />} />
                             <Route path="/privacy" element={<Privacy />} />
+
+                            {/* N-08: this used to sit outside ShellContent, so the 404 page
+                                rendered with no header/footer, unlike every other route. */}
+                            <Route path="*" element={<NotFound />} />
                         </Route>
 
                         {/* Legacy routes — redirect to Lensy */}
                         <Route path="/about" element={<Navigate to="/" replace />} />
                         <Route path="/console/lensy" element={<Navigate to="/" replace />} />
                         <Route path="/console" element={<Navigate to="/" replace />} />
-
-                        {/* Catch-all */}
-                        <Route path="*" element={<NotFound />} />
                     </Routes>
                 </AuditAllowanceProvider>
             </Suspense>

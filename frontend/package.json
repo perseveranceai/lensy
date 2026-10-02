@@ -28,11 +28,12 @@
         "ws": "^8.14.0"
     },
     "scripts": {
-        "start": "react-scripts start",
-        "prebuild": "node scripts/generate-markdown.js",
+        "start": "npm run build:css && react-scripts start",
+        "prebuild": "npm run build:css && node scripts/generate-markdown.js",
         "build": "react-scripts build",
-        "build:prod": "env-cmd -f .env.production node scripts/generate-markdown.js && env-cmd -f .env.production react-scripts build",
-        "build:gamma": "env-cmd -f .env.gamma node scripts/generate-markdown.js && env-cmd -f .env.gamma react-scripts build",
+        "build:css": "tailwindcss -i src/index.css -o src/tailwind.css",
+        "build:prod": "npm run build:css && env-cmd -f .env.production node scripts/generate-markdown.js && env-cmd -f .env.production react-scripts build",
+        "build:gamma": "npm run build:css && env-cmd -f .env.gamma node scripts/generate-markdown.js && env-cmd -f .env.gamma react-scripts build",
         "test": "react-scripts test",
         "typecheck": "tsc --noEmit -p tsconfig.json",
         "lint": "eslint src --ext .ts,.tsx",
