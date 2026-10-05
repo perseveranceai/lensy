@@ -15,6 +15,37 @@
   --font-mono: "JetBrains Mono", monospace;
 }
 
+/* Theme-independent aliases used by the console/static-page components
+   (ConsoleLayout, ConsoleDashboard, Login, Contact/About/Article/Education,
+   Privacy/Terms, FeedbackWidget, the MUI theme in index.tsx). These resolve
+   layout/typography values that don't change between light and dark. */
+:root {
+  --font-ui: var(--font-sans);
+  --font-heading: var(--font-sans);
+  --width-wide: 1200px;
+  --width-prose: 65ch;
+  --transition-base: .18s var(--ease);
+  --tracking-tight: -.02em;
+
+  /* Spacing scale (N * 0.25rem), matching the Tailwind scale the rest of the
+     app uses. Referenced by the static pages (Privacy, Terms, About, Article,
+     Education) which were authored against an undefined token set. */
+  --space-2: .5rem;
+  --space-3: .75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-12: 3rem;
+
+  /* Type scale for the static/article pages. */
+  --text-xs: .75rem;
+  --text-sm: .875rem;
+  --text-eyebrow: .75rem;
+  --text-body: 1rem;
+  --text-h2: 1.5rem;
+  --text-h1: clamp(2rem, 4vw, 2.5rem);
+}
+
 /* ---- theme tokens: black / white / logo cement ---- */
 :root,
 [data-theme="light"] {
@@ -48,6 +79,30 @@
   --radius-sm: 7px;
   --radius-md: 11px;
   --radius-lg: 15px;
+
+  /* Console/static-page token set. These were referenced across ConsoleLayout,
+     ConsoleDashboard, Login, the static pages and FeedbackWidget but never
+     defined, so in light mode they resolved to nothing (transparent) or to the
+     dark-only hardcoded fallbacks baked into some callsites. Alias them onto
+     the real palette so the whole console side follows the active theme. */
+  --bg-primary: var(--bg);
+  --bg-secondary: var(--surface);
+  --bg-tertiary: var(--surface-2);
+  --text-primary: var(--ink);
+  --text-secondary: var(--ink-soft);
+  --text-muted: var(--muted);
+  --border-subtle: var(--line-soft);
+  --border-default: var(--line);
+  --border-strong: var(--line-strong);
+  --accent-primary: var(--accent);
+  /* Solid by default so the fixed header always masks the content scrolling
+     under it. The frosted translucent look is layered on only where
+     backdrop-filter actually works (see @supports below) — on mobile browsers
+     that ignore backdrop-filter, a translucent header let sharp text bleed
+     through next to the logo. */
+  --header-bg: var(--bg);
+  --accent-error: #c0392b;
+  --bg-input-hover: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 [data-theme="dark"] {
@@ -75,6 +130,31 @@
   --shadow-raised: 0 12px 28px rgba(0, 0, 0, .26);
   --shadow-float: 0 14px 35px rgba(0, 0, 0, .42);
   --shadow-ink: rgba(0, 0, 0, .38);
+
+  /* Console/static-page token set, dark values. See the light block above. */
+  --bg-primary: var(--bg);
+  --bg-secondary: var(--surface);
+  --bg-tertiary: var(--surface-2);
+  --text-primary: var(--ink);
+  --text-secondary: var(--ink-soft);
+  --text-muted: var(--muted);
+  --border-subtle: var(--line-soft);
+  --border-default: var(--line);
+  --border-strong: var(--line-strong);
+  --accent-primary: var(--accent);
+  --header-bg: var(--bg);
+  --accent-error: #ef6a5a;
+  --bg-input-hover: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+/* Frosted header only where backdrop-filter is supported; otherwise the solid
+   --header-bg above keeps content from showing through the fixed header. */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root,
+  [data-theme="light"],
+  [data-theme="dark"] {
+    --header-bg: color-mix(in srgb, var(--bg) 82%, transparent);
+  }
 }
 
 html {

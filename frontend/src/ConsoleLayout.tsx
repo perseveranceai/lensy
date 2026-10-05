@@ -47,20 +47,33 @@ function ConsoleLayout() {
         return () => window.removeEventListener('lensy:usage-changed', handler);
     }, [fetchUsage, skipRateLimit]);
 
-    // Theme dropdown state
+    // Theme dropdown state. Shares the 'theme' localStorage key with the main
+    // app's toggle (AppRoutes.tsx) so the two stay in sync instead of fighting
+    // over separate keys.
     const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
-        return (localStorage.getItem('lensy-theme') as ThemeMode) || 'system';
+        const saved = localStorage.getItem('theme');
+        return saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'system';
     });
     const [themeDropdownOpen, setThemeDropdownOpen] = useState(false);
     const themeDropdownRef = useRef<HTMLDivElement>(null);
 
+    // Resolve 'system' to the actual OS preference. Writing data-theme="system"
+    // matched no CSS rule, so system mode silently fell through to the light
+    // defaults; the CSS only defines [data-theme="light"] and ="dark".
     const applyTheme = useCallback((mode: ThemeMode) => {
-        document.documentElement.setAttribute('data-theme', mode);
+        const resolved = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', resolved);
+        document.documentElement.style.colorScheme = resolved;
     }, []);
 
     useEffect(() => {
         applyTheme(themeMode);
-        localStorage.setItem('lensy-theme', themeMode);
+        localStorage.setItem('theme', themeMode);
+        if (themeMode !== 'system') return;
+        const mq = window.matchMedia('(prefers-color-scheme: dark)');
+        const handler = () => applyTheme('system');
+        mq.addEventListener('change', handler);
+        return () => mq.removeEventListener('change', handler);
     }, [themeMode, applyTheme]);
 
     // Close dropdown when clicking outside
