@@ -33,15 +33,13 @@
 2.
 3.
 
-## Test cases run
+## Tests
 
-<!-- From docs/test-cases.md. Test a production build or gamma — not `npm start` (it doesn't minify CSS). -->
+<!-- Tests are automatic: the pre-push hook updated and ran them, and CI runs the suite again on this PR. Only fill this in if something was skipped. -->
 
-- Environment: [ ] gamma  [ ] local production build (`CI=false npm run build:gamma`)
-- Themes: [ ] light  [ ] dark — Viewports: [ ] desktop  [ ] 375px mobile
-- Smoke S-01 to S-08: <!-- pass, or list failures -->
-- Area sections and REG cases run: <!-- e.g. Report, Citations, REG-01, REG-06 -->
-- Bug fix? Regression case added to docs/test-cases.md: <!-- REG-xx, or n/a -->
+- [ ] Pushed through the pre-push check (default)
+- [ ] Skipped it (`SKIP_PRE_CR=1` / `PRE_CR_CONFIRMED=1`) — why:
+- Manual checks done (only for things not marked [auto] in docs/test-cases.md):
 
 ## Screenshots / Recordings
 

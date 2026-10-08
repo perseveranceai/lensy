@@ -1,0 +1,16 @@
+#!/bin/sh
+# Pre-CR check on every push: the coding agent brings the e2e tests up to date
+# with the branch, then the full suite runs on a production build. See
+# scripts/pre-cr.sh for what it does and how to override it.
+#
+# Installed by `npm install` in frontend/ (its "prepare" script sets
+# core.hooksPath to .githooks).
+
+# Pushes that only delete a remote branch have nothing to test.
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$local_sha" in
+    0000000000000000000000000000000000000000) ;;
+    *) exec "$(git rev-parse --show-toplevel)/scripts/pre-cr.sh" ;;
+  esac
+done
+exit 0

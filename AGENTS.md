@@ -3,42 +3,42 @@
 Read by Claude Code (via `CLAUDE.md`), Kiro (via `.kiro/steering/`), Cursor,
 Codex and other agents that support `AGENTS.md`.
 
-## Tests before commit
+## Tests are automatic — engineers don't have to think about them
 
-Every change to product code — `frontend/src/`, `frontend/public/index.html`,
-`backend/lambda/`, `backend/lib/` — ships with its tests in the same commit.
+Product code is `frontend/src/`, `frontend/public/index.html`,
+`backend/lambda/`, `backend/lib/`. The e2e tests in `frontend/e2e/` are the
+test cases: each test's title carries its case id (S-xx smoke, REG-xx
+regression). `docs/test-cases.md` holds the rules, the test URLs and the few
+checks that can't be automated.
 
-1. **Update the test cases.** Open `docs/test-cases.md`. For any behaviour you
-   added or changed, add or edit the matching case (smoke `S-xx`, area check,
-   or regression `REG-xx`) so the expected result matches the new behaviour.
-2. **Bug fixes add a regression case.** A bug that reached gamma or prod gets
-   a new `REG-xx` entry in `docs/test-cases.md` describing the incident, and a
-   test in `frontend/e2e/` that would have caught it. Put the REG id in the
-   test title.
-3. **Automate what you can.** Add or update the Playwright test in
-   `frontend/e2e/` (`smoke.spec.ts` for S-xx, `regressions.spec.ts` for REG-xx).
-   If a case can't be automated, say so in the doc and in the PR.
-4. **Run the suite on a production build before committing:**
-   ```
-   cd frontend && npm run test:e2e:local
-   ```
-   This builds with `build:gamma`, checks the minified CSS, serves the build
-   on localhost:3000 and runs every test. It makes real scans against the
-   gamma API. Do not rely on `npm start`: the dev server doesn't minify CSS,
-   and that is exactly where the October 2026 light-theme bug hid (REG-01).
-5. **Fill in "Test cases run" in the PR** (environment, themes, viewports,
-   results, REG case added).
+**On every `git push`** (`.githooks/pre-push` → `scripts/pre-cr.sh`, installed
+by `npm install` in `frontend/`), before a CR exists:
 
-A pre-commit hook (`.githooks/pre-commit`, installed by `npm install` in
-`frontend/`) blocks commits that change product code without touching
-`frontend/e2e/` or `docs/test-cases.md`. CI runs the same check on every PR.
-For a change with genuinely no behaviour impact, commit with
-`SKIP_TEST_IMPACT=1` and explain why in the PR.
+1. If the branch changes product code, the engineer's coding agent (Claude
+   Code or Kiro, whichever is installed) reads the diff and adds or updates
+   e2e tests, following `scripts/pre-cr-prompt.md`.
+   - It changed tests → the push stops; review and commit them, push again.
+   - Already covered / no behaviour change → carry on.
+   - It can't tell how to test the change → only then the push stops and
+     asks the engineer to check the tests (`PRE_CR_CONFIRMED=1 git push`
+     once they're right).
+2. Production build + minified-CSS check + the full e2e suite. Pass → push.
+
+Run the same thing by hand any time: `cd frontend && npm run pre-cr`.
+
+**If you are a coding agent making a change:** write or update the e2e test
+for it in the same commit, so the pre-push step finds nothing to do. Bug
+fixes get a regression test with the next REG-xx id in its title and a row in
+the regression table in `docs/test-cases.md`. Never sign off on `npm start`
+alone: the dev server doesn't minify CSS, which is where the October 2026
+light-theme bug hid (REG-01).
 
 ## What runs where
 
+- **Before the CR (pre-push):** as above.
 - **Every PR (CI):** backend typecheck + CDK synth, frontend production build,
-  minified-CSS check, `tailwind.css` drift check, test-impact check.
+  minified-CSS check, `tailwind.css` drift check, the full e2e suite on the
+  PR's production build, and an advisory "test impact" warning.
 - **After merge to `main` (deploy.yml):** deploy gamma → smoke scan → full
   e2e suite against gamma. Prod deploys **only** if all of that passed, and
   it ships the frontend bundle built in that same gamma run — prod never

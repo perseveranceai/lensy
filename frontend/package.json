@@ -41,7 +41,8 @@
         "check:css": "node scripts/verify-built-css.js",
         "typecheck": "tsc --noEmit -p tsconfig.json",
         "lint": "eslint src --ext .ts,.tsx",
-        "eject": "react-scripts eject"
+        "eject": "react-scripts eject",
+        "pre-cr": "bash ../scripts/pre-cr.sh"
     },
     "eslintConfig": {
         "extends": [

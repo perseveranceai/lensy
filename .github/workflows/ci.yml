@@ -114,3 +114,25 @@ jobs:
         # means the generated file was hand-edited, or the regenerated one
         # wasn't committed.
         run: git diff --exit-code src/tailwind.css
+
+      - name: E2E suite on the production build
+        working-directory: frontend
+        # The same suite the pre-push hook runs locally and deploy.yml runs on
+        # gamma — here as the backstop for anyone who skipped the hook. Serves
+        # this PR's build on localhost:3000 against the gamma API. No secrets
+        # needed; the paid citation check is skipped (it runs on gamma).
+        env:
+          E2E_SKIP_CITATIONS: '1'
+        run: |
+          [ -x /opt/google/chrome/chrome ] || npx playwright install --with-deps chrome
+          npx playwright test
+
+      - name: Keep the e2e report
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-report-pr-${{ github.event.pull_request.number }}
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          retention-days: 14
