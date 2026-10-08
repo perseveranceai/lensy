@@ -92,15 +92,51 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Build + publish frontend
+      - name: Build frontend (gamma + prod bundles)
         working-directory: frontend
         env:
           CI: false  # CRA turns lint warnings into errors under CI; see ci.yml
+        # Both bundles are built here, from the same checkout and install. The
+        # prod job deploys the build-prod/ bundle from THIS run instead of
+        # rebuilding, so what reaches prod is built alongside the gamma bundle
+        # that the e2e suite below tests.
         run: |
           npm run build:gamma
+          npm run check:css
+          BUILD_PATH=build-prod npm run build:prod
+          npm run check:css -- build-prod
+
+      - name: Keep the prod bundle for the prod job
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: frontend-prod-${{ github.sha }}
+          path: frontend/build-prod/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Publish gamma frontend
+        working-directory: frontend
+        run: |
           aws s3 sync build/ s3://lensy-console-951411676525-us-east-1-gamma --delete
           aws cloudfront create-invalidation \
             --distribution-id E1J3M0RUB5VA7F --paths "/*"
+
+      - name: Wait until gamma serves this build
+        working-directory: frontend
+        # Testing right after an invalidation can hit the previous build from
+        # cache. Poll the live index.html until it references this run's
+        # bundle (the gamma role can create invalidations but not read their
+        # status, so `aws cloudfront wait` isn't available).
+        run: |
+          built=$(grep -o 'main\.[a-z0-9]*\.js' build/index.html | head -1)
+          for i in $(seq 1 40); do
+            served=$(curl -s -H 'Cache-Control: no-cache' "https://gamma.perseveranceai.com/?deploy=${GITHUB_RUN_ID}" | grep -o 'main\.[a-z0-9]*\.js' | head -1 || true)
+            echo "attempt $i: built=$built served=$served"
+            [ -n "$built" ] && [ "$built" = "$served" ] && exit 0
+            sleep 15
+          done
+          echo "::error::gamma still not serving $built after 10 minutes"
+          exit 1
 
       - name: Smoke test gamma
         id: smoke
@@ -108,6 +144,27 @@ jobs:
           node scripts/smoke-test.js \
             --base-url https://bnkzdze378.execute-api.us-east-1.amazonaws.com \
             --out "${GITHUB_WORKSPACE}/smoke.json"
+
+      - name: E2E tests on gamma (prod gate)
+        working-directory: frontend
+        env:
+          E2E_BASE_URL: https://gamma.perseveranceai.com
+        # The docs/test-cases.md suite, run against the gamma we just deployed.
+        # If any test fails, this job fails and the prod job never starts.
+        # Uses the runner's installed Chrome; installs it only if missing.
+        run: |
+          [ -x /opt/google/chrome/chrome ] || npx playwright install --with-deps chrome
+          npm run test:e2e
+
+      - name: Keep the e2e report
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-report-${{ github.sha }}
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          retention-days: 14
 
       - name: Classify deploy risk
         id: classify
@@ -153,6 +210,9 @@ jobs:
   prod:
     name: Deploy prod
     needs: gamma
+    # Prod only ships what was deployed to gamma and passed its smoke scan and
+    # e2e suite in this same run, and only from main.
+    if: ${{ needs.gamma.result == 'success' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-prod-main
@@ -191,21 +251,22 @@ jobs:
           PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
         run: npx cdk deploy --require-approval never
 
-      - name: Install frontend
-        working-directory: frontend
-        run: npm ci
+      - name: Get the prod bundle built in the gamma job
+        # No rebuild here: deploy exactly the bundle built (and CSS-checked)
+        # alongside the gamma bundle that passed e2e in this run.
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: frontend-prod-${{ github.sha }}
+          path: frontend/build-prod/
 
-      - name: Build + publish frontend
+      - name: Publish frontend
         working-directory: frontend
-        env:
-          CI: false  # CRA turns lint warnings into errors under CI; see ci.yml
         # NOTE: prod frontend is NOT the stack's ConsoleBucketName output
         # (lensy-console-951411676525-us-east-1 redirects). The live site is
         # served from www.perseveranceai.com behind E274OKID4GUQ1J. Wiring this
         # to stack outputs would "succeed" and change nothing visible.
         run: |
-          npm run build:prod
-          aws s3 sync build/ s3://www.perseveranceai.com --delete
+          aws s3 sync build-prod/ s3://www.perseveranceai.com --delete
           aws cloudfront create-invalidation \
             --distribution-id E274OKID4GUQ1J --paths "/*"
 

@@ -33,6 +33,16 @@
 2.
 3.
 
+## Test cases run
+
+<!-- From docs/test-cases.md. Test a production build or gamma — not `npm start` (it doesn't minify CSS). -->
+
+- Environment: [ ] gamma  [ ] local production build (`CI=false npm run build:gamma`)
+- Themes: [ ] light  [ ] dark — Viewports: [ ] desktop  [ ] 375px mobile
+- Smoke S-01 to S-08: <!-- pass, or list failures -->
+- Area sections and REG cases run: <!-- e.g. Report, Citations, REG-01, REG-06 -->
+- Bug fix? Regression case added to docs/test-cases.md: <!-- REG-xx, or n/a -->
+
 ## Screenshots / Recordings
 
 <!-- If UI changes, attach before/after screenshots or a short recording. Delete this section if not applicable. -->

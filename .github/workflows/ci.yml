@@ -100,3 +100,17 @@ jobs:
           # if that cleanup lands, delete this and let warnings fail the build.
           CI: false
         run: npm run build:gamma
+
+      - name: Minified CSS check (REG-01)
+        working-directory: frontend
+        # Fails if the production minifier merged a Tailwind opacity class into
+        # its plain sibling — the bug that rendered light theme dark grey on
+        # gamma/prod in Oct 2026 while dev builds looked fine.
+        run: npm run check:css
+
+      - name: tailwind.css matches its source (REG-07)
+        working-directory: frontend
+        # build:gamma regenerates src/tailwind.css from src/index.css. A diff
+        # means the generated file was hand-edited, or the regenerated one
+        # wasn't committed.
+        run: git diff --exit-code src/tailwind.css
