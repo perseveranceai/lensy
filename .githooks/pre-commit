@@ -1,0 +1,45 @@
+#!/bin/sh
+# Lensy pre-commit check: code changes must come with test changes.
+#
+# Installed automatically by `npm install` in frontend/ (the "prepare" script
+# sets core.hooksPath to .githooks). Rules: AGENTS.md, "Tests before commit".
+#
+# If a change genuinely has no behaviour impact (a pure refactor, a comment),
+# bypass it once and say why in the PR:
+#   SKIP_TEST_IMPACT=1 git commit ...
+
+[ "${SKIP_TEST_IMPACT:-}" = "1" ] && exit 0
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+
+# Product code. src/tailwind.css is generated from src/index.css, so it doesn't
+# count on its own.
+code=$(printf '%s\n' "$staged" \
+  | grep -E '^(frontend/src/|frontend/public/index\.html$|backend/lambda/|backend/lib/)' \
+  | grep -vE '^frontend/src/tailwind\.css$')
+[ -z "$code" ] && exit 0
+
+tests=$(printf '%s\n' "$staged" | grep -E '^(frontend/e2e/|docs/test-cases\.md$)')
+[ -n "$tests" ] && exit 0
+
+cat >&2 <<'MSG'
+
+pre-commit: this commit changes product code but no tests.
+
+  Changed:
+MSG
+printf '%s\n' "$code" | sed 's/^/    /' >&2
+cat >&2 <<'MSG'
+
+  Before committing (see AGENTS.md, "Tests before commit"):
+    1. Update docs/test-cases.md for any behaviour you added or changed.
+       Bug fix? Add a REG-xx case for it.
+    2. Add or update the matching test in frontend/e2e/.
+    3. Run it on a production build:  cd frontend && npm run test:e2e:local
+    4. Stage the test changes with your code.
+
+  Genuinely no behaviour change (refactor, comment)?
+    SKIP_TEST_IMPACT=1 git commit ...   and say why in the PR.
+
+MSG
+exit 1

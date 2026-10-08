@@ -27,6 +27,11 @@ debug-*.js
 check-*.js
 check-*.sh
 
+# Playwright e2e output (frontend/e2e) and the prod bundle built alongside gamma
+frontend/test-results/
+frontend/playwright-report/
+frontend/build-prod/
+
 # Environment variables
 .env
 .env.local
@@ -136,16 +141,17 @@ Thumbs.db
 # Local development
 *.local
 requirements/
-.kiro/
 
 # Python virtual environments
 venv/
 .venv/
 __pycache__/
 
-# Claude Code and Kiro working files
+# Claude Code and Kiro working files — except Kiro steering, which holds the
+# shared project rules (it points at AGENTS.md).
 .claude/
-.kiro/
+.kiro/*
+!.kiro/steering/
 
 # Video assets (8.7MB, not referenced in code)
 frontend/public/video/

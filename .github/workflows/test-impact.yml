@@ -1,0 +1,49 @@
+name: Test impact
+
+# Product-code changes must come with test changes (docs/test-cases.md or
+# frontend/e2e/). Same rule as the local .githooks/pre-commit hook; see
+# AGENTS.md, "Tests before commit".
+#
+# For a change with genuinely no behaviour impact, add the label
+# `no-test-impact` to the PR and say why in the description. The job then
+# reports as skipped, which satisfies the check.
+#
+# Kept separate from ci.yml so adding/removing that label re-runs only this
+# check, not the full build.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  test-impact:
+    name: Code changes come with test changes
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-test-impact') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Check
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          changed=$(git diff --name-only "$BASE"..."$HEAD")
+          code=$(printf '%s\n' "$changed" \
+            | grep -E '^(frontend/src/|frontend/public/index\.html$|backend/lambda/|backend/lib/)' \
+            | grep -vE '^frontend/src/tailwind\.css$' || true)
+          if [ -z "$code" ]; then echo "No product-code changes."; exit 0; fi
+          tests=$(printf '%s\n' "$changed" | grep -E '^(frontend/e2e/|docs/test-cases\.md$)' || true)
+          if [ -n "$tests" ]; then
+            echo "Product code changed, and tests were updated:"; printf '  %s\n' $tests; exit 0
+          fi
+          echo "::error::This PR changes product code but no tests (docs/test-cases.md or frontend/e2e/)."
+          printf '  %s\n' $code
+          echo "See AGENTS.md, 'Tests before commit'. If there's genuinely no behaviour change, add the 'no-test-impact' label and say why."
+          exit 1
