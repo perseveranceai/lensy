@@ -354,7 +354,13 @@ export function ThemeToggle() {
 export function NavLink({ to, label, badge, onNavigate }: { to: string; label: string; badge?: string; onNavigate?: () => void }) {
   const { pathname } = useLocation();
   const active = pathname === to || pathname.startsWith(to + "/");
-  return <Link to={to} onClick={onNavigate} data-nav-active={active} className={`nav-item relative z-10 inline-flex items-center gap-1.5 rounded-[var(--radius-xs)] px-2.5 py-1.5 ${active ? "is-active text-[var(--bg)]" : "text-[var(--ink-soft)] hover:text-[var(--ink)]"}`} aria-current={active ? "page" : undefined}>{label}{badge && <span className={`inline-flex items-center rounded-full px-1.5 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[.09em] ${active ? "bg-[var(--bg)]/15 text-[var(--bg)]" : "bg-[var(--accent)]/12 text-[var(--accent)]"}`}>{badge}</span>}</Link>;
+  // Badge tints use explicit color-mix() values, NOT Tailwind opacity modifiers
+  // like bg-[var(--bg)]/15. Tailwind emits those with a nested @supports block,
+  // and CRA's production CSS minifier merges that rule into the plain
+  // bg-[var(--bg)] rule — which then rendered every page background at 15%
+  // opacity in production (light theme went dark grey). Dev builds don't
+  // minify, so it only showed up on gamma/prod.
+  return <Link to={to} onClick={onNavigate} data-nav-active={active} className={`nav-item relative z-10 inline-flex items-center gap-1.5 rounded-[var(--radius-xs)] px-2.5 py-1.5 ${active ? "is-active text-[var(--bg)]" : "text-[var(--ink-soft)] hover:text-[var(--ink)]"}`} aria-current={active ? "page" : undefined}>{label}{badge && <span className={`inline-flex items-center rounded-full px-1.5 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[.09em] ${active ? "bg-[color-mix(in_srgb,var(--bg)_15%,transparent)] text-[var(--bg)]" : "bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-[var(--accent)]"}`}>{badge}</span>}</Link>;
 }
 
 export function NavRail() {
@@ -413,7 +419,7 @@ export function MobileNav({ remaining }: { remaining: number }) {
       <div className="space-y-0.5">
         {links.map(([to, label, badge]) => {
           const active = pathname === to || (to !== "/" && pathname.startsWith(to + "/"));
-          return <Link key={to} to={to} onClick={to === "/contact" ? () => trackEvent("contact_link_clicked", { source: "mobile-nav" }) : undefined} className={`flex items-center justify-between rounded-[var(--radius-xs)] px-3 py-2.5 text-[13px] font-medium tracking-[-.025em] transition-colors ${active ? "bg-[var(--ink)] text-[var(--bg)]" : "text-[var(--ink-soft)] hover:bg-[var(--surface)] hover:text-[var(--ink)]"}`} aria-current={active ? "page" : undefined}><span className="inline-flex items-center gap-1.5">{label}{badge && <span className={`inline-flex items-center rounded-full px-1.5 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[.09em] ${active ? "bg-[var(--bg)]/15 text-[var(--bg)]" : "bg-[var(--accent)]/12 text-[var(--accent)]"}`}>{badge}</span>}</span>{active && <Check className="size-3.5" strokeWidth={1.8} aria-hidden="true" />}</Link>;
+          return <Link key={to} to={to} onClick={to === "/contact" ? () => trackEvent("contact_link_clicked", { source: "mobile-nav" }) : undefined} className={`flex items-center justify-between rounded-[var(--radius-xs)] px-3 py-2.5 text-[13px] font-medium tracking-[-.025em] transition-colors ${active ? "bg-[var(--ink)] text-[var(--bg)]" : "text-[var(--ink-soft)] hover:bg-[var(--surface)] hover:text-[var(--ink)]"}`} aria-current={active ? "page" : undefined}><span className="inline-flex items-center gap-1.5">{label}{badge && <span className={`inline-flex items-center rounded-full px-1.5 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[.09em] ${active ? "bg-[color-mix(in_srgb,var(--bg)_15%,transparent)] text-[var(--bg)]" : "bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-[var(--accent)]"}`}>{badge}</span>}</span>{active && <Check className="size-3.5" strokeWidth={1.8} aria-hidden="true" />}</Link>;
         })}
       </div>
       <p className="mt-1.5 border-t border-[var(--line)] px-3 py-2.5 text-[11px] font-medium tracking-[-.02em] text-[var(--muted)]">Free tier — {remaining} audits left</p>
