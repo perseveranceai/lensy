@@ -1,29 +1,23 @@
 name: Test impact
 
-# Product-code changes must come with test changes (docs/test-cases.md or
-# frontend/e2e/). Same rule as the local .githooks/pre-commit hook; see
-# AGENTS.md, "Tests before commit".
-#
-# For a change with genuinely no behaviour impact, add the label
-# `no-test-impact` to the PR and say why in the description. The job then
-# reports as skipped, which satisfies the check.
-#
-# Kept separate from ci.yml so adding/removing that label re-runs only this
-# check, not the full build.
+# Flags PRs that change product code without changing any tests, as a
+# WARNING on the PR — it never fails. Tests are written automatically by the
+# pre-push hook's coding agent (scripts/pre-cr.sh), and the real gate is that
+# the e2e suite passes (ci.yml on the PR, deploy.yml on gamma). A refactor
+# legitimately needs no test change, so a hard failure here would only add
+# friction. The warning tells the reviewer to look twice.
 
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 permissions:
   contents: read
 
 jobs:
   test-impact:
-    name: Code changes come with test changes
+    name: Test impact (advisory)
     runs-on: ubuntu-latest
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-test-impact') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -43,7 +37,5 @@ jobs:
           if [ -n "$tests" ]; then
             echo "Product code changed, and tests were updated:"; printf '  %s\n' $tests; exit 0
           fi
-          echo "::error::This PR changes product code but no tests (docs/test-cases.md or frontend/e2e/)."
+          echo "::warning::This PR changes product code but no tests. Fine for a refactor; otherwise the pre-push hook (scripts/pre-cr.sh) was probably skipped — check that frontend/e2e/ covers the change."
           printf '  %s\n' $code
-          echo "See AGENTS.md, 'Tests before commit'. If there's genuinely no behaviour change, add the 'no-test-impact' label and say why."
-          exit 1

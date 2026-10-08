@@ -3,8 +3,12 @@
 A living document. It replaces `v2-test-cases.md` (April 2026), whose expected
 results described the pre-redesign UI and no longer hold.
 
-**Every bug that reaches gamma or prod gets a regression case (REG-xx) added
-here, in the same PR that fixes it.** That is how this list stays current.
+**Engineers don't maintain this by hand.** Automated cases live in
+`frontend/e2e/` (the test is the test case; its title carries the id). On
+every `git push`, the pre-push hook has the engineer's coding agent add or
+update tests for the branch, then runs the whole suite (see "What's
+automated" below). Every bug that reaches gamma or prod still gets a
+regression case (REG-xx) — the agent adds the row here and the test.
 
 ---
 
@@ -12,11 +16,8 @@ here, in the same PR that fixes it.** That is how this list stays current.
 
 1. **Test a production build, never only `npm start`.** The dev server does not
    minify CSS, and minification has broken the site before while it looked
-   fine locally (REG-01). Use gamma after merge, or a local production build.
-   The automated suite does this for you:
-   ```
-   cd frontend && npm run test:e2e:local
-   ```
+   fine locally (REG-01). The pre-push hook and CI do this automatically; to
+   run it by hand: `cd frontend && npm run pre-cr`.
 2. **Both themes, every time.** Light and dark. A bug that only shows in light
    theme shipped to prod because dark theme hid it (REG-01).
 3. **Desktop and 375px mobile.** Several layout bugs only showed on mobile
@@ -25,25 +26,21 @@ here, in the same PR that fixes it.** That is how this list stays current.
    old JS/CSS bundle and make a working deploy look broken, or the reverse.
 5. **Browser console must be clean** (no red errors) on every page you touch.
 
-### What to run when
+### What still needs a human
 
-| When | Run |
-|---|---|
-| Every PR | Smoke (S-01 to S-08) + the sections for the areas you changed + every REG case for those areas |
-| Before approving a prod deploy | Everything in this document |
-| After any CSS/Tailwind/theme change | Smoke + REG-01 + REG-07 + the Accessibility section, in both themes |
-
-Paste the IDs you ran and the result into the PR's **Test cases run** section.
+The automated suite covers everything marked **[auto]**. Before approving a
+prod deploy, glance at the unmarked cases and the area checklists below for
+whatever the change touched — those are the only manual checks left.
 
 ### What's automated, and where it runs
 
 Cases marked **[auto]** below have a Playwright test in `frontend/e2e/` with
-the same ID in its title. Everything else is checked by hand.
+the same ID in its title.
 
 | Where | What runs | Blocks |
 |---|---|---|
-| Your machine, before committing | `cd frontend && npm run test:e2e:local` — production build, minified-CSS check, then the full e2e suite against it (real scans on the gamma API) | Nothing automatically; the pre-commit hook blocks commits that change product code without changing tests |
-| Every PR (CI) | Backend typecheck + CDK synth; frontend production build; minified-CSS check (REG-01); `tailwind.css` drift check (REG-07); test-impact check | The PR shows red; merging is only blocked if branch protection requires these checks |
+| On `git push`, before the CR (pre-push hook → `scripts/pre-cr.sh`) | If product code changed: the coding agent (Claude Code or Kiro) adds/updates e2e tests for the diff; then production build, minified-CSS check and the full e2e suite (citation test skipped to save paid calls) | **The push.** It also stops if the agent changed tests (review + commit them) or couldn't tell how to test the change (`PRE_CR_CONFIRMED=1` once checked). `SKIP_PRE_CR=1` skips it entirely |
+| Every PR (CI) | Backend typecheck + CDK synth; frontend production build; minified-CSS check (REG-01); `tailwind.css` drift check (REG-07); **full e2e suite on the PR's build**; advisory test-impact warning | The PR shows red; merging is only blocked if branch protection requires these checks |
 | After merge to `main` (deploy.yml) | Deploy gamma → wait until gamma serves the new build → smoke scan → **full e2e suite against gamma** | **Prod.** The prod job runs only if all of that passed, and it deploys the frontend bundle built in that same run — it never rebuilds its own |
 | After prod deploy | Smoke scan against prod | — |
 
