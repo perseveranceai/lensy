@@ -110,6 +110,8 @@ interface AIReadinessReport {
         queriesGenerated: number;
     };
     analysisTime: number;
+    /** When this report was generated (ISO 8601, UTC). Printed as the scan time in report downloads (H-001). */
+    generatedAt: string;
     // Legacy compat — frontend won't crash during rollout
     dimensions: Record<string, never>;
 }
@@ -310,6 +312,7 @@ export const generateReportTool = tool(
                     queriesGenerated: discoverabilityResults?.queries?.length || 0,
                 },
                 analysisTime: totalTime,
+                generatedAt: new Date().toISOString(),
                 dimensions: {} as Record<string, never>,  // Legacy compat
             };
 
