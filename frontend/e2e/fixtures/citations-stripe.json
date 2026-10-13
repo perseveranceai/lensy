@@ -1,0 +1,66 @@
+{
+ "queries": [
+  "api reference",
+  "how to api reference",
+  "api reference best practices",
+  "api reference not working"
+ ],
+ "queryTypes": [
+  "high",
+  "mid",
+  "low",
+  "low"
+ ],
+ "engines": {
+  "perplexity": {
+   "available": true,
+   "results": [
+    {
+     "query": "api reference",
+     "cited": false,
+     "totalCitations": 10,
+     "competingDomains": [
+      "developers.openai.com",
+      "docs.readme.com",
+      "gov.uk"
+     ]
+    },
+    {
+     "query": "how to api reference",
+     "cited": false,
+     "totalCitations": 0
+    },
+    {
+     "query": "api reference best practices",
+     "cited": false,
+     "totalCitations": 10,
+     "competingDomains": [
+      "docs.readme.com",
+      "developers.google.com",
+      "gitbook.com"
+     ]
+    },
+    {
+     "query": "api reference not working",
+     "cited": false,
+     "totalCitations": 10,
+     "competingDomains": [
+      "gitbook.com",
+      "docs.readme.com",
+      "docs.cloud.google.com"
+     ]
+    }
+   ],
+   "foundRate": 0
+  }
+ },
+ "overallDiscoverability": "not-found",
+ "recommendations": [
+  {
+   "priority": "high",
+   "issue": "Your page was not cited by Perplexity for any of the organic queries tested.",
+   "fix": "Improve your page's AI readiness: add llms.txt, structured data, and ensure content is indexable. Check the Bot Access and Discoverability categories for specific actions."
+  }
+ ],
+ "analysisTime": 6774
+}

@@ -415,6 +415,7 @@ export class LensyStack extends cdk.Stack {
         httpApi.addRoutes({ path: '/generate-fixes', methods: [apigwv2.HttpMethod.POST], integration: apiIntegration });
         httpApi.addRoutes({ path: '/apply-fixes', methods: [apigwv2.HttpMethod.POST], integration: apiIntegration });
         httpApi.addRoutes({ path: '/run-citations', methods: [apigwv2.HttpMethod.POST], integration: apiIntegration });
+        httpApi.addRoutes({ path: '/citations/{sessionId}', methods: [apigwv2.HttpMethod.GET], integration: apiIntegration });
         httpApi.addRoutes({ path: '/sessions/{sessionId}/fixes', methods: [apigwv2.HttpMethod.GET], integration: apiIntegration });
         httpApi.addRoutes({ path: '/get-fixes/{sessionId}', methods: [apigwv2.HttpMethod.GET], integration: apiIntegration });
         httpApi.addRoutes({ path: '/github-issues', methods: [apigwv2.HttpMethod.POST], integration: apiIntegration });

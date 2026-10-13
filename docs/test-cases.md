@@ -85,6 +85,19 @@ URL stops behaving as described, replace it and note the date.
 | S-07 [auto] | Open `/this-page-does-not-exist` | 404 page has header and footer; exactly one `<meta name="robots">` and it says `noindex` |
 | S-08 [auto] | After S-02, reload `/results` | The same report is still there |
 
+## Report download (H-001)
+
+Run against saved fixtures from real gamma scans (`frontend/e2e/fixtures/`, U-1 on 2026-10-13); citation calls are mocked, so these make no paid calls.
+
+| ID | Steps | Expected |
+|---|---|---|
+| DL-01 [auto] | Report with citations done → **Download report** → Markdown | Saves `lensy-report-<host>-<date>.md` at once, no citation request; holds every recommendation, bot, signal group and citation query on the page; plain PASS/WARN/FAIL/INFO words; one `report_download_clicked` and one `_completed`; reloading fires neither again |
+| DL-02 [auto] | Same → PDF | A real PDF under 1 MB with the site font embedded. **Manual:** open it; no broken characters, no row split across pages, links work |
+| DL-03 [auto] | Report without citations → Markdown, then PDF while waiting | Button shows "Running AI citations, then downloading… Ns"; one `/run-citations` call serves both files; files include the citation table; the citations card fills in; `run_citations_clicked` has `trigger: download` |
+| DL-04 [auto] | Citations can't start (`/run-citations` fails) | File still downloads and says "AI citations could not run", never "Not cited" |
+| DL-05 [auto] | While waiting, click **Download without citations** | Saves at once; file says citations are not in this report |
+| DL-06 [auto] | 375px | The download menu fits on screen |
+
 ---
 
 ## Regression cases (from real incidents)
@@ -121,6 +134,7 @@ Run the sections for whatever your PR touches.
 
 ### Citations
 - [ ] Run, results, intent tiers, engine name (S-03)
+- [ ] With AWS access: a second run for the same session returns the saved result instead of a new Perplexity call (`/run-citations` answers `status: done`)
 - [ ] Results survive a reload of `/results`
 - [ ] "Completed in Xs" roughly matches the wait
 

@@ -91,6 +91,25 @@ export const checkAIDiscoverabilityTool = tool(
 
         } catch (error) {
             console.error('AI discoverability check failed:', error);
+            // Tell the browser the check could not run. Without this the UI
+            // waited for a result that never came and the report download
+            // (H-001) could not tell "could not run" from "not cited".
+            const failed = {
+                status: 'error' as const,
+                error: error instanceof Error ? error.message : 'Unknown error',
+                queries: [],
+                queryTypes: [],
+                engines: {},
+                overallDiscoverability: 'not-found' as const,
+                recommendations: [],
+                analysisTime: 0,
+            };
+            try {
+                await writeSessionArtifact(input.sessionId, 'ai-discoverability-results.json', failed);
+                await createProgressHelper(input.sessionId).categoryResult('aiDiscoverability', failed, 'AI citation check could not run');
+            } catch (publishError) {
+                console.error('Could not publish citation failure:', publishError);
+            }
             return JSON.stringify({
                 success: false,
                 error: error instanceof Error ? error.message : 'Unknown error'

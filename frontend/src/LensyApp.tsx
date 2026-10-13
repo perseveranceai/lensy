@@ -571,6 +571,7 @@ function LensyApp() {
     const wsRef = useRef<WebSocket | null>(null);
     const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const citationsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const citationsPollRef = useRef<NodeJS.Timeout | null>(null);
     const currentSessionIdRef = useRef<string>('');
     const urlRef = useRef<string>('');
     const progressEndRef = useRef<HTMLDivElement>(null);
@@ -757,6 +758,10 @@ function LensyApp() {
                 clearTimeout(citationsTimeoutRef.current);
                 citationsTimeoutRef.current = null;
             }
+            if (citationsPollRef.current) {
+                clearInterval(citationsPollRef.current);
+                citationsPollRef.current = null;
+            }
         };
     }, []);
 
@@ -894,6 +899,10 @@ function LensyApp() {
                         // Stop citations loading when data arrives
                         if (category === 'aiDiscoverability') {
                             setCitationsLoading(false);
+                            if (citationsTimeoutRef.current) clearTimeout(citationsTimeoutRef.current);
+                            if (citationsPollRef.current) clearInterval(citationsPollRef.current);
+                            citationsTimeoutRef.current = null;
+                            citationsPollRef.current = null;
                         }
                         // Don't add category-result to progress messages (noisy)
                         return;
@@ -1738,26 +1747,39 @@ function LensyApp() {
 
     // â”€â”€ Run AI Citations check on-demand â”€â”€
     const [citationsLoading, setCitationsLoading] = useState(false);
-    const handleRunCitations = async () => {
-        if (!currentSessionId || citationsLoading) {
-            console.warn('[Citations] Skipped: sessionId=', currentSessionId, 'loading=', citationsLoading);
-            return;
+    const stopCitationsWait = () => {
+        if (citationsTimeoutRef.current) clearTimeout(citationsTimeoutRef.current);
+        if (citationsPollRef.current) clearInterval(citationsPollRef.current);
+        citationsTimeoutRef.current = null;
+        citationsPollRef.current = null;
+    };
+    // Starts the on-demand citations check. Used by the citations card
+    // (trigger 'card') and by the report download when citations haven't run
+    // yet (trigger 'download', H-001). Resolves with what happened so the
+    // download knows whether to wait: 'done' (result already available),
+    // 'started' / 'running' (result will arrive), or 'unavailable' (it can't run).
+    const handleRunCitations = async (trigger: 'card' | 'download' = 'card'): Promise<'done' | 'started' | 'running' | 'unavailable'> => {
+        if (!currentSessionId) {
+            console.warn('[Citations] Skipped: no session ID');
+            return 'unavailable';
         }
+        if (citationsLoading) return 'running';
         const citationUrl = urlRef.current || url || (analysisState.report as any)?.url;
         if (!citationUrl) {
             console.warn('[Citations] Skipped: no URL available');
-            return;
+            return 'unavailable';
         }
+        const sessionId = currentSessionId;
 
-        console.log('[Citations] Starting citation check for:', citationUrl, 'session:', currentSessionId);
-        trackEvent('run_citations_clicked', { url: citationUrl });
+        console.log('[Citations] Starting citation check for:', citationUrl, 'session:', sessionId);
+        trackEvent('run_citations_clicked', { url: citationUrl, trigger });
         setCitationsLoading(true);
         setHeroTab('citations');
 
         try {
             // Reconnect WebSocket to receive category-result messages
             try {
-                await connectWebSocket(currentSessionId);
+                await connectWebSocket(sessionId);
                 console.log('[Citations] WebSocket connected');
             } catch (e) {
                 console.warn('[Citations] WebSocket reconnect failed, will poll:', e);
@@ -1766,21 +1788,48 @@ function LensyApp() {
             const resp = await fetch(`${API_BASE_URL}/run-citations`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: citationUrl, sessionId: currentSessionId }),
+                body: JSON.stringify({ url: citationUrl, sessionId }),
             });
+            const body = await resp.json().catch(() => ({}));
             if (!resp.ok) {
-                const errorBody = await resp.json().catch(() => ({}));
-                throw new Error(errorBody.error || `Citation check request failed with ${resp.status}`);
+                throw new Error(body.error || `Citation check request failed with ${resp.status}`);
             }
-            console.log('[Citations] API response:', resp.status);
+            console.log('[Citations] API response:', resp.status, body.status);
 
-            // Timeout fallback â€” WebSocket should deliver results, but stop loading after 90s.
-            // Tracked in a ref so it can be cleared on unmount (avoids setState-after-unmount).
-            if (citationsTimeoutRef.current) clearTimeout(citationsTimeoutRef.current);
-            citationsTimeoutRef.current = setTimeout(() => setCitationsLoading(false), 90000);
+            // The backend never pays for the same session twice: a finished
+            // result comes straight back.
+            if (body.status === 'done' && body.data) {
+                setAsyncCards(prev => ({ ...prev, aiDiscoverability: body.data }));
+                setCitationsLoading(false);
+                return 'done';
+            }
+
+            // The WebSocket normally delivers the result. Poll as a fallback in
+            // case it dropped (or never connected), and stop loading after 90s.
+            // Both are tracked in refs so they're cleared on unmount.
+            stopCitationsWait();
+            citationsPollRef.current = setInterval(async () => {
+                if (currentSessionIdRef.current && currentSessionIdRef.current !== sessionId) return stopCitationsWait();
+                try {
+                    const poll = await fetch(`${API_BASE_URL}/citations/${encodeURIComponent(sessionId)}`);
+                    if (!poll.ok) return;
+                    const result = await poll.json();
+                    if ((result.status === 'done' || result.status === 'error') && result.data) {
+                        stopCitationsWait();
+                        setAsyncCards(prev => (prev.aiDiscoverability ? prev : { ...prev, aiDiscoverability: result.data }));
+                        setCitationsLoading(false);
+                    }
+                } catch { /* try again on the next tick */ }
+            }, 3000);
+            citationsTimeoutRef.current = setTimeout(() => {
+                stopCitationsWait();
+                setCitationsLoading(false);
+            }, 90000);
+            return body.status === 'running' ? 'running' : 'started';
         } catch (e) {
             console.error('[Citations] Citation check failed:', e);
             setCitationsLoading(false);
+            return 'unavailable';
         }
     };
 
@@ -2263,289 +2312,6 @@ function LensyApp() {
         }, 1000);
     };
 
-    const exportMarkdownReport = (report: FinalReport) => {
-        const analysisDate = new Date().toLocaleDateString();
-
-        let markdown = `# DOCUMENTATION QUALITY REPORT\n\n`;
-        markdown += `**URL:** ${url}\n`;
-        markdown += `**Analyzed:** ${analysisDate}\n`;
-
-        // Handle sitemap mode vs doc mode scoring
-        // Only use sitemap layout if we are explicitly in sitemap mode
-        if ((manualModeOverride || selectedMode) === 'sitemap' && report.sitemapHealth) {
-            // SITEMAP MODE: Show health percentage
-            markdown += `**Overall Health:** ${report.sitemapHealth.healthPercentage}%\n`;
-            markdown += `**Total URLs Checked:** ${report.sitemapHealth.totalUrls}\n`;
-            markdown += `**Healthy URLs:** ${report.sitemapHealth.healthyUrls}\n\n`;
-
-            markdown += `## SITEMAP HEALTH SUMMARY\n\n`;
-            markdown += `- **Total URLs:** ${report.sitemapHealth.totalUrls}\n`;
-            markdown += `- **Healthy:** ${report.sitemapHealth.healthyUrls} (${report.sitemapHealth.healthPercentage}%)\n`;
-            markdown += `- **Broken (404):** ${report.sitemapHealth.brokenUrls}\n`;
-            markdown += `- **Access Denied (403):** ${report.sitemapHealth.accessDeniedUrls}\n`;
-            markdown += `- **Timeout:** ${report.sitemapHealth.timeoutUrls}\n`;
-            markdown += `- **Other Errors:** ${report.sitemapHealth.otherErrorUrls}\n\n`;
-
-            // Show broken links if any
-            if (report.sitemapHealth.linkIssues && report.sitemapHealth.linkIssues.length > 0) {
-                markdown += `## LINK ISSUES DETAILS\n\n`;
-
-                const brokenLinks = report.sitemapHealth.linkIssues.filter(issue => issue.issueType === '404');
-                const accessDeniedLinks = report.sitemapHealth.linkIssues.filter(issue => issue.issueType === 'access-denied');
-                const timeoutLinks = report.sitemapHealth.linkIssues.filter(issue => issue.issueType === 'timeout');
-                const otherErrors = report.sitemapHealth.linkIssues.filter(issue => issue.issueType === 'error');
-
-                if (brokenLinks.length > 0) {
-                    markdown += `### Broken Links (404) - ${brokenLinks.length}\n\n`;
-                    brokenLinks.forEach((issue, i) => {
-                        markdown += `${i + 1}. \`${issue.url}\`\n`;
-                        markdown += `   Error: ${issue.errorMessage}\n\n`;
-                    });
-                }
-
-                if (accessDeniedLinks.length > 0) {
-                    markdown += `### Access Denied (403) - ${accessDeniedLinks.length}\n\n`;
-                    accessDeniedLinks.forEach((issue, i) => {
-                        markdown += `${i + 1}. \`${issue.url}\`\n`;
-                        markdown += `   Error: ${issue.errorMessage}\n\n`;
-                    });
-                }
-
-                if (timeoutLinks.length > 0) {
-                    markdown += `### Timeout Issues - ${timeoutLinks.length}\n\n`;
-                    timeoutLinks.forEach((issue, i) => {
-                        markdown += `${i + 1}. \`${issue.url}\`\n`;
-                        markdown += `   Error: ${issue.errorMessage}\n\n`;
-                    });
-                }
-
-                if (otherErrors.length > 0) {
-                    markdown += `### Other Errors - ${otherErrors.length}\n\n`;
-                    otherErrors.forEach((issue, i) => {
-                        markdown += `${i + 1}. \`${issue.url}\` (${issue.status})\n`;
-                        markdown += `   Error: ${issue.errorMessage}\n\n`;
-                    });
-                }
-            } else if (report.sitemapHealth.error) {
-                markdown += `## SITEMAP HEALTH ERROR\n\n`;
-                markdown += `âš ï¸ **Check Failed:** ${report.sitemapHealth.error}\n\n`;
-            } else {
-                markdown += `## LINK ISSUES\n\nâœ“ No broken links found - all URLs are healthy!\n\n`;
-            }
-
-        } else if ((manualModeOverride || selectedMode) === 'doc') {
-            // DOC MODE
-            markdown += `**Overall Score:** ${report.overallScore}/100\n\n`;
-
-            markdown += `## DIMENSION SCORES\n\n`;
-            Object.entries(report.dimensions || {}).forEach(([dimension, result]) => {
-                const rawScore = result.score || 0;
-                const displayScore = rawScore > 10 ? (rawScore / 10).toFixed(1) : rawScore;
-                markdown += `**${dimension.charAt(0).toUpperCase() + dimension.slice(1)}:** ${displayScore}/10\n`;
-            });
-
-            // DOC MODE SITEMAP HEALTH (if available)
-            if (report.sitemapHealth) {
-                markdown += `\n## SITEMAP HEALTH SUMMARY\n\n`;
-                if (report.sitemapHealth.error) {
-                    markdown += `âš ï¸ **Check Failed:** ${report.sitemapHealth.error}\n\n`;
-                } else {
-                    markdown += `- **Total URLs:** ${report.sitemapHealth.totalUrls}\n`;
-                    markdown += `- **Healthy:** ${report.sitemapHealth.healthyUrls} (${report.sitemapHealth.healthPercentage}%)\n`;
-                    markdown += `- **Broken (404):** ${report.sitemapHealth.brokenUrls}\n`;
-                }
-            }
-
-            // AI Readiness Assessment
-            if (report.aiReadiness) {
-                markdown += `\n## AI-READINESS ASSESSMENT\n\n`;
-                markdown += `**Overall AI Score:** ${report.aiReadiness.overallScore}/100\n\n`;
-
-                markdown += `### Key Checks\n`;
-                markdown += `- **llms.txt:** ${report.aiReadiness.llmsTxt.found ? 'âœ… Found' : 'âŒ Missing'}\n`;
-                markdown += `- **llms-full.txt:** ${report.aiReadiness.llmsFullTxt.found ? 'âœ… Found' : 'âŒ Missing'}\n`;
-                markdown += `- **Robots.txt AI Rules:** ${report.aiReadiness.robotsTxt.aiDirectives.length > 0 ? 'âœ… ' + report.aiReadiness.robotsTxt.aiDirectives.length + ' rules found' : 'âš ï¸ No specific AI rules'}\n`;
-                markdown += `- **Structured Data (JSON-LD):** ${report.aiReadiness.structuredData.hasJsonLd ? 'âœ… Found' : 'âŒ Missing'}\n`;
-
-                if (report.aiReadiness.recommendations.length > 0) {
-                    markdown += `\n### Recommendations\n`;
-                    report.aiReadiness.recommendations.forEach(rec => markdown += `- ${rec}\n`);
-                }
-            }
-
-            // Spelling & Typos
-            const spellingIssues = report.dimensions?.clarity?.spellingIssues || [];
-            if (spellingIssues.length > 0) {
-                markdown += `\n## SPELLING & TYPOS (${spellingIssues.length})\n\n`;
-                markdown += `| Incorrect | Correct | Context |\n`;
-                markdown += `|-----------|---------|---------|\n`;
-                spellingIssues.forEach(m => {
-                    markdown += `| ${m.incorrect} | **${m.correct}** | ...${m.context.replace(/\|/g, '-').replace(/\n/g, ' ')}... |\n`;
-                });
-            }
-
-            // Configuration & Code Issues
-            const configIssues = report.dimensions?.accuracy?.codeIssues || [];
-            if (configIssues.length > 0) {
-                markdown += `\n## CONFIGURATION & CODE ISSUES (${configIssues.length})\n\n`;
-                configIssues.forEach((issue, i) => {
-                    markdown += `### ${i + 1}. ${issue.type.toUpperCase()}\n`;
-                    markdown += `**Description:** ${issue.description}\n`;
-                    markdown += `**Location:** ${issue.location}\n`;
-                    markdown += `\`\`\`\n${issue.codeFragment}\n\`\`\`\n\n`;
-                });
-            }
-
-            markdown += `\n## CRITICAL FINDINGS\n\n`;
-
-            // URL Slug Analysis - NEW
-            const urlSlugAnalysis = (report as any).urlSlugAnalysis;
-            if (urlSlugAnalysis && urlSlugAnalysis.issues && urlSlugAnalysis.issues.length > 0) {
-                markdown += `### URL Slug Issues (${urlSlugAnalysis.issues.length}) âš ï¸\n\n`;
-                markdown += `| Segment | Issue | Suggestion | Confidence |\n`;
-                markdown += `|---------|-------|------------|------------|\n`;
-                urlSlugAnalysis.issues.forEach((issue: any) => {
-                    markdown += `| ${issue.segment} | Likely typo | **${issue.suggestion}** | ${issue.confidence} |\n`;
-                });
-                markdown += `\n**Impact:** URL typos are particularly problematic because:\n`;
-                markdown += `- Developers bookmark and share these URLs, perpetuating the mistake\n`;
-                markdown += `- Fixing later requires setting up redirects\n`;
-                markdown += `- It signals lack of automated quality checks in the documentation pipeline\n\n`;
-                markdown += `**Recommendation:** Consider fixing this URL and setting up a 301 redirect from the old URL to maintain existing bookmarks.\n\n`;
-            }
-
-            // Link Issues (404s and other errors)
-            const linkIssues = (report.linkAnalysis.linkIssueFindings || report.linkAnalysis.linkValidation?.linkIssueFindings) || [];
-            const brokenLinks = linkIssues.filter((link: any) => link.issueType === '404');
-            const otherIssues = linkIssues.filter((link: any) => link.issueType !== '404');
-
-            markdown += `### Link Issues (${linkIssues.length})\n\n`;
-
-            if (brokenLinks.length > 0) {
-                markdown += `#### Broken Links (404) - ${brokenLinks.length}\n\n`;
-                brokenLinks.forEach((link: any, i: number) => {
-                    markdown += `${i + 1}. **${link.anchorText}** â†’ \`${link.url}\`\n`;
-                    markdown += `   Error: ${link.errorMessage}\n\n`;
-                });
-            }
-
-            if (otherIssues.length > 0) {
-                markdown += `#### Other Link Issues - ${otherIssues.length}\n\n`;
-                otherIssues.forEach((link: any, i: number) => {
-                    markdown += `${i + 1}. **${link.anchorText}** â†’ \`${link.url}\` (${link.status})\n`;
-                    markdown += `   Issue: ${link.errorMessage}\n`;
-                    markdown += `   Type: ${link.issueType === 'access-denied' ? 'Access Denied (403)' : link.issueType === 'timeout' ? 'Timeout' : 'Error'}\n\n`;
-                });
-            }
-
-            if (linkIssues.length === 0) {
-                markdown += `âœ“ None found\n\n`;
-            }
-
-            // Deprecated Code
-            const deprecatedCode = report.codeAnalysis.enhancedAnalysis?.deprecatedFindings || [];
-            markdown += `### Deprecated Code (${deprecatedCode.length})\n\n`;
-            if (deprecatedCode.length === 0) {
-                markdown += `âœ“ None found\n\n`;
-            } else {
-                deprecatedCode.forEach((finding, i) => {
-                    markdown += `${i + 1}. **${finding.method}** in ${finding.location}\n`;
-                    markdown += `   - Deprecated in: ${finding.deprecatedIn}\n`;
-                    if (finding.removedIn) {
-                        markdown += `   - Removed in: ${finding.removedIn}\n`;
-                    }
-                    markdown += `   - Replacement: ${finding.replacement}\n`;
-                    markdown += `   - Confidence: ${finding.confidence}\n\n`;
-                });
-            }
-
-            // Syntax Errors
-            const syntaxErrors = report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings || [];
-            markdown += `### Syntax Errors (${syntaxErrors.length})\n\n`;
-            if (syntaxErrors.length === 0) {
-                markdown += `âœ“ None found\n\n`;
-            } else {
-                syntaxErrors.forEach((error, i) => {
-                    markdown += `${i + 1}. **${error.errorType}** in ${error.location}\n`;
-                    markdown += `   - Description: ${error.description}\n`;
-                    markdown += `   - Code: \`${error.codeFragment}\`\n`;
-                    markdown += `   - Confidence: ${error.confidence}\n\n`;
-                });
-            }
-
-            markdown += `## RECOMMENDATIONS\n\n`;
-            Object.entries(report.dimensions || {}).forEach(([dimension, result]) => {
-                if (result.recommendations.length > 0) {
-                    markdown += `### ${dimension.charAt(0).toUpperCase() + dimension.slice(1)}\n\n`;
-                    result.recommendations.forEach((rec, i) => {
-                        markdown += `${i + 1}. **${rec.priority.toUpperCase()}:** ${rec.action}\n`;
-                        markdown += `   Impact: ${rec.impact}\n`;
-                        if (rec.evidence) {
-                            markdown += `   Evidence: _${rec.evidence}_${rec.location ? ` (${rec.location})` : ''}\n`;
-                        }
-                        markdown += `\n`;
-                    });
-                }
-            });
-
-            // [NEW] Sitemap Health Status (Domain-level)
-            console.log('Exporting report, sitemapHealth:', report.sitemapHealth);
-            if (report.sitemapHealth) {
-                markdown += `\n## SITEMAP HEALTH (Domain Level)\n\n`;
-
-                if (report.sitemapHealth.error) {
-                    markdown += `âš ï¸ **Check Failed:** ${report.sitemapHealth.error}\n\n`;
-                } else {
-                    markdown += `**Health Score:** ${report.sitemapHealth.healthPercentage}/100\n`;
-                    markdown += `**Total URLs:** ${report.sitemapHealth.totalUrls}\n`;
-                    markdown += `**Broken URLs:** ${report.sitemapHealth.brokenUrls}\n\n`;
-                }
-
-                if (report.sitemapHealth && (report.sitemapHealth.brokenUrls || 0) > 0) {
-                    if (report.sitemapHealth.linkIssues) {
-                        const broken = report.sitemapHealth.linkIssues.filter(i => i.issueType === '404').slice(0, 10);
-                        markdown += `### Top Broken Links\n`;
-                        broken.forEach(link => {
-                            markdown += `- \`${link.url}\` (404)\n`;
-                        });
-                        if ((report.sitemapHealth.brokenUrls || 0) > 10) {
-                            markdown += `- ...and ${(report.sitemapHealth.brokenUrls || 0) - 10} more\n`;
-                        }
-                        markdown += `\n`;
-                    }
-                }
-            }
-        }
-
-        markdown += `---\n\n`;
-        markdown += `*Report generated by Documentation Quality Auditor*\n`;
-        markdown += `*Analysis model: ${report.modelUsed}*\n`;
-        markdown += `*Analysis time: ${(report.analysisTime / 1000).toFixed(1)}s*\n`;
-
-        // Create and download file
-        // [FIX] Use data URL instead of blob URL for better Chrome compatibility
-        const isSitemapMode = (manualModeOverride || selectedMode) === 'sitemap';
-        const filename = isSitemapMode && report.sitemapHealth
-            ? `sitemap-health-report-${new Date().toISOString().split('T')[0]}.md`
-            : `documentation-quality-report-${new Date().toISOString().split('T')[0]}.md`;
-
-        // Encode markdown as data URL
-        const dataUrl = 'data:text/markdown;charset=utf-8,' + encodeURIComponent(markdown);
-
-        const a = document.createElement('a');
-        a.style.display = 'none';
-        a.href = dataUrl;
-        a.download = filename;
-
-        document.body.appendChild(a);
-        a.click();
-
-        // Cleanup
-        setTimeout(() => {
-            document.body.removeChild(a);
-        }, 100);
-    };
-
     /** Quick-start user guide PDF */
     const exportUserGuidePdf = async () => {
         // @ts-ignore
@@ -2695,8 +2461,8 @@ function LensyApp() {
         gy += 2;
 
         // Step 6
-        stepTitle(6, 'Export Your Report');
-        stepBody('Click "Export Report (PDF)" at the bottom of the results to download a branded PDF report. This report follows a structured narrative format and can be shared with your team for review or compliance purposes.');
+        stepTitle(6, 'Download Your Report');
+        stepBody('Click "Download report" under the score cards and choose Markdown (.md) to hand the fixes to your coding agent, or PDF to read or share with your team. If AI citations have not run yet, Lensy runs them first.');
         gy += 4;
 
         // Helpful links section
@@ -2736,726 +2502,6 @@ function LensyApp() {
         doc.save(`lensy-quick-start-guide-${new Date().toISOString().split('T')[0]}.pdf`);
     };
 
-    /** Export report as branded Perseverance AI PDF â€” Amazon narrative style */
-    const exportPdfReport = async (report: FinalReport) => {
-        // @ts-ignore
-        const jspdfModule = await import('jspdf') as any;
-        const jsPDF = jspdfModule.default || jspdfModule.jsPDF;
-        const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-
-        // Use default helvetica font
-        const fn = 'helvetica';
-        doc.setFont(fn, 'normal');
-
-        const pageWidth = doc.internal.pageSize.getWidth();
-        const pageHeight = doc.internal.pageSize.getHeight();
-        const margin = 20;
-        const contentWidth = pageWidth - margin * 2;
-        let y = 0;
-
-        // --- Minimal palette: uniform dark text, matching user guide ---
-        const c = {
-            textDark: [30, 30, 30] as [number, number, number],
-            textBody: [30, 30, 30] as [number, number, number],       // same as dark â€” uniform black
-            textMuted: [100, 100, 100] as [number, number, number],   // only for footer
-            textLight: [156, 163, 175] as [number, number, number],   // only for footer/cover accents
-            blue: [59, 130, 246] as [number, number, number],
-            borderLight: [229, 231, 235] as [number, number, number],
-        };
-
-        // Helper: normalize dimension score to 0-100
-        const normScore100 = (raw: number): number => raw <= 10 ? Math.round(raw * 10) : Math.round(raw);
-        const sz = 10; // standard body font size
-        const lh = 5;  // line height
-
-        const checkPage = (neededHeight: number) => {
-            if (y + neededHeight > pageHeight - 18) {
-                doc.addPage();
-                drawFooter();
-                y = 18;
-            }
-        };
-
-        const drawFooter = () => {
-            doc.setDrawColor(...c.borderLight);
-            doc.line(margin, pageHeight - 12, pageWidth - margin, pageHeight - 12);
-            doc.setFontSize(7);
-            doc.setTextColor(...c.textLight);
-            doc.setFont(fn, 'normal');
-            doc.text(`(c) ${new Date().getFullYear()} Perseverance AI  |  Confidential`, margin, pageHeight - 7);
-            doc.text('Generated by Lensy AI. Mistakes can happen, please double-check.', pageWidth - margin, pageHeight - 7, { align: 'right' });
-        };
-
-        // Section heading: bold, no underline, just spacing
-        const heading = (text: string) => {
-            checkPage(12);
-            y += 6;
-            doc.setFontSize(12);
-            doc.setFont(fn, 'bold');
-            doc.setTextColor(...c.textDark);
-            doc.text(text, margin, y);
-            y += 6;
-        };
-
-        // Sub-heading: bold, same size as body
-        const subheading = (text: string) => {
-            checkPage(10);
-            y += 3;
-            doc.setFontSize(sz);
-            doc.setFont(fn, 'bold');
-            doc.setTextColor(...c.textDark);
-            doc.text(text, margin, y);
-            y += lh + 1;
-        };
-
-        // Paragraph: normal weight, wraps at content width
-        const para = (text: string) => {
-            doc.setFontSize(sz);
-            doc.setFont(fn, 'normal');
-            doc.setTextColor(...c.textBody);
-            const lines = doc.splitTextToSize(text, contentWidth);
-            for (const line of lines) {
-                checkPage(lh);
-                doc.text(line, margin, y);
-                y += lh;
-            }
-        };
-
-        // Inline bold label + normal value on same line
-        const labelValue = (label: string, value: string) => {
-            checkPage(lh + 1);
-            doc.setFontSize(sz);
-            doc.setFont(fn, 'bold');
-            doc.setTextColor(...c.textDark);
-            doc.text(label, margin, y);
-            doc.setFont(fn, 'normal');
-            doc.setTextColor(...c.textBody);
-            doc.text(value, margin + doc.getTextWidth(label + '  '), y);
-            y += lh + 0.5;
-        };
-
-        const isSitemapMode = (manualModeOverride || selectedMode) === 'sitemap';
-
-        // ====== PAGE 1: COVER ======
-
-        // Thin top accent line
-        doc.setFillColor(...c.blue);
-        doc.rect(0, 0, pageWidth, 2, 'F');
-
-        // Logo
-        y = 40;
-        const logoSize = 24;
-        doc.addImage(logoImg, 'PNG', pageWidth / 2 - logoSize / 2, y, logoSize, logoSize);
-
-        y += logoSize + 6;
-        doc.setFontSize(10);
-        doc.setTextColor(...c.textMuted);
-        doc.setFont(fn, 'normal');
-        doc.text('Perseverance AI', pageWidth / 2, y, { align: 'center' });
-
-        y += 22;
-        doc.setFontSize(22);
-        doc.setFont(fn, 'bold');
-        doc.setTextColor(...c.textDark);
-        const reportTitle = isSitemapMode && report.sitemapHealth
-            ? 'Sitemap Health Report'
-            : 'Documentation Quality Report';
-        doc.text(reportTitle, pageWidth / 2, y, { align: 'center' });
-
-        y += 8;
-        doc.setDrawColor(...c.borderLight);
-        doc.line(margin + 40, y, pageWidth - margin - 40, y);
-
-        y += 10;
-        doc.setFontSize(10);
-        doc.setFont(fn, 'normal');
-        doc.setTextColor(...c.blue);
-        const displayUrl = url.length > 65 ? url.substring(0, 62) + '...' : url;
-        doc.text(displayUrl, pageWidth / 2, y, { align: 'center' });
-
-        y += 8;
-        doc.setFontSize(9);
-        doc.setTextColor(...c.textMuted);
-        doc.text(new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), pageWidth / 2, y, { align: 'center' });
-
-        // Score box
-        y += 18;
-        const boxW = 56;
-        const boxH = 28;
-        const boxX = pageWidth / 2 - boxW / 2;
-        if (isSitemapMode && report.sitemapHealth) {
-            const pct = report.sitemapHealth.healthPercentage || 0;
-            doc.setDrawColor(...c.textDark);
-            doc.setLineWidth(1);
-            doc.roundedRect(boxX, y, boxW, boxH, 4, 4, 'S');
-            doc.setLineWidth(0.2);
-            doc.setFontSize(22);
-            doc.setFont(fn, 'bold');
-            doc.setTextColor(...c.textDark);
-            doc.text(`${pct}/100`, pageWidth / 2, y + 16, { align: 'center' });
-            doc.setFontSize(7);
-            doc.setTextColor(...c.textMuted);
-            doc.setFont(fn, 'normal');
-            doc.text('HEALTH SCORE', pageWidth / 2, y + 23, { align: 'center' });
-        } else {
-            const score = report.overallScore || 0;
-            doc.setDrawColor(...c.textDark);
-            doc.setLineWidth(1);
-            doc.roundedRect(boxX, y, boxW, boxH, 4, 4, 'S');
-            doc.setLineWidth(0.2);
-            doc.setFontSize(22);
-            doc.setFont(fn, 'bold');
-            doc.setTextColor(...c.textDark);
-            doc.text(`${score}/100`, pageWidth / 2, y + 16, { align: 'center' });
-            doc.setFontSize(7);
-            doc.setTextColor(...c.textMuted);
-            doc.setFont(fn, 'normal');
-            doc.text('OVERALL SCORE', pageWidth / 2, y + 23, { align: 'center' });
-        }
-
-        y += 38;
-        doc.setFontSize(8);
-        doc.setTextColor(...c.textLight);
-        doc.text(`Analysis time: ${(report.analysisTime / 1000).toFixed(1)}s`, pageWidth / 2, y, { align: 'center' });
-
-        drawFooter();
-
-        // ====== PAGE 2+: NARRATIVE BODY ======
-        doc.addPage();
-        drawFooter();
-        y = 18;
-
-        if (isSitemapMode && report.sitemapHealth) {
-            // --- SITEMAP MODE (narrative) ---
-            heading('Sitemap Health Summary');
-            const sh = report.sitemapHealth;
-            const shPct = sh.healthPercentage ?? ((sh.totalUrls || 0) > 0 ? Math.round(((sh.healthyUrls || 0) / (sh.totalUrls || 1)) * 100) : 0);
-            para(
-                `The sitemap contains ${sh.totalUrls} URLs in total, of which ${sh.healthyUrls} are healthy (${shPct}%). ` +
-                `Broken links (404): ${sh.brokenUrls || 0}. Access-denied responses (403): ${sh.accessDeniedUrls || 0}. ` +
-                `Timeouts: ${sh.timeoutUrls || 0}. Other errors: ${sh.otherErrorUrls || 0}.`
-            );
-
-            if (sh.linkIssues && sh.linkIssues.length > 0) {
-                heading('Link Issue Details');
-                const broken404 = sh.linkIssues.filter(i => i.issueType === '404');
-                if (broken404.length > 0) {
-                    subheading(`Broken Links (404) - ${broken404.length}`);
-                    broken404.forEach((issue, i) => {
-                        checkPage(lh);
-                        doc.setFontSize(sz);
-                        doc.setFont(fn, 'normal');
-                        doc.setTextColor(...c.textBody);
-                        const line = `${i + 1}. ${issue.url}`;
-                        doc.text(line.length > 100 ? line.substring(0, 97) + '...' : line, margin, y);
-                        y += lh;
-                    });
-                    y += 2;
-                }
-            }
-        } else {
-            // --- DOC MODE (Amazon narrative style) ---
-
-            // Build dimension data
-            const dimEntries = Object.entries(report.dimensions || {});
-            const strengths: string[] = [];
-            const weaknesses: string[] = [];
-            const improvements: { action: string; impact: string }[] = [];
-
-            dimEntries.forEach(([dim, result]) => {
-                const raw = result.score || 0;
-                const s100 = normScore100(raw);
-                const dimName = dim.charAt(0).toUpperCase() + dim.slice(1);
-                if (s100 >= 85) {
-                    const reason = (result.findings || []).find(f => !f.toLowerCase().startsWith('content type'));
-                    strengths.push(reason ? `${dimName} scored ${s100}/100. ${reason}` : `${dimName} scored ${s100}/100`);
-                } else if (s100 < 70) {
-                    const reason = (result.findings || []).find(f => !f.toLowerCase().startsWith('content type'));
-                    weaknesses.push(reason ? `${dimName} scored ${s100}/100. ${reason}` : `${dimName} scored ${s100}/100`);
-                }
-            });
-
-            // Build Top Actions from across ALL sections
-            // Clean up text: remove em dashes, en dashes, ellipsis, and other AI-looking symbols
-            const cleanText = (text: string): string => {
-                return text
-                    .replace(/\s*[â€”â€“]\s*/g, '. ')     // em dash, en dash to period+space
-                    .replace(/\.{2,}/g, '.')            // collapse multiple dots
-                    .replace(/\.\s*\./g, '.')           // collapse ". ." to "."
-                    .replace(/\s{2,}/g, ' ')            // collapse double spaces
-                    .trim();
-            };
-
-            // Top Actions are structured: { action, impact }
-            // 1. AI-Readiness
-            if (report.aiReadiness) {
-                const aiScore = Number(report.aiReadiness.overallScore) || 0;
-                const missingAI: string[] = [];
-                if (!report.aiReadiness.llmsTxt.found) missingAI.push('llms.txt');
-                if (!report.aiReadiness.llmsFullTxt.found) missingAI.push('llms-full.txt');
-                if (!report.aiReadiness.structuredData.hasJsonLd) missingAI.push('structured data (JSON-LD)');
-                if (missingAI.length > 0) {
-                    improvements.push({
-                        action: `AI-readiness scored ${aiScore}/100. Add ${missingAI.join(', ')}`,
-                        impact: 'Without these files, AI assistants cannot discover or accurately reference your documentation, making your content invisible to the fastest-growing discovery channel.'
-                    });
-                }
-            }
-
-            // 2. Sitemap health issues
-            if (report.sitemapHealth) {
-                if (report.sitemapHealth.error) {
-                    const cleanedError = cleanText(report.sitemapHealth.error);
-                    improvements.push({
-                        action: `Sitemap check failed. ${cleanedError}`,
-                        impact: 'A broken sitemap prevents search engines from efficiently crawling and indexing your pages, directly reducing organic search visibility.'
-                    });
-                } else if ((report.sitemapHealth.brokenUrls || 0) > 0) {
-                    improvements.push({
-                        action: `${report.sitemapHealth.brokenUrls} broken URLs found in sitemap need to be fixed`,
-                        impact: 'Broken URLs in the sitemap waste crawl budget and erode search engine trust in your site over time.'
-                    });
-                }
-            }
-
-            // 3. Critical findings
-            const linkIssueCountSummary = (report.linkAnalysis.linkIssueFindings || report.linkAnalysis.linkValidation?.linkIssueFindings)?.length || 0;
-            const deprecatedCountSummary = report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length || 0;
-            const spellingCountSummary = (report.dimensions?.clarity?.spellingIssues || []).length;
-            if (linkIssueCountSummary > 0) {
-                improvements.push({
-                    action: `${linkIssueCountSummary} broken or problematic link${linkIssueCountSummary !== 1 ? 's' : ''} need attention`,
-                    impact: 'Broken links frustrate users and signal poor maintenance to search engines, hurting rankings.'
-                });
-            }
-            if (deprecatedCountSummary > 0) {
-                improvements.push({
-                    action: `${deprecatedCountSummary} deprecated code reference${deprecatedCountSummary !== 1 ? 's' : ''} should be updated`,
-                    impact: 'Developers following deprecated examples will hit errors, generating support tickets and eroding trust in your docs.'
-                });
-            }
-            if (spellingCountSummary > 3) {
-                improvements.push({
-                    action: `${spellingCountSummary} spelling errors should be corrected`,
-                    impact: 'Spelling errors reduce credibility and can confuse developers trying to match exact API names or parameters.'
-                });
-            }
-
-            // 4. High-priority dimension recommendations (cleaned, deduplicated)
-            const seenActions: string[] = [];
-            improvements.forEach(imp => seenActions.push(imp.action.toLowerCase().substring(0, 40)));
-
-            const isDuplicate = (action: string): boolean => {
-                const lower = action.toLowerCase();
-                return seenActions.some(seen =>
-                    lower.includes(seen.substring(0, 25)) || seen.includes(lower.substring(0, 25))
-                );
-            };
-
-            dimEntries.forEach(([, result]) => {
-                if (result.recommendations && result.recommendations.length > 0) {
-                    const topRec = result.recommendations[0];
-                    if (topRec.priority === 'high' || (topRec.priority as string) === 'HIGH') {
-                        const cleaned = cleanText(topRec.action);
-                        if (!isDuplicate(cleaned)) {
-                            seenActions.push(cleaned.toLowerCase().substring(0, 40));
-                            improvements.push({ action: cleaned, impact: topRec.impact || '' });
-                        }
-                    }
-                }
-            });
-
-            // 5. Fill from any dimension recommendations if under 3
-            if (improvements.length < 3) {
-                dimEntries.forEach(([, result]) => {
-                    if (result.recommendations && result.recommendations.length > 0 && improvements.length < 5) {
-                        const action = cleanText(result.recommendations[0].action);
-                        if (!isDuplicate(action)) {
-                            seenActions.push(action.toLowerCase().substring(0, 40));
-                            improvements.push({ action, impact: result.recommendations[0].impact || '' });
-                        }
-                    }
-                });
-            }
-
-            // ================================================================
-            // PAGE 2: THE ONE-PAGER (CTO scans this in 2 minutes)
-            // ================================================================
-
-            // --- Executive Summary (2-3 lines) ---
-            heading('Executive Summary');
-            const overallScore = report.overallScore || 0;
-            const scoreVerdict = overallScore >= 80
-                ? 'The page demonstrates strong documentation quality across most dimensions.'
-                : overallScore >= 60
-                    ? 'The page meets baseline quality standards but has room for improvement in several areas.'
-                    : 'The page has significant quality gaps that should be addressed.';
-            para(`This documentation scored ${overallScore}/100 overall. ${scoreVerdict}`);
-            y += 1;
-
-            // --- Dimension Scores (score + one-line definition) ---
-            const dimDefs: Record<string, string> = {
-                relevance: 'Does the content match what the target audience needs?',
-                freshness: 'Is the content up to date with current versions and practices?',
-                clarity: 'Is the content well-structured, readable, and free of errors?',
-                accuracy: 'Are code samples, configurations, and instructions correct?',
-                completeness: 'Does the page cover the full workflow, edge cases, and next steps?',
-            };
-            subheading('Dimension Scores');
-            dimEntries.forEach(([dimension, result]) => {
-                const s100 = normScore100(result.score || 0);
-                checkPage(lh * 2);
-                doc.setFontSize(sz);
-                const dimLabel = dimension.charAt(0).toUpperCase() + dimension.slice(1);
-                // Dimension name + score on same line
-                doc.setFont(fn, 'bold');
-                doc.setTextColor(...c.textDark);
-                doc.text(dimLabel, margin + 4, y);
-                doc.text(`${s100}/100`, margin + 50, y);
-                // Definition on same line after score
-                const def = dimDefs[dimension.toLowerCase()] || '';
-                if (def) {
-                    doc.setFont(fn, 'normal');
-                    doc.text(def, margin + 68, y);
-                }
-                y += lh + 1;
-            });
-            if (report.aiReadiness) {
-                const aiS = Number(report.aiReadiness.overallScore) || 0;
-                checkPage(lh * 2);
-                doc.setFontSize(sz);
-                doc.setFont(fn, 'bold');
-                doc.setTextColor(...c.textDark);
-                doc.text('AI-Readiness', margin + 4, y);
-                doc.text(`${aiS}/100`, margin + 50, y);
-                doc.setFont(fn, 'normal');
-                doc.text('Can AI assistants discover and use your documentation?', margin + 68, y);
-                y += lh + 1;
-            }
-            y += 2;
-
-            // --- Top 5 Issues: What, Why, Action ---
-            heading('Top 5 Issues');
-            para('The highest-impact findings across all dimensions. Each issue includes what was found, why it matters, and the recommended action.');
-            y += 1;
-
-            improvements.slice(0, 5).forEach((imp, i) => {
-                checkPage(lh * 6);
-                // Issue number + action (bold)
-                doc.setFontSize(sz);
-                doc.setFont(fn, 'bold');
-                doc.setTextColor(...c.textDark);
-                const numPrefix = `${i + 1}. `;
-                const actionX = margin + doc.getTextWidth(numPrefix);
-                doc.text(numPrefix, margin, y);
-                doc.setFont(fn, 'normal');
-                doc.setTextColor(...c.textBody);
-                const actionLines = doc.splitTextToSize(imp.action, contentWidth - doc.getTextWidth(numPrefix));
-                actionLines.forEach((line: string, li: number) => {
-                    checkPage(lh);
-                    doc.text(line, li === 0 ? actionX : actionX, y);
-                    y += lh;
-                });
-                // Why it matters (same dark color, slightly smaller, indented)
-                if (imp.impact) {
-                    doc.setFontSize(sz - 1);
-                    doc.setTextColor(...c.textDark);
-                    const impactLines = doc.splitTextToSize(`Why it matters: ${imp.impact}`, contentWidth - 8);
-                    impactLines.forEach((line: string) => { checkPage(lh); doc.text(line, margin + 8, y); y += lh; });
-                }
-                y += 2;
-            });
-
-            // ================================================================
-            // APPENDIX: EVERYTHING BELOW THE LINE
-            // ================================================================
-            doc.addPage();
-            drawFooter();
-            y = 18;
-
-            // Appendix title
-            y += 4;
-            doc.setFontSize(14);
-            doc.setFont(fn, 'bold');
-            doc.setTextColor(...c.textDark);
-            doc.text('Appendix', margin, y);
-            y += 3;
-            doc.setDrawColor(...c.borderLight);
-            doc.line(margin, y, pageWidth - margin, y);
-            y += 6;
-
-            // --- A1: Sitemap Health ---
-            if (report.sitemapHealth) {
-                heading('Sitemap Health');
-                if (report.sitemapHealth.error) {
-                    para(`The sitemap check was unable to complete. ${cleanText(report.sitemapHealth.error)}`);
-                } else {
-                    const sh = report.sitemapHealth;
-                    const pctHealthy = sh.healthPercentage ?? ((sh.totalUrls || 0) > 0 ? Math.round(((sh.healthyUrls || 0) / (sh.totalUrls || 1)) * 100) : 0);
-                    para(
-                        `The domain-level sitemap contains ${sh.totalUrls} URLs. Of these, ${sh.healthyUrls} (${pctHealthy}%) are healthy. ` +
-                        `Broken links (404): ${sh.brokenUrls || 0}. Access-denied (403): ${sh.accessDeniedUrls || 0}. Timeouts: ${sh.timeoutUrls || 0}.`
-                    );
-                    if (sh.linkIssues && sh.linkIssues.length > 0) {
-                        subheading(`Link Issues (${sh.linkIssues.length})`);
-                        sh.linkIssues.forEach((issue, i) => {
-                            checkPage(lh);
-                            doc.setFontSize(sz);
-                            doc.setFont(fn, 'normal');
-                            doc.setTextColor(...c.textBody);
-                            const txt = `${i + 1}. [${issue.issueType}] ${issue.url}`;
-                            doc.text(txt.length > 100 ? txt.substring(0, 97) + '...' : txt, margin, y);
-                            y += lh;
-                        });
-                        y += 2;
-                    }
-                }
-            }
-
-            // --- A2: Critical Findings ---
-            heading('Critical Findings');
-            const linkIssueCount = (report.linkAnalysis.linkIssueFindings || report.linkAnalysis.linkValidation?.linkIssueFindings)?.length || 0;
-            const deprecatedCount = report.codeAnalysis.enhancedAnalysis?.deprecatedFindings?.length || 0;
-            const syntaxErrorCount = report.codeAnalysis.enhancedAnalysis?.syntaxErrorFindings?.length || 0;
-            const urlSlugIssues = (report as any).urlSlugAnalysis?.issues || [];
-
-            const criticalItems = [
-                { label: 'Link Issues', count: linkIssueCount },
-                { label: 'Deprecated Code', count: deprecatedCount },
-                { label: 'Syntax Errors', count: syntaxErrorCount },
-                { label: 'URL Slug Issues', count: urlSlugIssues.length },
-            ];
-            criticalItems.forEach((item, idx) => {
-                checkPage(lh);
-                doc.setFontSize(sz);
-                doc.setFont(fn, 'normal');
-                doc.setTextColor(...c.textBody);
-                const status = item.count > 0 ? `${item.count} found` : 'None found';
-                doc.text(`${idx + 1}. ${item.label}: ${status}`, margin, y);
-                y += lh + 0.5;
-            });
-
-            if (urlSlugIssues.length > 0) {
-                subheading('URL Slug Issues');
-                urlSlugIssues.forEach((issue: any, i: number) => {
-                    checkPage(lh);
-                    doc.setFontSize(sz);
-                    doc.setFont(fn, 'normal');
-                    doc.setTextColor(...c.textBody);
-                    doc.text(`${i + 1}. "${issue.segment}" should be "${issue.suggestion}" (${issue.confidence})`, margin, y);
-                    y += lh;
-                });
-                y += 2;
-            }
-
-            // --- A3: Spelling & Typos ---
-            const spellingIssues = report.dimensions?.clarity?.spellingIssues || [];
-            if (spellingIssues.length > 0) {
-                heading('Spelling and Typos');
-                para(`${spellingIssues.length} spelling issue${spellingIssues.length !== 1 ? 's were' : ' was'} detected in the documentation.`);
-                spellingIssues.forEach((m, idx) => {
-                    checkPage(lh);
-                    doc.setFontSize(sz);
-                    doc.setFont(fn, 'normal');
-                    doc.setTextColor(...c.textBody);
-                    doc.text(`${idx + 1}. "${m.incorrect}" should be "${m.correct}"`, margin, y);
-                    y += lh;
-                });
-                y += 2;
-            }
-
-            // --- A4: Configuration & Code Issues ---
-            const configIssues = report.dimensions?.accuracy?.codeIssues || [];
-            if (configIssues.length > 0) {
-                heading('Configuration and Code Issues');
-                para(`${configIssues.length} code or configuration issue${configIssues.length !== 1 ? 's were' : ' was'} identified.`);
-                configIssues.forEach((issue, i) => {
-                    subheading(`${i + 1}. ${issue.type.toUpperCase()}`);
-                    para(issue.description);
-                    labelValue('Location:', issue.location);
-                });
-            }
-
-            // --- A5: Link Issues (grouped by type) ---
-            const linkIssues = (report.linkAnalysis.linkIssueFindings || report.linkAnalysis.linkValidation?.linkIssueFindings) || [];
-            if (linkIssues.length > 0) {
-                const brokenLinks = linkIssues.filter((l: any) => l.issueType === '404');
-                const authLinks = linkIssues.filter((l: any) => l.issueType === 'access-denied');
-                const timeoutLinks = linkIssues.filter((l: any) => l.issueType === 'timeout');
-                const otherLinks = linkIssues.filter((l: any) => l.issueType === 'error');
-
-                heading('Link Issues');
-                para(`${linkIssues.length} link issue${linkIssues.length !== 1 ? 's were' : ' was'} found during validation.`);
-
-                const renderLinkGroup = (title: string, items: any[], muted: boolean, note?: string) => {
-                    if (items.length === 0) return;
-                    subheading(`${title} (${items.length})`);
-                    if (note) {
-                        checkPage(lh);
-                        doc.setFontSize(sz - 1);
-                        doc.setFont(fn, 'italic');
-                        doc.setTextColor(...(muted ? c.textLight : c.textBody));
-                        doc.text(note, margin, y);
-                        y += lh;
-                    }
-                    items.forEach((link: any, i: number) => {
-                        checkPage(lh);
-                        doc.setFontSize(sz);
-                        doc.setFont(fn, 'normal');
-                        doc.setTextColor(...(muted ? c.textLight : c.textBody));
-                        const linkLine = `${i + 1}. "${link.anchorText || 'Link'}" \u2192 ${link.url}`;
-                        doc.text(linkLine.length > 100 ? linkLine.substring(0, 97) + '...' : linkLine, margin, y);
-                        y += lh;
-                    });
-                    y += 1;
-                };
-
-                renderLinkGroup('Broken Links (404)', brokenLinks, false);
-                renderLinkGroup('Auth-Protected (401/403)', authLinks, true, 'These endpoints may require authentication and are likely not broken.');
-                renderLinkGroup('Timeouts', timeoutLinks, true);
-                renderLinkGroup('Other Errors', otherLinks, true);
-                y += 2;
-            }
-
-            // --- A6: Deprecated Code ---
-            const deprecatedCode = report.codeAnalysis.enhancedAnalysis?.deprecatedFindings || [];
-            if (deprecatedCode.length > 0) {
-                heading('Deprecated Code');
-                para(`${deprecatedCode.length} deprecated API${deprecatedCode.length !== 1 ? 's were' : ' was'} found.`);
-                deprecatedCode.forEach((finding, i) => {
-                    subheading(`${i + 1}. ${finding.method}`);
-                    labelValue('Location:', finding.location);
-                    labelValue('Deprecated in:', finding.deprecatedIn);
-                    labelValue('Replacement:', finding.replacement);
-                });
-            }
-
-            // --- A7: AI-Readiness (detailed) ---
-            if (report.aiReadiness) {
-                heading('AI-Readiness Assessment');
-                const ai = report.aiReadiness;
-                labelValue('Overall AI Score:', `${ai.overallScore}/100`);
-                y += 1;
-                const aiItems = [
-                    { label: 'llms.txt', found: ai.llmsTxt.found, impact: 'AI assistants (ChatGPT, Copilot, Perplexity) cannot discover or reference your documentation. This is the fastest-growing traffic channel and your content is invisible to it.' },
-                    { label: 'llms-full.txt', found: ai.llmsFullTxt.found, impact: 'AI tools that do find your site can only work with partial content, leading to incomplete or inaccurate answers about your product.' },
-                    { label: 'Structured Data (JSON-LD)', found: ai.structuredData.hasJsonLd, impact: 'Search engines cannot build rich results (FAQs, how-tos, breadcrumbs) for your pages, reducing click-through rates from search.' },
-                ];
-                aiItems.forEach((item, idx) => {
-                    checkPage(lh * 3);
-                    doc.setFontSize(sz);
-                    doc.setFont(fn, 'normal');
-                    doc.setTextColor(...c.textBody);
-                    const status = item.found ? 'Found' : 'Missing';
-                    doc.text(`${idx + 1}. ${item.label}: ${status}`, margin, y);
-                    y += lh + 0.5;
-                    if (!item.found) {
-                        doc.setFontSize(sz - 1);
-                        doc.setTextColor(...c.textDark);
-                        const impactLines = doc.splitTextToSize(`Impact: ${item.impact}`, contentWidth - 6);
-                        impactLines.forEach((line: string) => { checkPage(lh); doc.text(line, margin + 6, y); y += lh; });
-                    }
-                });
-                y += 2;
-            }
-
-            // --- A8: All Recommendations (sorted, deduplicated) ---
-            const priorityOrder: Record<string, number> = { high: 0, HIGH: 0, medium: 1, MEDIUM: 1, low: 2, LOW: 2 };
-            const allRecsRaw = Object.entries(report.dimensions || {})
-                .flatMap(([dim, result]) => (result.recommendations || []).map(rec => ({ ...rec, dimension: dim })))
-                .sort((a, b) => (priorityOrder[a.priority] ?? 3) - (priorityOrder[b.priority] ?? 3));
-
-            const allRecs: typeof allRecsRaw = [];
-            const recFingerprints: string[] = [];
-            allRecsRaw.forEach(rec => {
-                const fp = rec.action.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 50);
-                const isSimilar = recFingerprints.some(existing => {
-                    const shorter = Math.min(fp.length, existing.length, 30);
-                    let matches = 0;
-                    for (let ci = 0; ci < shorter; ci++) { if (fp[ci] === existing[ci]) matches++; }
-                    return matches / shorter > 0.6;
-                });
-                if (!isSimilar) {
-                    allRecs.push(rec);
-                    recFingerprints.push(fp);
-                }
-            });
-
-            if (allRecs.length > 0) {
-                heading('All Recommendations');
-                allRecs.forEach((rec: any, i: number) => {
-                    checkPage(lh * 3);
-                    doc.setFontSize(sz);
-                    doc.setFont(fn, 'bold');
-                    doc.setTextColor(...c.textDark);
-                    const numPrefix = `${i + 1}. `;
-                    doc.text(numPrefix, margin, y);
-                    const actionX = margin + doc.getTextWidth(numPrefix);
-                    doc.setFont(fn, 'normal');
-                    doc.setTextColor(...c.textBody);
-                    const actionLines = doc.splitTextToSize(rec.action, contentWidth - doc.getTextWidth(numPrefix));
-                    actionLines.forEach((line: string, li: number) => {
-                        checkPage(lh);
-                        doc.text(line, li === 0 ? actionX : margin + doc.getTextWidth(numPrefix), y);
-                        y += lh;
-                    });
-                    doc.setFontSize(sz);
-                    doc.setFont(fn, 'normal');
-                    doc.setTextColor(...c.textMuted);
-                    checkPage(lh);
-                    doc.text(`${rec.priority?.toUpperCase()} priority, ${rec.impact} impact, ${rec.dimension}`, margin + doc.getTextWidth(numPrefix), y);
-                    y += lh;
-                    if (rec.evidence) {
-                        checkPage(lh);
-                        const evidenceText = `Evidence: ${rec.evidence}${rec.location ? ` (${rec.location})` : ''}`;
-                        const evidenceLines = doc.splitTextToSize(evidenceText, contentWidth - doc.getTextWidth(numPrefix));
-                        evidenceLines.forEach((line: string) => {
-                            checkPage(lh);
-                            doc.text(line, margin + doc.getTextWidth(numPrefix), y);
-                            y += lh;
-                        });
-                    }
-                    y += 1;
-                });
-            }
-
-            // --- A9: Dimension Analysis (detailed findings) ---
-            heading('Dimension Analysis');
-            para('Detailed findings for each quality dimension are listed below.');
-
-            dimEntries.forEach(([dimension, result]) => {
-                const s100 = normScore100(result.score || 0);
-                subheading(`${dimension.charAt(0).toUpperCase() + dimension.slice(1)} - ${s100}/100`);
-
-                const findings = (result.findings || []).filter(
-                    (f: string) => !f.toLowerCase().startsWith('content type')
-                );
-                if (findings.length > 0) {
-                    findings.forEach((finding: string, idx: number) => {
-                        checkPage(lh);
-                        doc.setFontSize(sz);
-                        doc.setFont(fn, 'normal');
-                        doc.setTextColor(...c.textBody);
-                        const lines = doc.splitTextToSize(`${idx + 1}. ${finding}`, contentWidth);
-                        lines.forEach((line: string) => {
-                            checkPage(lh);
-                            doc.text(line, margin, y);
-                            y += lh;
-                        });
-                    });
-                } else {
-                    para('No major findings.');
-                }
-                y += 2;
-            });
-        }
-
-        // Save
-        const pdfFilename = isSitemapMode && report.sitemapHealth
-            ? `sitemap-health-report-${new Date().toISOString().split('T')[0]}.pdf`
-            : `documentation-quality-report-${new Date().toISOString().split('T')[0]}.pdf`;
-        doc.save(pdfFilename);
-    };
 
     const isGithubWideMode = selectedMode === 'github-issues' && (analysisState.status === 'analyzing' || !!githubAnalysisResults);
     // Pre-submit input validation (empty/invalid URL, missing domain/issues) should NOT
@@ -3497,6 +2543,7 @@ function LensyApp() {
                 detectionData={asyncCards.detection}
                 citationsLoading={citationsLoading}
                 onRunCitations={handleRunCitations}
+                sessionId={currentSessionId}
                 onScan={handleAnalyze}
             />
         );

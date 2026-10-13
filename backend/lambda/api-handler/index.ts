@@ -1,6 +1,6 @@
 import { Handler, APIGatewayProxyResult } from 'aws-lambda';
 import { SFNClient, StartExecutionCommand, DescribeExecutionCommand } from '@aws-sdk/client-sfn';
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { DynamoDBClient, GetItemCommand, UpdateItemCommand, PutItemCommand } from '@aws-sdk/client-dynamodb';
 import * as crypto from 'crypto';
@@ -9,6 +9,36 @@ import { URL } from 'url';
 
 const sfnClient = new SFNClient({ region: process.env.AWS_REGION || 'us-east-1' });
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
+
+// ── Session JSON helpers (citations, H-001) ──
+const CITATIONS_RUN_TTL_MS = 3 * 60 * 1000;
+
+function isValidSessionId(id: unknown): id is string {
+    return typeof id === 'string' && /^[A-Za-z0-9_-]{8,100}$/.test(id);
+}
+
+async function readSessionJson(sessionId: string, key: string): Promise<any | null> {
+    try {
+        const response = await s3Client.send(new GetObjectCommand({
+            Bucket: process.env.ANALYSIS_BUCKET,
+            Key: `sessions/${sessionId}/${key}`,
+        }));
+        const text = await response.Body?.transformToString();
+        return text ? JSON.parse(text) : null;
+    } catch (error: any) {
+        if (error?.name === 'NoSuchKey' || error?.$metadata?.httpStatusCode === 404) return null;
+        throw error;
+    }
+}
+
+async function writeSessionJson(sessionId: string, key: string, data: unknown): Promise<void> {
+    await s3Client.send(new PutObjectCommand({
+        Bucket: process.env.ANALYSIS_BUCKET,
+        Key: `sessions/${sessionId}/${key}`,
+        Body: JSON.stringify(data),
+        ContentType: 'application/json',
+    }));
+}
 const lambdaClient = new LambdaClient({ region: process.env.AWS_REGION || 'us-east-1' });
 const dynamoClient = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' });
 
@@ -296,18 +326,43 @@ export const handler: Handler<any, any> = async (event: any) => {
             return await handleApplyFixesRequest(body, corsHeaders);
         }
 
-        // Run AI Citations check on-demand (no rate limit — readiness already counted)
+        // Run AI Citations check on-demand (no rate limit — readiness already counted).
+        // H-001: the report download can start this too, so it must never pay
+        // for the same session twice: a finished result is returned as-is, a run
+        // already in flight is not started again, and only sessions that have a
+        // finished report (and that report's own URL) can trigger a paid run.
         if (httpMethod === 'POST' && path === '/run-citations') {
             const parsedBody = safeParseBody(body);
-            const { url: citationUrl, sessionId: citationSessionId } = parsedBody;
-            if (!citationUrl || !citationSessionId) {
+            const { url: requestedUrl, sessionId: citationSessionId } = parsedBody;
+            if (!requestedUrl || !citationSessionId) {
                 return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'url and sessionId required' }) };
+            }
+            if (!isValidSessionId(citationSessionId)) {
+                return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Invalid sessionId' }) };
             }
 
             const agentFunctionName = process.env.AGENT_FUNCTION_NAME;
             if (!agentFunctionName) {
                 return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: 'Agent function not configured' }) };
             }
+
+            const sessionReport = await readSessionJson(citationSessionId, 'report.json');
+            if (!sessionReport) {
+                return { statusCode: 404, headers: corsHeaders, body: JSON.stringify({ error: 'No finished scan for this session' }) };
+            }
+
+            const existing = await readSessionJson(citationSessionId, 'ai-discoverability-results.json');
+            if (existing && existing.status !== 'error') {
+                return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'done', cached: true, sessionId: citationSessionId, data: existing }) };
+            }
+
+            const marker = await readSessionJson(citationSessionId, 'citations-run.json');
+            if (marker?.startedAt && Date.now() - marker.startedAt < CITATIONS_RUN_TTL_MS) {
+                return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'running', sessionId: citationSessionId }) };
+            }
+
+            const citationUrl = sessionReport.scope?.url || sessionReport.url || requestedUrl;
+            await writeSessionJson(citationSessionId, 'citations-run.json', { startedAt: Date.now() });
 
             // Invoke agent Lambda in async mode with citationsOnly flag
             const invokeCommand = new InvokeCommand({
@@ -325,8 +380,25 @@ export const handler: Handler<any, any> = async (event: any) => {
             return {
                 statusCode: 200,
                 headers: corsHeaders,
-                body: JSON.stringify({ message: 'Citation check started', sessionId: citationSessionId })
+                body: JSON.stringify({ status: 'started', message: 'Citation check started', sessionId: citationSessionId })
             };
+        }
+
+        // Citation result for a session, read from S3. The browser polls this
+        // while waiting, so a dropped WebSocket (or a page reload mid-run) still
+        // gets the result (H-001).
+        if (httpMethod === 'GET' && path?.startsWith('/citations/')) {
+            const citationSessionId = path.split('/')[2];
+            if (!isValidSessionId(citationSessionId)) {
+                return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Invalid sessionId' }) };
+            }
+            const existing = await readSessionJson(citationSessionId, 'ai-discoverability-results.json');
+            if (existing) {
+                return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: existing.status === 'error' ? 'error' : 'done', data: existing }) };
+            }
+            const marker = await readSessionJson(citationSessionId, 'citations-run.json');
+            const running = Boolean(marker?.startedAt && Date.now() - marker.startedAt < CITATIONS_RUN_TTL_MS);
+            return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: running ? 'running' : 'not_run' }) };
         }
 
         if (httpMethod === 'GET' && path?.startsWith('/status/')) {
