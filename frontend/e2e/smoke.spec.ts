@@ -46,11 +46,11 @@ test('S-02, S-08, REG-06, REG-09: scan, progress log, report, reload', async ({ 
   expect(errors, errors.join('\n')).toEqual([]);
 });
 
-// Known open bug N-06: reloading /results fires generate_report_completed
-// again, inflating GA completions. Confirmed by this test on 2026-10-08.
-// test.fixme keeps it from blocking deploys; when N-06 is fixed, change
-// test.fixme to test so it guards against the bug coming back.
-test.fixme('N-06: reloading /results does not re-fire generate_report_completed', async ({ page }) => {
+// REG-13 (was N-06): reloading /results must not re-fire
+// generate_report_completed. A reload wipes the module-level dedupe set, so the
+// restored terminal state re-counted the completion; the restore now seeds the
+// dedupe key. This guards against the regression.
+test('REG-13: reloading /results does not re-fire generate_report_completed', async ({ page }) => {
   await startScan(page, URLS.stripeApi);
   await expectReport(page);
   await page.reload();
