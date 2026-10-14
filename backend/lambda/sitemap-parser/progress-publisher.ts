@@ -92,7 +92,10 @@ export class ProgressPublisher {
                         Data: JSON.stringify(messageWithSession)
                     }));
                 } catch (error: any) {
-                    if (error.statusCode === 410) {
+                    // SDK v3 reports the status in $metadata.httpStatusCode, not statusCode, so the
+                    // old check never matched: every closed browser tab was logged as an ERROR
+                    // (tripping the ApiErrors/AgentErrors alarms) and never cleaned up.
+                    if (error.statusCode === 410 || error.$metadata?.httpStatusCode === 410 || error.name === 'GoneException') {
                         console.log('Stale connection:', connectionId);
                     } else {
                         console.error('Error sending message to connection:', connectionId, error);
