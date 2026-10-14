@@ -167,7 +167,7 @@ export class LensyStack extends cdk.Stack {
 
         // 3. WebSocket API
         const webSocketHandler = new lambda.Function(this, 'WebSocketHandlerFunction', {
-            runtime: lambda.Runtime.NODEJS_20_X,
+            runtime: lambda.Runtime.NODEJS_22_X,
             handler: 'index.handler',
             code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/websocket-handler')),
             timeout: cdk.Duration.seconds(30),
@@ -207,7 +207,7 @@ export class LensyStack extends cdk.Stack {
 
         const createLambda = (id: string, dir: string, timeout = 30, memory = 128, env = {}) => {
             const fn = new lambda.Function(this, id, {
-                runtime: lambda.Runtime.NODEJS_20_X,
+                runtime: lambda.Runtime.NODEJS_22_X,
                 handler: 'index.handler',
                 code: lambda.Code.fromAsset(path.join(__dirname, `../lambda/${dir}`)),
                 timeout: cdk.Duration.seconds(timeout),
@@ -283,7 +283,7 @@ export class LensyStack extends cdk.Stack {
 
         // NEW: Agent Handler (LangGraph + Bedrock)
         const agentHandler = new lambda.Function(this, 'AgentHandlerFunction', {
-            runtime: lambda.Runtime.NODEJS_20_X,
+            runtime: lambda.Runtime.NODEJS_22_X,
             handler: 'index.handler',
             code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/agent-handler'), {
                 exclude: ['*.ts', 'tsconfig.json', '*.d.ts'],
@@ -430,7 +430,7 @@ export class LensyStack extends cdk.Stack {
 
         // 6b. Console Login Logger — records login events for audit trail
         const consoleLoginLogger = new lambda.Function(this, 'ConsoleLoginLoggerFunction', {
-            runtime: lambda.Runtime.NODEJS_20_X,
+            runtime: lambda.Runtime.NODEJS_22_X,
             handler: 'index.handler',
             code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/console-login-logger')),
             timeout: cdk.Duration.seconds(10),

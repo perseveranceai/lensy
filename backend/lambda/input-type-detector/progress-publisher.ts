@@ -66,7 +66,10 @@ export class ProgressPublisher {
                     }));
                     console.log(`Sent progress to connection ${connectionId}:`, message.message);
                 } catch (error: any) {
-                    if (error.statusCode === 410) {
+                    // SDK v3 reports the status in $metadata.httpStatusCode, not statusCode, so the
+                    // old check never matched: every closed browser tab was logged as an ERROR
+                    // (tripping the ApiErrors/AgentErrors alarms) and never cleaned up.
+                    if (error.statusCode === 410 || error.$metadata?.httpStatusCode === 410 || error.name === 'GoneException') {
                         // Connection is stale, remove it
                         console.log('Stale connection, removing:', connectionId);
                         await this.removeConnection(connectionId);
