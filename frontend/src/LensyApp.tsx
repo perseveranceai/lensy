@@ -632,6 +632,20 @@ function LensyApp() {
                 if (parsed.url) setUrl(parsed.url);
                 if (parsed.asyncCards && Object.keys(parsed.asyncCards).length > 0) setAsyncCards(parsed.asyncCards);
                 if (parsed.analysisState && parsed.analysisState.status !== 'analyzing') {
+                    // N-06: a reload wipes the module-level dedupe set, so the
+                    // restored terminal state would re-fire its analytics event
+                    // and double-count the completion. Seed the dedupe key for
+                    // the restored state (matching the terminal-event effect's
+                    // key form) so a reload never re-counts an already-finished
+                    // scan. A genuinely new scan passes through 'analyzing',
+                    // which clears the key, so it still counts.
+                    const restoredStatus = parsed.analysisState.status;
+                    const restoredUrl = parsed.url;
+                    if (restoredStatus === 'completed' && parsed.analysisState.report) {
+                        trackedTerminalEvents.add(`completed:${restoredUrl}`);
+                    } else if (restoredStatus === 'error') {
+                        trackedTerminalEvents.add(`error:${restoredUrl}:${parsed.analysisState.error || ''}`);
+                    }
                     setAnalysisState(parsed.analysisState);
                 }
                 if (parsed.heroTab) setHeroTab(parsed.heroTab);
