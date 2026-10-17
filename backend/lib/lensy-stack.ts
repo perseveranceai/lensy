@@ -49,6 +49,7 @@ export class LensyStack extends cdk.Stack {
         const lensyEnv = props.lensyEnv;
         const isProd = lensyEnv === 'prod';
         const envSuffix = isProd ? '' : `-${lensyEnv}`;
+        const jinaEnabled = lensyEnv === 'gamma' || (process.env.JINA_ENABLED || '').trim().toLowerCase() === 'true';
 
         // PERPLEXITY_API_KEY drives the AI-citation check. It comes from
         // backend/.env (gitignored) or the ambient environment. It used to be
@@ -297,9 +298,10 @@ export class LensyStack extends cdk.Stack {
                 LENSY_ENV: lensyEnv,
                 LANGSMITH_API_KEY: process.env.LANGSMITH_API_KEY || '',
                 PERPLEXITY_API_KEY: perplexityApiKey,
-                // The shared code is deployed to both environments, but only gamma
-                // reads and injects the credential into the AgentHandler runtime.
-                ...(lensyEnv === 'gamma' ? { JINA_API_KEY: process.env.JINA_API_KEY || '' } : {}),
+                // JS-render fallback via Jina: always on in gamma; in prod only when
+                // the deploy sets JINA_ENABLED=true. The key is injected only where
+                // the fallback can run, so prod without the flag carries no key.
+                ...(jinaEnabled ? { JINA_ENABLED: 'true', JINA_API_KEY: process.env.JINA_API_KEY || '' } : {}),
                 DEPLOY_VERSION: '2026-03-21-v10-ui-restructure',
             }
         });
