@@ -54,8 +54,15 @@ light-theme bug hid (REG-01).
   `bg-[color-mix(in_srgb,var(--bg)_15%,transparent)]`. `npm run check:css`
   catches this.
 - **Check both themes and 375px mobile** for any visual change.
-- **Analytics:** gamma and prod share one GA4 property. Tests block Google
-  Analytics requests; never let automated runs send real events.
+- **Analytics:** gamma and prod share one GA4 property ID, but only the live
+  hostnames (`perseveranceai.com`, `www.`) load gtag.js (`public/index.html`),
+  so gamma, localhost and e2e runs send nothing (REG-14). Page views come only
+  from `trackPageView` in `App.tsx`. Tests also block Google Analytics
+  requests; never let automated runs send real events.
+- **Audit log:** every row carries `trafficSource` (`web`, `test`, `dev`,
+  `api`) and `clientOrigin`, set by the API handler. Smoke tests use a
+  `smoke-` session id and headless or scripted user agents, so they're tagged
+  `test`. Traction reporting counts `web` only.
 
 ## Don't
 

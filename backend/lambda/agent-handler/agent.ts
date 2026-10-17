@@ -390,6 +390,8 @@ export interface AgentRunInput {
     ipHash?: string; // For refunding usage on content gate rejection
     skipCitations?: boolean; // Skip Perplexity AI citation check (run on-demand from frontend)
     forceJsRender?: boolean; // Override SPA rejection and force Jina render
+    trafficSource?: string; // 'web' | 'test' | 'dev' | 'api', set by the API handler
+    clientOrigin?: string;  // hostname of the page that started the scan
 }
 
 /**
@@ -401,6 +403,8 @@ export interface AgentRunInput {
  */
 export async function runAgent(input: AgentRunInput): Promise<string> {
     const { sessionId, analysisStartTime, llmsTxtUrl, ipHash, skipCitations } = input;
+    // Written on every audit log row so reporting can leave out internal traffic.
+    const auditTags = { trafficSource: input.trafficSource || 'unknown', clientOrigin: input.clientOrigin || '' };
     let url = input.url;  // mutable — updated if redirect detected
     const progress = new ProgressPublisher(sessionId);
 
@@ -460,7 +464,7 @@ export async function runAgent(input: AgentRunInput): Promise<string> {
                 reason: 'unreachable-url',
                 completedAt: new Date().toISOString(),
             });
-            await writeAuditLog(sessionId, url, 'rejected', { reason: 'unreachable-url' });
+            await writeAuditLog(sessionId, url, 'rejected', { ...auditTags, reason: 'unreachable-url' });
             // Refund usage — rejected scans should not count against daily limit
             if (ipHash) await refundUsage(ipHash);
             return JSON.stringify({
@@ -503,6 +507,7 @@ export async function runAgent(input: AgentRunInput): Promise<string> {
                         completedAt: new Date().toISOString(),
                     });
                     await writeAuditLog(sessionId, url, 'rejected', {
+                        ...auditTags,
                         reason: 'js-render-required',
                         spaMarkers: spaCheck.markers.join(', '),
                     });
@@ -542,6 +547,7 @@ export async function runAgent(input: AgentRunInput): Promise<string> {
                     completedAt: new Date().toISOString(),
                 });
                 await writeAuditLog(sessionId, url, 'rejected', {
+                    ...auditTags,
                     reason: 'javascript-rendered-page',
                     spaMarkers: spaCheck.markers.join(', '),
                 });
@@ -723,6 +729,7 @@ Respond with JSON only:
                     completedAt: new Date().toISOString(),
                 });
                 await writeAuditLog(sessionId, url, 'rejected', {
+                    ...auditTags,
                     reason: 'non-documentation-page',
                     docConfidence: String(docConfidence.confidence),
                     detectedCategory,
@@ -856,6 +863,7 @@ Respond with JSON only:
         );
 
         await writeAuditLog(sessionId, url, 'completed', {
+            ...auditTags,
             overallScore: String(overallScore),
             analysisTimeMs: String(totalTime),
             docConfidence: String(docConfidence.confidence),

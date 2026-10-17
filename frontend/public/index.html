@@ -108,18 +108,27 @@
     }
     </script>
 
-    <!-- Google Analytics (GA4) — deferred until after page loads for performance -->
+    <!-- Google Analytics (GA4) — deferred until after page loads for performance.
+         Only the live site loads gtag.js. Gamma, localhost and e2e runs keep the
+         gtag() stub (events still land in window.dataLayer for tests and
+         debugging) but send nothing, so test traffic never reaches the shared
+         production GA4 property. send_page_view is off because App.tsx sends
+         every page view, including the first; leaving it on doubled the first
+         page view of each visit. -->
     <script>
         window.dataLayer = window.dataLayer || [];
         function gtag() { dataLayer.push(arguments); }
         gtag('js', new Date());
-        gtag('config', '%REACT_APP_GA_ID%');
-        window.addEventListener('load', function () {
-            var s = document.createElement('script');
-            s.src = 'https://www.googletagmanager.com/gtag/js?id=%REACT_APP_GA_ID%';
-            s.async = true;
-            document.head.appendChild(s);
-        });
+        gtag('config', '%REACT_APP_GA_ID%', { send_page_view: false });
+        var gaLiveHosts = ['perseveranceai.com', 'www.perseveranceai.com'];
+        if (gaLiveHosts.indexOf(window.location.hostname) !== -1) {
+            window.addEventListener('load', function () {
+                var s = document.createElement('script');
+                s.src = 'https://www.googletagmanager.com/gtag/js?id=%REACT_APP_GA_ID%';
+                s.async = true;
+                document.head.appendChild(s);
+            });
+        }
     </script>
 
 </head>
