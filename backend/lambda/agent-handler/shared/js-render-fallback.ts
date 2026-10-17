@@ -1,5 +1,9 @@
 /**
- * Gamma-only JS-render fallback via Jina Reader.
+ * JS-render fallback via Jina Reader.
+ *
+ * Always on in gamma. Elsewhere (prod) it runs only when JINA_ENABLED is
+ * 'true', so the deploy, not a code change, decides whether prod renders.
+ * Every environment also needs a non-empty JINA_API_KEY.
  *
  * This helper is deliberately return-or-null: recoverable request, timeout,
  * and response failures never escape into the scan pipeline. Successful HTML
@@ -49,8 +53,9 @@ function logEvent(level: LogLevel, event: string, details: Record<string, unknow
 
 function eligibility(): { eligible: boolean; environment: string; apiKey?: string; reason?: string } {
     const environment = process.env.LENSY_ENV || 'unset';
-    if (environment !== 'gamma') {
-        return { eligible: false, environment, reason: 'environment-not-gamma' };
+    const flagOn = (process.env.JINA_ENABLED || '').trim().toLowerCase() === 'true';
+    if (environment !== 'gamma' && !flagOn) {
+        return { eligible: false, environment, reason: 'disabled-in-environment' };
     }
 
     const apiKey = process.env[JINA_API_KEY_ENV];
@@ -59,6 +64,15 @@ function eligibility(): { eligible: boolean; environment: string; apiKey?: strin
     }
 
     return { eligible: true, environment, apiKey };
+}
+
+/**
+ * Whether this environment may render JS shells through Jina. The pipeline
+ * uses this to decide between offering the render and rejecting outright;
+ * renderWithJina re-checks it, so the two can't drift apart.
+ */
+export function isJsRenderEnabled(): boolean {
+    return eligibility().eligible;
 }
 
 /** Parse Retry-After delta-seconds or HTTP-date values into milliseconds. */
@@ -185,7 +199,7 @@ async function requestJinaRender(url: string, apiKey: string): Promise<RenderedC
 
 /**
  * Render directly through Jina. This exported boundary independently enforces
- * gamma-plus-key eligibility so it cannot be bypassed by another caller.
+ * environment-plus-key eligibility so it cannot be bypassed by another caller.
  */
 export async function renderWithJina(url: string): Promise<RenderedContent | null> {
     const context = targetContext(url);

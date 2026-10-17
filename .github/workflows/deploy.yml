@@ -249,6 +249,10 @@ jobs:
         env:
           LENSY_ENV: prod
           PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
+          # JS-render fallback: off until the repo variable JINA_ENABLED_PROD is
+          # set to 'true'. Shares gamma's JINA_API_KEY secret.
+          JINA_ENABLED: ${{ vars.JINA_ENABLED_PROD || 'false' }}
+          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
         run: npx cdk deploy --require-approval never
 
       - name: Get the prod bundle built in the gamma job

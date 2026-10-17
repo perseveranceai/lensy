@@ -16,6 +16,7 @@
 
 import { ProgressPublisher } from './shared/progress-publisher';
 import { findMarkdownAlternate } from './shared/markdown-alternate.js';
+import { isJsRenderEnabled } from './shared/js-render-fallback.js';
 import { writeSessionArtifact, readSessionArtifact } from './shared/s3-helpers';
 
 // Import tools for direct invocation
@@ -479,11 +480,12 @@ export async function runAgent(input: AgentRunInput): Promise<string> {
         if (spaCheck.isSPA) {
             console.log(`[Pipeline] SPA shell detected — markers: ${spaCheck.markers.join(', ')}`);
 
-            // ── JS-render fallback (gamma-only) ──
+            // ── JS-render fallback ──
             // Before rejecting a JS shell, try to recover it by rendering the page
-            // through Jina Reader. Double-gated: runtime LENSY_ENV==='gamma' AND a
-            // present JINA_API_KEY (only in the gamma stack's env). In production
-            // the gate is false, preserving the existing SPA rejection path.
+            // through Jina Reader. Gated by isJsRenderEnabled(): always on in gamma,
+            // on elsewhere only when the deploy sets JINA_ENABLED=true, and always
+            // requires a JINA_API_KEY. When the gate is off, the existing SPA
+            // rejection path below runs unchanged.
             //
             // On a successful render we REPLACE prefetchedHtml and FALL THROUGH to
             // Step 1.7 — we do NOT return. Hard invariant: recovered content must
@@ -491,7 +493,7 @@ export async function runAgent(input: AgentRunInput): Promise<string> {
             // non-doc SPA is still rejected as non-doc. The rendered HTML flows to
             // fall through to Step 1.7 — do NOT return.
             //
-            if (process.env.LENSY_ENV === 'gamma' && !!process.env.JINA_API_KEY) {
+            if (isJsRenderEnabled()) {
                 if (!input.forceJsRender) {
                     const jsMessage = 'This page is JS-rendered. Most AI bots (like GPTBot or ClaudeBot) do not execute JavaScript and cannot crawl your website. Consider Server-Side Rendering (SSR) for AI discoverability.';
                     await progress.error(jsMessage);
