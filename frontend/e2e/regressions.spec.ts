@@ -54,3 +54,20 @@ test('REG-10: leaving a scan mid-way does not strand /results', async ({ page })
   await expect(page).toHaveURL(/\/$|\/\?/, { timeout: 15_000 });
   expect((await gaEvents(page)).filter((e) => e === 'generate_report_completed')).toHaveLength(0);
 });
+
+// REG-14: test traffic reached the production GA4 property (gamma, localhost
+// and e2e runs all sent events to it), and the first page view of every visit
+// was counted twice (gtag's automatic page_view plus App.tsx's). Only the live
+// hostnames may load gtag.js, and each route counts one page_view.
+test('REG-14: non-live hosts send nothing to GA, and each page view counts once', async ({ page }) => {
+  const gaRequests: string[] = [];
+  page.on('request', (req) => {
+    if (/googletagmanager\.com|google-analytics\.com|analytics\.google\.com/.test(req.url())) gaRequests.push(req.url());
+  });
+  await page.goto('/', { waitUntil: 'load' });
+  await expect.poll(async () => (await gaEvents(page)).filter((e) => e === 'page_view')).toHaveLength(1);
+  await page.getByRole('link', { name: 'Contact' }).first().click();
+  await expect(page).toHaveURL(/\/contact/);
+  await expect.poll(async () => (await gaEvents(page)).filter((e) => e === 'page_view')).toHaveLength(2);
+  expect(gaRequests, gaRequests.join('\n')).toEqual([]);
+});

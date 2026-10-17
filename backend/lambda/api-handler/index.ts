@@ -83,6 +83,32 @@ function hashIp(ip: string): string {
     return crypto.createHash('sha256').update(ip).digest('hex').substring(0, 16);
 }
 
+const PRODUCTION_ORIGINS = ['perseveranceai.com', 'www.perseveranceai.com'];
+// Headless browsers (Playwright e2e) and scripted clients (smoke-test.js uses
+// Node's fetch, which sends "node").
+const AUTOMATION_UA = /HeadlessChrome|Playwright|^node$|node-fetch|undici|curl\/|python-requests|axios\//i;
+
+/**
+ * Says where an audit request came from, so the audit log can tell real
+ * visitors from our own smoke tests, e2e runs and local development.
+ * trafficSource: 'web' (the live site), 'test' (smoke/e2e/scripts),
+ * 'dev' (localhost or another site, such as gamma) or 'api' (no browser origin).
+ */
+function classifyTraffic(event: any, sessionId: string): { trafficSource: string; clientOrigin: string } {
+    const headers = event.headers || {};
+    const userAgent = headers['user-agent'] || headers['User-Agent'] || '';
+    const originHeader = headers['origin'] || headers['Origin'] || headers['referer'] || headers['Referer'] || '';
+    let clientOrigin = '';
+    try { clientOrigin = originHeader ? new URL(originHeader).hostname : ''; } catch { /* malformed header */ }
+
+    let trafficSource: string;
+    if (String(sessionId).startsWith('smoke-') || AUTOMATION_UA.test(userAgent)) trafficSource = 'test';
+    else if (PRODUCTION_ORIGINS.includes(clientOrigin)) trafficSource = 'web';
+    else if (clientOrigin) trafficSource = 'dev';
+    else trafficSource = 'api';
+    return { trafficSource, clientOrigin };
+}
+
 function getTodayDate(): string {
     return new Date().toISOString().split('T')[0]; // e.g. "2026-03-07"
 }
@@ -538,6 +564,9 @@ async function handleAnalyzeRequest(body: string | null, corsHeaders: Record<str
         ...analysisRequest,
         analysisStartTime: Date.now(),
         ipHash, // Pass IP hash so agent can refund usage on content gate rejection
+        // Tagged on the audit log so traction reporting can leave out our own
+        // smoke tests, e2e runs and local development.
+        ...classifyTraffic(event, analysisRequest.sessionId),
     };
 
     if (useAgent) {

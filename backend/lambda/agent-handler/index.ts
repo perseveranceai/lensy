@@ -31,6 +31,8 @@ interface AgentHandlerEvent {
     skipCitations?: boolean;
     citationsOnly?: boolean; // Only run Perplexity citation check (on-demand from frontend)
     forceJsRender?: boolean;
+    trafficSource?: string; // set by the API handler for the audit log
+    clientOrigin?: string;
 }
 
 export const handler: Handler<AgentHandlerEvent, void> = async (event) => {
@@ -50,6 +52,8 @@ export const handler: Handler<AgentHandlerEvent, void> = async (event) => {
         skipCitations,
         citationsOnly,
         forceJsRender,
+        trafficSource,
+        clientOrigin,
     } = event;
 
     // Validate required fields
@@ -113,6 +117,8 @@ export const handler: Handler<AgentHandlerEvent, void> = async (event) => {
             ipHash,
             skipCitations,
             forceJsRender,
+            trafficSource,
+            clientOrigin,
         };
 
         // Run the direct analysis pipeline

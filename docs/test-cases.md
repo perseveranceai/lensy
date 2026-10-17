@@ -117,6 +117,7 @@ Run against saved fixtures from real gamma scans (`frontend/e2e/fixtures/`, U-1 
 | REG-11 [auto] | 404 page rendered without header/footer (fixed #29) | S-07 | Header and footer present |
 | REG-12 [auto] | Citations Cited pill clipped at 375px (fixed #29) | S-06 | Pill fully visible; long cited URLs wrap |
 | REG-13 [auto] | Reloading `/results` re-fired `generate_report_completed`, inflating GA completions (was N-06; fixed). A reload wipes the module-level dedupe set, so the restored terminal state re-counted | Scan U-1, reload `/results`, watch `dataLayer` | No new `generate_report_completed` on the reload |
+| REG-14 [auto] | Test traffic (gamma, localhost, e2e) reached the production GA4 property, and the first page view of each visit was counted twice | Load `/` on gamma or a local build, then open Contact; watch network and `dataLayer` | No request to Google Analytics; exactly one `page_view` per route |
 
 ---
 
