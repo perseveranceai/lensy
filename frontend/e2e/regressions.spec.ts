@@ -71,3 +71,18 @@ test('REG-14: non-live hosts send nothing to GA, and each page view counts once'
   await expect.poll(async () => (await gaEvents(page)).filter((e) => e === 'page_view')).toHaveLength(2);
   expect(gaRequests, gaRequests.join('\n')).toEqual([]);
 });
+
+test('REG-16: the social preview image the meta tags name is served as a 1200x630 PNG', async ({ page, request }) => {
+  await page.goto('/');
+  const ogImage = await page.locator('meta[property="og:image"]').getAttribute('content');
+  const twitterImage = await page.locator('meta[name="twitter:image"]').getAttribute('content');
+  expect(ogImage).toBeTruthy();
+  expect(twitterImage).toBe(ogImage);
+  // The tags carry the build's absolute base URL; fetch the same path here.
+  const res = await request.get(new URL(ogImage!).pathname);
+  expect(res.status()).toBe(200);
+  expect(res.headers()['content-type']).toContain('image/png');
+  const png = await res.body();
+  expect(png.readUInt32BE(16)).toBe(1200);
+  expect(png.readUInt32BE(20)).toBe(630);
+});
