@@ -46,7 +46,8 @@ the same ID in its title.
 
 Notes:
 - The suite blocks Google Analytics requests (gamma and prod share one GA4
-  property), so test runs never send real analytics.
+  property), so test runs never send real analytics. It also starts every
+  test with analytics declined, so the cookie banner stays out of the way.
 - Each run makes ~10 real scans and one citation check (paid Perplexity calls).
   Set `E2E_SKIP_CITATIONS=1` to skip the citation test locally.
 - There are still no unit tests in the repo.
@@ -97,6 +98,18 @@ Run against saved fixtures from real gamma scans (`frontend/e2e/fixtures/`, U-1 
 | DL-04 [auto] | Citations can't start (`/run-citations` fails) | File still downloads and says "AI citations could not run", never "Not cited" |
 | DL-05 [auto] | While waiting, click **Download without citations** | Saves at once; file says citations are not in this report |
 | DL-06 [auto] | 375px | The download menu fits on screen |
+
+## Cookie consent and privacy
+
+Google Analytics may only load on the live site after the visitor accepts in the cookie banner. Every other test starts with analytics already declined (`playwright.config.ts`), so the banner never covers what a test clicks; `consent.spec.ts` starts from a first visit.
+
+| ID | Steps | Expected |
+|---|---|---|
+| CK-01 [auto] | First visit to `/` → **Decline** → reload | Banner shows; first `consent` command in `dataLayer` is `default` with `analytics_storage: denied`; after Decline the banner is gone, `lensy-analytics-consent` is `denied`, `ga-disable-<id>` is true, and it stays that way after reload; no request to Google Analytics |
+| CK-02 [auto] | First visit → **Accept** → reload | Choice saved as `granted`; `consent update granted` in `dataLayer` before and after reload; still no Google Analytics request on a non-live host (REG-14) |
+| CK-03 [auto] | Accept → footer **Cookie settings** → **Decline** → open Privacy | Banner reopens; switching saves `denied`, sends `consent update denied` and sets `ga-disable`; the privacy page names Google Analytics, `_ga`, Jina, Perplexity, Amazon Bedrock, 30 days and Cookie settings |
+| CK-04 [auto] | 375px | Banner fits on screen with both buttons visible |
+| CK-05 [manual] | On perseveranceai.com in a private window: watch the network tab, Accept, then reload; then Cookie settings → Decline | No `googletagmanager.com` request before Accept; `gtag/js` and `collect` requests after; after Decline the `_ga` cookies are gone and no further `collect` requests |
 
 ---
 
@@ -162,7 +175,7 @@ Run the sections for whatever your PR touches.
 - [ ] Links read as active (ink colour + underline), not grey
 
 ### Footer and nav
-- [ ] Footer has LinkedIn, X, Schedule a conversation, Terms and Policy, Privacy
+- [ ] Footer has LinkedIn, X, Schedule a conversation, Terms and Policy, Privacy, Cookie settings
 - [ ] Beta badge on Lensy in desktop nav and mobile menu (S-06)
 
 ---

@@ -2,6 +2,15 @@
 
 All notable changes to the Lensy Documentation Auditor project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Cookie banner**: Google Analytics loads only after the visitor accepts; consent mode starts as denied, Decline sets `ga-disable` and removes `_ga` cookies, and **Cookie settings** in the footer changes the choice (CK-01 to CK-05).
+
+### Changed
+- **Privacy page rewritten** to match the code: names Jina Reader, Perplexity, Amazon Bedrock, Google Analytics and Google Fonts; describes the contact form, feedback and hashed-IP usage limit; states real retention periods. Removed the unused `PrivacyPolicy.tsx` copy.
+- **Scan files expire after 30 days**: lifecycle rule on the analysis bucket, which the privacy page now promises.
+
 ## [2.0.1] — 2026-04-07
 
 ### Fixed

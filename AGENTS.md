@@ -56,9 +56,18 @@ light-theme bug hid (REG-01).
 - **Check both themes and 375px mobile** for any visual change.
 - **Analytics:** gamma and prod share one GA4 property ID, but only the live
   hostnames (`perseveranceai.com`, `www.`) load gtag.js (`public/index.html`),
-  so gamma, localhost and e2e runs send nothing (REG-14). Page views come only
-  from `trackPageView` in `App.tsx`. Tests also block Google Analytics
-  requests; never let automated runs send real events.
+  so gamma, localhost and e2e runs send nothing (REG-14). Even there, gtag.js
+  loads only after the visitor accepts in the cookie banner
+  (`src/CookieBanner.tsx`, `src/consent.ts`); consent mode starts as denied
+  (CK-01 to CK-05). Page views come only from `trackPageView` in `App.tsx`.
+  Tests also block Google Analytics requests and start with analytics
+  declined; never let automated runs send real events.
+- **Privacy page:** `Privacy()` in `src/AppRoutes.tsx` states what Lensy
+  collects, which services receive it (AWS and Bedrock, Jina, Perplexity,
+  Google) and how long it is kept (scan files expire after 30 days via the
+  bucket lifecycle rule in `backend/lib/lensy-stack.ts`). If a change adds a
+  new third-party service, a new cookie or new stored data, or changes a
+  retention period, update that page and its date in the same PR.
 - **Audit log:** every row carries `trafficSource` (`web`, `test`, `dev`,
   `api`) and `clientOrigin`, set by the API handler. Smoke tests use a
   `smoke-` session id and headless or scripted user agents, so they're tagged
