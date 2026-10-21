@@ -11,6 +11,8 @@ import type { ReportSignalStatus, DetectionSignal, DetectionData, EvidenceStatus
 import { useReportDownload } from "./report/useReportDownload";
 import type { RunCitationsResult } from "./report/useReportDownload";
 import { DownloadReportButton } from "./report/DownloadReportButton";
+import { CookieBanner } from "./CookieBanner";
+import { openCookieSettings } from "./consent";
 const logo = `${process.env.PUBLIC_URL}/logo.png`;
 
 // N-08: keep transient / non-canonical pages (404, empty results) out of search
@@ -438,6 +440,7 @@ export function ShellContent() {
     </header>
     <main className="flex-1"><div key={pathname} className="route-enter"><Outlet /></div></main>
     <FeedbackWidget />
+    <CookieBanner />
     <footer className="border-t border-[var(--line)] px-5 py-6 sm:px-8">
       <div className="mx-auto flex max-w-[1400px] flex-col items-center gap-4 text-center">
         <Link to="/" aria-label="Perseverance AI home" className="inline-flex w-full justify-center opacity-80 transition-opacity hover:opacity-100">
@@ -456,6 +459,7 @@ export function ShellContent() {
           {/* T-13: a Privacy Policy link existed only inside the legal page's own
               side nav, never in the public footer. */}
           <Link to="/privacy" className="link-sweep text-[var(--ink-soft)] hover:text-[var(--ink)]">Privacy</Link>
+          <button type="button" onClick={openCookieSettings} className="link-sweep text-[var(--ink-soft)] hover:text-[var(--ink)]">Cookie settings</button>
         </div>
         <p className="max-w-[640px] text-[11px] leading-relaxed text-[var(--muted)]">Lensy is in beta. Results are generated automatically and may not always be accurate — treat them as guidance, not a definitive audit.</p>
       </div>
@@ -1574,55 +1578,69 @@ export function Terms() {
 }
 
 export function Privacy() {
-  return <LegalPage title="Privacy Policy" updated="February 10, 2026">
-    <p>Perseverance AI ("Company", "we", "our", or "us") is committed to protecting your privacy. This Privacy Policy describes how we collect, use, and safeguard information when you use the Perseverance AI Console and associated services ("Services").</p>
+  // Every statement here was checked against the code (backend/lib/lensy-stack.ts,
+  // backend/lambda, public/index.html). If you change what Lensy collects, sends
+  // or keeps, change this page in the same PR.
+  return <LegalPage title="Privacy Policy" updated="October 19, 2026">
+    <p>This policy explains what Perseverance AI ("we", "us") collects when you use Lensy on perseveranceai.com, who we share it with, and how long we keep it.</p>
 
-    <h2>1. Information We Collect</h2>
-    <p>We only collect what we need to run the Services:</p>
+    <h2>1. What we collect</h2>
     <ul>
-      <li><strong>Authentication Data:</strong> An access code cookie stored in your browser to maintain your session. We do not collect usernames, email addresses, or passwords through the Services.</li>
-      <li><strong>Usage Data:</strong> URLs of documentation pages you submit for analysis, analysis results, and generated fixes.</li>
-      <li><strong>Technical Data:</strong> Standard web server logs including IP addresses, browser type, and access timestamps, collected automatically by our hosting infrastructure (AWS CloudFront).</li>
+      <li><strong>Pages you scan:</strong> the URL you submit. To analyse it, Lensy fetches that page and public files on the same site, such as <code>robots.txt</code>, <code>llms.txt</code> and the sitemap. We store the page content we read and the report we produce.</li>
+      <li><strong>Contact form:</strong> your name, email, organization, docs URL and message, if you send them.</li>
+      <li><strong>Feedback:</strong> your message, the page you were on and, if you add it, your email.</li>
+      <li><strong>Usage limits:</strong> to apply the free daily scan limit, we store a hashed form of your IP address with a count of today&apos;s scans.</li>
+      <li><strong>Server logs:</strong> our servers log requests, including your IP address, browser type, the URL you scanned and the time.</li>
+      <li><strong>Analytics, only if you accept:</strong> which pages you visit and which buttons you use, such as starting a scan or downloading a report, collected by Google Analytics.</li>
     </ul>
 
-    <h2>2. Cookies</h2>
-    <p>We use one cookie (<code>perseverance_console_token</code>) to keep you logged in. It expires after 48 hours. We don't track you or run ads.</p>
+    <h2>2. Cookies and browser storage</h2>
+    <p>If you accept analytics in the cookie banner, Google Analytics sets the <code>_ga</code> and <code>_ga_*</code> cookies to count visits. If you decline or don&apos;t choose, Google Analytics does not load and these cookies are not set. You can change your choice at any time with <strong>Cookie settings</strong> in the footer.</p>
+    <p>Lensy also keeps a few things in your browser that are needed for the site to work, not for tracking: your theme, your cookie choice, and your latest scan, which is cleared when you close the tab.</p>
 
-    <h2>3. How We Use Information</h2>
-    <p>We use the information we collect to:</p>
+    <h2>3. How we use it</h2>
     <ul>
-      <li>Provide, operate, and maintain the Services</li>
-      <li>Authenticate your access and maintain session security</li>
-      <li>Process documentation analysis requests</li>
-      <li>Improve and optimize the Services during the beta period</li>
-      <li>Detect and prevent technical issues or abuse</li>
+      <li>To run scans and show you the report</li>
+      <li>To apply the free daily scan limit and stop abuse</li>
+      <li>To answer your messages and feedback</li>
+      <li>To understand how Lensy is used and improve it</li>
+      <li>To find and fix problems</li>
     </ul>
 
-    <h2>4. Data Sharing</h2>
-    <p>We do not sell, rent, or trade your information. We may share data only in these limited circumstances:</p>
+    <h2>4. Who we share it with</h2>
+    <p>We do not sell or rent your information. We use these services to run Lensy, and each one gets only what it needs:</p>
     <ul>
-      <li><strong>Service Providers:</strong> AWS (hosting, CDN, compute). Documentation URLs you submit are processed through AWS Bedrock AI models for analysis.</li>
-      <li><strong>Legal Requirements:</strong> If required by law, regulation, legal process, or governmental request.</li>
-      <li><strong>Business Transfer:</strong> In connection with a merger, acquisition, or sale of assets, with appropriate confidentiality protections.</li>
+      <li><strong>Amazon Web Services:</strong> hosting, storage and email. Data is stored in the United States (AWS us-east-1). Page content is analysed by AI models through Amazon Bedrock.</li>
+      <li><strong>Jina AI (Jina Reader):</strong> when a page only shows its content with JavaScript and you choose to render it, we send its URL to Jina Reader, which loads the page and returns the text.</li>
+      <li><strong>Perplexity:</strong> when the AI citation check runs, we send search questions about the scanned product to Perplexity to see whether AI answers cite the page.</li>
+      <li><strong>Google:</strong> Google Analytics, only if you accept. Our fonts load from Google Fonts, which receives your IP address when your browser requests them.</li>
+    </ul>
+    <p>We may also share information if the law requires it, or with a buyer if the company is sold.</p>
+
+    <h2>5. How long we keep it</h2>
+    <ul>
+      <li>Scan files (page content and reports) are deleted automatically about 30 days after they are created. Cached summaries of scanned pages expire after 7 days.</li>
+      <li>The hashed IP address used for the daily limit expires after 48 hours.</li>
+      <li>A short record of each scan (the URL, time, result, score, and whether it came from our website or a test) is kept so we can see how Lensy is used.</li>
+      <li>Contact form entries and feedback are kept until you ask us to delete them.</li>
+      <li>Server logs do not yet expire on a fixed schedule.</li>
+      <li>Google Analytics data is kept under the retention setting of our Google Analytics account.</li>
     </ul>
 
-    <h2>5. Data Security</h2>
-    <p>We use standard security measures like HTTPS encryption to protect your data. However, nothing on the internet is 100% secure.</p>
+    <h2>6. Security</h2>
+    <p>Data is sent over HTTPS and stored encrypted on AWS. No system is perfectly secure.</p>
 
-    <h2>6. Data Retention</h2>
-    <p>Authentication cookies expire after 48 hours. Analysis session data is retained for 30 days to support re-scanning and report generation, then automatically deleted. Server logs are retained for up to 90 days for security and debugging purposes.</p>
+    <h2>7. Your rights</h2>
+    <p>You can ask us what we hold about you, or ask us to correct or delete it. Email <a href="mailto:hello@perseveranceai.com" className="text-[var(--accent)] underline underline-offset-2">hello@perseveranceai.com</a>.</p>
 
-    <h2>7. Your Rights</h2>
-    <p>Depending on your jurisdiction, you may have rights regarding your personal data including the right to access, correct, or delete your data. To exercise these rights, contact us at <a href="mailto:hello@perseveranceai.com" className="text-[var(--accent)] underline underline-offset-2">hello@perseveranceai.com</a>.</p>
+    <h2>8. Children</h2>
+    <p>Lensy is not meant for anyone under 18, and we do not knowingly collect their information.</p>
 
-    <h2>8. Children&apos;s Privacy</h2>
-    <p>The Services are not intended for use by individuals under the age of 18. We do not knowingly collect personal information from children.</p>
-
-    <h2>9. Changes to This Policy</h2>
-    <p>We may update this Privacy Policy from time to time. Changes will be effective immediately upon posting. We encourage you to review this page periodically.</p>
+    <h2>9. Changes</h2>
+    <p>When we change this policy, we update the date at the top of this page.</p>
 
     <h2>Contact</h2>
-    <p>Questions about this Privacy Policy? Contact us at <a href="mailto:hello@perseveranceai.com" className="text-[var(--accent)] underline underline-offset-2">hello@perseveranceai.com</a></p>
+    <p>Questions about this policy? Email <a href="mailto:hello@perseveranceai.com" className="text-[var(--accent)] underline underline-offset-2">hello@perseveranceai.com</a>.</p>
     <p className="text-[var(--muted)]">© 2026 Perseverance AI. All rights reserved. Confidential &amp; Proprietary.</p>
   </LegalPage>;
 }

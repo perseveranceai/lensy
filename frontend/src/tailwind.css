@@ -222,6 +222,9 @@
   .sticky {
     position: sticky;
   }
+  .inset-x-3 {
+    inset-inline: calc(var(--spacing) * 3);
+  }
   .top-0 {
     top: 0px;
   }
@@ -233,6 +236,9 @@
   }
   .right-0 {
     right: 0px;
+  }
+  .bottom-3 {
+    bottom: calc(var(--spacing) * 3);
   }
   .bottom-5 {
     bottom: calc(var(--spacing) * 5);
@@ -1354,6 +1360,9 @@
     .hover\:border-\[var\(--accent\)\]:hover {
       border-color: var(--accent);
     }
+    .hover\:border-\[var\(--ink\)\]:hover {
+      border-color: var(--ink);
+    }
     .hover\:border-\[var\(--line-strong\)\]:hover {
       border-color: var(--line-strong);
     }
@@ -1404,6 +1413,15 @@
     opacity: 75%;
   }
   @media (width >= 40rem) {
+    .sm\:inset-x-auto {
+      inset-inline: auto;
+    }
+    .sm\:right-5 {
+      right: calc(var(--spacing) * 5);
+    }
+    .sm\:bottom-5 {
+      bottom: calc(var(--spacing) * 5);
+    }
     .sm\:-mx-5 {
       margin-inline: calc(var(--spacing) * -5);
     }
@@ -1412,6 +1430,9 @@
     }
     .sm\:grid {
       display: grid;
+    }
+    .sm\:w-\[360px\] {
+      width: 360px;
     }
     .sm\:grid-cols-2 {
       grid-template-columns: repeat(2, minmax(0, 1fr));

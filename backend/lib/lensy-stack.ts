@@ -79,6 +79,10 @@ export class LensyStack extends cdk.Stack {
             encryption: s3.BucketEncryption.S3_MANAGED,
             removalPolicy: isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
             autoDeleteObjects: !isProd,
+            // The privacy page promises scan files are deleted after 30 days.
+            // Everything in this bucket is per-scan data or a rebuildable cache
+            // (sessions/, sitemap-health-cache/, github-issues-results/).
+            lifecycleRules: [{ id: 'expire-scan-data-30d', expiration: cdk.Duration.days(30) }],
         });
 
         // 2. DynamoDB Tables
