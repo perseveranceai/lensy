@@ -105,6 +105,11 @@ test('S-06: mobile menu shows the Beta badge', async ({ page }) => {
   await expect(page.locator('#mobile-navigation').getByText('Beta', { exact: true })).toBeVisible();
 });
 
+test('REG-17: bare hostname without trailing slash completes scan', async ({ page }) => {
+  await startScan(page, URLS.bareHostname);
+  await expectReport(page);
+});
+
 test('S-07, REG-11: 404 page has the site shell and is noindex', async ({ page }) => {
   await page.goto('/this-page-does-not-exist-e2e');
   await expect(page.getByText('This page does not exist')).toBeVisible();

@@ -9,6 +9,7 @@ export const URLS = {
   noRobots: 'https://www.lua.org/manual/5.4/manual.html', // U-5
   marketing: 'https://stripe.com/', // U-8
   invalid: 'not a url', // U-9
+  bareHostname: 'https://docs.python.org', // U-10: no trailing slash (doc subdomain)
 };
 
 // gamma and prod share one GA4 property. Never let a test run send real
