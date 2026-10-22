@@ -208,7 +208,12 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
                       const raw = (scanError || "").trim();
                       let title = "Something went wrong";
                       let description = raw || "The scan couldn't be completed. Please try again.";
-                      if (/\b400\b/.test(raw) || /not a valid url/i.test(raw)) {
+                      if (/blocked-by-bot-protection|bot protection blocked/i.test(raw)) {
+                        // REG-18: a bot-protection block is not "unreachable".
+                        const status = (raw.match(/HTTP (\d{3})/) || [])[1] || "403";
+                        title = "This site's bot protection blocked our checker";
+                        description = `HTTP ${status}. The site refused Lensy under its own name and as a browser. AI agents that name themselves may be refused the same way. To scan it, allow the Lensy/1.0 user agent in your bot protection.`;
+                      } else if (/\b400\b/.test(raw) || /not a valid url/i.test(raw)) {
                         title = "That doesn't look like a valid URL";
                         description = "Please enter a valid documentation URL and try again.";
                       } else if (/\b404\b/.test(raw) || /unable to access|could not (?:be )?reach|unreachable|ENOTFOUND|ECONNREFUSED/i.test(raw)) {

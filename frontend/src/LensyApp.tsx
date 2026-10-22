@@ -885,6 +885,7 @@ function LensyApp() {
                             'unable to access',
                             'unable to fetch',
                             'does not appear to be',
+                            'bot protection blocked',
                         ];
                         const isTerminal = terminalPatterns.some(p => message.message?.includes(p));
                         if (isTerminal) {
@@ -994,6 +995,8 @@ function LensyApp() {
                         let errorMsg = statusData.error || statusData.reason || 'Analysis failed. Check the progress messages for details.';
                         if (errorMsg === 'unreachable-url') {
                             errorMsg = 'Lensy was unable to access this URL. Please verify the URL is correct and publicly accessible.';
+                        } else if (errorMsg === 'blocked-by-bot-protection') {
+                            errorMsg = "This site's bot protection blocked our checker.";
                         }
                         const isDocRejection = errorMsg.includes('does not appear to be') || errorMsg.includes('not a documentation page') || errorMsg.includes('non-documentation-page');
                         if (isDocRejection && !rejectedUrl) {

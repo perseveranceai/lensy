@@ -23,6 +23,7 @@ test-*.js
 test-*.ts
 *.test.js
 *.test.ts
+!**/__tests__/**/*.test.ts
 debug-*.js
 check-*.js
 check-*.sh

@@ -13,6 +13,7 @@
  */
 
 import { URL } from 'url';
+import { fetchWithFallback } from '../shared/fetch-page';
 import {
     HarvestedSignals,
     DetectionReport,
@@ -29,15 +30,14 @@ import {
 
 // ── Constants ───────────────────────────────────────────────────────────
 
-const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 (+https://perseveranceai.com/bot)';
-
-const FETCH_HEADERS: Record<string, string> = {
-    'User-Agent': BROWSER_UA,
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.9',
-};
-
 const PROBE_TIMEOUT_MS = 3000;
+
+/** Honest user agent first, browser once on 403/429 (spec §7). Throws on network errors, like fetch. */
+async function probeFetch(url: string, method: 'GET' | 'HEAD' = 'GET', accept?: string): Promise<Response> {
+    const a = await fetchWithFallback(url, { method, accept, timeoutMs: PROBE_TIMEOUT_MS });
+    if (!a.response) throw new Error(a.error || 'network error');
+    return a.response;
+}
 
 /** Known docs path segments for subpath derivation */
 const DOCS_PATH_SEGMENTS = new Set([
@@ -701,23 +701,19 @@ async function probeUrl(
 ): Promise<ProbeResult> {
     const start = Date.now();
     try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
-
         // Use HEAD when we don't need content — avoids downloading large files (e.g., llms-full.txt)
         // Some servers don't support HEAD, so we fall back to GET with immediate body abort.
         let res: Response;
         if (!returnContent) {
             try {
-                res = await fetch(url, { method: 'HEAD', signal: controller.signal, headers: FETCH_HEADERS, redirect: 'follow' });
+                res = await probeFetch(url, 'HEAD');
             } catch {
                 // HEAD not supported — fall back to GET
-                res = await fetch(url, { signal: controller.signal, headers: FETCH_HEADERS, redirect: 'follow' });
+                res = await probeFetch(url);
             }
         } else {
-            res = await fetch(url, { signal: controller.signal, headers: FETCH_HEADERS, redirect: 'follow' });
+            res = await probeFetch(url);
         }
-        clearTimeout(timeoutId);
 
         const durationMs = Date.now() - start;
         const statusCode = res.status;
@@ -802,17 +798,7 @@ async function probeContentNegotiation(
     const purpose = 'content-negotiation';
 
     try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
-        const res = await fetch(targetUrl, {
-            signal: controller.signal,
-            headers: {
-                ...FETCH_HEADERS,
-                'Accept': 'text/markdown',
-            },
-            redirect: 'follow',
-        });
-        clearTimeout(timeoutId);
+        const res = await probeFetch(targetUrl, 'GET', 'text/markdown');
 
         const durationMs = Date.now() - start;
         const statusCode = res.status;

@@ -13,7 +13,8 @@
 #        - tests changed     → push stops so you can review + commit them
 #        - covered / no impact → continue
 #        - can't tell        → push stops and asks you to check the tests
-#   3. Production build + minified-CSS check + full e2e suite. Pass → push.
+#   3. Backend unit tests (Jest), then production build + minified-CSS check +
+#      full e2e suite. Pass → push.
 #
 # Overrides:
 #   PRE_CR_CONFIRMED=1 git push   you've checked the tests yourself; skip the
@@ -30,7 +31,7 @@ STATE_DIR="$(git rev-parse --git-dir)/pre-cr"
 mkdir -p "$STATE_DIR"
 
 PRODUCT_RE='^(frontend/src/|frontend/public/index\.html$|backend/lambda/|backend/lib/)'
-TEST_RE='^(frontend/e2e/|docs/test-cases\.md$)'
+TEST_RE='^(frontend/e2e/|docs/test-cases\.md$|backend/.*/__tests__/)'
 
 say()  { printf '\npre-cr: %s\n' "$*"; }
 fail() { printf '\npre-cr: %s\n\n' "$*" >&2; exit 1; }
@@ -168,7 +169,12 @@ Check the tests cover your change, then push with PRE_CR_CONFIRMED=1." ;;
   fi
 fi
 
-# ── Step 2: production build + CSS check + full e2e suite ─────────────────────
+# ── Step 2: backend unit tests, then production build + CSS check + e2e ──────
+say "running the backend unit tests…"
+[ -d backend/node_modules ] || (cd backend && npm ci) || fail "npm ci failed in backend/"
+npm --prefix backend test --silent || fail "the backend unit tests failed (details above).
+Fix the code or the test, commit, and push again."
+
 say "building for production and running the e2e suite (a few minutes; real scans on the gamma API)…"
 [ -d frontend/node_modules ] || (cd frontend && npm ci) || fail "npm ci failed in frontend/"
 

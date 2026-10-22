@@ -6,13 +6,7 @@ import { createProgressHelper } from './publish-progress';
 import { harvestSignals, executeProbes, crossReference } from './detection-engine';
 import { DetectionReport } from './detection-types';
 
-// ── Browser User-Agent for page fetching (hybrid Chrome UA — avoids JS shell responses from CDNs) ──
-const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 (+https://perseveranceai.com/bot)';
-const FETCH_HEADERS = {
-    'User-Agent': BROWSER_UA,
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.9',
-};
+import { fetchPage, headersToRecord, ACCEPT_HTML, FetchVia } from '../shared/fetch-page';
 
 // ── AI Bot Registry ─────────────────────────────────────────────────────
 const AI_BOTS = [
@@ -104,6 +98,8 @@ export interface AIReadinessResult {
     };
     /** v2: Evidence-aware detection report (site-level + page-level signals) */
     detection?: DetectionReport;
+    /** How the page fetch went: honest user agent, or the browser fallback (spec §7) */
+    fetchGate?: { via: FetchVia; honestStatus: number; browserStatus?: number };
     recommendations: Recommendation[];
     // Legacy fields for backward compat during rollout
     overallScore: number;
@@ -121,6 +117,7 @@ export const checkAIReadinessTool = tool(
             await progress.info('Analyzing AI readiness across 4 categories...');
 
             const results = await checkAIReadiness(domain, input.url, input.sessionId, input.llmsTxtUrl, input.prefetchedHtml, input.prefetchedHeaders, input.originRequiresJavaScript, input.rescued);
+            if (input.fetchGate) results.fetchGate = input.fetchGate;
 
             // Store results in S3
             await writeSessionArtifact(input.sessionId, 'ai-readiness-results.json', results);
@@ -165,7 +162,12 @@ export const checkAIReadinessTool = tool(
             prefetchedHtml: z.string().optional().describe('Pre-fetched HTML content of the target URL. If provided, skips the initial page fetch.'),
             prefetchedHeaders: z.record(z.string()).optional().describe('Pre-fetched HTTP response headers from the target URL. Passed alongside prefetchedHtml to preserve Link headers for detection.'),
             originRequiresJavaScript: z.boolean().optional().describe('Flag indicating if the original page was an SPA before rendering fallback.'),
-            rescued: z.boolean().optional().describe('Flag indicating if Jina fallback successfully recovered the content.')
+            rescued: z.boolean().optional().describe('Flag indicating if Jina fallback successfully recovered the content.'),
+            fetchGate: z.object({
+                via: z.enum(['honest', 'browser']),
+                honestStatus: z.number(),
+                browserStatus: z.number().optional(),
+            }).optional().describe('How the prefetch went: honest user agent or browser fallback, with statuses.'),
         })
     }
 );
@@ -189,32 +191,26 @@ async function checkAIReadiness(domain: string, targetUrl: string, sessionId: st
         }
     } else {
         console.log(`[AIReadiness] No prefetched HTML, fetching ${targetUrl} directly`);
-        try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 8000);
-            const res = await fetch(targetUrl, { signal: controller.signal, headers: FETCH_HEADERS });
-            clearTimeout(timeoutId);
-            if (res.ok) {
-                targetHtml = await res.text();
-                targetHeaders = res.headers;
-                // Convert Headers to plain Record for v2 detection engine
-                targetHeadersRecord = {};
-                res.headers.forEach((v, k) => { targetHeadersRecord![k] = v; });
+        const res = await fetchPage(targetUrl, { accept: ACCEPT_HTML, timeoutMs: 8000 });
+        if (res.ok) {
+            targetHtml = res.body;
+            targetHeaders = res.headers;
+            // Convert Headers to plain Record for v2 detection engine
+            targetHeadersRecord = headersToRecord(res.headers);
 
-                // ── Follow redirects: update baseUrl + targetUrl to final destination ──
-                const finalUrl = res.url;
-                if (finalUrl && finalUrl !== targetUrl) {
-                    const finalParsed = new URL(finalUrl);
-                    const newDomain = finalParsed.hostname;
-                    if (newDomain !== domain) {
-                        console.log(`[AIReadiness] Redirect detected: ${domain} → ${newDomain} (final URL: ${finalUrl})`);
-                        baseUrl = `${finalParsed.protocol}//${newDomain}`;
-                        targetUrl = finalUrl;
-                    }
+            // ── Follow redirects: update baseUrl + targetUrl to final destination ──
+            const finalUrl = res.finalUrl;
+            if (finalUrl && finalUrl !== targetUrl) {
+                const finalParsed = new URL(finalUrl);
+                const newDomain = finalParsed.hostname;
+                if (newDomain !== domain) {
+                    console.log(`[AIReadiness] Redirect detected: ${domain} → ${newDomain} (final URL: ${finalUrl})`);
+                    baseUrl = `${finalParsed.protocol}//${newDomain}`;
+                    targetUrl = finalUrl;
                 }
             }
-        } catch (e) {
-            console.warn(`Failed to fetch target page ${targetUrl}:`, e);
+        } else {
+            console.warn(`Failed to fetch target page ${targetUrl}: status ${res.status}${res.errorKind ? ` (${res.errorKind})` : ''}`);
         }
     }
 
@@ -1173,18 +1169,10 @@ function deriveDocsSubpath(llmsTxtUrl?: string, targetUrl?: string, baseUrl?: st
 }
 
 async function checkUrl(url: string, returnContent = false): Promise<{ found: boolean; content?: string }> {
-    try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-        const res = await fetch(url, { signal: controller.signal, headers: FETCH_HEADERS });
-        clearTimeout(timeoutId);
-        if (res.ok) {
-            const content = returnContent ? await res.text() : undefined;
-            return { found: true, content };
-        }
-        return { found: false };
-    } catch (e) {
-        console.log(`Failed to fetch ${url}: ${(e as Error).message}`);
-        return { found: false };
+    const res = await fetchPage(url, { accept: ACCEPT_HTML, timeoutMs: 5000 });
+    if (res.ok) {
+        return { found: true, content: returnContent ? res.body : undefined };
     }
+    if (res.errorKind === 'network') console.log(`Failed to fetch ${url}: ${res.error}`);
+    return { found: false };
 }
