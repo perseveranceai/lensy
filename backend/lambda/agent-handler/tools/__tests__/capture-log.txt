@@ -1,0 +1,15 @@
+vitepress-getting-started: coding 85 search 95 gate pass
+vitest-guide: coding 85 search 68 gate pass
+mintlify-quickstart: coding 100 search 100 gate pass
+fern-overview: coding 94 search 90 gate pass
+stripe-payments: coding 87 search 80 gate pass
+docusaurus-docs: coding 50 search 98 gate pass
+react-learn: coding 95 search 70 gate pass
+branch-home: coding 96 search 75 gate pass
+branch-onboarding: coding 97 search 78 gate pass
+u1-stripe-api: coding 94 search 76 gate pass
+u2-github-rest: coding 96 search 62 gate pass
+u4-redoc: coding 0 search 30 gate pass
+u5-lua-manual: coding 28 search 63 gate pass
+u6-reddit-api: coding 26 search 48 gate pass
+u7-zoom-library: coding 91 search 76 gate pass

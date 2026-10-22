@@ -1,0 +1,82 @@
+{
+ "url": "https://docusaurus.io/docs",
+ "gate": {
+  "honestStatus": 200,
+  "reachable": true,
+  "robotsBlocks": [],
+  "mismatch": null,
+  "state": "pass"
+ },
+ "coding": {
+  "total": 50,
+  "checks": {
+   "Content without JavaScript": {
+    "pts": 20,
+    "max": 20,
+    "detail": "1743 words in raw HTML"
+   },
+   "Markdown on Accept: text/markdown": {
+    "pts": 0,
+    "max": 15,
+    "detail": "got text/html"
+   },
+   ".md version discoverable": {
+    "pts": 0,
+    "max": 15,
+    "detail": "no .md version"
+   },
+   "llms.txt usable": {
+    "pts": 0,
+    "max": 20,
+    "detail": "not found"
+   },
+   "Page fits one fetch": {
+    "pts": 15,
+    "max": 15,
+    "detail": "11K chars received as HTML text"
+   },
+   "Sections findable": {
+    "pts": 15,
+    "max": 15,
+    "detail": "1 H1, 0 level skip(s), 100% of H2/H3 have ids, 1 generic heading(s)"
+   }
+  }
+ },
+ "search": {
+  "total": 98,
+  "checks": {
+   "AI search bots allowed": {
+    "pts": 20,
+    "max": 20,
+    "detail": "all 6 allowed"
+   },
+   "Content without JavaScript": {
+    "pts": 20,
+    "max": 20,
+    "detail": "1743 words in raw HTML"
+   },
+   "Indexable": {
+    "pts": 25,
+    "max": 25,
+    "detail": "indexable, canonical yes, in sitemap: yes (1361 URLs read)"
+   },
+   "Freshness declared": {
+    "pts": 15,
+    "max": 15,
+    "detail": "page date: <time>; sitemap lastmod: 1175/1361 URLs, 35 distinct dates; this URL has lastmod; age 104 days (info)"
+   },
+   "Answer-ready sections": {
+    "pts": 15,
+    "max": 15,
+    "detail": "1 H1, 0 skip(s), median section 81 words (HTML)"
+   },
+   "JSON-LD": {
+    "pts": 3,
+    "max": 5,
+    "detail": "BreadcrumbList"
+   }
+  }
+ },
+ "notes": [],
+ "netErrors": []
+}

@@ -1,0 +1,82 @@
+{
+ "url": "https://redocly.github.io/redoc/",
+ "gate": {
+  "honestStatus": 200,
+  "reachable": true,
+  "robotsBlocks": [],
+  "mismatch": null,
+  "state": "pass"
+ },
+ "coding": {
+  "total": 0,
+  "checks": {
+   "Content without JavaScript": {
+    "pts": 0,
+    "max": 20,
+    "detail": "3 words in raw HTML, empty SPA root"
+   },
+   "Markdown on Accept: text/markdown": {
+    "pts": 0,
+    "max": 15,
+    "detail": "got text/html"
+   },
+   ".md version discoverable": {
+    "pts": 0,
+    "max": 15,
+    "detail": "no .md version"
+   },
+   "llms.txt usable": {
+    "pts": 0,
+    "max": 20,
+    "detail": "not found"
+   },
+   "Page fits one fetch": {
+    "pts": 0,
+    "max": 15,
+    "detail": "no readable content received (3 words)"
+   },
+   "Sections findable": {
+    "pts": 0,
+    "max": 15,
+    "detail": "0 H1, 0 level skip(s), 0% of H2/H3 have ids, 0 generic heading(s)"
+   }
+  }
+ },
+ "search": {
+  "total": 30,
+  "checks": {
+   "AI search bots allowed": {
+    "pts": 20,
+    "max": 20,
+    "detail": "all 6 allowed (no robots.txt)"
+   },
+   "Content without JavaScript": {
+    "pts": 0,
+    "max": 20,
+    "detail": "3 words in raw HTML, empty SPA root"
+   },
+   "Indexable": {
+    "pts": 10,
+    "max": 25,
+    "detail": "indexable, canonical no, no sitemap found"
+   },
+   "Freshness declared": {
+    "pts": 0,
+    "max": 15,
+    "detail": "page date: none; sitemap lastmod: 0/0 URLs, 0 distinct dates; this URL no lastmod"
+   },
+   "Answer-ready sections": {
+    "pts": 0,
+    "max": 15,
+    "detail": "0 H1, 0 skip(s), median section n/a words (HTML)"
+   },
+   "JSON-LD": {
+    "pts": 0,
+    "max": 5,
+    "detail": "none"
+   }
+  }
+ },
+ "notes": [],
+ "netErrors": []
+}
