@@ -1,6 +1,17 @@
 # Tasks: two readiness scores
 
-Work top to bottom. Each PR branches fresh from `origin/main`, never from a stale local branch. Before pushing, run `cd frontend && npm run pre-cr` (AGENTS.md). Never deploy prod.
+**Goal: all three PRs built, merged and verified on gamma.** Merging to `main` deploys gamma automatically, then runs the smoke scan and the full e2e suite there (`deploy.yml`, `docs/cicd-runbook.md`). Prod then waits for Rakesh's approval. The work is done when §4 below is checked off on gamma.
+
+**How each PR gets to gamma:**
+1. Branch fresh from `origin/main` (never from a stale local branch).
+2. Build the tasks, with tests in the same commit.
+3. Run `cd frontend && npm run pre-cr` (AGENTS.md).
+4. Open the PR; CI must be green.
+5. Merge.
+6. Watch the gamma deploy and the e2e run in GitHub Actions. If gamma fails, fix forward before starting the next PR.
+7. Do that PR's gamma check (1.6, 2.7, 3.10).
+
+Never approve or trigger the prod deploy; that stays with Rakesh. Merge order: PR 1 → PR 2 → PR 3. PR 2 must not change the UI, so gamma stays usable between merges.
 Spec: [`spec.md`](spec.md). Requirements: [requirements.md](requirements.md). Design: [design.md](design.md).
 
 ## PR 1: honest fetcher (§7) — fixes the Branch case on its own
@@ -50,7 +61,12 @@ Spec: [`spec.md`](spec.md). Requirements: [requirements.md](requirements.md). De
   - Per check, the points must equal the prototype's output on the same fixtures (_R7_). To get expected values, point the prototype at a local server that replays the fixture files, or port its rules into the test as a table.
   - Also cover the edge cases in §9.1.
 
-**Done when:** all fixture tests pass; the §5 table reproduces from fixtures within 0.5 points per check; pre-cr passes.
+- [ ] 2.7 On gamma, after merge:
+  - scan 3 pages from §5 (Branch docs, Docusaurus, Stripe);
+  - open each `report.json` in the gamma analysis bucket (`sessions/<id>/report.json`) and confirm `scoringVersion: 2`, `scores` and `gate` match §5 within ±3;
+  - check that the current UI still renders the report, using the legacy fields.
+
+**Done when:** all fixture tests pass; the §5 table reproduces from fixtures within 0.5 points per check; pre-cr passes; 2.7 is checked on gamma.
 
 ## PR 3: report UI (§8)
 
@@ -85,8 +101,19 @@ Spec: [`spec.md`](spec.md). Requirements: [requirements.md](requirements.md). De
   - check both themes and 375 px.
   - Update `docs/test-cases.md`.
 
-**Done when:** pre-cr passes on a production build; screenshots of the new hero in light and dark at 1280 px and 375 px are attached to the PR.
+- [ ] 3.10 On gamma, after merge: run one scan end to end in the browser (U-11, the Branch docs page).
+  - Both score cards, the reachability banner, the agent preview and both downloads work.
+  - No citations card shows.
+  - Check light and dark themes, and 375 px.
 
-## After PR 3 merges (gamma)
-- [ ] 4.1 Scan every §5 page and U-1 to U-7 on gamma. Each score must be within ±3 of §5 / §12, or the PR comment explains the difference.
-- [ ] 4.2 Hand back to Rakesh for the prod approval. Agents don't deploy prod.
+**Done when:** pre-cr passes on a production build; screenshots of the new hero in light and dark at 1280 px and 375 px are attached to the PR; 3.10 is checked on gamma.
+
+## 4. Final check on gamma (definition of done)
+- [ ] 4.1 Scan every §5 page and U-1 to U-7 on gamma. Each score must be within ±3 of §5 / §12, or a comment on PR 3 explains the difference.
+- [ ] 4.2 The gamma e2e run after the last merge is green, with S-02, S-09, S-10 and REG-18 to REG-20 included.
+- [ ] 4.3 Post a short summary to Rakesh:
+  - the PR links;
+  - a table of gamma scores vs §5;
+  - anything that differed;
+  - the gamma URL to try.
+  - Rakesh decides on prod and approves it himself.
