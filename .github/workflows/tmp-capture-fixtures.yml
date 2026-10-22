@@ -15,7 +15,7 @@ jobs:
         with:
           node-version: '23.11.0'
       - name: Capture
-        run: node backend/scripts/capture-fixtures.mjs 2>&1 | tee backend/lambda/agent-handler/tools/__tests__/capture-log.txt || true
+        run: mkdir -p backend/lambda/agent-handler/tools/__tests__ && node backend/scripts/capture-fixtures.mjs 2>&1 | tee backend/lambda/agent-handler/tools/__tests__/capture-log.txt || true
       - name: Commit the fixtures back to this scratch branch
         run: |
           git config user.name "github-actions[bot]"
