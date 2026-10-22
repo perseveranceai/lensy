@@ -83,7 +83,8 @@ test('CK-03: Cookie settings in the footer reopens the banner and can switch to 
   expect(await gaDisabled(page)).toEqual([true]);
 
   // The privacy page describes what the banner controls and who gets data.
-  await page.getByRole('link', { name: 'Privacy' }).last().click();
+  await page.getByRole('link', { name: 'Terms and Policy' }).click();
+  await page.getByRole('navigation', { name: 'Legal documents' }).getByRole('link', { name: 'Privacy Policy' }).click();
   await expect(page).toHaveURL(/\/privacy/);
   const policy = page.locator('main');
   for (const text of ['Google Analytics', '_ga', 'Jina', 'Perplexity', 'Amazon Bedrock', '30 days', 'Cookie settings']) {

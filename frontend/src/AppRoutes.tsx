@@ -455,10 +455,8 @@ export function ShellContent() {
         </div>
         <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[12px] text-[var(--muted)]">
           <span>© {new Date().getFullYear()} Perseverance AI. All rights reserved.</span>
+          {/* One link for both legal pages: /terms has a side nav to the Privacy Policy. */}
           <Link to="/terms" className="link-sweep text-[var(--ink-soft)] hover:text-[var(--ink)]">Terms and Policy</Link>
-          {/* T-13: a Privacy Policy link existed only inside the legal page's own
-              side nav, never in the public footer. */}
-          <Link to="/privacy" className="link-sweep text-[var(--ink-soft)] hover:text-[var(--ink)]">Privacy</Link>
           <button type="button" onClick={openCookieSettings} className="link-sweep text-[var(--ink-soft)] hover:text-[var(--ink)]">Cookie settings</button>
         </div>
         <p className="max-w-[640px] text-[11px] leading-relaxed text-[var(--muted)]">Lensy is in beta. Results are generated automatically and may not always be accurate — treat them as guidance, not a definitive audit.</p>
