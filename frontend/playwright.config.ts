@@ -15,6 +15,14 @@ import { defineConfig } from '@playwright/test';
 const baseURL = process.env.E2E_BASE_URL || 'http://localhost:3000';
 const useLocalBuild = !process.env.E2E_BASE_URL;
 
+// Every test starts with analytics already declined, so the cookie banner
+// (which sits over the bottom of the page) never covers what a test clicks.
+// The consent tests in consent.spec.ts clear this to see the first visit.
+const consentDeclined = {
+  cookies: [],
+  origins: [{ origin: new URL(baseURL).origin, localStorage: [{ name: 'lensy-analytics-consent', value: 'denied' }] }],
+};
+
 export default defineConfig({
   testDir: './e2e',
   // Scans and citation checks hit a real backend; give them room.
@@ -27,6 +35,7 @@ export default defineConfig({
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL,
+    storageState: consentDeclined,
     // Use the installed Chrome (present on GitHub's ubuntu runners and dev
     // machines) instead of downloading Playwright's bundled browser.
     channel: 'chrome',

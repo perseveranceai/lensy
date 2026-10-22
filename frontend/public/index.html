@@ -108,27 +108,69 @@
     }
     </script>
 
-    <!-- Google Analytics (GA4) — deferred until after page loads for performance.
-         Only the live site loads gtag.js. Gamma, localhost and e2e runs keep the
-         gtag() stub (events still land in window.dataLayer for tests and
-         debugging) but send nothing, so test traffic never reaches the shared
-         production GA4 property. send_page_view is off because App.tsx sends
-         every page view, including the first; leaving it on doubled the first
-         page view of each visit. -->
+    <!-- Google Analytics (GA4), only with consent.
+         Only the live site can load gtag.js, and only after the visitor accepts
+         analytics in the cookie banner (src/consent.ts). Gamma, localhost and
+         e2e runs keep the gtag() stub (events still land in window.dataLayer for
+         tests and debugging) but send nothing, so test traffic never reaches the
+         shared production GA4 property. Consent mode starts every visit as
+         "denied"; declining also sets ga-disable so nothing is sent at all.
+         send_page_view is off because App.tsx sends every page view, including
+         the first; leaving it on doubled the first page view of each visit. -->
     <script>
         window.dataLayer = window.dataLayer || [];
         function gtag() { dataLayer.push(arguments); }
+        gtag('consent', 'default', {
+            analytics_storage: 'denied',
+            ad_storage: 'denied',
+            ad_user_data: 'denied',
+            ad_personalization: 'denied'
+        });
         gtag('js', new Date());
         gtag('config', '%REACT_APP_GA_ID%', { send_page_view: false });
-        var gaLiveHosts = ['perseveranceai.com', 'www.perseveranceai.com'];
-        if (gaLiveHosts.indexOf(window.location.hostname) !== -1) {
-            window.addEventListener('load', function () {
+        (function () {
+            var GA_ID = '%REACT_APP_GA_ID%';
+            var CONSENT_KEY = 'lensy-analytics-consent';
+            var liveHosts = ['perseveranceai.com', 'www.perseveranceai.com'];
+            var isLive = liveHosts.indexOf(window.location.hostname) !== -1;
+            var loaded = false;
+            function loadGtag() {
+                if (!isLive || loaded) return;
+                loaded = true;
                 var s = document.createElement('script');
-                s.src = 'https://www.googletagmanager.com/gtag/js?id=%REACT_APP_GA_ID%';
+                s.src = 'https://www.googletagmanager.com/gtag/js?id=' + GA_ID;
                 s.async = true;
                 document.head.appendChild(s);
-            });
-        }
+            }
+            function deleteGaCookies() {
+                var host = window.location.hostname;
+                var domains = ['', host, '.' + host, '.' + host.replace(/^www\./, '')];
+                document.cookie.split(';').forEach(function (c) {
+                    var name = c.split('=')[0].trim();
+                    if (name !== '_ga' && name.indexOf('_ga_') !== 0) return;
+                    domains.forEach(function (d) {
+                        document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/' + (d ? '; domain=' + d : '');
+                    });
+                });
+            }
+            window.lensyAnalytics = {
+                grant: function () {
+                    window['ga-disable-' + GA_ID] = false;
+                    gtag('consent', 'update', { analytics_storage: 'granted' });
+                    if (document.readyState === 'complete') loadGtag();
+                    else window.addEventListener('load', loadGtag);
+                },
+                deny: function () {
+                    window['ga-disable-' + GA_ID] = true;
+                    gtag('consent', 'update', { analytics_storage: 'denied' });
+                    deleteGaCookies();
+                }
+            };
+            var saved = null;
+            try { saved = window.localStorage.getItem(CONSENT_KEY); } catch (e) { /* storage blocked */ }
+            if (saved === 'granted') window.lensyAnalytics.grant();
+            else if (saved === 'denied') window.lensyAnalytics.deny();
+        })();
     </script>
 
 </head>
