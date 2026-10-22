@@ -101,6 +101,20 @@ export function scoreCodingAgents(s: SignalsV2): ScoreResult {
         llmsRaw = 8 + (l.validFormat ? 4 : 0) + 4 * resolve + sizePts;
         llmsDetail = `${l.url}, ${l.links} links, ${Math.round(resolve * 100)}% of ${l.sampled} sampled resolve, ${kChars(l.size)} chars`;
     }
+    // llms.txt exists but loses points: say which part, not how to publish one.
+    let llmsFix = fixFor('C4', s.platform);
+    if (s.llmsTxt) {
+        const l = s.llmsTxt;
+        const parts = [
+            !l.validFormat && 'Start it with an H1 (the site name) and list pages as Markdown links.',
+            l.sampled > l.resolved && `${l.sampled - l.resolved} of ${l.sampled} sampled links did not resolve; fix or remove them.`,
+            l.size > 50000 && `It is ${kChars(l.size)} characters; keep it under 50K by moving full page text into llms-full.txt.`,
+        ].filter(Boolean);
+        if (parts.length) llmsFix = parts.join(' ');
+    }
+    const mdFix = md.ok && !md.advertisedBy
+        ? `A Markdown copy exists at ${md.url}, but nothing points to it. Add <link rel="alternate" type="text/markdown" href="${md.url}"> to the page head, or list it in llms.txt.`
+        : fixFor('C3', s.platform);
 
     const r = s.received;
     const fitsRaw = r.words < 40 ? 0 : r.chars <= 50000 ? 15 : r.chars <= 100000 ? 10 : 0;
@@ -117,8 +131,8 @@ export function scoreCodingAgents(s: SignalsV2): ScoreResult {
     return total([
         check('C1', 'Content without JavaScript', 20 * share, 20, jsDetail(s), JS_FIX),
         check('C2', 'Markdown on request', cn.ok ? 15 : 0, 15, cn.ok ? `served ${cn.contentType}` : `got ${cn.contentType || cn.status}`, fixFor('C2', s.platform)),
-        check('C3', '.md version discoverable', md.ok && md.advertisedBy ? 15 : md.ok ? 8 : 0, 15, md.ok ? `${md.url} (${mdVia})` : 'no .md version', fixFor('C3', s.platform)),
-        check('C4', 'llms.txt usable', llmsRaw, 20, llmsDetail, fixFor('C4', s.platform)),
+        check('C3', '.md version discoverable', md.ok && md.advertisedBy ? 15 : md.ok ? 8 : 0, 15, md.ok ? `${md.url} (${mdVia})` : 'no .md version', mdFix),
+        check('C4', 'llms.txt usable', llmsRaw, 20, llmsDetail, llmsFix),
         check('C5', 'Page fits one fetch', fitsRaw, 15, fitsDetail, fixFor('C5', s.platform)),
         check('C6', 'Sections findable', secRaw, 15, `${h.h1Count} H1, ${h.skips} level skip(s), ${Math.round(idShare * 100)}% of H2/H3 have ids, ${h.generic} generic heading(s)`, fixFor('C6', s.platform)),
     ]);

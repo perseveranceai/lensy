@@ -149,3 +149,20 @@ test('gate: honest refused, browser worked gives warn with the mismatch note, an
     expect(g.mismatch).toMatch(/robots\.txt allows AI bots/);
     expect(scoreAiSearch(s).checks.find(c => c.id === 'S1')!.points).toBe(20);
 });
+
+test('fix copy names what is wrong when llms.txt or a .md copy exists but loses points', async () => {
+    const html = article(`<article><h1>Getting started</h1>${body}</article>`);
+    const links = Array.from({ length: 1200 }, (_, i) => `- [Page ${i}](${ORIGIN}/guide/start): ${words(6)}`).join('\n');
+    const { s } = await score(html, {
+        [`${ORIGIN}/llms.txt`]: { type: 'text/plain', body: `# Example docs\n\n${links}\n` },
+        [`${PAGE}.md`]: { type: 'text/markdown', body: `# Getting started\n\n## Install\n\n${words(120)}\n` },
+    });
+    const checks = scoreCodingAgents(s).checks;
+    const c3 = checks.find(c => c.id === 'C3')!;
+    const c4 = checks.find(c => c.id === 'C4')!;
+    expect(c3.status).toBe('warn');
+    expect(c3.fix).toContain(`A Markdown copy exists at ${PAGE}.md, but nothing points to it`);
+    expect(c4.status).toBe('warn');
+    expect(c4.fix).toMatch(/^It is \d+K characters; keep it under 50K/);
+    expect(c4.fix).not.toContain('Publish /llms.txt');
+});

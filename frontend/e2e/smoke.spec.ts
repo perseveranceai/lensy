@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { URLS, blockAnalytics, setTheme, trackConsoleErrors, paintedBackground, startScan, expectReport, gaEvents } from './helpers';
+import { URLS, CITATIONS_ENABLED, blockAnalytics, setTheme, trackConsoleErrors, paintedBackground, startScan, expectReport, gaEvents } from './helpers';
 
 // Smoke S-01..S-08 from docs/test-cases.md. IDs in test titles match the doc.
 
@@ -28,8 +28,21 @@ test('S-02, S-08, REG-06, REG-09: scan, progress log, report, reload', async ({ 
   // D-04: the progress log is open by default while scanning.
   await expect(page.locator('[aria-live="polite"] [style*="max-height: 300px"]')).toBeAttached({ timeout: 10_000 });
   await expectReport(page);
-  await expect(page.getByText(/Bot access/).first()).toBeVisible();
+  // A deployed gamma serves two-score reports. A PR build scans gamma's current
+  // backend, which is single-score until the two-score backend is merged, so
+  // there either view is accepted. The two-score view itself is checked on a
+  // saved report in report-v2.spec.ts (S-02, S-09, S-10).
+  const twoScores = (await page.getByTestId('score-cards').count()) > 0;
+  if (process.env.E2E_BASE_URL) expect(twoScores, 'gamma should serve two-score reports').toBe(true);
+  if (twoScores) {
+    await expect(page.getByTestId('reachability-banner')).toBeVisible();
+    await expect(page.getByTestId('signal-groups').locator('section')).toHaveCount(3);
+    await expect(page.getByTestId('signal-points').first()).toBeVisible();
+  } else {
+    await expect(page.getByText(/Bot access/).first()).toBeVisible();
+  }
   await expect(page.getByText(/^Fix:/).first()).toBeVisible();
+  const scoresBefore = twoScores ? [await page.getByTestId('score-card-search').innerText(), await page.getByTestId('score-card-coding').innerText()] : [];
 
   // REG-06: exactly one started and one completed event per scan.
   const events = await gaEvents(page);
@@ -40,9 +53,12 @@ test('S-02, S-08, REG-06, REG-09: scan, progress log, report, reload', async ({ 
   const robots = await page.locator('meta[name="robots"]').evaluateAll((els) => els.map((e) => (e as HTMLMetaElement).content));
   expect(robots).toEqual(['noindex']);
 
-  // S-08: the report survives a reload.
+  // S-08: the report survives a reload, with both scores.
   await page.reload();
   await expect(page.getByText('What Lensy found')).toBeVisible();
+  if (twoScores) {
+    expect([await page.getByTestId('score-card-search').innerText(), await page.getByTestId('score-card-coding').innerText()]).toEqual(scoresBefore);
+  }
   expect(errors, errors.join('\n')).toEqual([]);
 });
 
@@ -58,24 +74,29 @@ test('REG-13: reloading /results does not re-fire generate_report_completed', as
   expect((await gaEvents(page)).filter((e) => e === 'generate_report_completed')).toHaveLength(0);
 });
 
-test('S-03, S-06, REG-12: citation check, then no clipping at 375px', async ({ page }) => {
-  test.skip(!!process.env.E2E_SKIP_CITATIONS, 'E2E_SKIP_CITATIONS set (each run makes paid Perplexity calls)');
-  await startScan(page, URLS.stripeApi);
-  await expectReport(page);
-  await page.getByText('Run citation check').click();
-  await expect(page.getByText(/citations check completed/i)).toBeVisible({ timeout: 150_000 });
-  const table = page.locator('table').first();
-  await expect(table.getByRole('columnheader', { name: 'Perplexity' })).toBeVisible();
-  await expect(table.getByText(/(High|Mid|Low) intent/).first()).toBeVisible();
+// S-03 runs a real citation check, so it exists only on a build with
+// REACT_APP_CITATIONS_ENABLED=true. While citations are off it is retired and
+// report-v2.spec.ts checks that no citations card renders (docs/test-cases.md).
+if (CITATIONS_ENABLED) {
+  test('S-03, S-06, REG-12: citation check, then no clipping at 375px', async ({ page }) => {
+    test.skip(!!process.env.E2E_SKIP_CITATIONS, 'E2E_SKIP_CITATIONS set (each run makes paid Perplexity calls)');
+    await startScan(page, URLS.stripeApi);
+    await expectReport(page);
+    await page.getByText('Run citation check').click();
+    await expect(page.getByText(/citations check completed/i)).toBeVisible({ timeout: 150_000 });
+    const table = page.locator('table').first();
+    await expect(table.getByRole('columnheader', { name: 'Perplexity' })).toBeVisible();
+    await expect(table.getByText(/(High|Mid|Low) intent/).first()).toBeVisible();
 
-  // REG-12: at 375px the table must fit its wrapper, so no pill is clipped.
-  await page.setViewportSize({ width: 375, height: 812 });
-  const overflow = await table.evaluate((t) => {
-    const wrap = t.parentElement!;
-    return wrap.scrollWidth - wrap.clientWidth;
+    // REG-12: at 375px the table must fit its wrapper, so no pill is clipped.
+    await page.setViewportSize({ width: 375, height: 812 });
+    const overflow = await table.evaluate((t) => {
+      const wrap = t.parentElement!;
+      return wrap.scrollWidth - wrap.clientWidth;
+    });
+    expect(overflow).toBeLessThanOrEqual(1);
   });
-  expect(overflow).toBeLessThanOrEqual(1);
-});
+}
 
 test('S-04: home-page error cards', async ({ page }) => {
   await startScan(page, URLS.invalid);

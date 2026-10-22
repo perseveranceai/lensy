@@ -1595,7 +1595,9 @@ async function handleFeedbackRequest(body: string | null, corsHeaders: Record<st
                 const metricsLines = scanMetrics
                     ? [
                           `\n📊 Scan Metrics:`,
-                          scanMetrics.overallScore != null ? `  • Overall Score: ${scanMetrics.overallScore}/100` : null,
+                          scanMetrics.searchScore != null ? `  • AI search score: ${scanMetrics.searchScore}/100` : null,
+                          scanMetrics.codingScore != null ? `  • Coding agents score: ${scanMetrics.codingScore}/100` : null,
+                          scanMetrics.searchScore == null && scanMetrics.overallScore != null ? `  • Overall Score: ${scanMetrics.overallScore}/100` : null,
                           scanMetrics.aiReadiness != null ? `  • AI Readiness: ${scanMetrics.aiReadiness}/100` : null,
                           scanMetrics.botsAllowed ? `  • Bots Allowed: ${scanMetrics.botsAllowed}` : null,
                           scanMetrics.contentHealth ? `  • Content Health: ${scanMetrics.contentHealth}` : null,

@@ -11,6 +11,8 @@ interface ScanMetrics {
     queriesVisible?: string;
     aiReadiness?: number;
     overallScore?: number;
+    searchScore?: number;
+    codingScore?: number;
 }
 
 interface FeedbackWidgetProps {
