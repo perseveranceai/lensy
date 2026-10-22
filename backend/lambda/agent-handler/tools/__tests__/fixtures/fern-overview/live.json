@@ -1,0 +1,82 @@
+{
+ "url": "https://buildwithfern.com/learn/docs/getting-started/overview",
+ "gate": {
+  "honestStatus": 200,
+  "reachable": true,
+  "robotsBlocks": [],
+  "mismatch": null,
+  "state": "pass"
+ },
+ "coding": {
+  "total": 94,
+  "checks": {
+   "Content without JavaScript": {
+    "pts": 20,
+    "max": 20,
+    "detail": "356 words in raw HTML"
+   },
+   "Markdown on Accept: text/markdown": {
+    "pts": 15,
+    "max": 15,
+    "detail": "served text/markdown"
+   },
+   ".md version discoverable": {
+    "pts": 15,
+    "max": 15,
+    "detail": "https://buildwithfern.com/learn/docs/getting-started/capabilities.md (rel=alternate)"
+   },
+   "llms.txt usable": {
+    "pts": 20,
+    "max": 20,
+    "detail": "https://buildwithfern.com/llms.txt, 158 links, 100% of 8 sampled resolve, 45K chars"
+   },
+   "Page fits one fetch": {
+    "pts": 15,
+    "max": 15,
+    "detail": "5K chars received as Markdown"
+   },
+   "Sections findable": {
+    "pts": 9,
+    "max": 15,
+    "detail": "1 H1, 2 level skip(s), 100% of H2/H3 have ids, 0 generic heading(s)"
+   }
+  }
+ },
+ "search": {
+  "total": 90,
+  "checks": {
+   "AI search bots allowed": {
+    "pts": 20,
+    "max": 20,
+    "detail": "all 6 allowed"
+   },
+   "Content without JavaScript": {
+    "pts": 20,
+    "max": 20,
+    "detail": "356 words in raw HTML"
+   },
+   "Indexable": {
+    "pts": 25,
+    "max": 25,
+    "detail": "indexable, canonical yes, in sitemap: yes (6969 URLs read)"
+   },
+   "Freshness declared": {
+    "pts": 7,
+    "max": 15,
+    "detail": "page date: none; sitemap lastmod: 6944/6969 URLs, 179 distinct dates; this URL has lastmod; age 52 days (info)"
+   },
+   "Answer-ready sections": {
+    "pts": 15,
+    "max": 15,
+    "detail": "1 H1, 0 skip(s), median section 246 words (HTML)"
+   },
+   "JSON-LD": {
+    "pts": 3,
+    "max": 5,
+    "detail": "BreadcrumbList, TechArticle"
+   }
+  }
+ },
+ "notes": [],
+ "netErrors": []
+}

@@ -1,0 +1,82 @@
+{
+ "url": "https://help.branch.io/account-hub/onboarding-guide",
+ "gate": {
+  "honestStatus": 200,
+  "reachable": true,
+  "robotsBlocks": [],
+  "mismatch": null,
+  "state": "pass"
+ },
+ "coding": {
+  "total": 97,
+  "checks": {
+   "Content without JavaScript": {
+    "pts": 20,
+    "max": 20,
+    "detail": "3231 words in raw HTML"
+   },
+   "Markdown on Accept: text/markdown": {
+    "pts": 15,
+    "max": 15,
+    "detail": "served text/markdown"
+   },
+   ".md version discoverable": {
+    "pts": 15,
+    "max": 15,
+    "detail": "https://help.branch.io/account-hub/onboarding-guide.md (rel=alternate)"
+   },
+   "llms.txt usable": {
+    "pts": 20,
+    "max": 20,
+    "detail": "https://help.branch.io/llms.txt, 42 links, 100% of 8 sampled resolve, 9K chars"
+   },
+   "Page fits one fetch": {
+    "pts": 15,
+    "max": 15,
+    "detail": "29K chars received as Markdown"
+   },
+   "Sections findable": {
+    "pts": 12,
+    "max": 15,
+    "detail": "1 H1, 1 level skip(s), 100% of H2/H3 have ids, 1 generic heading(s)"
+   }
+  }
+ },
+ "search": {
+  "total": 78,
+  "checks": {
+   "AI search bots allowed": {
+    "pts": 20,
+    "max": 20,
+    "detail": "all 6 allowed"
+   },
+   "Content without JavaScript": {
+    "pts": 20,
+    "max": 20,
+    "detail": "3231 words in raw HTML"
+   },
+   "Indexable": {
+    "pts": 25,
+    "max": 25,
+    "detail": "indexable, canonical yes, in sitemap: yes (891 URLs read)"
+   },
+   "Freshness declared": {
+    "pts": 0,
+    "max": 15,
+    "detail": "page date: none; sitemap lastmod: 0/891 URLs, 0 distinct dates; this URL no lastmod"
+   },
+   "Answer-ready sections": {
+    "pts": 13,
+    "max": 15,
+    "detail": "1 H1, 1 skip(s), median section 235 words (HTML)"
+   },
+   "JSON-LD": {
+    "pts": 0,
+    "max": 5,
+    "detail": "none"
+   }
+  }
+ },
+ "notes": [],
+ "netErrors": []
+}

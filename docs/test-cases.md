@@ -51,6 +51,11 @@ Notes:
 - Each run makes ~10 real scans and one citation check (paid Perplexity calls).
   Set `E2E_SKIP_CITATIONS=1` to skip the citation test locally.
 - Backend unit tests (Jest, `backend/**/__tests__/`) run in the pre-push hook and in PR CI (`npm --prefix backend test`).
+- Scoring v2 is tested offline against saved responses for the 15 pages in the two-score spec (§5, §12):
+  `backend/lambda/agent-handler/tools/__tests__/fixtures/<page>/`. Each folder has every response the
+  reference prototype received (`responses.json.gz`) and its output (`expected.json`); the tests require the
+  same points per check. Re-capture with `node backend/scripts/capture-fixtures.mjs [page names]` (needs open
+  internet) and review the score changes it prints.
 
 ---
 
@@ -137,6 +142,10 @@ Google Analytics may only load on the live site after the visitor accepts in the
 | REG-16 [auto] | X/Twitter showed no preview image: its card cache kept a fetch from before `og-image.png` was live. Renamed to `og-image-v2.png` so crawlers fetch fresh | Load `/`, fetch the `og:image` URL | `og:image` and `twitter:image` match; the URL serves a 1200×630 PNG |
 | REG-17 [auto] | Bare hostnames without trailing slash (e.g. `help.branch.io`) were rejected as unreachable because `fetch()` failed without a path; `new URL().toString()` now normalizes them | Scan U-10 (`https://help.branch.io`) | Scan completes with a report; not rejected as `unreachable-url` |
 | REG-18 [auto] | Sites behind bot protection (Cloudflare) were rejected as "unreachable" because the fetcher pretended to be Chrome (Branch, 2026-10-21). Lensy now sends `Lensy/1.0 (+https://perseveranceai.com/bot)` first and retries once with the browser user agent on 403/429 | Unit (Jest, `backend/lambda/agent-handler/shared/__tests__/fetch-page.test.ts`): mocked `fetch` per user agent. UI (Playwright): mocked scan that fails with `blocked-by-bot-protection`; open `/bot`. On gamma after deploy: scan U-10 and U-11 | Honest 200 = pass; honest 403 + browser 200 = warn (browser fallback); both 403 = `blocked-by-bot-protection`; a network error is never a block. The UI shows "This site's bot protection blocked our checker", never "We couldn't reach that page". `/bot` names the user agent |
+| REG-19 [auto] | Markdown listed in llms.txt never counted as discoverable: `analyzeConsumability` was called with `llmsTxtFound` hardcoded to `false` (found while prototyping two-score readiness, 2026-10-22) | Jest: `tools/__tests__/legacy-fixes.test.ts` and the v2 edge test in `scoring-v2-edges.test.ts` | A `.md` listed in llms.txt is discoverable (v1 `discoveryMethod: llms-txt`; v2 C3 = 15) |
+| REG-20 [auto] | A page H1 inside an article `<header>` was ignored because every `<header>` was stripped (Docusaurus, React) | Jest: `legacy-fixes.test.ts`, `scoring-v2-edges.test.ts`, and the `docusaurus-docs` / `react-learn` fixtures | The article H1 counts; a site-chrome header (with a `<nav>`, `role=banner`, `navbar` or `site-header`) is still dropped |
+| REG-21 [auto] | `checkUrl` treated any 2xx as found, so an HTML soft-404 could pass as llms.txt, sitemap or `.md` | Jest: `legacy-fixes.test.ts`, `scoring-v2-edges.test.ts` | HTML (by content type or body) is never an llms.txt or `.md`; a sitemap must contain `<urlset>` or `<sitemapindex>` |
+| REG-22 [auto] | A network error (DNS, timeout, reset) was reported as "not found" | Jest: `legacy-fixes.test.ts` | One retry, then "couldn't check" (`unknown`), with a re-scan note instead of "No llms.txt found" |
 
 ---
 

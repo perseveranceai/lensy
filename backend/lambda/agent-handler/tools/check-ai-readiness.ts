@@ -7,6 +7,8 @@ import { harvestSignals, executeProbes, crossReference } from './detection-engin
 import { DetectionReport } from './detection-types';
 
 import { fetchPage, headersToRecord, ACCEPT_HTML, FetchVia } from '../shared/fetch-page';
+import { stripNonContent, looksLikeHtml } from '../shared/html-content';
+import { collectSignalsV2, SignalsV2, FetchGateInput } from './collect-signals-v2';
 
 // ── AI Bot Registry ─────────────────────────────────────────────────────
 const AI_BOTS = [
@@ -100,6 +102,8 @@ export interface AIReadinessResult {
     detection?: DetectionReport;
     /** How the page fetch went: honest user agent, or the browser fallback (spec §7) */
     fetchGate?: { via: FetchVia; honestStatus: number; browserStatus?: number };
+    /** Signals for the two readiness scores (scored in generate-report) */
+    signalsV2?: SignalsV2;
     recommendations: Recommendation[];
     // Legacy fields for backward compat during rollout
     overallScore: number;
@@ -116,7 +120,9 @@ export const checkAIReadinessTool = tool(
             const progress = createProgressHelper(input.sessionId);
             await progress.info('Analyzing AI readiness across 4 categories...');
 
-            const results = await checkAIReadiness(domain, input.url, input.sessionId, input.llmsTxtUrl, input.prefetchedHtml, input.prefetchedHeaders, input.originRequiresJavaScript, input.rescued);
+            const results = await checkAIReadiness(domain, input.url, input.sessionId, input.llmsTxtUrl, input.prefetchedHtml, input.prefetchedHeaders, input.originRequiresJavaScript, input.rescued, {
+                rawHtml: input.rawHtml, rawHeaders: input.rawHeaders, fetchGate: input.fetchGate,
+            });
             if (input.fetchGate) results.fetchGate = input.fetchGate;
 
             // Store results in S3
@@ -168,13 +174,23 @@ export const checkAIReadinessTool = tool(
                 honestStatus: z.number(),
                 browserStatus: z.number().optional(),
             }).optional().describe('How the prefetch went: honest user agent or browser fallback, with statuses.'),
+            rawHtml: z.string().optional().describe('The HTML as served, when prefetchedHtml is a JavaScript render (scoring v2 scores what crawlers receive).'),
+            rawHeaders: z.record(z.string()).optional().describe('Response headers that came with rawHtml.'),
         })
     }
 );
 
 // ── Main Analysis Function ───────────────────────────────────────────────
 
-async function checkAIReadiness(domain: string, targetUrl: string, sessionId: string, explicitLlmsTxtUrl?: string, prefetchedHtml?: string, prefetchedHeaders?: Record<string, string>, originRequiresJavaScript?: boolean, rescued?: boolean): Promise<AIReadinessResult> {
+/** Inputs for scoring v2 that differ from what the legacy checks read. */
+interface V2Input {
+    /** The HTML as served, when prefetchedHtml was replaced by a JavaScript render. */
+    rawHtml?: string;
+    rawHeaders?: Record<string, string>;
+    fetchGate?: FetchGateInput;
+}
+
+async function checkAIReadiness(domain: string, targetUrl: string, sessionId: string, explicitLlmsTxtUrl?: string, prefetchedHtml?: string, prefetchedHeaders?: Record<string, string>, originRequiresJavaScript?: boolean, rescued?: boolean, v2: V2Input = {}): Promise<AIReadinessResult> {
     let baseUrl = `https://${domain}`;
     const recommendations: Recommendation[] = [];
     const progress = createProgressHelper(sessionId);
@@ -188,6 +204,7 @@ async function checkAIReadiness(domain: string, targetUrl: string, sessionId: st
         targetHtml = prefetchedHtml;
         if (prefetchedHeaders) {
             targetHeadersRecord = prefetchedHeaders;
+            targetHeaders = new Headers(prefetchedHeaders); // so the Link header counts for Markdown discovery
         }
     } else {
         console.log(`[AIReadiness] No prefetched HTML, fetching ${targetUrl} directly`);
@@ -219,7 +236,7 @@ async function checkAIReadiness(domain: string, targetUrl: string, sessionId: st
 
     // ── Fetch robots.txt once (reused for bot access + sitemap ref + v2 detection) ──
     const robotsTxtUrl = `${baseUrl}/robots.txt`;
-    const robotsCheck = await checkUrl(robotsTxtUrl, true);
+    const robotsCheck = await checkUrl(robotsTxtUrl, true, 'text');
 
     // ═══════════════════════════════════════════════════════════════════
     // v2 Detection Engine — 3-phase: harvest → parallel probes → cross-reference
@@ -239,16 +256,25 @@ async function checkAIReadiness(domain: string, targetUrl: string, sessionId: st
     console.log(`[AIReadiness v2] Phase 1 complete: ${signals.llmsTxtHintUrls.length} llms.txt hints, ${signals.blockedCrawlers.length} blocked crawlers`);
 
     // Phase 2 (v2 parallel probes) + existing categories run concurrently
-    const [probeResults, botAccess, discoverability, consumabilityData] = await Promise.all([
+    const [probeResults, botAccess, discoverabilityAndConsumability, signalsV2] = await Promise.all([
         // v2: All probes fire in parallel (~5s wall clock)
         executeProbes(baseUrl, targetUrl, signals, robotsCheck.content || null),
         // Existing Category 1: Bot Access (sync, no HTTP)
         Promise.resolve(analyzeBotAccess(robotsCheck, recommendations)),
-        // Existing Category 2: Discoverability (sequential HTTP — will be replaced by v2 in future)
-        analyzeDiscoverability(baseUrl, targetUrl, targetHtml, robotsCheck, explicitLlmsTxtUrl, docsSubpath, recommendations),
-        // Existing Category 3: Consumability
-        analyzeConsumability(targetUrl, targetHtml, targetHeaders, baseUrl, false, recommendations),
+        // Existing Category 2: Discoverability, then Category 3: Consumability, which
+        // needs the llms.txt content to tell whether the page's Markdown is listed (REG-19).
+        analyzeDiscoverability(baseUrl, targetUrl, targetHtml, robotsCheck, explicitLlmsTxtUrl, docsSubpath, recommendations)
+            .then(async d => [d, await analyzeConsumability(targetUrl, targetHtml, targetHeaders, baseUrl, d.llmsTxt.found ? d.llmsTxt.fullContent || null : null, recommendations)] as const),
+        // Scoring v2 signals (two readiness scores). Never fails the scan: a report
+        // without them renders in the legacy view.
+        collectSignalsV2({
+            finalUrl: targetUrl,
+            html: v2.rawHtml ?? targetHtml,
+            headers: v2.rawHeaders ?? targetHeadersRecord ?? {},
+            gate: v2.fetchGate ?? { via: 'honest', honestStatus: targetHtml ? 200 : 0 },
+        }).catch(e => { console.warn('[AIReadiness v2] signal collection failed:', (e as Error).message); return undefined; }),
     ]);
+    const [discoverability, consumabilityData] = discoverabilityAndConsumability;
 
     const consumability = {
         ...consumabilityData,
@@ -284,6 +310,7 @@ async function checkAIReadiness(domain: string, targetUrl: string, sessionId: st
         categories: { botAccess, discoverability, consumability, structuredData },
         detection,
         recommendations,
+        ...(signalsV2 ? { signalsV2 } : {}),
         overallScore: 0, // Scoring added in generate-report
     };
 }
@@ -446,18 +473,27 @@ async function analyzeDiscoverability(
     }
 
     let llmsTxt: { found: boolean; content?: string } = { found: false };
+    let llmsTxtUnknown = false;
     let llmsTxtUrl = llmsTxtCandidates[0];
     const llmsTxtCheckedUrls: string[] = [];
     for (const candidateUrl of llmsTxtCandidates) {
         llmsTxtCheckedUrls.push(candidateUrl);
-        const result = await checkUrl(candidateUrl, true);
+        const result = await checkUrl(candidateUrl, true, 'text');
+        if (result.unknown) llmsTxtUnknown = true;
         if (result.found) {
             llmsTxt = result;
             llmsTxtUrl = candidateUrl;
             break;
         }
     }
-    if (!llmsTxt.found) {
+    if (!llmsTxt.found && llmsTxtUnknown) {
+        recommendations.push({
+            category: 'Discoverability',
+            priority: 'low',
+            issue: `Couldn't check llms.txt: the request failed at the network level (${llmsTxtCheckedUrls.join(', ')}). Re-scan to confirm.`,
+            fix: 'Re-run the scan. If it keeps failing, check that the site answers requests from Lensy (see perseveranceai.com/bot).',
+        });
+    } else if (!llmsTxt.found) {
         recommendations.push({
             category: 'Discoverability',
             priority: 'high',
@@ -481,7 +517,7 @@ async function analyzeDiscoverability(
     const llmsFullCheckedUrls: string[] = [];
     for (const candidateUrl of llmsFullCandidates) {
         llmsFullCheckedUrls.push(candidateUrl);
-        const result = await checkUrl(candidateUrl);
+        const result = await checkUrl(candidateUrl, false, 'text');
         if (result.found) {
             llmsFullTxt = result;
             llmsFullTxtUrl = candidateUrl;
@@ -560,7 +596,7 @@ async function checkSitemap(baseUrl: string, robotsCheck: { found: boolean; cont
 
     // Check sitemap.xml directly
     const sitemapUrl = sitemapUrlFromRobots || `${baseUrl}/sitemap.xml`;
-    const sitemapCheck = await checkUrl(sitemapUrl);
+    const sitemapCheck = await checkUrl(sitemapUrl, false, 'xml');
 
     return {
         found: sitemapCheck.found,
@@ -591,7 +627,7 @@ async function analyzeConsumability(
     html: string,
     headers: Headers | null,
     baseUrl: string,
-    llmsTxtFound: boolean,
+    llmsTxtContent: string | null,
     recommendations: Recommendation[]
 ): Promise<AIReadinessResult['categories']['consumability']> {
 
@@ -636,7 +672,7 @@ async function analyzeConsumability(
     }
 
     // ── Markdown availability & discoverability ──
-    const markdown = await analyzeMarkdownAvailability(html, headers, targetUrl, baseUrl, llmsTxtFound);
+    const markdown = await analyzeMarkdownAvailability(html, headers, targetUrl, baseUrl, llmsTxtContent);
     if (!markdown.found) {
         recommendations.push({
             category: 'Consumability',
@@ -706,13 +742,9 @@ async function analyzeConsumability(
     }
 
     // Word count from clean text — strip non-content elements (nav, header, footer, sidebar)
-    const cleanText = html
-        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-        .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
-        .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
-        .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
-        .replace(/<aside[^>]*>[\s\S]*?<\/aside>/gi, '')
+    // REG-20: stripNonContent keeps an article <header> (which often holds the H1)
+    // and drops only site-chrome headers.
+    const cleanText = stripNonContent(html)
         .replace(/<[^>]+>/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
@@ -859,7 +891,9 @@ function detectJSRendering(html: string): boolean {
     return spaPatterns.some(p => p.test(html));
 }
 
-function analyzeHeadings(html: string): AIReadinessResult['categories']['consumability']['headingHierarchy'] {
+export function analyzeHeadings(rawHtml: string): AIReadinessResult['categories']['consumability']['headingHierarchy'] {
+    // REG-20: count the content's headings, not the site chrome's; keep an article <header>.
+    const html = stripNonContent(rawHtml);
     const headingRegex = /<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi;
     const headings: string[] = [];
     const levels: number[] = [];
@@ -890,12 +924,19 @@ function analyzeHeadings(html: string): AIReadinessResult['categories']['consuma
     return { h1Count, h2Count, h3Count, hasProperNesting, headings: headings.slice(0, 20) };
 }
 
+/** Does llms.txt list this page's Markdown (by one of its .md URLs, or <page>.md)? */
+export function markdownListedInLlms(llms: string, targetUrl: string, mdUrls: string[]): boolean {
+    const pagePath = new URL(targetUrl).pathname.replace(/\/$/, '');
+    const candidates = [...mdUrls.map(u => { try { return new URL(u, targetUrl).pathname; } catch { return u; } }), pagePath + '.md'];
+    return candidates.some(c => c.length > 3 && llms.includes(c));
+}
+
 async function analyzeMarkdownAvailability(
     html: string,
     headers: Headers | null,
     targetUrl: string,
     baseUrl: string,
-    llmsTxtFound: boolean
+    llmsTxtContent: string | null
 ): Promise<AIReadinessResult['categories']['consumability']['markdownAvailable']> {
     const urls: string[] = [];
     let discoverable = false;
@@ -940,14 +981,15 @@ async function analyzeMarkdownAvailability(
     // Probe {targetUrl}.md directly (common convention: Mintlify, GitBook, etc.)
     if (urls.length === 0) {
         const mdProbeUrl = targetUrl.replace(/\/$/, '') + '.md';
-        const mdProbe = await checkUrl(mdProbeUrl);
+        const mdProbe = await checkUrl(mdProbeUrl, false, 'markdown');
         if (mdProbe.found) {
             urls.push(mdProbeUrl);
         }
     }
 
     // If llms.txt references markdown, it's discoverable through llms.txt
-    if (llmsTxtFound && !discoverable) {
+    // REG-19: only when llms.txt actually lists this page's Markdown.
+    if (!discoverable && urls.length > 0 && llmsTxtContent && markdownListedInLlms(llmsTxtContent, targetUrl, urls)) {
         discoverable = true;
         discoveryMethod = 'llms-txt';
     }
@@ -1168,11 +1210,35 @@ function deriveDocsSubpath(llmsTxtUrl?: string, targetUrl?: string, baseUrl?: st
     return null;
 }
 
-async function checkUrl(url: string, returnContent = false): Promise<{ found: boolean; content?: string }> {
-    const res = await fetchPage(url, { accept: ACCEPT_HTML, timeoutMs: 5000 });
-    if (res.ok) {
-        return { found: true, content: returnContent ? res.body : undefined };
+/** What a probed file must look like to count as found. 'page' accepts any 2xx. */
+export type ExpectKind = 'page' | 'text' | 'xml' | 'markdown';
+
+/**
+ * REG-21: a 2xx alone is not "found". Many sites answer a missing /llms.txt,
+ * sitemap or .md with their HTML 404 page and status 200 (a soft 404).
+ */
+export function isExpectedContent(kind: ExpectKind, contentType: string, body: string): boolean {
+    if (kind === 'page') return true;
+    const html = /text\/html/i.test(contentType) || looksLikeHtml(body);
+    if (kind === 'xml') return /<(urlset|sitemapindex)\b/i.test(body);
+    if (html) return false;
+    return body.trim().length > 0; // 'text' and 'markdown'
+}
+
+export interface UrlCheck { found: boolean; content?: string; unknown?: boolean }
+
+export async function checkUrl(url: string, returnContent = false, kind: ExpectKind = 'page'): Promise<UrlCheck> {
+    // REG-22: a network failure means "couldn't check", never "not found". Retry once first.
+    for (let attempt = 0; attempt < 2; attempt++) {
+        const res = await fetchPage(url, { accept: ACCEPT_HTML, timeoutMs: 5000 });
+        if (res.errorKind === 'network') {
+            console.log(`Failed to fetch ${url} (attempt ${attempt + 1}): ${res.error}`);
+            continue;
+        }
+        if (res.ok && isExpectedContent(kind, res.headers.get('content-type') || '', res.body)) {
+            return { found: true, content: returnContent ? res.body : undefined };
+        }
+        return { found: false };
     }
-    if (res.errorKind === 'network') console.log(`Failed to fetch ${url}: ${res.error}`);
-    return { found: false };
+    return { found: false, unknown: true };
 }

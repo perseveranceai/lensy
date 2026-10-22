@@ -5,9 +5,17 @@ All notable changes to the Lensy Documentation Auditor project will be documente
 ## [Unreleased]
 
 ### Added
+- **Scoring v2 backend (two readiness scores)**: `report.json` now carries `scoringVersion: 2`, `scores.codingAgents` (C1-C6), `scores.aiSearch` (S1-S6), a reachability `gate` (pass/warn), tips and an agent-preview summary, per `docs/two-score-readiness/spec.md`. `overallScore` is now the AI search score; `scoreBreakdown` is kept for the current UI. Audit rows add `codingScore`, `searchScore` and `scoringVersion`.
+- **Scoring fixtures**: saved responses for the 15 spec pages and `backend/scripts/capture-fixtures.mjs`; tests require the prototype's points for every check.
 - **`/bot` page**: what the Lensy checker is, its user agent and how to allow it through bot protection.
 - **Backend unit tests** (Jest, `backend/**/__tests__/`), run by the pre-push hook and PR CI. First test: REG-18.
 - **Cookie banner**: Google Analytics loads only after the visitor accepts; consent mode starts as denied, Decline sets `ga-disable` and removes `_ga` cookies, and **Cookie settings** in the footer changes the choice (CK-01 to CK-05).
+
+### Fixed
+- **REG-19**: Markdown listed in llms.txt now counts as discoverable (was hardcoded off).
+- **REG-20**: an H1 inside an article `<header>` is counted; only site-chrome headers are dropped.
+- **REG-21**: HTML soft-404s no longer pass as llms.txt, sitemap or `.md`.
+- **REG-22**: network errors are "couldn't check", not "not found".
 
 ### Changed
 - **Honest fetcher (REG-18)**: Lensy now sends `Lensy/1.0 (+https://perseveranceai.com/bot)` first and retries once with the browser user agent on 403/429. Sites whose bot protection refuses both end with `blocked-by-bot-protection` and a "bot protection blocked our checker" card instead of "unreachable". Audit rows add `submittedUrl`, `finalUrl`, `httpStatus` and `ipHash`; the privacy page says so.

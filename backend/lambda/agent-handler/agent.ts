@@ -428,6 +428,8 @@ export async function runAgent(input: AgentRunInput): Promise<string> {
         await progress.info('Fetching page content...');
         let prefetchedHtml = '';
         let prefetchedHeaders: Record<string, string> = {};
+        let rawPageHtml: string | undefined;
+        let rawPageHeaders: Record<string, string> | undefined;
         // Honest user agent first, browser user agent once on 403/429 (spec §7, REG-18).
         const page = await fetchPage(url, { accept: ACCEPT_HTML, timeoutMs: 10000 });
         const fetchGate: FetchGate = {
@@ -559,6 +561,9 @@ export async function runAgent(input: AgentRunInput): Promise<string> {
                         latencyMs: rendered.latencyMs,
                         spaMarkers: spaCheck.markers.join(', '),
                     }));
+                    // Scoring v2 still scores what crawlers receive: the shell as served.
+                    rawPageHtml = prefetchedHtml;
+                    rawPageHeaders = prefetchedHeaders;
                     prefetchedHtml = rendered.html;
                     prefetchedHeaders = {}; // rendered content; original shell headers no longer describe it
                     rescued = true;
@@ -780,9 +785,10 @@ Respond with JSON only:
             ? 'Analyzing AI readiness...'
             : 'Analyzing AI readiness and search discoverability in parallel...');
 
+        const rawPage = rawPageHtml !== undefined ? { rawHtml: rawPageHtml, rawHeaders: rawPageHeaders } : {};
         const readinessInput = llmsTxtUrl
-            ? { url, sessionId, llmsTxtUrl, prefetchedHtml, prefetchedHeaders, originRequiresJavaScript, rescued, fetchGate }
-            : { url, sessionId, prefetchedHtml, prefetchedHeaders, originRequiresJavaScript, rescued, fetchGate };
+            ? { url, sessionId, llmsTxtUrl, prefetchedHtml, prefetchedHeaders, originRequiresJavaScript, rescued, fetchGate, ...rawPage }
+            : { url, sessionId, prefetchedHtml, prefetchedHeaders, originRequiresJavaScript, rescued, fetchGate, ...rawPage };
 
         const parallelTasks: Promise<any>[] = [
             checkAIReadinessTool.invoke(readinessInput),
@@ -832,10 +838,14 @@ Respond with JSON only:
 
         // Parse report result, inject doc confidence, and extract score
         let overallScore = 0;
+        let v2Audit: Record<string, string> = {};
         let finalResult = reportResult;
         try {
             const parsed = JSON.parse(reportResult);
             overallScore = parsed.overallScore || 0;
+            if (parsed.scoringVersion === 2) {
+                v2Audit = { scoringVersion: '2', codingScore: String(parsed.codingScore), searchScore: String(parsed.searchScore) };
+            }
             // Inject doc confidence into the result. When the page was rescued
             // via its markdown twin (N-12), the score is meaningless for it, so
             // flag it and let the frontend show a note instead of the percentage.
@@ -893,6 +903,7 @@ Respond with JSON only:
         await writeAuditLog(sessionId, url, 'completed', {
             ...auditTags,
             overallScore: String(overallScore),
+            ...v2Audit,
             analysisTimeMs: String(totalTime),
             docConfidence: String(docConfidence.confidence),
         });

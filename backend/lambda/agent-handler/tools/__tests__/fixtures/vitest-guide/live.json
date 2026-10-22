@@ -1,0 +1,82 @@
+{
+ "url": "https://vitest.dev/guide/",
+ "gate": {
+  "honestStatus": 200,
+  "reachable": true,
+  "robotsBlocks": [],
+  "mismatch": null,
+  "state": "pass"
+ },
+ "coding": {
+  "total": 85,
+  "checks": {
+   "Content without JavaScript": {
+    "pts": 20,
+    "max": 20,
+    "detail": "688 words in raw HTML"
+   },
+   "Markdown on Accept: text/markdown": {
+    "pts": 0,
+    "max": 15,
+    "detail": "got text/html"
+   },
+   ".md version discoverable": {
+    "pts": 15,
+    "max": 15,
+    "detail": "https://vitest.dev/guide.md (listed in llms.txt)"
+   },
+   "llms.txt usable": {
+    "pts": 20,
+    "max": 20,
+    "detail": "https://vitest.dev/llms.txt, 215 links, 100% of 8 sampled resolve, 12K chars"
+   },
+   "Page fits one fetch": {
+    "pts": 15,
+    "max": 15,
+    "detail": "8K chars received as Markdown"
+   },
+   "Sections findable": {
+    "pts": 15,
+    "max": 15,
+    "detail": "1 H1, 0 level skip(s), 100% of H2/H3 have ids, 1 generic heading(s)"
+   }
+  }
+ },
+ "search": {
+  "total": 68,
+  "checks": {
+   "AI search bots allowed": {
+    "pts": 20,
+    "max": 20,
+    "detail": "all 6 allowed"
+   },
+   "Content without JavaScript": {
+    "pts": 20,
+    "max": 20,
+    "detail": "688 words in raw HTML"
+   },
+   "Indexable": {
+    "pts": 10,
+    "max": 25,
+    "detail": "indexable, canonical no, no sitemap found"
+   },
+   "Freshness declared": {
+    "pts": 6,
+    "max": 15,
+    "detail": "page date: <time>; sitemap lastmod: 0/0 URLs, 0 distinct dates; this URL no lastmod; age 24 days (info)"
+   },
+   "Answer-ready sections": {
+    "pts": 12,
+    "max": 15,
+    "detail": "1 H1, 0 skip(s), median section 38 words (HTML)"
+   },
+   "JSON-LD": {
+    "pts": 0,
+    "max": 5,
+    "detail": "none"
+   }
+  }
+ },
+ "notes": [],
+ "netErrors": []
+}

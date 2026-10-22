@@ -4,6 +4,8 @@ import { readSessionArtifact, writeSessionArtifact } from '../shared/s3-helpers'
 import { createProgressHelper } from './publish-progress';
 
 import type { AIReadinessResult } from './check-ai-readiness';
+import { scoreCodingAgents, scoreAiSearch, gateState, tipsV2, ScoreResult, GateResult, Tip } from './scoring-v2';
+import type { SignalsV2 } from './collect-signals-v2';
 import type { AIDiscoverabilityResult } from './check-ai-discoverability';
 
 /**
@@ -36,43 +38,95 @@ const WEIGHTS = {
 const AI_CITATION_WEIGHT = 30;
 
 /**
- * Per-signal impact tiers, derived from the point weights used by the
- * calculate*Score functions below. This is the single source of truth for how
- * much each signal matters, emitted in the report so the frontend renders a
- * consistent impact chip on every signal (not just a hardcoded couple).
+ * Per-signal impact tiers, emitted in the report so the frontend renders a
+ * consistent impact chip on every signal.
  *
- * Tiering rule (by scoring weight): >= 10 pts -> high, 5-9 -> medium, < 5 -> low.
- * Keys are stable signal ids the frontend maps its rows to (see signalImpactId).
+ * Scoring v2 (docs/two-score-readiness/spec.md §4): tiers come from the points
+ * each check carries, by the same rule as before: >= 10 pts high, 5-9 medium,
+ * < 5 low. The check ids (C1-C6, S1-S6) are the v2 signal ids; the older keys
+ * are the legacy rows the current report UI still renders, re-tiered by the
+ * v2 check they now feed (spec §4.5). Signals v2 dropped or made tips are low.
  */
 const SIGNAL_IMPACT: Record<string, 'high' | 'medium' | 'low'> = {
-    // Discoverability (out of 40)
-    'llms.txt': 'high',            // 15 pts
-    'llms-full.txt': 'low',        // not individually scored / optional
-    'sitemap': 'medium',           // 8 pts
-    'canonical url': 'medium',     // 5 pts
-    'meta robots': 'high',         // blocking penalty
-    'indexing directive': 'high',  // blocking penalty
-    'page markdown': 'high',       // 12 pts (markdown availability)
-    'page in llms.txt': 'low',     // mapping-only, not separately scored
-    'content negotiation': 'medium',
-    'agents.md': 'low',            // experimental, not scored
-    'mcp config': 'low',           // experimental, not scored
-    // Structured data (out of 20)
-    'json-ld': 'medium',           // 5 pts
-    'opengraph': 'high',           // 10 pts (heaviest structured-data signal)
-    'breadcrumbs': 'low',          // 3 pts
-    // Content quality / consumability (out of 40)
-    'client-side rendered': 'high', // 10 pts (JS-render)
-    'text-to-html': 'medium',
-    'headings': 'high',            // up to 20 pts combined
-    'word count': 'medium',        // 6 pts
-    'code blocks': 'low',
-    'links': 'low',                // 4 pts
+    // Coding agents (100)
+    'C1': 'high',   // content without JavaScript, 20
+    'C2': 'high',   // Markdown on request, 15
+    'C3': 'high',   // .md version discoverable, 15
+    'C4': 'high',   // llms.txt usable, 20
+    'C5': 'high',   // page fits one fetch, 15
+    'C6': 'high',   // sections findable, 15
+    // AI search (100)
+    'S1': 'high',   // AI search bots allowed, 20
+    'S2': 'high',   // content without JavaScript, 20
+    'S3': 'high',   // indexable, 25
+    'S4': 'high',   // freshness declared, 15
+    'S5': 'high',   // answer-ready sections, 15
+    'S6': 'medium', // JSON-LD, 5
+    // Legacy rows
+    'llms.txt': 'high',            // C4, 20
+    'llms-full.txt': 'low',        // not scored
+    'sitemap': 'medium',           // in S3, 8
+    'canonical url': 'medium',     // in S3, 7
+    'meta robots': 'high',         // noindex zeroes S3
+    'indexing directive': 'high',  // noindex zeroes S3
+    'page markdown': 'high',       // C3, 15
+    'page in llms.txt': 'high',    // advertises the .md (C3)
+    'content negotiation': 'high', // C2, 15
+    'agents.md': 'low',            // tip, not scored
+    'mcp config': 'low',           // tip, not scored
+    'json-ld': 'medium',           // S6, 5
+    'opengraph': 'low',            // tip only (social previews)
+    'breadcrumbs': 'low',          // dropped
+    'client-side rendered': 'high', // C1 and S2, 20 each
+    'text-to-html': 'medium',      // folded into C5
+    'headings': 'high',            // C6 and S5
+    'word count': 'low',           // dropped (tip for very thin pages)
+    'code blocks': 'low',          // tip
+    'links': 'low',                // dropped
 };
 
 // ── Report Types ──────────────────────────────────────────────────────────
 
-interface AIReadinessReport {
+/** "What an agent receives" preview under the Coding agents card (spec §8.2). */
+export interface AgentPreview {
+    format: 'markdown' | 'html';
+    chars: number;
+    approxTokens: number;
+    /** Share of the page a 100K-character fetch window covers (1 = all of it). */
+    windowShare: number;
+    url: string;
+}
+
+/** The v2 part of report.json (spec §6.1). Absent on reports scored before v2. */
+export interface ScoringV2Fields {
+    scoringVersion: 2;
+    scores: { codingAgents: ScoreResult; aiSearch: ScoreResult };
+    gate: GateResult;
+    tips: Tip[];
+    agentPreview: AgentPreview;
+}
+
+const AGENT_WINDOW_CHARS = 100000;
+
+export function buildScoringV2(signals: SignalsV2): ScoringV2Fields {
+    const r = signals.received;
+    return {
+        scoringVersion: 2,
+        scores: { codingAgents: scoreCodingAgents(signals), aiSearch: scoreAiSearch(signals) },
+        gate: gateState(signals),
+        tips: tipsV2(signals),
+        agentPreview: {
+            format: r.format,
+            chars: r.chars,
+            approxTokens: Math.round(r.chars / 4),
+            windowShare: r.chars <= AGENT_WINDOW_CHARS ? 1 : Math.round((AGENT_WINDOW_CHARS / r.chars) * 100) / 100,
+            url: r.format === 'markdown' ? (signals.contentNegotiation.ok ? signals.finalUrl : signals.markdownUrl.url) : signals.finalUrl,
+        },
+    };
+}
+
+interface AIReadinessReport extends Partial<ScoringV2Fields> {
+    /** AI search score when scoringVersion is 2 (kept for legacy readers until the UI migrates); else the v1 total. */
     overallScore: number;
     letterGrade: string;  // A+, A, B+, B, C, D, F
     botAccessState: 'js_blocked' | 'fully_blocked' | 'partially_blocked' | 'accessible';
@@ -146,12 +200,24 @@ export const generateReportTool = tool(
             const scoreBreakdown = calculateScores(readinessResults, discoverabilityResults);
             const botAccessState = determineBotAccessState(readinessResults);
             // AI Readiness = only what doc owners control (excludes citations and bot access prerequisite)
-            const overallScore = Math.round(
+            const v1Score = Math.round(
                 scoreBreakdown.discoverability +
                 scoreBreakdown.consumability +
                 scoreBreakdown.structuredData
             );
+            // Scoring v2: two scores. overallScore carries the AI search score so
+            // legacy readers and the audit log keep working (spec §6.1).
+            let v2: ScoringV2Fields | null = null;
+            if (readinessResults?.signalsV2) {
+                try {
+                    v2 = buildScoringV2(readinessResults.signalsV2);
+                } catch (e) {
+                    console.warn('[generate_report] scoring v2 failed, writing a v1 report:', (e as Error).message);
+                }
+            }
+            const overallScore = v2 ? v2.scores.aiSearch.score : v1Score;
             const letterGrade = getLetterGrade(overallScore);
+            if (v2) console.log(`[generate_report] v2 scores: coding ${v2.scores.codingAgents.score}, search ${v2.scores.aiSearch.score}, gate ${v2.gate.state} (v1 total ${v1Score})`);
 
             console.log(`[generate_report] Score breakdown:`, scoreBreakdown, `Overall: ${overallScore} (${letterGrade}), Citations: ${scoreBreakdown.aiDiscoverability}`);
 
@@ -262,6 +328,7 @@ export const generateReportTool = tool(
                 : 0;
 
             const finalReport: AIReadinessReport = {
+                ...(v2 || {}),
                 overallScore,
                 letterGrade,
                 botAccessState,
@@ -321,6 +388,7 @@ export const generateReportTool = tool(
             await writeSessionArtifact(sessionId, 'status.json', {
                 status: 'completed',
                 overallScore,
+                ...(v2 ? { scoringVersion: 2, codingScore: v2.scores.codingAgents.score, searchScore: v2.scores.aiSearch.score } : {}),
                 analysisTime: totalTime,
                 completedAt: new Date().toISOString(),
             });
@@ -345,6 +413,7 @@ export const generateReportTool = tool(
                 mode: 'ai-readiness',
                 overallScore,
                 scoreBreakdown,
+                ...(v2 ? { scoringVersion: 2, codingScore: v2.scores.codingAgents.score, searchScore: v2.scores.aiSearch.score, gateState: v2.gate.state } : {}),
                 recommendationCount: recommendations.length,
                 contextualSuggestionCount: contextualSuggestions.length,
                 aiSearchEnginesTested: enginesTested,
