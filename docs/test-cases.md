@@ -50,7 +50,7 @@ Notes:
   test with analytics declined, so the cookie banner stays out of the way.
 - Each run makes ~10 real scans and one citation check (paid Perplexity calls).
   Set `E2E_SKIP_CITATIONS=1` to skip the citation test locally.
-- There are still no unit tests in the repo.
+- Backend unit tests (Jest, `backend/**/__tests__/`) run in the pre-push hook and in PR CI (`npm --prefix backend test`).
 
 ---
 
@@ -70,6 +70,8 @@ URL stops behaving as described, replace it and note the date.
 | U-7 | `https://library.zoom.com` | Markdown-alternate rescue | Report labelled "Recovered via markdown alternate" |
 | U-8 | `https://stripe.com/` | Marketing page / root URL | Rejected with the "doesn't look like a documentation page" card |
 | U-9 | `not a url` | Invalid input | "That doesn't look like a valid URL" card |
+| U-10 | `https://help.branch.io` | Bare hostname; site behind Cloudflare bot protection (VitePress) | Scan completes (REG-17, REG-18). Added to this table 2026-10-22 |
+| U-11 | `https://help.branch.io/account-hub/onboarding-guide` | Docs page behind bot protection | Scan completes, not "unreachable" (REG-18). Strong coding-agent score, freshness 0 (spec two-score-readiness §5) |
 
 ---
 
@@ -134,6 +136,7 @@ Google Analytics may only load on the live site after the visitor accepts in the
 | REG-15 | The audit log couldn't tell customer scans from our own smoke tests, e2e runs and local development, so traction numbers included internal use | After a gamma deploy, open the gamma `AuditLogTable` in DynamoDB and look at the newest rows | Each row has `trafficSource` and `clientOrigin`: the post-deploy smoke scan (`smoke-` session id) and e2e scans are `test`; a scan you start by hand on gamma is `dev` with `clientOrigin` `gamma.perseveranceai.com`; on prod, a scan from the live site is `web` |
 | REG-16 [auto] | X/Twitter showed no preview image: its card cache kept a fetch from before `og-image.png` was live. Renamed to `og-image-v2.png` so crawlers fetch fresh | Load `/`, fetch the `og:image` URL | `og:image` and `twitter:image` match; the URL serves a 1200×630 PNG |
 | REG-17 [auto] | Bare hostnames without trailing slash (e.g. `help.branch.io`) were rejected as unreachable because `fetch()` failed without a path; `new URL().toString()` now normalizes them | Scan U-10 (`https://help.branch.io`) | Scan completes with a report; not rejected as `unreachable-url` |
+| REG-18 [auto] | Sites behind bot protection (Cloudflare) were rejected as "unreachable" because the fetcher pretended to be Chrome (Branch, 2026-10-21). Lensy now sends `Lensy/1.0 (+https://perseveranceai.com/bot)` first and retries once with the browser user agent on 403/429 | Unit (Jest, `backend/lambda/agent-handler/shared/__tests__/fetch-page.test.ts`): mocked `fetch` per user agent. UI (Playwright): mocked scan that fails with `blocked-by-bot-protection`; open `/bot`. On gamma after deploy: scan U-10 and U-11 | Honest 200 = pass; honest 403 + browser 200 = warn (browser fallback); both 403 = `blocked-by-bot-protection`; a network error is never a block. The UI shows "This site's bot protection blocked our checker", never "We couldn't reach that page". `/bot` names the user agent |
 
 ---
 

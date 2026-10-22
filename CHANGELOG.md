@@ -5,9 +5,12 @@ All notable changes to the Lensy Documentation Auditor project will be documente
 ## [Unreleased]
 
 ### Added
+- **`/bot` page**: what the Lensy checker is, its user agent and how to allow it through bot protection.
+- **Backend unit tests** (Jest, `backend/**/__tests__/`), run by the pre-push hook and PR CI. First test: REG-18.
 - **Cookie banner**: Google Analytics loads only after the visitor accepts; consent mode starts as denied, Decline sets `ga-disable` and removes `_ga` cookies, and **Cookie settings** in the footer changes the choice (CK-01 to CK-05).
 
 ### Changed
+- **Honest fetcher (REG-18)**: Lensy now sends `Lensy/1.0 (+https://perseveranceai.com/bot)` first and retries once with the browser user agent on 403/429. Sites whose bot protection refuses both end with `blocked-by-bot-protection` and a "bot protection blocked our checker" card instead of "unreachable". Audit rows add `submittedUrl`, `finalUrl`, `httpStatus` and `ipHash`; the privacy page says so.
 - **Privacy page rewritten** to match the code: names Jina Reader, Perplexity, Amazon Bedrock, Google Analytics and Google Fonts; describes the contact form, feedback and hashed-IP usage limit; states real retention periods. Removed the unused `PrivacyPolicy.tsx` copy.
 - **Scan files expire after 30 days**: lifecycle rule on the analysis bucket, which the privacy page now promises.
 

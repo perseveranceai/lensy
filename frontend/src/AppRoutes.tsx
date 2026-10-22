@@ -557,6 +557,11 @@ export function ScanReport({
   // the error card never shows a raw status code. Falls back to the raw message.
   const describeScanError = (raw?: string): { title: string; description: string } => {
     const msg = (raw || "").trim();
+    // REG-18: a bot-protection block is not "unreachable"; say who refused and how to fix it.
+    if (/blocked-by-bot-protection|bot protection blocked/i.test(msg)) {
+      const status = (msg.match(/HTTP (\d{3})/) || [])[1] || "403";
+      return { title: "This site's bot protection blocked our checker", description: `HTTP ${status}. The site refused Lensy under its own name and as a browser. AI agents that name themselves may be refused the same way. To scan it, allow the Lensy/1.0 user agent in your bot protection.` };
+    }
     if (/\b400\b/.test(msg)) {
       return { title: "That doesn't look like a valid URL", description: "Please enter a valid documentation URL and try again." };
     }
@@ -1581,7 +1586,7 @@ export function Privacy() {
   // Every statement here was checked against the code (backend/lib/lensy-stack.ts,
   // backend/lambda, public/index.html). If you change what Lensy collects, sends
   // or keeps, change this page in the same PR.
-  return <LegalPage title="Privacy Policy" updated="October 19, 2026">
+  return <LegalPage title="Privacy Policy" updated="October 22, 2026">
     <p>This policy explains what Perseverance AI ("we", "us") collects when you use Lensy on perseveranceai.com, who we share it with, and how long we keep it.</p>
 
     <h2>1. What we collect</h2>
@@ -1621,7 +1626,7 @@ export function Privacy() {
     <ul>
       <li>Scan files (page content and reports) are deleted automatically about 30 days after they are created. Cached summaries of scanned pages expire after 7 days.</li>
       <li>The hashed IP address used for the daily limit expires after 48 hours.</li>
-      <li>A short record of each scan (the URL, time, result, score, and whether it came from our website or a test) is kept so we can see how Lensy is used.</li>
+      <li>A short record of each scan (the URL you entered and the URL it led to, the time, the status code the site returned, the result, the score, the hashed form of your IP address, and whether it came from our website or a test) is kept so we can see how Lensy is used.</li>
       <li>Contact form entries and feedback are kept until you ask us to delete them.</li>
       <li>Server logs do not yet expire on a fixed schedule.</li>
       <li>Google Analytics data is kept under the retention setting of our Google Analytics account.</li>
@@ -1643,6 +1648,30 @@ export function Privacy() {
     <p>Questions about this policy? Email <a href="mailto:hello@perseveranceai.com" className="text-[var(--accent)] underline underline-offset-2">hello@perseveranceai.com</a>.</p>
     <p className="text-[var(--muted)]">© 2026 Perseverance AI. All rights reserved. Confidential &amp; Proprietary.</p>
   </LegalPage>;
+}
+
+// /bot: the page Lensy's user agent points to (spec docs/two-score-readiness §7.5).
+// Every statement here matches backend/lambda/agent-handler/shared/fetch-page.ts.
+export function BotInfo() {
+  const code = "rounded-[var(--radius-xs)] bg-[var(--surface-2)] px-1.5 py-0.5 text-[13px]";
+  return <Page title={<>Lensy<br /><span className="text-[var(--accent)]">checker.</span></>} intro="What the Lensy checker is, when it visits your site, and how to let it through your bot protection.">
+    <article className="legal-prose prose-lensy max-w-[760px] py-12 sm:py-16">
+      <h2>What it is</h2>
+      <p>Lensy checks whether a documentation page is ready for AI search engines and coding agents. When someone enters a URL on perseveranceai.com, Lensy fetches that page and a few public files on the same site, such as <code className={code}>robots.txt</code>, <code className={code}>llms.txt</code>, the sitemap and the page&apos;s Markdown version. It does not crawl your site on its own; each visit starts from a person&apos;s scan.</p>
+
+      <h2>User agent</h2>
+      <p>Lensy names itself in every request:</p>
+      <p><code className={code}>Lensy/1.0 (+https://perseveranceai.com/bot)</code></p>
+      <p>If the site refuses that request with HTTP 403 or 429, Lensy tries once more with a browser user agent that ends with the same <code className={code}>(+https://perseveranceai.com/bot)</code> link. If that is refused too, the scan stops and tells the person that the site&apos;s bot protection blocked the checker. The report says when only the browser request worked, because AI agents that name themselves may be blocked the same way.</p>
+      <p>Lensy never sends the names of other companies&apos; crawlers, such as GPTBot or ClaudeBot.</p>
+
+      <h2>How to allow it</h2>
+      <p>In your bot protection or firewall, allow requests whose <code className={code}>User-Agent</code> contains <code className={code}>Lensy/1.0</code>. Lensy runs on AWS in us-east-1 and has no fixed IP address, so a rule by IP will not work.</p>
+
+      <h2>Contact</h2>
+      <p>Questions, or want Lensy to stop visiting your site? Email <a href="mailto:hello@perseveranceai.com" className="text-[var(--accent)] underline underline-offset-2">hello@perseveranceai.com</a>.</p>
+    </article>
+  </Page>;
 }
 
 // ---- Shared ----
@@ -1676,6 +1705,7 @@ export const router = createBrowserRouter([{
     { path: "contact", Component: Contact },
     { path: "terms", Component: Terms },
     { path: "privacy", Component: Privacy },
+    { path: "bot", Component: BotInfo },
     { path: "*", Component: NotFound },
   ],
 }]);

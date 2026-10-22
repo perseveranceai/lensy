@@ -2,7 +2,7 @@ import React, { useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { trackPageView } from './analytics';
 import { ShellContent, AuditAllowanceProvider } from './AppRoutes';
-import { HowItWorks, Education, ArticlePage, Contact, Terms, Privacy, NotFound } from './AppRoutes';
+import { HowItWorks, Education, ArticlePage, Contact, Terms, Privacy, BotInfo, NotFound } from './AppRoutes';
 /* ── Code-split heavy routes ── */
 const LensyApp = lazy(() => import('./LensyApp'));
 
@@ -79,6 +79,9 @@ function App() {
                             {/* Legal pages */}
                             <Route path="/terms" element={<Terms />} />
                             <Route path="/privacy" element={<Privacy />} />
+
+                            {/* What the Lensy checker is (its user agent links here) */}
+                            <Route path="/bot" element={<BotInfo />} />
 
                             {/* N-08: this used to sit outside ShellContent, so the 404 page
                                 rendered with no header/footer, unlike every other route. */}

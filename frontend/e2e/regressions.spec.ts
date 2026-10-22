@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { URLS, blockAnalytics, startScan, expectReport, gaEvents } from './helpers';
+import { URLS, blockAnalytics, startScan, expectReport, gaEvents, trackConsoleErrors } from './helpers';
 
 // Regression cases (REG-xx) from docs/test-cases.md. Each one is a bug that
 // reached gamma or prod. When you fix a new one, add its REG case to the doc
@@ -85,4 +85,31 @@ test('REG-16: the social preview image the meta tags name is served as a 1200x63
   const png = await res.body();
   expect(png.readUInt32BE(16)).toBe(1200);
   expect(png.readUInt32BE(20)).toBe(630);
+});
+
+test('REG-18: a site behind bot protection shows the bot-protection card, not "unreachable"', async ({ page }) => {
+  // The fetcher fallback itself is unit-tested (backend fetch-page.test.ts);
+  // gamma's Lambda can't reach a local fixture site, so this part mocks the
+  // scan API and checks only what the visitor sees.
+  const errors = trackConsoleErrors(page);
+  await blockAnalytics(page);
+  await page.routeWebSocket(/execute-api/, () => { /* accept and stay silent */ });
+  await page.route(/\/usage$/, (route) => route.fulfill({ json: { used: 0, limit: 100, remaining: 100, waitlisted: false } }));
+  await page.route(/\/scan-doc$/, (route) => route.fulfill({ json: { executionArn: 'arn:e2e:reg-18' } }));
+  await page.route(/\/status\//, (route) => route.fulfill({
+    json: { status: 'failed', error: "This site's bot protection blocked our checker (HTTP 403)." },
+  }));
+
+  await startScan(page, 'https://help.branch.io/account-hub/onboarding-guide');
+  await expect(page.getByText("This site's bot protection blocked our checker")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/HTTP 403\. .*allow the Lensy\/1\.0 user agent/)).toBeVisible();
+  await expect(page.getByText("We couldn't reach that page")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('REG-18: /bot explains the checker and its user agent', async ({ page }) => {
+  await page.goto('/bot');
+  await expect(page.getByRole('heading', { name: 'User agent' })).toBeVisible();
+  await expect(page.getByText('Lensy/1.0 (+https://perseveranceai.com/bot)')).toBeVisible();
+  await expect(page.getByText("This page does not exist.")).toHaveCount(0);
 });

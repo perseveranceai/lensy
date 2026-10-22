@@ -18,6 +18,7 @@ import { ProgressPublisher } from './shared/progress-publisher';
 import { findMarkdownAlternate } from './shared/markdown-alternate.js';
 import { isJsRenderEnabled } from './shared/js-render-fallback.js';
 import { writeSessionArtifact, readSessionArtifact } from './shared/s3-helpers';
+import { fetchPage, headersToRecord, ACCEPT_HTML, FetchVia } from './shared/fetch-page';
 
 // Import tools for direct invocation
 import { checkAIReadinessTool } from './tools/check-ai-readiness';
@@ -75,6 +76,13 @@ async function writeAuditLog(sessionId: string, auditUrl: string, status: string
     } catch (e) {
         console.warn('[AuditLog] Failed to write:', (e as Error).message);
     }
+}
+
+/** How the page fetch went; feeds the reachability banner (spec §4.1). */
+interface FetchGate {
+    via: FetchVia;
+    honestStatus: number;
+    browserStatus?: number;
 }
 
 // ── Content Gate: Score how likely a URL is a tech documentation page ──
@@ -404,7 +412,7 @@ export interface AgentRunInput {
 export async function runAgent(input: AgentRunInput): Promise<string> {
     const { sessionId, analysisStartTime, llmsTxtUrl, ipHash, skipCitations } = input;
     // Written on every audit log row so reporting can leave out internal traffic.
-    const auditTags = { trafficSource: input.trafficSource || 'unknown', clientOrigin: input.clientOrigin || '' };
+    const auditTags: Record<string, string> = { trafficSource: input.trafficSource || 'unknown', clientOrigin: input.clientOrigin || '' };
     let url = input.url;  // mutable — updated if redirect detected
     const progress = new ProgressPublisher(sessionId);
 
@@ -420,41 +428,61 @@ export async function runAgent(input: AgentRunInput): Promise<string> {
         await progress.info('Fetching page content...');
         let prefetchedHtml = '';
         let prefetchedHeaders: Record<string, string> = {};
-        try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000);
-            const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 (+https://perseveranceai.com/bot)';
-            const res = await fetch(url, {
-                signal: controller.signal,
-                headers: {
-                    'User-Agent': BROWSER_UA,
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                },
-            });
-            clearTimeout(timeoutId);
-            if (res.ok) {
-                prefetchedHtml = await res.text();
-                res.headers.forEach((v, k) => { prefetchedHeaders[k] = v; });
-                console.log(`[Pipeline] Prefetched ${url}: ${prefetchedHtml.length} bytes, headers: ${Object.keys(prefetchedHeaders).join(', ')}`);
+        // Honest user agent first, browser user agent once on 403/429 (spec §7, REG-18).
+        const page = await fetchPage(url, { accept: ACCEPT_HTML, timeoutMs: 10000 });
+        const fetchGate: FetchGate = {
+            via: page.via,
+            honestStatus: page.honestStatus,
+            ...(page.browserStatus !== undefined ? { browserStatus: page.browserStatus } : {}),
+        };
+        if (page.ok) {
+            prefetchedHtml = page.body;
+            prefetchedHeaders = headersToRecord(page.headers);
+            console.log(`[Pipeline] Prefetched ${url} via ${page.via} UA: ${prefetchedHtml.length} bytes, headers: ${Object.keys(prefetchedHeaders).join(', ')}`);
 
-                // ── Follow redirects: update URL to final destination ──
-                const finalUrl = res.url;
-                if (finalUrl && finalUrl !== url) {
-                    const originalDomain = new URL(url).hostname;
-                    const finalDomain = new URL(finalUrl).hostname;
-                    if (finalDomain !== originalDomain) {
-                        console.log(`[Pipeline] Redirect detected: ${originalDomain} → ${finalDomain} (final URL: ${finalUrl})`);
-                    } else {
-                        console.log(`[Pipeline] Path redirect: ${url} → ${finalUrl}`);
-                    }
-                    url = finalUrl;
+            // ── Follow redirects: update URL to final destination ──
+            const finalUrl = page.finalUrl;
+            if (finalUrl && finalUrl !== url) {
+                const originalDomain = new URL(url).hostname;
+                const finalDomain = new URL(finalUrl).hostname;
+                if (finalDomain !== originalDomain) {
+                    console.log(`[Pipeline] Redirect detected: ${originalDomain} → ${finalDomain} (final URL: ${finalUrl})`);
+                } else {
+                    console.log(`[Pipeline] Path redirect: ${url} → ${finalUrl}`);
                 }
-            } else {
-                console.warn(`[Pipeline] Prefetch failed with status ${res.status}`);
+                url = finalUrl;
             }
-        } catch (e) {
-            console.warn(`[Pipeline] Prefetch failed:`, (e as Error).message);
+        } else {
+            console.warn(`[Pipeline] Prefetch failed: status ${page.status}, honest ${page.honestStatus}, browser ${page.browserStatus ?? '-'}, ${page.errorKind || 'http'}${page.error ? `: ${page.error}` : ''}`);
+        }
+        // Every audit row from here on records what was typed, where it ended up
+        // and what the site answered (spec §7.4).
+        Object.assign(auditTags, {
+            submittedUrl: input.url,
+            finalUrl: url,
+            httpStatus: String(page.status),
+            ...(ipHash ? { ipHash } : {}),
+        });
+
+        if (!prefetchedHtml && page.errorKind === 'blocked') {
+            const status = page.browserStatus || page.honestStatus;
+            const blockedMessage = `This site's bot protection blocked our checker (HTTP ${status}).`;
+            await progress.error(blockedMessage);
+            await writeSessionArtifact(sessionId, 'status.json', {
+                status: 'rejected',
+                reason: 'blocked-by-bot-protection',
+                // /status returns `error` first, so polling clients get the status code too.
+                error: blockedMessage,
+                httpStatus: status,
+                completedAt: new Date().toISOString(),
+            });
+            await writeAuditLog(sessionId, url, 'rejected', { ...auditTags, reason: 'blocked-by-bot-protection' });
+            if (ipHash) await refundUsage(ipHash);
+            return JSON.stringify({
+                success: false,
+                error: 'blocked-by-bot-protection',
+                message: blockedMessage,
+            });
         }
 
         if (!prefetchedHtml) {
@@ -753,8 +781,8 @@ Respond with JSON only:
             : 'Analyzing AI readiness and search discoverability in parallel...');
 
         const readinessInput = llmsTxtUrl
-            ? { url, sessionId, llmsTxtUrl, prefetchedHtml, prefetchedHeaders, originRequiresJavaScript, rescued }
-            : { url, sessionId, prefetchedHtml, prefetchedHeaders, originRequiresJavaScript, rescued };
+            ? { url, sessionId, llmsTxtUrl, prefetchedHtml, prefetchedHeaders, originRequiresJavaScript, rescued, fetchGate }
+            : { url, sessionId, prefetchedHtml, prefetchedHeaders, originRequiresJavaScript, rescued, fetchGate };
 
         const parallelTasks: Promise<any>[] = [
             checkAIReadinessTool.invoke(readinessInput),
