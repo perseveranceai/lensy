@@ -543,9 +543,10 @@ async function handleAnalyzeRequest(body: string | null, corsHeaders: Record<str
         analysisRequest.url = `https://${analysisRequest.url}`;
     }
 
-    // Validate URL format
+    // Validate and normalize URL: new URL().toString() ensures bare hostnames
+    // get a trailing slash so servers that require a path don't reject the fetch.
     try {
-        new URL(analysisRequest.url);
+        analysisRequest.url = new URL(analysisRequest.url).toString();
     } catch (error) {
         return {
             statusCode: 400,

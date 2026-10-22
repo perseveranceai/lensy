@@ -133,6 +133,7 @@ Google Analytics may only load on the live site after the visitor accepts in the
 | REG-14 [auto] | Test traffic (gamma, localhost, e2e) reached the production GA4 property, and the first page view of each visit was counted twice | Load `/` on gamma or a local build, then open Contact; watch network and `dataLayer` | No request to Google Analytics; exactly one `page_view` per route |
 | REG-15 | The audit log couldn't tell customer scans from our own smoke tests, e2e runs and local development, so traction numbers included internal use | After a gamma deploy, open the gamma `AuditLogTable` in DynamoDB and look at the newest rows | Each row has `trafficSource` and `clientOrigin`: the post-deploy smoke scan (`smoke-` session id) and e2e scans are `test`; a scan you start by hand on gamma is `dev` with `clientOrigin` `gamma.perseveranceai.com`; on prod, a scan from the live site is `web` |
 | REG-16 [auto] | X/Twitter showed no preview image: its card cache kept a fetch from before `og-image.png` was live. Renamed to `og-image-v2.png` so crawlers fetch fresh | Load `/`, fetch the `og:image` URL | `og:image` and `twitter:image` match; the URL serves a 1200×630 PNG |
+| REG-17 [auto] | Bare hostnames without trailing slash (e.g. `help.branch.io`) were rejected as unreachable because `fetch()` failed without a path; `new URL().toString()` now normalizes them | Scan U-10 (`https://help.branch.io`) | Scan completes with a report; not rejected as `unreachable-url` |
 
 ---
 
