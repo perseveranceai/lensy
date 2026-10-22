@@ -86,11 +86,167 @@ export type Signal = {
   // carry a live audience via `signal.audience` from the detection engine.
   // `impact` is resolved centrally at render time via resolveImpact(label).
   audience?: string;
+  // Scoring v2 rows: points earned out of the check's max ("11/15", or one per
+  // score for the shared rows), the check ids behind the row, and the fix the
+  // backend wrote for that check.
+  points?: string;
+  checkIds?: string[];
+  fix?: string;
 };
 
 export type Rec = { category?: string; priority?: string; issue?: string; title?: string; fix?: string; description?: string; codeSnippet?: string };
 
-export type SignalGroup = { title: string; sections: Array<{ title: string; signals: Signal[] }> };
+export type SignalGroup = { title: string; key?: ScoreGroupKey; sections: Array<{ title: string; signals: Signal[] }> };
+
+// ── Scoring v2: two scores (docs/two-score-readiness/spec.md §4, §8) ──
+export type ScoreGroupKey = "both" | "coding" | "search";
+export type ScoreFilter = "coding" | "search" | null;
+
+export interface ScoreCheck {
+  id: string;
+  label: string;
+  points: number;
+  max: number;
+  status: "pass" | "warn" | "fail";
+  detail: string;
+  fix?: string;
+}
+
+export interface ScoringV2 {
+  coding: { score: number; checks: ScoreCheck[]; toImprove: number };
+  search: { score: number; checks: ScoreCheck[]; toImprove: number };
+  gate: {
+    state: "pass" | "warn";
+    via?: "honest" | "browser";
+    honestStatus: number;
+    browserStatus?: number;
+    robotsBlocks: string[];
+    mismatch?: string;
+  };
+  bots: Array<{ name: string; allowed: boolean }>;
+  preview: { format: "markdown" | "html"; chars: number; approxTokens: number; windowShare: number; url?: string } | null;
+  tips: string[];
+}
+
+// The six AI search and retrieval bots S1 checks (spec §4.3).
+export const AI_SEARCH_BOTS = ["OAI-SearchBot", "ChatGPT-User", "PerplexityBot", "Perplexity-User", "Claude-SearchBot", "Claude-User"];
+
+// Agents read about 100,000 characters per fetch (C5).
+export const AGENT_WINDOW_CHARS = 100_000;
+
+export function readScoringV2(report: any): ScoringV2 | null {
+  const coding = report?.scores?.codingAgents;
+  const search = report?.scores?.aiSearch;
+  if (report?.scoringVersion !== 2 || !coding || !search) return null;
+  const toImprove = (checks: ScoreCheck[]) => checks.filter((c) => c.status !== "pass").length;
+  const gate = report.gate || { state: "pass", honestStatus: 0, robotsBlocks: [] };
+  const blocked: string[] = Array.isArray(gate.robotsBlocks) ? gate.robotsBlocks : [];
+  const p = report.agentPreview;
+  return {
+    coding: { score: coding.score, checks: coding.checks || [], toImprove: toImprove(coding.checks || []) },
+    search: { score: search.score, checks: search.checks || [], toImprove: toImprove(search.checks || []) },
+    gate: { ...gate, robotsBlocks: blocked },
+    bots: AI_SEARCH_BOTS.map((name) => ({ name, allowed: !blocked.includes(name) })),
+    preview: p && typeof p.chars === "number" ? p : null,
+    tips: (report.tips || []).map((t: any) => String(t.text || t)).filter(Boolean),
+  };
+}
+
+// One line for the reachability banner, the same on the page and in the files.
+export function gateBannerText(v2: ScoringV2, jsBlocked: boolean): string {
+  const g = v2.gate;
+  const blocked = v2.bots.filter((b) => !b.allowed).length;
+  const robots = blocked === 0 ? `robots.txt allows all ${v2.bots.length} AI search bots` : `robots.txt blocks ${blocked} of ${v2.bots.length} AI search bots`;
+  if (jsBlocked) return `Reachability: the page needs JavaScript, so most AI bots see little or nothing. ${robots}.`;
+  if (g.state === "pass") return `Reachability: an honest AI agent can read this page (HTTP ${g.honestStatus}). ${robots}.`;
+  const browser = g.browserStatus ? ` A browser got HTTP ${g.browserStatus}.` : "";
+  return `Reachability warning: the server refused an honest AI agent (HTTP ${g.honestStatus}).${browser} ${robots}.`;
+}
+
+export function previewSummary(p: NonNullable<ScoringV2["preview"]>): string {
+  const format = p.format === "markdown" ? "Markdown" : "HTML text";
+  const fits = p.chars <= AGENT_WINDOW_CHARS
+    ? "fits in one fetch"
+    : `about ${Math.round(p.windowShare * 100)}% fits in one fetch; the rest is cut off`;
+  return `${format}, ${p.chars.toLocaleString("en-US")} characters (about ${p.approxTokens.toLocaleString("en-US")} tokens), ${fits}`;
+}
+
+const pts = (c?: ScoreCheck) => (c ? `${c.points}/${c.max}` : "");
+const worse = (a: ScoreCheck["status"], b: ScoreCheck["status"]): ReportSignalStatus =>
+  a === "fail" || b === "fail" ? "fail" : a === "warn" || b === "warn" ? "warn" : "pass";
+
+// Three cards: what both audiences need, then each score's own checks (§8.2).
+function v2SignalGroups(v2: ScoringV2): SignalGroup[] {
+  const c = Object.fromEntries(v2.coding.checks.map((x) => [x.id, x]));
+  const s = Object.fromEntries(v2.search.checks.map((x) => [x.id, x]));
+  // The audience chip is only shown in "Both audiences"; elsewhere the card title says it.
+  const row = (x: ScoreCheck | undefined, audience?: string, info?: string): Signal[] => x
+    ? [{ label: x.label, detail: x.detail, status: x.status, points: pts(x), checkIds: [x.id], fix: x.fix, audience, info }]
+    : [];
+  const both: Signal[] = [];
+  if (c.C1 || s.S2) {
+    const a = c.C1 || s.S2;
+    both.push({
+      label: "Content without JavaScript",
+      detail: a.detail,
+      status: worse(c.C1?.status || "pass", s.S2?.status || "pass"),
+      points: [c.C1 && `Coding ${pts(c.C1)}`, s.S2 && `Search ${pts(s.S2)}`].filter(Boolean).join(" · "),
+      checkIds: [c.C1 && "C1", s.S2 && "S2"].filter(Boolean) as string[],
+      fix: c.C1?.fix || s.S2?.fix,
+      audience: "both",
+      info: "AI crawlers and coding agents read the raw HTML. Most do not run JavaScript.",
+    });
+  }
+  both.push(...row(c.C6, "coding_agents", "One H1, no skipped levels, and ids on H2/H3 so an agent can jump to a section."));
+  both.push(...row(s.S5, "ai_search", "AI search quotes sections, so each H2/H3 section should answer one question on its own."));
+  const coding = ["C2", "C3", "C4", "C5"].flatMap((id) => row(c[id]));
+  const search = ["S1", "S3", "S4", "S6"].flatMap((id) => row(s[id]));
+  return [
+    { title: "Both audiences", key: "both", sections: [{ title: "", signals: both }] },
+    { title: "Coding agents", key: "coding", sections: [{ title: "", signals: coding }] },
+    { title: "AI search", key: "search", sections: [{ title: "", signals: search }] },
+  ];
+}
+
+// What a score card shows when clicked: the shared rows that feed that score,
+// plus that score's own card.
+export function filterGroups(groups: SignalGroup[], filter: ScoreFilter): SignalGroup[] {
+  if (!filter) return groups;
+  const prefix = filter === "coding" ? "C" : "S";
+  return groups
+    .filter((g) => g.key === "both" || g.key === filter)
+    .map((g) => g.key !== "both" ? g : {
+      ...g,
+      sections: g.sections.map((sec) => ({ ...sec, signals: sec.signals.filter((sig) => (sig.checkIds || []).some((id) => id.startsWith(prefix))) })),
+    });
+}
+
+// Fixes for the v2 checks, in the same Quick Wins / Deeper / Watch shape the
+// recommendations view uses. Ordered by points lost; tips are "watch" items.
+function v2Recommendations(v2: ScoringV2): Rec[] {
+  const seen = new Set<string>();
+  const items: Array<Rec & { lost: number }> = [];
+  for (const [category, checks] of [["Coding agents", v2.coding.checks], ["AI search", v2.search.checks]] as const) {
+    for (const x of checks) {
+      if (x.status === "pass" || !x.fix) continue;
+      // C1 and S2 are the same check scored twice; list its fix once.
+      const key = x.id === "S2" ? "C1" : x.id;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const lost = x.max - x.points;
+      items.push({ category: key === "C1" ? "Both audiences" : category, priority: lost >= 10 ? "high" : lost >= 5 ? "medium" : "low", issue: `${x.label}: ${x.detail}`, fix: x.fix, lost });
+    }
+  }
+  items.sort((a, b) => b.lost - a.lost);
+  // A tip reads "What we saw. Why it matters." Split it into the title and the body.
+  const tips: Rec[] = v2.tips.map((t) => {
+    const cut = t.indexOf(". ");
+    return cut > 0
+      ? { category: "Tip", priority: "best-practice", issue: t.slice(0, cut), fix: t.slice(cut + 2) }
+      : { category: "Tip", priority: "best-practice", issue: t, fix: "Not scored." };
+  });
+  return [...items.map(({ lost, ...r }) => r), ...tips];
+}
 
 export const TIER_LABELS: Record<string, string> = { high: "High intent", mid: "Mid intent", low: "Low intent" };
 
@@ -127,7 +283,8 @@ export function buildReportModel({ report, overallScoreData, detectionData, cita
     return tier ? IMPACT_LABEL[tier] : undefined;
   };
 
-  const signalGroups: SignalGroup[] = [];
+  const v2 = readScoringV2(report);
+  const signalGroups: SignalGroup[] = v2 ? v2SignalGroups(v2) : [];
   const categories = report?.categories;
   const botAccess = categories?.botAccess;
   // Prefer the canonical report state, but fall back to deriving `js_blocked`
@@ -184,7 +341,7 @@ export function buildReportModel({ report, overallScoreData, detectionData, cita
     return aggregateStatus(signals.map((s) => s.status));
   };
 
-  if (categories?.structuredData) {
+  if (!v2 && categories?.structuredData) {
     const s = categories.structuredData;
     const signals: Signal[] = [
       {
@@ -219,7 +376,7 @@ export function buildReportModel({ report, overallScoreData, detectionData, cita
     signalGroups.push({ title: "Structured data", sections: [{ title: "", signals }] });
   }
 
-  if (categories?.discoverability) {
+  if (!v2 && categories?.discoverability) {
     const d = categories.discoverability;
     const consumability = categories.consumability;
 
@@ -386,7 +543,7 @@ export function buildReportModel({ report, overallScoreData, detectionData, cita
     signalGroups.push({ title: "Discoverability", sections: discSections });
   }
 
-  if (categories?.consumability) {
+  if (!v2 && categories?.consumability) {
     const consumability = categories.consumability;
     const h1 = consumability.headingHierarchy.h1Count;
     const h2 = consumability.headingHierarchy.h2Count || 0;
@@ -494,7 +651,7 @@ export function buildReportModel({ report, overallScoreData, detectionData, cita
     signalGroups.push({ title: "Content quality", sections: [{ title: "", signals: contentSignals }] });
   }
 
-  if (!categories && report?.dimensions) {
+  if (!v2 && !categories && report?.dimensions) {
     Object.entries(report.dimensions).forEach(([dimKey, dimData]: [string, any]) => {
       const signals: Signal[] = (dimData.signals || []).map((signal: any): Signal => ({
         label: signal.name || "Check",
@@ -509,8 +666,8 @@ export function buildReportModel({ report, overallScoreData, detectionData, cita
   // Quick Wins = high priority; Deeper Improvements = medium/low; Things to Watch
   // = best-practice (informational, non-scored). Each rec carries category, fix,
   // an optional codeSnippet, and effort is derived from whether a snippet exists.
-  let allRecs: Rec[] = report?.recommendations || [];
-  if (allRecs.length === 0 && report?.dimensions) {
+  let allRecs: Rec[] = v2 ? v2Recommendations(v2) : report?.recommendations || [];
+  if (!v2 && allRecs.length === 0 && report?.dimensions) {
     allRecs = Object.values(report.dimensions).flatMap((d: any) => (d.recommendations || []).map((r: any) => ({
       category: d.title,
       priority: r.priority,
@@ -528,6 +685,12 @@ export function buildReportModel({ report, overallScoreData, detectionData, cita
   const effortLabel = (r: Rec) => (r.codeSnippet ? "Medium effort" : "Low effort");
   const actionLink = (r: Rec): { href: string; label: string } | null => {
     const issue = recIssue(r).toLowerCase();
+    // Two-score fixes: offer help only when the file is missing, not when it exists and loses points.
+    if (v2) {
+      if (issue.startsWith("llms.txt usable: not found")) return { href: "/contact?ref=llmstxt", label: "We can help you generate one" };
+      if (issue.startsWith(".md version discoverable: no .md version")) return { href: "/contact?ref=markdown", label: "We can help you generate markdown" };
+      return null;
+    }
     const category = (r.category || "").toLowerCase();
     if (issue.includes("llms.txt")) return { href: "/contact?ref=llmstxt", label: "We can help you generate one" };
     // N-10: only offer "generate markdown" for recommendations genuinely about
@@ -550,6 +713,7 @@ export function buildReportModel({ report, overallScoreData, detectionData, cita
   // We match a signal to its recommendation by the same fuzzy identity used for
   // impact, so the guidance stays in sync with the backend and is never hardcoded.
   const fixForSignal = (label: string): string | undefined => {
+    if (v2) return signalGroups.flatMap((g) => g.sections).flatMap((sec) => sec.signals).find((sig) => sig.label === label)?.fix;
     const key = impactKeyFor(label);
     const match = allRecs.find((r) => {
       const hay = `${recIssue(r)} ${r.category || ""}`.toLowerCase();
@@ -612,6 +776,7 @@ export function buildReportModel({ report, overallScoreData, detectionData, cita
   };
 
   return {
+    v2,
     categories,
     botAccess,
     botAccessState,

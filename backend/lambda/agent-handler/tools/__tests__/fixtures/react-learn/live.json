@@ -1,0 +1,82 @@
+{
+ "url": "https://react.dev/learn",
+ "gate": {
+  "honestStatus": 200,
+  "reachable": true,
+  "robotsBlocks": [],
+  "mismatch": null,
+  "state": "pass"
+ },
+ "coding": {
+  "total": 95,
+  "checks": {
+   "Content without JavaScript": {
+    "pts": 20,
+    "max": 20,
+    "detail": "2497 words in raw HTML"
+   },
+   "Markdown on Accept: text/markdown": {
+    "pts": 15,
+    "max": 15,
+    "detail": "served text/plain"
+   },
+   ".md version discoverable": {
+    "pts": 15,
+    "max": 15,
+    "detail": "https://react.dev/learn.md (listed in llms.txt)"
+   },
+   "llms.txt usable": {
+    "pts": 20,
+    "max": 20,
+    "detail": "https://react.dev/llms.txt, 180 links, 100% of 8 sampled resolve, 15K chars"
+   },
+   "Page fits one fetch": {
+    "pts": 15,
+    "max": 15,
+    "detail": "16K chars received as Markdown"
+   },
+   "Sections findable": {
+    "pts": 9.7,
+    "max": 15,
+    "detail": "0 H1, 0 level skip(s), 92% of H2/H3 have ids, 0 generic heading(s)"
+   }
+  }
+ },
+ "search": {
+  "total": 70,
+  "checks": {
+   "AI search bots allowed": {
+    "pts": 20,
+    "max": 20,
+    "detail": "all 6 allowed"
+   },
+   "Content without JavaScript": {
+    "pts": 20,
+    "max": 20,
+    "detail": "2497 words in raw HTML"
+   },
+   "Indexable": {
+    "pts": 17,
+    "max": 25,
+    "detail": "indexable, canonical yes, no sitemap found"
+   },
+   "Freshness declared": {
+    "pts": 0,
+    "max": 15,
+    "detail": "page date: none; sitemap lastmod: 0/0 URLs, 0 distinct dates; this URL no lastmod"
+   },
+   "Answer-ready sections": {
+    "pts": 13,
+    "max": 15,
+    "detail": "1 H1, 1 skip(s), median section 175 words (HTML)"
+   },
+   "JSON-LD": {
+    "pts": 0,
+    "max": 5,
+    "detail": "none"
+   }
+  }
+ },
+ "notes": [],
+ "netErrors": []
+}

@@ -51,6 +51,11 @@ Notes:
 - Each run makes ~10 real scans and one citation check (paid Perplexity calls).
   Set `E2E_SKIP_CITATIONS=1` to skip the citation test locally.
 - Backend unit tests (Jest, `backend/**/__tests__/`) run in the pre-push hook and in PR CI (`npm --prefix backend test`).
+- Scoring v2 is tested offline against saved responses for the 15 pages in the two-score spec (§5, §12):
+  `backend/lambda/agent-handler/tools/__tests__/fixtures/<page>/`. Each folder has every response the
+  reference prototype received (`responses.json.gz`) and its output (`expected.json`); the tests require the
+  same points per check. Re-capture with `node backend/scripts/capture-fixtures.mjs [page names]` (needs open
+  internet) and review the score changes it prints.
 
 ---
 
@@ -80,26 +85,30 @@ URL stops behaving as described, replace it and note the date.
 | ID | Steps | Expected |
 |---|---|---|
 | S-01 [auto] | Open home in light theme, then dark theme | Light: white background, dark text. Dark: dark background, light text. Font is Plus Jakarta Sans. No console errors |
-| S-02 [auto] | Scan U-1 | Progress log is **open by default** while scanning; report loads with score, bot access, three signal groups, recommendation count |
-| S-03 [auto] | On the report, click **Run citation check** | Spinner, then a results table: engine column named "Perplexity", High/Mid/Low intent tags, "Cited: X / Y" matches the rows |
+| S-02 [auto] | Scan U-1; and a saved two-score report (`report-v2.spec.ts`) | Progress log is **open by default** while scanning; report loads with **two** score cards (AI search, Coding agents), the reachability banner with the six AI search bots, three signal groups (Both audiences, Coding agents, AI search), points on each signal, the "What an agent receives" preview and a recommendation count. On gamma the live scan must be two-score; a PR build scans gamma's current backend and accepts either view |
+| S-03 [auto] | On the report, click **Run citation check** | **Retired while citations are off** (`REACT_APP_CITATIONS_ENABLED=false` in `.env.gamma` and `.env.production`, spec `docs/two-score-readiness/spec.md` §8.3). Meanwhile the check is that no citations card renders. On a build with the flag on: spinner, then a results table: engine column named "Perplexity", High/Mid/Low intent tags, "Cited: X / Y" matches the rows |
 | S-04 [auto] | Submit U-9, then U-8, from the home page | Friendly error card on the home page (not raw "HTTP 400"), with Try again / Try another URL / Report an issue |
 | S-05 [auto] | `/contact`, submit the empty form | Three separate field messages (URL, name, email); no network request sent |
-| S-06 [auto] | At 375px: open the menu; scan U-1 and run the citation check | Beta badge shows in the mobile menu; the Cited/Not cited pill is fully visible |
+| S-06 [auto] | At 375px: open the menu; open a two-score report (and, with citations on, run the citation check) | Beta badge shows in the mobile menu; both score cards, the reachability banner and the agent preview fit with no horizontal scroll; with citations on, the Cited/Not cited pill is fully visible |
 | S-07 [auto] | Open `/this-page-does-not-exist` | 404 page has header and footer; exactly one `<meta name="robots">` and it says `noindex` |
-| S-08 [auto] | After S-02, reload `/results` | The same report is still there |
+| S-08 [auto] | After S-02, reload `/results` | The same report is still there, with both scores |
+| S-09 [auto] | On a two-score report, click the AI search card, then Coding agents, then Coding agents again | Each card shows only its score's checks (Both audiences keeps the rows that feed that score; the agent preview shows with Coding agents); the second click shows all three groups again |
+| S-10 [auto] | Load a report saved before two scores (`report-stripe.json`) at `/results` | The legacy single-score view with "Re-scan to see the new scores" and a Re-scan button; no two-score cards |
 
 ## Report download (H-001)
 
-Run against saved fixtures from real gamma scans (`frontend/e2e/fixtures/`, U-1 on 2026-10-13); citation calls are mocked, so these make no paid calls.
+Run against saved fixtures from real gamma scans (`frontend/e2e/fixtures/`, U-1 on 2026-10-13); citation calls are mocked, so these make no paid calls. `report-stripe-v2.json` is that U-1 report with the two-score fields added by the backend's own scoring code from the U-1 page saved on 2026-10-22. DL-03 to DL-05 run only on a build with citations on; DL-07 runs while they are off.
 
 | ID | Steps | Expected |
 |---|---|---|
-| DL-01 [auto] | Report with citations done → **Download report** → Markdown | Saves `lensy-report-<host>-<date>.md` at once, no citation request; holds every recommendation, bot, signal group and citation query on the page; plain PASS/WARN/FAIL/INFO words; one `report_download_clicked` and one `_completed`; reloading fires neither again |
+| DL-01 [auto] | Two-score report → **Download report** → Markdown | Saves `lensy-report-<host>-<date>.md` at once, no citation request; front matter has `scoring_version: 2` and both scores; holds both scores, every check with its points and fix, the six AI search bots, the agent preview, every tip and every signal group on the page (with citations on, every citation query too); plain PASS/WARN/FAIL/INFO words; one `report_download_clicked` and one `_completed`; reloading fires neither again |
 | DL-02 [auto] | Same → PDF | A real PDF under 1 MB with the site font embedded. **Manual:** open it; no broken characters, no row split across pages, links work |
 | DL-03 [auto] | Report without citations → Markdown, then PDF while waiting | Button shows "Running AI citations, then downloading… Ns"; one `/run-citations` call serves both files; files include the citation table; the citations card fills in; `run_citations_clicked` has `trigger: download` |
 | DL-04 [auto] | Citations can't start (`/run-citations` fails) | File still downloads and says "AI citations could not run", never "Not cited" |
 | DL-05 [auto] | While waiting, click **Download without citations** | Saves at once; file says citations are not in this report |
 | DL-06 [auto] | 375px | The download menu fits on screen |
+| DL-07 [auto] | Citations off: download Markdown, then PDF | Both save at once; no `/run-citations` or `/citations/` request; no citations section or `citations:` key in the file |
+| DL-08 [auto] | Report saved before two scores → Markdown | The old format: `readiness_score`, the three old signal groups, AI bot access, every recommendation |
 
 ## Cookie consent and privacy
 
@@ -136,7 +145,11 @@ Google Analytics may only load on the live site after the visitor accepts in the
 | REG-15 | The audit log couldn't tell customer scans from our own smoke tests, e2e runs and local development, so traction numbers included internal use | After a gamma deploy, open the gamma `AuditLogTable` in DynamoDB and look at the newest rows | Each row has `trafficSource` and `clientOrigin`: the post-deploy smoke scan (`smoke-` session id) and e2e scans are `test`; a scan you start by hand on gamma is `dev` with `clientOrigin` `gamma.perseveranceai.com`; on prod, a scan from the live site is `web` |
 | REG-16 [auto] | X/Twitter showed no preview image: its card cache kept a fetch from before `og-image.png` was live. Renamed to `og-image-v2.png` so crawlers fetch fresh | Load `/`, fetch the `og:image` URL | `og:image` and `twitter:image` match; the URL serves a 1200×630 PNG |
 | REG-17 [auto] | Bare hostnames without trailing slash (e.g. `help.branch.io`) were rejected as unreachable because `fetch()` failed without a path; `new URL().toString()` now normalizes them | Scan U-10 (`https://help.branch.io`) | Scan completes with a report; not rejected as `unreachable-url` |
-| REG-18 [auto] | Sites behind bot protection (Cloudflare) were rejected as "unreachable" because the fetcher pretended to be Chrome (Branch, 2026-10-21). Lensy now sends `Lensy/1.0 (+https://perseveranceai.com/bot)` first and retries once with the browser user agent on 403/429 | Unit (Jest, `backend/lambda/agent-handler/shared/__tests__/fetch-page.test.ts`): mocked `fetch` per user agent. UI (Playwright): mocked scan that fails with `blocked-by-bot-protection`; open `/bot`. On gamma after deploy: scan U-10 and U-11 | Honest 200 = pass; honest 403 + browser 200 = warn (browser fallback); both 403 = `blocked-by-bot-protection`; a network error is never a block. The UI shows "This site's bot protection blocked our checker", never "We couldn't reach that page". `/bot` names the user agent |
+| REG-18 [auto] | Sites behind bot protection (Cloudflare) were rejected as "unreachable" because the fetcher pretended to be Chrome (Branch, 2026-10-21). Lensy now sends `Lensy/1.0 (+https://perseveranceai.com/bot)` first and retries once with the browser user agent on 403/429 | Unit (Jest, `backend/lambda/agent-handler/shared/__tests__/fetch-page.test.ts`): mocked `fetch` per user agent. UI (Playwright): mocked scan that fails with `blocked-by-bot-protection`; open `/bot`. On gamma after deploy: scan U-10 and U-11 | Honest 200 = pass; honest 403 + browser 200 = warn (browser fallback); both 403 = `blocked-by-bot-protection`; a network error is never a block. The UI shows "This site's bot protection blocked our checker", never "We couldn't reach that page". `/bot` names the user agent. A two-score report whose server refused the honest agent shows "Reachability warning" and the robots.txt mismatch note (`report-v2.spec.ts`) |
+| REG-19 [auto] | Markdown listed in llms.txt never counted as discoverable: `analyzeConsumability` was called with `llmsTxtFound` hardcoded to `false` (found while prototyping two-score readiness, 2026-10-22) | Jest: `tools/__tests__/legacy-fixes.test.ts` and the v2 edge test in `scoring-v2-edges.test.ts` | A `.md` listed in llms.txt is discoverable (v1 `discoveryMethod: llms-txt`; v2 C3 = 15) |
+| REG-20 [auto] | A page H1 inside an article `<header>` was ignored because every `<header>` was stripped (Docusaurus, React) | Jest: `legacy-fixes.test.ts`, `scoring-v2-edges.test.ts`, and the `docusaurus-docs` / `react-learn` fixtures | The article H1 counts; a site-chrome header (with a `<nav>`, `role=banner`, `navbar` or `site-header`) is still dropped |
+| REG-21 [auto] | `checkUrl` treated any 2xx as found, so an HTML soft-404 could pass as llms.txt, sitemap or `.md` | Jest: `legacy-fixes.test.ts`, `scoring-v2-edges.test.ts` | HTML (by content type or body) is never an llms.txt or `.md`; a sitemap must contain `<urlset>` or `<sitemapindex>` |
+| REG-22 [auto] | A network error (DNS, timeout, reset) was reported as "not found" | Jest: `legacy-fixes.test.ts` | One retry, then "couldn't check" (`unknown`), with a re-scan note instead of "No llms.txt found" |
 
 ---
 

@@ -2,10 +2,12 @@
 // (H-001): Markdown for coding agents (./markdown.ts) and PDF for people
 // (./pdf.ts). Everything comes from buildReportModel(), the same function the
 // results page renders from, so a file never shows something the page doesn't.
-import { buildReportModel, EVIDENCE_LABELS, AUDIENCE_LABELS, TIER_LABELS } from "./reportModel";
+import { buildReportModel, gateBannerText, previewSummary, EVIDENCE_LABELS, AUDIENCE_LABELS, TIER_LABELS } from "./reportModel";
+import { CITATIONS_ENABLED } from "./flags";
 import type { ReportSignalStatus, DetectionData, Rec } from "./reportModel";
 
-export type CitationsState = "done" | "no_engine" | "no_results" | "failed" | "not_run";
+// "off": citations are switched off for this build (spec §8.3); files leave them out.
+export type CitationsState = "done" | "no_engine" | "no_results" | "failed" | "not_run" | "off";
 
 export interface ExportSignal {
   label: string;
@@ -16,6 +18,8 @@ export interface ExportSignal {
   detail: string;
   fix?: string;
   note?: string;
+  /** Scoring v2: points out of the check's max, e.g. "11/15". */
+  points?: string;
 }
 
 export interface ExportRec {
@@ -46,10 +50,21 @@ export interface ExportReport {
   downloadedAt: string;
   readinessSeconds?: number;
   score: number | null;
+  /** Scoring v2 reports: the two scores, reachability and the agent preview. Null for older reports. */
+  scoring: {
+    search: { score: number; toImprove: number };
+    coding: { score: number; toImprove: number };
+    reachability: "pass" | "warn";
+    preview: string | null;
+    previewUrl?: string;
+    tips: string[];
+  } | null;
   signalsToImprove: number;
   categoriesToImprove: number;
   docCheck: { label: string; signals: string[] } | null;
   bots: {
+    /** "Reachability" for two-score reports, "AI bot access" before. */
+    title: string;
     banner: string;
     robotsUrl: string | null;
     jsBlocked: boolean;
@@ -132,7 +147,19 @@ export function buildExportReport(input: ExportInput): ExportReport {
   // ── Bot access (same rules as the banner on the page) ──
   const jsBlocked = model.botAccessState === "js_blocked";
   const botAccess = model.botAccess;
-  const bots = {
+  const v2 = model.v2;
+  const bots = v2 ? {
+    title: "Reachability",
+    banner: gateBannerText(v2, jsBlocked),
+    robotsUrl: parsed ? `${parsed.protocol}//${parsed.hostname}/robots.txt` : null,
+    jsBlocked,
+    note: [
+      v2.gate.mismatch ? "Your robots.txt allows AI bots, but the server refused an agent that named itself. Check your bot protection (for example Cloudflare) and allow verified AI agents." : "",
+      jsBlocked ? "This page is a JavaScript-rendered SPA. Most AI bots do not execute JavaScript, making your content invisible to them regardless of your robots.txt configuration." : "",
+    ].filter(Boolean).join(" ") || undefined,
+    list: v2.bots,
+  } : {
+    title: "AI bot access",
     banner: jsBlocked ? "AI bot access is blocked by JavaScript" : stripGlyph(model.botAccessBannerText()),
     robotsUrl: botAccess?.robotsTxtFound && parsed ? `${parsed.protocol}//${parsed.hostname}/robots.txt` : null,
     jsBlocked,
@@ -161,10 +188,11 @@ export function buildExportReport(input: ExportInput): ExportReport {
           status: sig.status,
           evidence: sig.signal ? EVIDENCE_LABELS[sig.signal.status] : undefined,
           audience: audienceKey ? AUDIENCE_LABELS[audienceKey] || audienceKey : undefined,
-          impact: failing ? model.resolveImpact(sig.label) : undefined,
+          impact: failing && !sig.points ? model.resolveImpact(sig.label) : undefined,
           detail: sig.detail,
-          fix: failing ? model.fixForSignal(sig.label) : undefined,
+          fix: failing ? sig.fix ?? model.fixForSignal(sig.label) : undefined,
           note: sig.signal?.note || undefined,
+          points: sig.points,
         };
       }),
     })),
@@ -214,7 +242,9 @@ export function buildExportReport(input: ExportInput): ExportReport {
   }));
   let state: CitationsState;
   let reason: string | undefined;
-  if (!aiDisc) {
+  if (!CITATIONS_ENABLED) {
+    state = "off";
+  } else if (!aiDisc) {
     state = input.citationsReason && !input.citationsSkipped ? "failed" : "not_run";
     reason = input.citationsSkipped ? "the check was still running when this file was downloaded" : input.citationsReason;
   } else if (aiDisc.status === "error") {
@@ -236,7 +266,7 @@ export function buildExportReport(input: ExportInput): ExportReport {
     total: rows.length,
     seconds: citationSeconds ? citationSeconds / 1000 : undefined,
     rows,
-    notes: state === "done" || state === "failed" ? [] : (aiDisc?.recommendations || []).map((r: any) => ({ issue: String(r.issue), fix: String(r.fix) })),
+    notes: state === "done" || state === "failed" || state === "off" ? [] : (aiDisc?.recommendations || []).map((r: any) => ({ issue: String(r.issue), fix: String(r.fix) })),
   };
 
   return {
@@ -247,6 +277,14 @@ export function buildExportReport(input: ExportInput): ExportReport {
     downloadedAt: (input.now || new Date()).toISOString(),
     readinessSeconds: typeof report?.analysisTime === "number" ? report.analysisTime / 1000 : undefined,
     score: typeof report?.overallScore === "number" ? report.overallScore : null,
+    scoring: v2 ? {
+      search: { score: v2.search.score, toImprove: v2.search.toImprove },
+      coding: { score: v2.coding.score, toImprove: v2.coding.toImprove },
+      reachability: v2.gate.state,
+      preview: v2.preview ? previewSummary(v2.preview) : null,
+      previewUrl: v2.preview?.url,
+      tips: v2.tips,
+    } : null,
     signalsToImprove: model.failingSignalCount,
     categoriesToImprove: model.failingGroupCount,
     docCheck,
@@ -275,6 +313,8 @@ export function citationsSummary(c: ExportReport["citations"]): string {
       return "The citation check completed but did not return query-level results.";
     case "failed":
       return `AI citations could not run for this report${c.reason ? `: ${c.reason.replace(/\.$/, "")}.` : "."}`;
+    case "off":
+      return "AI citations are not part of this report.";
     default:
       return c.reason ? `AI citations are not in this report: ${c.reason}.` : "AI citations were not run for this report.";
   }

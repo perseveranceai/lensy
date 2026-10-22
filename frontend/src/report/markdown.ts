@@ -18,7 +18,7 @@ function fence(code: string): string {
 }
 
 function signalMeta(sig: ExportSignal): string {
-  const meta = [sig.evidence && `Evidence: ${sig.evidence}`, sig.audience && `Audience: ${sig.audience}`, sig.impact && `Impact: ${sig.impact}`].filter(Boolean);
+  const meta = [sig.points && `Points: ${sig.points}`, sig.evidence && `Evidence: ${sig.evidence}`, sig.audience && `Audience: ${sig.audience}`, sig.impact && `Impact: ${sig.impact}`].filter(Boolean);
   return meta.length ? ` (${meta.join("; ")})` : "";
 }
 
@@ -34,6 +34,9 @@ export function renderMarkdown(data: ExportReport): string {
   const out: string[] = [];
   const push = (...lines: string[]) => out.push(...lines);
   const citationsValue = data.citations.state === "done" ? `${data.citations.cited}/${data.citations.total}` : data.citations.state;
+  const citationsOn = data.citations.state !== "off";
+  const sc = data.scoring;
+  const toImprove = (n: number) => n ? `${n} check${n === 1 ? "" : "s"} to improve` : "every check passes";
 
   push(
     "---",
@@ -41,8 +44,10 @@ export function renderMarkdown(data: ExportReport): string {
     `scanned_at: ${data.scannedAt ? yamlString(data.scannedAt) : "null"}`,
     `downloaded_at: ${yamlString(data.downloadedAt)}`,
     `report_id: ${data.reportId ? yamlString(data.reportId) : "null"}`,
-    `readiness_score: ${data.score ?? "null"}`,
-    `citations: ${yamlString(citationsValue)}`,
+    ...(sc
+      ? ["scoring_version: 2", `ai_search_score: ${sc.search.score}`, `coding_agents_score: ${sc.coding.score}`, `reachability: ${yamlString(sc.reachability)}`]
+      : [`readiness_score: ${data.score ?? "null"}`]),
+    ...(citationsOn ? [`citations: ${yamlString(citationsValue)}`] : []),
     "generator: \"Lensy (perseveranceai.com)\"",
     "---",
     "",
@@ -64,10 +69,17 @@ export function renderMarkdown(data: ExportReport): string {
     "",
     "## Summary",
     "",
-    `- AI readiness: ${data.score !== null ? `${data.score}/100` : "not available"}, ${data.signalsToImprove} signal${data.signalsToImprove === 1 ? "" : "s"} to improve across ${data.categoriesToImprove} categor${data.categoriesToImprove === 1 ? "y" : "ies"}`,
-    `- AI citations: ${citationsSummary(data.citations)}`,
+    ...(sc
+      ? [
+          `- AI search: ${sc.search.score}/100, ${toImprove(sc.search.toImprove)}`,
+          `- Coding agents: ${sc.coding.score}/100, ${toImprove(sc.coding.toImprove)}`,
+          `- ${data.bots.banner}`,
+          ...(sc.preview ? [`- What an agent receives: ${sc.preview}`] : []),
+        ]
+      : [`- AI readiness: ${data.score !== null ? `${data.score}/100` : "not available"}, ${data.signalsToImprove} signal${data.signalsToImprove === 1 ? "" : "s"} to improve across ${data.categoriesToImprove} categor${data.categoriesToImprove === 1 ? "y" : "ies"}`]),
+    ...(citationsOn ? [`- AI citations: ${citationsSummary(data.citations)}`] : []),
     ...(data.docCheck ? [`- Page check: ${data.docCheck.label}`] : []),
-    `- ${/^bot access/i.test(data.bots.banner) ? data.bots.banner : `Bot access: ${data.bots.banner}`}`,
+    ...(sc ? [] : [`- ${/^bot access/i.test(data.bots.banner) ? data.bots.banner : `Bot access: ${data.bots.banner}`}`]),
     "",
   );
 
@@ -97,11 +109,15 @@ export function renderMarkdown(data: ExportReport): string {
     push("Not available for this report.", "");
   }
 
-  push("## AI bot access", "", data.bots.banner, "");
+  push(`## ${data.bots.title}`, "", data.bots.banner, "");
   push(data.bots.robotsUrl ? `robots.txt: ${data.bots.robotsUrl}` : "No robots.txt found.", "");
   if (data.bots.note) push(data.bots.note, "");
   if (data.bots.list.length) {
     push("| Bot | Access |", "|---|---|", ...data.bots.list.map((b) => `| ${cell(b.name)} | ${b.allowed ? "Allowed" : "Blocked"} |`), "");
+  }
+  if (sc?.preview) {
+    push("## What an agent receives", "", sc.preview + ".", "");
+    if (sc.previewUrl) push(`Fetched from: ${sc.previewUrl}`, "");
   }
 
   push("## Signals", "");
@@ -118,8 +134,8 @@ export function renderMarkdown(data: ExportReport): string {
     }
   }
 
-  push("## AI citations", "", citationsSummary(data.citations), "");
-  if (data.citations.seconds !== undefined) push(`AI citations check completed in ${data.citations.seconds.toFixed(1)}s.`, "");
+  if (citationsOn) push("## AI citations", "", citationsSummary(data.citations), "");
+  if (citationsOn && data.citations.seconds !== undefined) push(`AI citations check completed in ${data.citations.seconds.toFixed(1)}s.`, "");
   if (data.citations.rows.length) {
     push(
       `| Query | Intent | ${cell(data.citations.engine || "Result")} | Cited URL | Cited instead |`,
@@ -135,7 +151,7 @@ export function renderMarkdown(data: ExportReport): string {
   push(
     "---",
     "",
-    "Lensy checked this one page, not the whole site. AI citation results change from run to run. Made with Lensy by Perseverance AI: https://perseveranceai.com",
+    `Lensy checked this one page, not the whole site.${citationsOn ? " AI citation results change from run to run." : ""} Made with Lensy by Perseverance AI: https://perseveranceai.com`,
     "",
   );
   return out.join("\n");

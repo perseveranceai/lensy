@@ -6,7 +6,7 @@
 
 - Document structure directly affects AI retrieval quality. DeepRead showed 10.3% improvement and RAPTOR showed 20% improvement with structure-aware processing.
 - ClaudeBot is blocked by 69% of websites and GPTBot by 62%. 71% of sites that block training bots also block search crawlers, removing themselves from AI results entirely.
-- JSON-LD markup increases rich snippet visibility by 20–30%. Structured data, heading hierarchies, and proper canonicalisation all contribute to higher citation rates.
+- Structured data helps search engines understand a page, but controlled studies find JSON-LD barely changes AI citations. Heading hierarchies and canonical URLs matter more.
 
 ## Why Document Structure Matters
 
@@ -24,7 +24,7 @@ Industry analysis shows ClaudeBot is blocked by approximately 69% of websites an
 
 ## Structured Data
 
-JSON-LD uses the Schema.org vocabulary to declare page types (TechArticle, APIReference), authors, publication dates, and topic relationships. BrightEdge research [8] shows pages with proper Schema.org markup see a 20–30% increase in rich snippet visibility. Google's Search Central documentation [9] confirms that structured data directly affects how content appears in search results and AI overviews.
+JSON-LD uses the Schema.org vocabulary to declare page types (TechArticle, APIReference), authors, publication dates, and topic relationships. Controlled data does not show it raising AI citations: Ahrefs [8] tracked 1,885 pages that added schema against 4,000 controls (May 2026), and their AI citations barely moved. That is why Lensy gives JSON-LD only 5 of the 100 AI search points. Google's Search Central documentation [9] confirms that structured data directly affects how content appears in search results and AI overviews.
 
 OpenGraph meta tags influence how AI-powered preview systems and content aggregation tools summarise your content. Canonical URLs consolidate link equity and prevent AI engines from indexing duplicate versions [10], which is especially important for documentation sites serving versioned or localised content.
 
@@ -40,7 +40,7 @@ OpenGraph meta tags influence how AI-powered preview systems and content aggrega
 4. [Snowflake. "How Retrieval & Chunking Impact Finance RAG." 2024.](https://www.snowflake.com/en/engineering-blog/impact-retrieval-chunking-finance-rag/)
 5. [ALM Corp. "ClaudeBot, Claude-User & Claude-SearchBot: Anthropic's Three-Bot Framework." 2025.](https://almcorp.com/blog/anthropic-claude-bots-robots-txt-strategy/)
 6. [Search Engine Journal. "Anthropic's Claude Bots Make Robots.txt Decisions More Granular." 2025.](https://www.searchenginejournal.com/anthropics-claude-bots-make-robots-txt-decisions-more-granular/568253/)
-8. [BrightEdge. "Structured Data in the AI Search Era." 2025.](https://www.brightedge.com/blog/structured-data-ai-search-era)
+8. [Ahrefs. "We Tracked 1,885 Pages Adding Schema." 2026.](https://ahrefs.com/blog/schema-ai-citations/)
 9. [Google. "Introduction to Structured Data." Search Central.](https://developers.google.com/search/docs/appearance/structured-data/intro-structured-data)
 10. [Google. "Canonicalisation." Search Central.](https://developers.google.com/search/docs/crawling-indexing/canonicalization)
 11. [Stack Overflow. "2025 Developer Survey Results." 2025.](https://survey.stackoverflow.co/2025/)

@@ -1,4 +1,6 @@
 import { expect, Page } from '@playwright/test';
+import fs from 'fs';
+import path from 'path';
 
 // Test URLs from docs/test-cases.md ("Test URLs"). Last confirmed 2026-10-08.
 export const URLS = {
@@ -71,4 +73,35 @@ export async function gaEvents(page: Page): Promise<string[]> {
       .filter((args: any[]) => args[0] === 'event')
       .map((args: any[]) => String(args[1])),
   );
+}
+
+// The build's citations flag (REACT_APP_CITATIONS_ENABLED, spec two-score
+// §8.3). Tests run against a build:gamma build, so read the same .env file
+// unless the run says otherwise.
+export const CITATIONS_ENABLED = process.env.REACT_APP_CITATIONS_ENABLED
+  ? process.env.REACT_APP_CITATIONS_ENABLED === 'true'
+  : /^REACT_APP_CITATIONS_ENABLED=true$/m.test(fs.readFileSync(path.join(__dirname, '..', '.env.gamma'), 'utf8'));
+
+// Saved reports in ./fixtures (see the note at the top of download.spec.ts).
+export const fixture = (name: string) => JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8'));
+
+export const SAVED_SESSION = 'session-e2e-download';
+
+// Put a finished scan where LensyApp restores it from (sessionStorage), and
+// keep every network call this page makes local to the test.
+export async function openSavedReport(page: Page, seed: { report: any; citations?: any }) {
+  await blockAnalytics(page);
+  await page.routeWebSocket(/execute-api/, () => { /* accept and stay silent */ });
+  await page.route(/\/usage$/, (route) => route.fulfill({ json: { used: 0, limit: 100, remaining: 100, waitlisted: false } }));
+  await page.addInitScript((s) => {
+    window.sessionStorage.setItem('lensy-audit-state', JSON.stringify({
+      url: s.report.scope?.url,
+      asyncCards: s.citations ? { aiDiscoverability: s.citations } : {},
+      analysisState: { status: 'completed', report: s.report, progressMessages: [] },
+      heroTab: 'readiness',
+      currentSessionId: s.session,
+    }));
+  }, { ...seed, session: SAVED_SESSION });
+  await page.goto('/results');
+  await expect(page.getByText('What Lensy found')).toBeVisible();
 }

@@ -9,9 +9,13 @@
 //
 // Analytics fire only from a click and its outcome, never from an effect that
 // a reload could replay (N-06).
+//
+// With citations off (REACT_APP_CITATIONS_ENABLED, spec §8.3) the file is
+// always saved at once and never starts a citations run.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { trackEvent } from "../analytics";
 import { buildExportReport, reportFileName } from "./exportReport";
+import { CITATIONS_ENABLED } from "./flags";
 import type { ExportInput } from "./exportReport";
 
 export type ReportFormat = "md" | "pdf";
@@ -86,7 +90,7 @@ export function useReportDownload({ input, citationsLoading, onRunCitations, vie
       saveBlob(blob, fileName);
       trackEvent("report_download_completed", {
         format: item.format,
-        citations_included: Boolean(citationData) && citationData?.status !== "error",
+        citations_included: CITATIONS_ENABLED && Boolean(citationData) && citationData?.status !== "error",
         citations_skipped: skipped,
         wait_ms: Date.now() - item.startedAt,
         file_kb: Math.max(1, Math.round(blob.size / 1024)),
@@ -156,12 +160,12 @@ export function useReportDownload({ input, citationsLoading, onRunCitations, vie
   const download = useCallback(async (format: ReportFormat) => {
     const current = inputRef.current;
     const citationData = current.citationData || current.report?.aiDiscoverability;
-    const citationsState = citationData ? (citationData.status === "error" ? "unavailable" : "done") : citationsLoading ? "running" : "not_run";
+    const citationsState = !CITATIONS_ENABLED ? "off" : citationData ? (citationData.status === "error" ? "unavailable" : "done") : citationsLoading ? "running" : "not_run";
     trackEvent("report_download_clicked", { format, citations_state: citationsState, view, url });
     const item: Pending = { format, startedAt: Date.now() };
 
-    // Done, or already known to have failed: no waiting.
-    if (citationData) {
+    // Citations off, done, or already known to have failed: no waiting.
+    if (!CITATIONS_ENABLED || citationData) {
       await finish(item);
       return;
     }

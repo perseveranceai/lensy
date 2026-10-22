@@ -1,0 +1,82 @@
+{
+ "url": "https://mintlify.com/docs/quickstart",
+ "gate": {
+  "honestStatus": 200,
+  "reachable": true,
+  "robotsBlocks": [],
+  "mismatch": null,
+  "state": "pass"
+ },
+ "coding": {
+  "total": 100,
+  "checks": {
+   "Content without JavaScript": {
+    "pts": 20,
+    "max": 20,
+    "detail": "3323 words in raw HTML"
+   },
+   "Markdown on Accept: text/markdown": {
+    "pts": 15,
+    "max": 15,
+    "detail": "served text/markdown"
+   },
+   ".md version discoverable": {
+    "pts": 15,
+    "max": 15,
+    "detail": "https://www.mintlify.com/docs/quickstart.md (rel=alternate)"
+   },
+   "llms.txt usable": {
+    "pts": 20,
+    "max": 20,
+    "detail": "https://www.mintlify.com/llms.txt, 41 links, 100% of 8 sampled resolve, 7K chars"
+   },
+   "Page fits one fetch": {
+    "pts": 15,
+    "max": 15,
+    "detail": "8K chars received as Markdown"
+   },
+   "Sections findable": {
+    "pts": 14.6,
+    "max": 15,
+    "detail": "1 H1, 0 level skip(s), 90% of H2/H3 have ids, 0 generic heading(s)"
+   }
+  }
+ },
+ "search": {
+  "total": 100,
+  "checks": {
+   "AI search bots allowed": {
+    "pts": 20,
+    "max": 20,
+    "detail": "all 6 allowed"
+   },
+   "Content without JavaScript": {
+    "pts": 20,
+    "max": 20,
+    "detail": "3323 words in raw HTML"
+   },
+   "Indexable": {
+    "pts": 25,
+    "max": 25,
+    "detail": "indexable, canonical yes, in sitemap: yes (1363 URLs read)"
+   },
+   "Freshness declared": {
+    "pts": 15,
+    "max": 15,
+    "detail": "page date: dateModified; sitemap lastmod: 1363/1363 URLs, 190 distinct dates; this URL has lastmod; age 6 days (info)"
+   },
+   "Answer-ready sections": {
+    "pts": 15,
+    "max": 15,
+    "detail": "1 H1, 0 skip(s), median section 59 words (HTML)"
+   },
+   "JSON-LD": {
+    "pts": 5,
+    "max": 5,
+    "detail": "Organization, WebSite, WebPage, BreadcrumbList, Article/TechArticle, WebSite, dateModified"
+   }
+  }
+ },
+ "notes": [],
+ "netErrors": []
+}

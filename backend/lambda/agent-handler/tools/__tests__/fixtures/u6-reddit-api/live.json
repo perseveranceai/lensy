@@ -1,0 +1,89 @@
+{
+ "url": "https://www.reddit.com/dev/api",
+ "gate": {
+  "honestStatus": 200,
+  "reachable": true,
+  "robotsBlocks": [
+   "OAI-SearchBot",
+   "ChatGPT-User",
+   "PerplexityBot",
+   "Perplexity-User",
+   "Claude-SearchBot",
+   "Claude-User"
+  ],
+  "mismatch": null,
+  "state": "pass"
+ },
+ "coding": {
+  "total": 26,
+  "checks": {
+   "Content without JavaScript": {
+    "pts": 20,
+    "max": 20,
+    "detail": "14964 words in raw HTML"
+   },
+   "Markdown on Accept: text/markdown": {
+    "pts": 0,
+    "max": 15,
+    "detail": "got text/html"
+   },
+   ".md version discoverable": {
+    "pts": 0,
+    "max": 15,
+    "detail": "no .md version"
+   },
+   "llms.txt usable": {
+    "pts": 0,
+    "max": 20,
+    "detail": "not found"
+   },
+   "Page fits one fetch": {
+    "pts": 0,
+    "max": 15,
+    "detail": "105K chars received as HTML text"
+   },
+   "Sections findable": {
+    "pts": 6.4,
+    "max": 15,
+    "detail": "0 H1, 0 level skip(s), 10% of H2/H3 have ids, 1 generic heading(s)"
+   }
+  }
+ },
+ "search": {
+  "total": 48,
+  "checks": {
+   "AI search bots allowed": {
+    "pts": 0,
+    "max": 20,
+    "detail": "blocked: OAI-SearchBot, ChatGPT-User, PerplexityBot, Perplexity-User, Claude-SearchBot, Claude-User"
+   },
+   "Content without JavaScript": {
+    "pts": 20,
+    "max": 20,
+    "detail": "14964 words in raw HTML"
+   },
+   "Indexable": {
+    "pts": 17,
+    "max": 25,
+    "detail": "indexable, canonical yes, no sitemap found"
+   },
+   "Freshness declared": {
+    "pts": 0,
+    "max": 15,
+    "detail": "page date: none; sitemap lastmod: 0/0 URLs, 0 distinct dates; this URL no lastmod"
+   },
+   "Answer-ready sections": {
+    "pts": 11,
+    "max": 15,
+    "detail": "0 H1, 0 skip(s), median section 40 words (HTML)"
+   },
+   "JSON-LD": {
+    "pts": 0,
+    "max": 5,
+    "detail": "none"
+   }
+  }
+ },
+ "notes": [],
+ "netErrors": []
+}

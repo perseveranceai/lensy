@@ -6,11 +6,12 @@ import { ArrowDown, ArrowLeft, ArrowRight, Check, Menu, Send, Monitor, Moon, Sun
 import type { LucideIcon } from "lucide-react";
 import Tooltip from "@mui/material/Tooltip";
 import { trackEvent } from "./analytics";
-import { buildReportModel, TIER_LABELS, EVIDENCE_LABELS, AUDIENCE_LABELS } from "./report/reportModel";
+import { buildReportModel, filterGroups, gateBannerText, previewSummary, readScoringV2, TIER_LABELS, EVIDENCE_LABELS, AUDIENCE_LABELS } from "./report/reportModel";
 import type { ReportSignalStatus, DetectionSignal, DetectionData, EvidenceStatus, Signal, Rec } from "./report/reportModel";
 import { useReportDownload } from "./report/useReportDownload";
 import type { RunCitationsResult } from "./report/useReportDownload";
 import { DownloadReportButton } from "./report/DownloadReportButton";
+import { CITATIONS_ENABLED } from "./report/flags";
 import { CookieBanner } from "./CookieBanner";
 import { openCookieSettings } from "./consent";
 const logo = `${process.env.PUBLIC_URL}/logo.png`;
@@ -375,6 +376,22 @@ export function MobileNav({ remaining }: { remaining: number }) {
   </div>;
 }
 
+// On a report page, feedback carries the scanned URL and its scores (spec §6.2a).
+function currentScanContext(): { auditUrl?: string; scanMetrics?: Record<string, number> } {
+  if (!/^\/(results|scan)\b/.test(window.location.pathname)) return {};
+  try {
+    const report = JSON.parse(window.sessionStorage.getItem("lensy-audit-state") || "null")?.analysisState?.report;
+    if (!report) return {};
+    const v2 = readScoringV2(report);
+    const scanMetrics: Record<string, number> | undefined = v2
+      ? { searchScore: v2.search.score, codingScore: v2.coding.score }
+      : typeof report.overallScore === "number" ? { overallScore: report.overallScore } : undefined;
+    return { auditUrl: report.scope?.url || report.url, scanMetrics };
+  } catch {
+    return {};
+  }
+}
+
 export function FeedbackWidget() {
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -394,7 +411,7 @@ export function FeedbackWidget() {
       const response = await fetch(`${process.env.REACT_APP_API_URL || "https://5gg6ce9y9e.execute-api.us-east-1.amazonaws.com"}/console/feedback`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: message.trim(), email: email.trim() || undefined, pageUrl: window.location.href }),
+        body: JSON.stringify({ message: message.trim(), email: email.trim() || undefined, pageUrl: window.location.href, ...currentScanContext() }),
       });
       if (!response.ok) throw new Error(`Feedback request failed with ${response.status}`);
       console.log("[Feedback] Submission accepted");
@@ -514,7 +531,9 @@ export function ScanReport({
   const navigate = useNavigate();
   const urlParam = params.get("url") || analysisState?.report?.url || url || "";
   const { hostname } = getScanProfile(urlParam);
-  const [view, setView] = useState<"readiness" | "citations-loading" | "citations" | "recommendations">("readiness");
+  // "coding" and "search" are the readiness view filtered to one score's checks.
+  const [view, setView] = useState<"readiness" | "coding" | "search" | "citations-loading" | "citations" | "recommendations">("readiness");
+  const isReadinessView = view === "readiness" || view === "coding" || view === "search";
   const citationRequestStarted = useRef(false);
   useEffect(() => {
     if (citationsLoading) citationRequestStarted.current = true;
@@ -623,7 +642,7 @@ export function ScanReport({
   // Everything the report shows is computed once in buildReportModel (shared
   // with the Markdown and PDF downloads, H-001) so the page and the files agree.
   const {
-    botAccess, botAccessState, botAccessBannerText, signalGroups, groupStatus, resolveImpact, fixForSignal,
+    v2, botAccess, botAccessState, botAccessBannerText, signalGroups, groupStatus, resolveImpact, fixForSignal,
     quickWins, deeperImprovements, thingsToWatch, totalRecCount, recIssue, recFix, impactLabel, effortLabel, actionLink,
     aiDisc, availableCitationEngines, citationResults, citationsByTier, citationsUntiered, testedEngineLabel,
     citedCount, citationsReturned, failingSignalCount, failingGroupCount,
@@ -648,6 +667,12 @@ export function ScanReport({
     if (!citationsLoading) onRunCitations?.("card");
   };
   const backToReadiness = () => setView("readiness");
+  // Clicking a score card shows that score's checks; clicking it again shows all.
+  const toggleScore = (key: "coding" | "search") => {
+    trackEvent("score_card_clicked", { score: key, active: view !== key });
+    setView(view === key ? "readiness" : key);
+  };
+  const shownGroups = v2 && (view === "coding" || view === "search") ? filterGroups(signalGroups, view) : signalGroups;
   const heading = view === "recommendations" ? "All recommendations" : view === "citations" || view === "citations-loading" ? "Where am I invisible?" : "What Lensy found";
 
   // A single scored recommendation card: title, impact/effort/category chips,
@@ -794,34 +819,74 @@ export function ScanReport({
       <div><p className="text-[12px] font-medium tracking-[-.025em] text-[var(--accent)]">Lensy scan / AI readiness report</p><h1 className="mt-3 text-[clamp(2.4rem,5.5vw,5rem)] font-medium leading-[.93] tracking-[-.07em]">{heading}</h1></div>
       <div className="flex flex-col items-start sm:items-end gap-1.5 text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">
         <div><span>Scanned </span><span className="text-[var(--ink)]">{hostname}</span></div>
-        {(view === "readiness" || view === "recommendations") && report?.analysisTime && <div><span>AI readiness Completed in </span><span className="text-[var(--ink)]">{(report.analysisTime / 1000).toFixed(1)}s</span></div>}
+        {(isReadinessView || view === "recommendations") && report?.analysisTime && <div><span>AI readiness Completed in </span><span className="text-[var(--ink)]">{(report.analysisTime / 1000).toFixed(1)}s</span></div>}
         {(view === "citations" || view === "citations-loading") && aiDisc && (aiDisc.analysisTime || aiDisc.processingTime || aiDisc.duration || aiDisc.executionTime || aiDisc.time) && <div><span>AI citations check completed in </span><span className="text-[var(--ink)]">{((aiDisc.analysisTime || aiDisc.processingTime || aiDisc.duration || aiDisc.executionTime || aiDisc.time) / 1000).toFixed(1)}s</span></div>}
       </div>
     </div>
 
-    <div className="mt-8 grid gap-3 sm:grid-cols-2">
-      <button onClick={backToReadiness} className={`rounded-[var(--radius-md)] border p-6 text-left transition-colors sm:p-7 ${view === "readiness" || view === "recommendations" ? "border-[var(--ink)] bg-[var(--panel-bg)] text-[var(--panel-fg)]" : "border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-2)]"}`}>
-        <span className="text-[11px] font-medium tracking-[-.025em] opacity-65">AI readiness</span>
-        <span className="mt-6 block text-[clamp(2.7rem,5vw,4.4rem)] font-medium leading-none tracking-[-.08em]">{realScore ?? "—"}<span className="ml-1 text-[15px] tracking-normal opacity-60">/100</span></span>
-        <span className="mt-3 block text-[13px] leading-relaxed opacity-75">{hasReport ? `${failingSignalCount} signal${failingSignalCount === 1 ? "" : "s"} to improve across ${failingGroupCount} categor${failingGroupCount === 1 ? "y" : "ies"}` : "Waiting for the completed scan report"}</span>
-      </button>
-      <button onClick={startCitationTest} className={`rounded-[var(--radius-md)] border p-6 text-left transition-colors sm:p-7 ${view === "citations" || view === "citations-loading" ? "border-[var(--ink)] bg-[var(--panel-bg)] text-[var(--panel-fg)]" : "border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-2)]"}`}>
-        {citationResults.length ? (<>
-          <span className="text-[11px] font-medium tracking-[-.025em] opacity-65">AI citations</span>
-          <span className="mt-6 block text-[clamp(2.7rem,5vw,4.4rem)] font-medium leading-none tracking-[-.08em]">{citedCount}/{citationResults.length}</span>
-          <span className="mt-3 block text-[13px] leading-relaxed opacity-75">Cited in {citedCount} of {citationResults.length} tested queries</span>
-        </>) : (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, width: '100%', minHeight: 80 }}>
-            {citationsLoading ? <span style={{ display: 'inline-block', width: 28, height: 28, borderRadius: '50%', borderWidth: 3, borderStyle: 'solid', borderColor: 'var(--accent, #697075)', borderTopColor: 'transparent', animation: 'citationspin .8s linear infinite', flexShrink: 0 }} /> : <svg width="32" height="36" viewBox="0 0 24 24" style={{ flexShrink: 0, opacity: 0.5 }}><path d="M8 5.14v14l11-7-11-7z" fill="currentColor" /></svg>}
-            <div>
-              <span style={{ display: 'block', fontSize: 17, fontWeight: 500, letterSpacing: '-0.025em' }}>AI Citations</span>
-              <span style={{ display: 'block', marginTop: 4, fontSize: 13, opacity: 0.65 }}>{citationsLoading ? "Testing citations with AI search" : "Run citation check"}</span>
-            </div>
-          </div>
+    {v2 ? (
+      <div data-testid="score-cards" className={`mt-8 grid gap-3 ${CITATIONS_ENABLED ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+        {([
+          ["search", "AI search", v2.search, "Can AI search (ChatGPT, Perplexity, Claude) find and quote this page?"],
+          ["coding", "Coding agents", v2.coding, "Can Claude Code, Cursor and other coding agents fetch and use this page?"],
+        ] as const).map(([key, title, score, about]) => <button key={key} data-testid={`score-card-${key}`} aria-pressed={view === key} onClick={() => toggleScore(key)} className={`rounded-[var(--radius-md)] border p-6 text-left transition-colors sm:p-7 ${view === key ? "border-[var(--ink)] bg-[var(--panel-bg)] text-[var(--panel-fg)]" : "border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-2)]"}`}>
+          <span className="text-[11px] font-medium tracking-[-.025em] opacity-65">{title}</span>
+          <span className="mt-6 block text-[clamp(2.7rem,5vw,4.4rem)] font-medium leading-none tracking-[-.08em]">{score.score}<span className="ml-1 text-[15px] tracking-normal opacity-60">/100</span></span>
+          <span className="mt-3 block text-[13px] leading-relaxed opacity-75">{about}</span>
+          <span className="mt-2 block text-[12px] leading-relaxed opacity-65">{score.toImprove ? `${score.toImprove} check${score.toImprove === 1 ? "" : "s"} to improve` : "Every check passes"}{view === key ? " · showing these checks" : ""}</span>
+        </button>)}
+        {CITATIONS_ENABLED && (
+          <button onClick={startCitationTest} className={`rounded-[var(--radius-md)] border p-6 text-left transition-colors sm:p-7 ${view === "citations" || view === "citations-loading" ? "border-[var(--ink)] bg-[var(--panel-bg)] text-[var(--panel-fg)]" : "border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-2)]"}`}>
+            {citationResults.length ? (<>
+              <span className="text-[11px] font-medium tracking-[-.025em] opacity-65">AI citations</span>
+              <span className="mt-6 block text-[clamp(2.7rem,5vw,4.4rem)] font-medium leading-none tracking-[-.08em]">{citedCount}/{citationResults.length}</span>
+              <span className="mt-3 block text-[13px] leading-relaxed opacity-75">Cited in {citedCount} of {citationResults.length} tested queries</span>
+            </>) : (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, width: '100%', minHeight: 80 }}>
+                {citationsLoading ? <span style={{ display: 'inline-block', width: 28, height: 28, borderRadius: '50%', borderWidth: 3, borderStyle: 'solid', borderColor: 'var(--accent, #697075)', borderTopColor: 'transparent', animation: 'citationspin .8s linear infinite', flexShrink: 0 }} /> : <svg width="32" height="36" viewBox="0 0 24 24" style={{ flexShrink: 0, opacity: 0.5 }}><path d="M8 5.14v14l11-7-11-7z" fill="currentColor" /></svg>}
+                <div>
+                  <span style={{ display: 'block', fontSize: 17, fontWeight: 500, letterSpacing: '-0.025em' }}>AI Citations</span>
+                  <span style={{ display: 'block', marginTop: 4, fontSize: 13, opacity: 0.65 }}>{citationsLoading ? "Testing citations with AI search" : "Run citation check"}</span>
+                </div>
+              </div>
+            )}
+            <style>{`@keyframes citationspin{to{transform:rotate(360deg)}}`}</style>
+          </button>
         )}
-        <style>{`@keyframes citationspin{to{transform:rotate(360deg)}}`}</style>
-      </button>
-    </div>
+      </div>
+    ) : (
+      <>
+        {hasReport && <div data-testid="legacy-report-note" className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[12px] font-medium tracking-[-.02em] text-[var(--ink-soft)]">
+          <span>This report was scored before Lensy split readiness into two scores, AI search and Coding agents. Re-scan to see the new scores.</span>
+          {onScan && urlParam && <button onClick={() => { trackEvent("legacy_rescan_clicked", { url: urlParam }); onScan(urlParam); }} className="btn-ink shrink-0 bg-[var(--ink)] px-3 py-1.5 text-[12px] font-medium tracking-[-.025em] text-[var(--bg)]">Re-scan</button>}
+        </div>}
+        <div className={`${hasReport ? "mt-3" : "mt-8"} grid gap-3 ${CITATIONS_ENABLED ? "sm:grid-cols-2" : ""}`}>
+          <button onClick={backToReadiness} className={`rounded-[var(--radius-md)] border p-6 text-left transition-colors sm:p-7 ${view === "readiness" || view === "recommendations" ? "border-[var(--ink)] bg-[var(--panel-bg)] text-[var(--panel-fg)]" : "border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-2)]"}`}>
+            <span className="text-[11px] font-medium tracking-[-.025em] opacity-65">AI readiness</span>
+            <span className="mt-6 block text-[clamp(2.7rem,5vw,4.4rem)] font-medium leading-none tracking-[-.08em]">{realScore ?? "—"}<span className="ml-1 text-[15px] tracking-normal opacity-60">/100</span></span>
+            <span className="mt-3 block text-[13px] leading-relaxed opacity-75">{hasReport ? `${failingSignalCount} signal${failingSignalCount === 1 ? "" : "s"} to improve across ${failingGroupCount} categor${failingGroupCount === 1 ? "y" : "ies"}` : "Waiting for the completed scan report"}</span>
+          </button>
+          {CITATIONS_ENABLED && (
+            <button onClick={startCitationTest} className={`rounded-[var(--radius-md)] border p-6 text-left transition-colors sm:p-7 ${view === "citations" || view === "citations-loading" ? "border-[var(--ink)] bg-[var(--panel-bg)] text-[var(--panel-fg)]" : "border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-2)]"}`}>
+              {citationResults.length ? (<>
+                <span className="text-[11px] font-medium tracking-[-.025em] opacity-65">AI citations</span>
+                <span className="mt-6 block text-[clamp(2.7rem,5vw,4.4rem)] font-medium leading-none tracking-[-.08em]">{citedCount}/{citationResults.length}</span>
+                <span className="mt-3 block text-[13px] leading-relaxed opacity-75">Cited in {citedCount} of {citationResults.length} tested queries</span>
+              </>) : (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, width: '100%', minHeight: 80 }}>
+                  {citationsLoading ? <span style={{ display: 'inline-block', width: 28, height: 28, borderRadius: '50%', borderWidth: 3, borderStyle: 'solid', borderColor: 'var(--accent, #697075)', borderTopColor: 'transparent', animation: 'citationspin .8s linear infinite', flexShrink: 0 }} /> : <svg width="32" height="36" viewBox="0 0 24 24" style={{ flexShrink: 0, opacity: 0.5 }}><path d="M8 5.14v14l11-7-11-7z" fill="currentColor" /></svg>}
+                  <div>
+                    <span style={{ display: 'block', fontSize: 17, fontWeight: 500, letterSpacing: '-0.025em' }}>AI Citations</span>
+                    <span style={{ display: 'block', marginTop: 4, fontSize: 13, opacity: 0.65 }}>{citationsLoading ? "Testing citations with AI search" : "Run citation check"}</span>
+                  </div>
+                </div>
+              )}
+              <style>{`@keyframes citationspin{to{transform:rotate(360deg)}}`}</style>
+            </button>
+          )}
+        </div>
+      </>
+    )}
 
     <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3 border-b border-[var(--line)] pb-5 text-[12px] font-medium tracking-[-.025em]">
       {(overallScoreData?.docConfidence || report?.docConfidence) ? (
@@ -886,7 +951,7 @@ export function ScanReport({
         </span>
       )}
 
-      {(view === "readiness" || view === "citations" || view === "citations-loading") && totalRecCount > 0 && (
+      {(isReadinessView || view === "citations" || view === "citations-loading") && totalRecCount > 0 && (
         <button onClick={() => { trackEvent("recommendations_viewed"); setView("recommendations"); }} className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--bg)] px-3 py-1.5 text-[var(--ink)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]">
           View all {totalRecCount} recommendations <ArrowRight className="size-3" strokeWidth={1.8} aria-hidden="true" />
         </button>
@@ -910,11 +975,19 @@ export function ScanReport({
       )}
     </div>
 
-    {view === "readiness" && <><div className="mt-6 flex flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] px-4 py-3"><div className="flex flex-wrap items-center gap-x-3 gap-y-1"><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink)]">{botAccessState === 'js_blocked' ? "! AI bot access is blocked by JavaScript" : botAccessBannerText()}</span>{botAccess?.robotsTxtFound ? <a href={robotsUrl} target="_blank" rel="noopener noreferrer" className="ml-auto text-[11px] font-medium tracking-[-.025em] text-[var(--ink)] transition-colors" style={{ textDecoration: "underline", textUnderlineOffset: "4px" }}>robots.txt</a> : <span className="ml-auto text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">No robots.txt found</span>}</div>{(botAccessState === 'js_blocked' || !botAccess?.bots?.length) && <span className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">{botAccessState === 'js_blocked' ? "This page is a JavaScript-rendered SPA. Most AI bots do not execute JavaScript, making your content invisible to them regardless of your robots.txt configuration. Lensy rendered this page for content analysis; most AI bots cannot." : hasReport ? "No checked crawler names were returned." : "No bot access data returned."}</span>}{botAccess?.bots?.length > 0 && <div className="mt-1 flex flex-wrap gap-1.5">{botAccess.bots.map((bot: any, i: number) => { const blocked = botAccessState === 'js_blocked' || !(bot.status === 'allowed' || bot.status === 'not-mentioned'); /* T-07: the icon alone carried the allowed/blocked state and was aria-hidden, so screen readers only heard the bot name. */ return <span key={i} aria-label={`${bot.name}: ${blocked ? "blocked" : "allowed"}`} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--line-soft)] bg-[var(--surface-2)] px-2.5 py-1 text-[10px] font-medium leading-none tracking-[-.02em] text-[var(--ink-soft)]">{blocked ? <XCircle className="size-3 shrink-0" style={{ color: "var(--ink-soft)" }} strokeWidth={2} aria-hidden="true" /> : <CheckCircle2 className="size-3 shrink-0" style={{ color: "var(--accent)" }} strokeWidth={2} aria-hidden="true" />}<span aria-hidden="true">{bot.name}</span></span>; })}</div>}</div><div className="mt-5 grid items-start gap-3 lg:grid-cols-3">{signalGroups.map((group) => <section key={group.title} className="rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] p-6"><div className="flex items-center justify-between border-b border-[var(--line)] pb-4"><h2 className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)]">{group.title}</h2><SignalStatusIcon status={groupStatus(group)} className="size-4 shrink-0" /></div>{group.sections.map((section: any) => <div key={section.title || group.title} className="mt-5 first:mt-5"><p className={`text-[11px] font-medium uppercase tracking-[.08em] text-[var(--muted)] ${section.title ? "mb-4" : "sr-only"}`}>{section.title || "Signals"}</p><ul className="space-y-5">{section.signals.map((sig: Signal) => <li key={sig.label} className="flex gap-2.5"><SignalStatusIcon status={sig.status} className="mt-0.5 size-4 shrink-0" /><div className="min-w-0"><div className="flex flex-wrap items-center gap-x-3 gap-y-2"><p className="text-[14px] tracking-[-.025em]">{sig.label}</p><EvidenceBadge signal={sig.signal} /><AudienceBadge audience={sig.signal?.audience || sig.audience} />{sig.status !== "pass" && <ImpactBadge impact={resolveImpact(sig.label)} />}<InfoHint text={sig.info} /></div><p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-soft)]">{sig.detail}</p>{sig.status !== "pass" && (() => { const fix = fixForSignal(sig.label); return fix ? <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--ink)]"><span className="font-medium">Fix: </span>{fix}</p> : null; })()}{sig.signal?.note && <p className="mt-1 text-[11px] italic leading-relaxed" style={{ color: "var(--ink-soft)" }}>{sig.signal.note}</p>}{sig.waitlist && <a href={`/contact?ref=${sig.waitlist}`} target="_blank" rel="noopener noreferrer" onClick={() => trackEvent("generate_markdown_link_clicked", { ref: sig.waitlist })} className="group mt-1.5 inline-flex items-center gap-1 text-[12px] font-medium tracking-[-.02em] text-[var(--ink)]"><span style={{ textDecoration: "underline", textUnderlineOffset: "3px" }}>{sig.waitlist === "llmstxt" ? "We can help you generate one" : "We can help you generate markdown"}</span><ArrowRight className="arrow-nudge size-3" strokeWidth={1.8} aria-hidden="true" /></a>}</div></li>)}</ul></div>)}</section>)}</div></>}
+    {isReadinessView && <>{v2 ? <div data-testid="reachability-banner" className="mt-6 flex flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink)]">{v2 && gateBannerText(v2, botAccessState === "js_blocked")}</span>
+        <a href={robotsUrl} target="_blank" rel="noopener noreferrer" className="ml-auto text-[11px] font-medium tracking-[-.025em] text-[var(--ink)] transition-colors" style={{ textDecoration: "underline", textUnderlineOffset: "4px" }}>robots.txt</a>
+      </div>
+      {v2?.gate.mismatch && <span className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink)]">Your robots.txt allows AI bots, but the server refused an agent that named itself. Check your bot protection (for example Cloudflare) and allow verified AI agents.</span>}
+      {botAccessState === "js_blocked" && <span className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">This page is a JavaScript-rendered SPA. Most AI bots do not execute JavaScript, making your content invisible to them regardless of your robots.txt configuration. Lensy rendered this page for content analysis; most AI bots cannot.</span>}
+      <div className="mt-1 flex flex-wrap gap-1.5">{v2?.bots.map((bot) => <span key={bot.name} aria-label={`${bot.name}: ${bot.allowed ? "allowed" : "blocked"} by robots.txt`} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--line-soft)] bg-[var(--surface-2)] px-2.5 py-1 text-[10px] font-medium leading-none tracking-[-.02em] text-[var(--ink-soft)]">{bot.allowed ? <CheckCircle2 className="size-3 shrink-0" style={{ color: "var(--accent)" }} strokeWidth={2} aria-hidden="true" /> : <XCircle className="size-3 shrink-0" style={{ color: "var(--ink-soft)" }} strokeWidth={2} aria-hidden="true" />}<span aria-hidden="true">{bot.name}</span></span>)}</div>
+    </div> : <div className="mt-6 flex flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] px-4 py-3"><div className="flex flex-wrap items-center gap-x-3 gap-y-1"><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink)]">{botAccessState === 'js_blocked' ? "! AI bot access is blocked by JavaScript" : botAccessBannerText()}</span>{botAccess?.robotsTxtFound ? <a href={robotsUrl} target="_blank" rel="noopener noreferrer" className="ml-auto text-[11px] font-medium tracking-[-.025em] text-[var(--ink)] transition-colors" style={{ textDecoration: "underline", textUnderlineOffset: "4px" }}>robots.txt</a> : <span className="ml-auto text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">No robots.txt found</span>}</div>{(botAccessState === 'js_blocked' || !botAccess?.bots?.length) && <span className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">{botAccessState === 'js_blocked' ? "This page is a JavaScript-rendered SPA. Most AI bots do not execute JavaScript, making your content invisible to them regardless of your robots.txt configuration. Lensy rendered this page for content analysis; most AI bots cannot." : hasReport ? "No checked crawler names were returned." : "No bot access data returned."}</span>}{botAccess?.bots?.length > 0 && <div className="mt-1 flex flex-wrap gap-1.5">{botAccess.bots.map((bot: any, i: number) => { const blocked = botAccessState === 'js_blocked' || !(bot.status === 'allowed' || bot.status === 'not-mentioned'); /* T-07: the icon alone carried the allowed/blocked state and was aria-hidden, so screen readers only heard the bot name. */ return <span key={i} aria-label={`${bot.name}: ${blocked ? "blocked" : "allowed"}`} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--line-soft)] bg-[var(--surface-2)] px-2.5 py-1 text-[10px] font-medium leading-none tracking-[-.02em] text-[var(--ink-soft)]">{blocked ? <XCircle className="size-3 shrink-0" style={{ color: "var(--ink-soft)" }} strokeWidth={2} aria-hidden="true" /> : <CheckCircle2 className="size-3 shrink-0" style={{ color: "var(--accent)" }} strokeWidth={2} aria-hidden="true" />}<span aria-hidden="true">{bot.name}</span></span>; })}</div>}</div>}<div data-testid="signal-groups" className={`mt-5 grid items-start gap-3 ${shownGroups.length === 2 ? "lg:grid-cols-2" : "lg:grid-cols-3"}`}>{shownGroups.map((group) => <section key={group.title} className="rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] p-6"><div className="flex items-center justify-between border-b border-[var(--line)] pb-4"><h2 className="text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)]">{group.title}</h2><SignalStatusIcon status={groupStatus(group)} className="size-4 shrink-0" /></div>{group.sections.map((section: any) => <div key={section.title || group.title} className="mt-5 first:mt-5"><p className={`text-[11px] font-medium uppercase tracking-[.08em] text-[var(--muted)] ${section.title ? "mb-4" : "sr-only"}`}>{section.title || "Signals"}</p><ul className="space-y-5">{section.signals.map((sig: Signal) => <li key={sig.label} className="flex gap-2.5"><SignalStatusIcon status={sig.status} className="mt-0.5 size-4 shrink-0" /><div className="min-w-0"><div className="flex flex-wrap items-center gap-x-3 gap-y-2"><p className="text-[14px] tracking-[-.025em]">{sig.label}</p><EvidenceBadge signal={sig.signal} /><AudienceBadge audience={sig.signal?.audience || sig.audience} />{sig.points ? <span data-testid="signal-points" className="inline-flex items-center rounded-full border border-[var(--line-soft)] bg-[var(--surface-2)] px-2 py-0.5 text-[10px] font-medium tabular-nums leading-none tracking-[-.02em] text-[var(--ink-soft)]">{sig.points}</span> : sig.status !== "pass" && <ImpactBadge impact={resolveImpact(sig.label)} />}<InfoHint text={sig.info} /></div><p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-soft)]">{sig.detail}</p>{sig.status !== "pass" && (() => { const fix = sig.fix ?? fixForSignal(sig.label); return fix ? <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--ink)]"><span className="font-medium">Fix: </span>{fix}</p> : null; })()}{sig.signal?.note && <p className="mt-1 text-[11px] italic leading-relaxed" style={{ color: "var(--ink-soft)" }}>{sig.signal.note}</p>}{sig.waitlist && <a href={`/contact?ref=${sig.waitlist}`} target="_blank" rel="noopener noreferrer" onClick={() => trackEvent("generate_markdown_link_clicked", { ref: sig.waitlist })} className="group mt-1.5 inline-flex items-center gap-1 text-[12px] font-medium tracking-[-.02em] text-[var(--ink)]"><span style={{ textDecoration: "underline", textUnderlineOffset: "3px" }}>{sig.waitlist === "llmstxt" ? "We can help you generate one" : "We can help you generate markdown"}</span><ArrowRight className="arrow-nudge size-3" strokeWidth={1.8} aria-hidden="true" /></a>}</div></li>)}</ul></div>)}{group.key === "coding" && v2?.preview && (() => { const pv = v2.preview; const share = Math.min(1, pv.windowShare); return <div data-testid="agent-preview" className="mt-6 border-t border-[var(--line)] pt-5"><p className="text-[11px] font-medium uppercase tracking-[.08em] text-[var(--muted)]">What an agent receives</p><p className="mt-3 text-[13px] leading-relaxed text-[var(--ink)]">{previewSummary(pv)}.</p><div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[var(--surface-2)]" role="img" aria-label={`${Math.round(share * 100)}% of the page fits in one 100,000-character fetch`}><div className="h-full rounded-full bg-[var(--ink)]" style={{ width: `${Math.max(2, Math.round(share * 100))}%` }} /></div><p className="mt-2 text-[11px] leading-relaxed text-[var(--ink-soft)]">Agents read about 100,000 characters per fetch.{pv.url ? <> Fetched from <span className="break-all">{pv.url}</span>{pv.format === "markdown" ? " as Markdown." : "."}</> : null}</p></div>; })()}</section>)}</div>{v2 && v2.tips.length > 0 && <div data-testid="report-tips" className="mt-5 rounded-[var(--radius-md)] border border-dashed border-[var(--line)] bg-[var(--surface)] px-5 py-4"><p className="text-[11px] font-medium uppercase tracking-[.08em] text-[var(--muted)]">Also worth knowing (not scored)</p><ul className="mt-3 space-y-2">{v2.tips.map((tip) => <li key={tip} className="text-[12px] leading-relaxed text-[var(--ink-soft)]">{tip}</li>)}</ul></div>}</>}
 
-    {view === "citations-loading" && <div className="mt-10"><p className="text-[15px] leading-relaxed text-[var(--ink-soft)]">AI-generated queries are being tested against configured AI search engines.</p><p className="mt-10 text-center text-[12px] font-medium tracking-[-.025em] text-[var(--accent)]">Testing citation queries…</p><div className="mt-6 grid gap-3">{Array.from({ length: 4 }).map((_, index) => <div key={index} className="grid grid-cols-[1.5fr_.65fr] gap-5 border-t border-[var(--line)] py-4"><span className="h-3 animate-pulse bg-[var(--surface-2)]" /><span className="h-3 animate-pulse bg-[var(--surface-2)]" /></div>)}</div></div>}
+    {CITATIONS_ENABLED && view === "citations-loading" && <div className="mt-10"><p className="text-[15px] leading-relaxed text-[var(--ink-soft)]">AI-generated queries are being tested against configured AI search engines.</p><p className="mt-10 text-center text-[12px] font-medium tracking-[-.025em] text-[var(--accent)]">Testing citation queries…</p><div className="mt-6 grid gap-3">{Array.from({ length: 4 }).map((_, index) => <div key={index} className="grid grid-cols-[1.5fr_.65fr] gap-5 border-t border-[var(--line)] py-4"><span className="h-3 animate-pulse bg-[var(--surface-2)]" /><span className="h-3 animate-pulse bg-[var(--surface-2)]" /></div>)}</div></div>}
 
-    {view === "citations" && <div className="mt-10"><p className="text-[15px] leading-relaxed text-[var(--ink-soft)]">{citationsLoading ? "AI search is checking the generated queries. Results will appear here when the scan controller receives them." : aiDisc?.status === "error" ? "The AI citation check could not run this time. Click the AI citations card to try again." : citationResults.length ? "Citation results returned by the completed AI search check." : citationsReturned && availableCitationEngines.length === 0 ? "The citation check completed, but no configured AI search engine was available to test this documentation." : citationsReturned ? "The citation check completed but did not return query-level results." : "Start the citation check to test whether AI search can find and cite your documentation."}</p>{citationResults.length > 0 && <><div className="mt-6 inline-flex rounded-full bg-[var(--surface-2)] px-3 py-1 text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)]">Cited: {citedCount} / {citationResults.length} tested queries</div>{renderCitationTable()}</>}{citationsReturned && citationResults.length === 0 && aiDisc?.recommendations?.length > 0 && <div className="mt-6 divide-y divide-[var(--line)] border-y border-[var(--line)]">{aiDisc.recommendations.map((recommendation: any) => <div key={recommendation.issue} className="py-4"><p className="text-[14px] tracking-[-.025em]">{recommendation.issue}</p><p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-soft)]">{recommendation.fix}</p></div>)}</div>}</div>}
+    {CITATIONS_ENABLED && view === "citations" && <div className="mt-10"><p className="text-[15px] leading-relaxed text-[var(--ink-soft)]">{citationsLoading ? "AI search is checking the generated queries. Results will appear here when the scan controller receives them." : aiDisc?.status === "error" ? "The AI citation check could not run this time. Click the AI citations card to try again." : citationResults.length ? "Citation results returned by the completed AI search check." : citationsReturned && availableCitationEngines.length === 0 ? "The citation check completed, but no configured AI search engine was available to test this documentation." : citationsReturned ? "The citation check completed but did not return query-level results." : "Start the citation check to test whether AI search can find and cite your documentation."}</p>{citationResults.length > 0 && <><div className="mt-6 inline-flex rounded-full bg-[var(--surface-2)] px-3 py-1 text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)]">Cited: {citedCount} / {citationResults.length} tested queries</div>{renderCitationTable()}</>}{citationsReturned && citationResults.length === 0 && aiDisc?.recommendations?.length > 0 && <div className="mt-6 divide-y divide-[var(--line)] border-y border-[var(--line)]">{aiDisc.recommendations.map((recommendation: any) => <div key={recommendation.issue} className="py-4"><p className="text-[14px] tracking-[-.025em]">{recommendation.issue}</p><p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-soft)]">{recommendation.fix}</p></div>)}</div>}</div>}
 
     {view === "recommendations" && <div className="mt-10">
       <h2 className="text-[19px] font-medium tracking-[-.04em]">All recommendations <span className="text-[var(--muted)]">({totalRecCount})</span></h2>
@@ -950,9 +1023,9 @@ export function ScanReport({
 
     {/* Shared footer note — shown on all three views (readiness, recommendations, citations),
         carrying the standing scan note and a Share feedback link. */}
-    {(view === "readiness" || view === "recommendations" || view === "citations" || view === "citations-loading") && (
+    {(isReadinessView || view === "recommendations" || view === "citations" || view === "citations-loading") && (
       <div className="mt-12 border-l-2 border-[var(--accent)] bg-[var(--surface)] px-5 py-4 text-[12px] leading-relaxed text-[var(--ink-soft)]">
-        Results above are generated from the completed Lensy scan. Citation results appear only after the citation check returns data. <a href="/contact?ref=feedback" target="_blank" rel="noopener noreferrer" onClick={() => trackEvent("contact_link_clicked", { source: "results-share-feedback" })} className="font-medium text-[var(--ink)]" style={{ textDecoration: "underline", textUnderlineOffset: "3px" }}>Share feedback</a>
+        Results above are generated from the completed Lensy scan.{CITATIONS_ENABLED ? " Citation results appear only after the citation check returns data." : ""} <a href="/contact?ref=feedback" target="_blank" rel="noopener noreferrer" onClick={() => trackEvent("contact_link_clicked", { source: "results-share-feedback" })} className="font-medium text-[var(--ink)]" style={{ textDecoration: "underline", textUnderlineOffset: "3px" }}>Share feedback</a>
       </div>
     )}
   </section>;
@@ -961,28 +1034,27 @@ export function ScanReport({
 export function HowItWorks() {
   const steps = [
     ["Paste a URL", "Enter any docs page. API references, guides, or tutorials."],
-    ["Lensy scans the page", "We check bot access, content structure, structured data, and discoverability in real time."],
-    ["Get your score", "See how you score out of 100, with exact steps to fix any issues."],
-    ["Check citations", "Find out if AI search engines like Perplexity actually cite your page right now."],
+    ["Lensy scans the page", "We check what AI search and coding agents can reach and read: bot access, Markdown, llms.txt, headings and freshness, in real time."],
+    ["Get your scores", "See two scores out of 100, one for AI search and one for coding agents, with exact steps to fix any issues."],
+    ...(CITATIONS_ENABLED ? [["Check citations", "Find out if AI search engines like Perplexity actually cite your page right now."]] : []),
   ];
   const flow = [
     ["01", "Paste Documentation URL", "docs.example.com/api"],
     ["02", "Content Validation", "Is this technical documentation?"],
-    ["04", "AI Citation Check", "Perplexity AI Search"],
-    ["05", "Score + Recommendations", ""],
+    ...(CITATIONS_ENABLED ? [["04", "AI Citation Check", "Perplexity AI Search"], ["05", "Scores + Recommendations", ""]] : [["04", "Scores + Recommendations", ""]]),
   ];
 
   return <>
     <header className="mx-auto grid max-w-[1240px] gap-8 border-b border-[var(--line)] px-5 pb-14 pt-16 sm:px-8 sm:pb-20 sm:pt-24 lg:grid-cols-12">
       <h1 style={{ fontSize: "clamp(2rem, 4vw, 3.5rem)" }} className="hero-intro max-w-3xl font-medium leading-[.88] tracking-[-.075em] lg:col-span-8">See exactly how bots <span className="text-[var(--accent)]">read your docs.</span></h1>
-      <p className="self-end text-[15px] leading-relaxed text-[var(--ink-soft)] lg:col-span-4">Give Lensy a URL, and it shows you exactly how AI search engines read and cite your page.</p>
+      <p className="self-end text-[15px] leading-relaxed text-[var(--ink-soft)] lg:col-span-4">{CITATIONS_ENABLED ? "Give Lensy a URL, and it shows you exactly how AI search engines read and cite your page." : "Give Lensy a URL, and it shows you exactly how AI search engines and coding agents read your page."}</p>
     </header>
     <section data-reveal className="mx-auto grid max-w-[1240px] gap-12 px-5 py-16 sm:px-8 sm:py-24 lg:grid-cols-12 lg:gap-16">
       <div className="lg:col-span-5"><p className="text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">The process</p><ol className="mt-7 border-t border-[var(--line)]">{steps.map(([title, description], index) => <li key={title} className="grid grid-cols-[32px_minmax(0,1fr)] gap-4 border-b border-[var(--line)] py-6"><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--accent)]">0{index + 1}</span><div><h2 className="text-[19px] font-light tracking-[-.04em]">{title}</h2><p className="mt-2 max-w-md text-[13px] leading-relaxed text-[var(--ink-soft)]">{description}</p></div></li>)}</ol><Link to="/#scan" className="btn-ink group mt-8 inline-flex items-center gap-2 bg-[var(--panel-bg)] px-4 py-3 text-[12px] font-medium tracking-[-.025em] text-[var(--panel-fg)]">Run a free scan <ArrowRight className="arrow-nudge size-3" strokeWidth={1.8} aria-hidden="true" /></Link></div>
       <div className="lg:col-span-6 lg:col-start-7">
         <div className="flex items-baseline justify-between border-b border-[var(--line)] pb-4">
           <p className="text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">From page to report</p>
-          <p className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">5 stages</p>
+          <p className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">{flow.length + 1} stages</p>
         </div>
         <div className="mt-7 rounded-[var(--radius-lg)] border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-8">
           <div className="mx-auto max-w-[420px]">
@@ -993,14 +1065,14 @@ export function HowItWorks() {
             <div className="rounded-[var(--radius-md)] border border-[var(--ink)] bg-[var(--bg)] p-5">
               <div className="flex items-start justify-between gap-6"><div><p className="text-[11px] font-medium tracking-[-.025em] text-[var(--accent)]">03</p><h2 className="mt-3 text-[19px] font-light tracking-[-.045em]">AI Readiness Analysis</h2></div><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">parallel analysis</span></div>
               <div className="mt-5 grid grid-cols-3 border-y border-[var(--line)]">
-                {["Discoverability", "Content quality", "Structured data"].map((signal, index) => <div key={signal} className={`py-3 text-center text-[10px] font-medium leading-snug tracking-[-.02em] text-[var(--ink-soft)] ${index ? "border-l border-[var(--line)]" : ""}`}>{signal}</div>)}
+                {["AI search", "Coding agents", "Reachability"].map((signal, index) => <div key={signal} className={`py-3 text-center text-[10px] font-medium leading-snug tracking-[-.02em] text-[var(--ink-soft)] ${index ? "border-l border-[var(--line)]" : ""}`}>{signal}</div>)}
               </div>
-              <p className="mt-4 text-center text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">+ bot access prerequisite check</p>
+              <p className="mt-4 text-center text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">+ checks both audiences need, such as content without JavaScript</p>
             </div>
             <FlowConnector />
             {flow.slice(2).map(([number, title, detail], index) => <div key={title}>
-              <FlowNode number={number} title={title} detail={detail} final={index === 1} />
-              {index === 0 && <FlowConnector />}
+              <FlowNode number={number} title={title} detail={detail} final={index === flow.length - 3} />
+              {index < flow.length - 3 && <FlowConnector />}
             </div>)}
           </div>
         </div>
@@ -1091,7 +1163,7 @@ const ARTICLES: ArticleData[] = [
         <TlDr items={[
           "Document structure directly affects AI retrieval quality. DeepRead showed 10.3% improvement and RAPTOR showed 20% improvement with structure-aware processing.",
           "ClaudeBot is blocked by 69% of websites and GPTBot by 62%. 71% of sites that block training bots also block search crawlers, removing themselves from AI results entirely.",
-          "JSON-LD markup increases rich snippet visibility by 20–30%. Structured data, heading hierarchies, and proper canonicalisation all contribute to higher citation rates.",
+          "Structured data helps search engines understand a page, but controlled studies find JSON-LD barely changes AI citations. Heading hierarchies and canonical URLs matter more.",
         ]} />
 
         <h2>Why Document Structure Matters</h2>
@@ -1104,7 +1176,7 @@ const ARTICLES: ArticleData[] = [
         <p>Industry analysis shows ClaudeBot is blocked by approximately 69% of websites and GPTBot by 62% [5]. More critically, 71% of sites that block training bots also inadvertently block search and retrieval bots [6], effectively removing themselves from AI-powered search results. OpenAI has stated that sites blocking OAI-SearchBot will not appear in ChatGPT search answers.</p>
 
         <h2>Structured Data</h2>
-        <p>JSON-LD uses the Schema.org vocabulary to declare page types (<code>TechArticle</code>, <code>APIReference</code>), authors, publication dates, and topic relationships. BrightEdge research [8] shows pages with proper Schema.org markup see a 20–30% increase in rich snippet visibility. Google's Search Central documentation [9] confirms that structured data directly affects how content appears in search results and AI overviews.</p>
+        <p>JSON-LD uses the Schema.org vocabulary to declare page types (<code>TechArticle</code>, <code>APIReference</code>), authors, publication dates, and topic relationships. Controlled data does not show it raising AI citations: Ahrefs [8] tracked 1,885 pages that added schema against 4,000 controls (May 2026), and their AI citations barely moved. That is why Lensy gives JSON-LD only 5 of the 100 AI search points. Google's Search Central documentation [9] confirms that structured data directly affects how content appears in search results and AI overviews.</p>
         <p>OpenGraph meta tags influence how AI-powered preview systems and content aggregation tools summarise your content. Canonical URLs consolidate link equity and prevent AI engines from indexing duplicate versions [10], which is especially important for documentation sites serving versioned or localised content.</p>
 
         <h2>What This Means</h2>
@@ -1118,7 +1190,7 @@ const ARTICLES: ArticleData[] = [
           { n: 5, text: 'ALM Corp. "ClaudeBot, Claude-User & Claude-SearchBot: Anthropic\'s Three-Bot Framework." 2025.', href: "https://almcorp.com/blog/anthropic-claude-bots-robots-txt-strategy/" },
           { n: 6, text: 'Search Engine Journal. "Anthropic\'s Claude Bots Make Robots.txt Decisions More Granular." 2025.', href: "https://www.searchenginejournal.com/anthropics-claude-bots-make-robots-txt-decisions-more-granular/568253/" },
           { n: 7, text: "Google. \"Google's Common Crawlers.\" Google for Developers, 2025.", href: "https://developers.google.com/crawling/docs/crawlers-fetchers/google-common-crawlers" },
-          { n: 8, text: 'BrightEdge. "Structured Data in the AI Search Era." 2025.', href: "https://www.brightedge.com/blog/structured-data-ai-search-era" },
+          { n: 8, text: 'Ahrefs. "We Tracked 1,885 Pages Adding Schema." 2026.', href: "https://ahrefs.com/blog/schema-ai-citations/" },
           { n: 9, text: 'Google. "Introduction to Structured Data." Search Central.', href: "https://developers.google.com/search/docs/appearance/structured-data/intro-structured-data" },
           { n: 10, text: 'Google. "Canonicalisation." Search Central.', href: "https://developers.google.com/search/docs/crawling-indexing/canonicalization" },
           { n: 11, text: 'Stack Overflow. "2025 Developer Survey Results." 2025.', href: "https://survey.stackoverflow.co/2025/" },

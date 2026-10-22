@@ -195,14 +195,20 @@ export async function renderPdf(data: ExportReport, options: PdfOptions = {}): P
     const lines = wrap(small, boxW - 12).slice(0, 2);
     lines.forEach((line, i) => doc.text(line, x + 6, y + 27 + i * lineH(8)));
   };
-  boxText(M, true, "AI readiness", data.score !== null ? `${data.score}/100` : "-", `${data.signalsToImprove} signal${data.signalsToImprove === 1 ? "" : "s"} to improve across ${data.categoriesToImprove} categor${data.categoriesToImprove === 1 ? "y" : "ies"}`);
-  boxText(
-    M + boxW + 4,
-    false,
-    "AI citations",
-    data.citations.state === "done" ? `${data.citations.cited}/${data.citations.total}` : data.citations.state === "failed" ? "Could not run" : data.citations.state === "not_run" ? "Not run" : "No results",
-    citationsSummary(data.citations),
-  );
+  const toImprove = (n: number) => n ? `${n} check${n === 1 ? "" : "s"} to improve` : "Every check passes";
+  if (data.scoring) {
+    boxText(M, true, "AI search", `${data.scoring.search.score}/100`, toImprove(data.scoring.search.toImprove));
+    boxText(M + boxW + 4, false, "Coding agents", `${data.scoring.coding.score}/100`, toImprove(data.scoring.coding.toImprove));
+  } else {
+    boxText(M, true, "AI readiness", data.score !== null ? `${data.score}/100` : "-", `${data.signalsToImprove} signal${data.signalsToImprove === 1 ? "" : "s"} to improve across ${data.categoriesToImprove} categor${data.categoriesToImprove === 1 ? "y" : "ies"}`);
+    boxText(
+      M + boxW + 4,
+      false,
+      "AI citations",
+      data.citations.state === "done" ? `${data.citations.cited}/${data.citations.total}` : data.citations.state === "failed" ? "Could not run" : data.citations.state === "not_run" ? "Not run" : data.citations.state === "off" ? "Off" : "No results",
+      citationsSummary(data.citations),
+    );
+  }
   y += boxH + 6;
 
   if (data.docCheck) {
@@ -212,8 +218,8 @@ export async function renderPdf(data: ExportReport, options: PdfOptions = {}): P
     y += 2;
   }
 
-  // ── AI bot access ───────────────────────────────────────────────────────
-  sectionTitle("AI bot access");
+  // ── Reachability (two scores) or AI bot access (older reports) ─────────
+  sectionTitle(data.bots.title);
   paragraph(data.bots.banner, 10, C.ink, "bold", 0, 1);
   font(8.5, "normal", C.accent);
   if (data.bots.robotsUrl) {
@@ -248,7 +254,7 @@ export async function renderPdf(data: ExportReport, options: PdfOptions = {}): P
   const signalRow = (sig: ExportSignal) => {
     const textX = M + 6.5;
     const textW = W - 6.5;
-    const metaText = [sig.evidence, sig.audience, sig.impact ? `${sig.impact} impact` : ""].filter(Boolean).join("  ·  ");
+    const metaText = [sig.points ? `${sig.points} points` : "", sig.evidence, sig.audience, sig.impact ? `${sig.impact} impact` : ""].filter(Boolean).join("  ·  ");
     font(10, "bold");
     const labelLines = wrap(sig.label, textW);
     font(7.5);
@@ -298,53 +304,62 @@ export async function renderPdf(data: ExportReport, options: PdfOptions = {}): P
     }
   }
 
-  // ── AI citations ────────────────────────────────────────────────────────
-  sectionTitle("AI citations");
-  paragraph(citationsSummary(data.citations), 9.5, C.ink, "bold", 0, 1);
-  if (data.citations.seconds !== undefined) paragraph(`AI citations check completed in ${data.citations.seconds.toFixed(1)}s`, 8, C.muted);
-  y += 1;
-  for (const row of data.citations.rows) {
-    const pillW = 20;
-    const textW = W - pillW - 4;
-    font(10, "normal");
-    const q = wrap(`"${row.query}"`, textW);
-    font(7.5);
-    const metaLine = [row.tier, row.engine].filter(Boolean).join("  ·  ");
-    font(8.5);
-    const cited = row.citedUrl ? wrap(`Cited URL: ${row.citedUrl}`, textW) : [];
-    const instead = row.competingDomains.length ? wrap(`Cited instead: ${row.competingDomains.join(", ")}`, textW) : [];
-    const height = q.length * lineH(10) + lineH(7.5) + (cited.length + instead.length) * lineH(8.5) + 6;
-    ensure(height);
-    const top = y;
-    font(10, "normal", C.ink);
-    drawLines(q, M, 10);
-    font(7.5, "normal", C.muted);
-    drawLines([clean(metaLine)], M, 7.5);
-    font(8.5, "normal", C.soft);
-    if (cited.length) drawLines(cited, M, 8.5);
-    if (instead.length) drawLines(instead, M, 8.5);
-    // Cited / Not cited pill on the right.
-    const label = row.cited ? "Cited" : "Not cited";
-    doc.setLineWidth(0.25);
-    doc.setDrawColor(...C.line);
-    if (row.cited) {
-      doc.setFillColor(...C.panel);
-      doc.roundedRect(PAGE_W - M - pillW, top + 0.5, pillW, 5.5, 2.75, 2.75, "F");
-      font(7.5, "bold", C.panelFg);
-    } else {
-      doc.roundedRect(PAGE_W - M - pillW, top + 0.5, pillW, 5.5, 2.75, 2.75, "S");
-      font(7.5, "normal", C.soft);
-    }
-    doc.text(label, PAGE_W - M - pillW / 2, top + 4.2, { align: "center" });
-    y += 2;
-    doc.setDrawColor(...C.line);
-    doc.setLineWidth(0.2);
-    doc.line(M, y, PAGE_W - M, y);
-    y += 3;
+  // ── What an agent receives (two-score reports) ──────────────────────────
+  if (data.scoring?.preview) {
+    sectionTitle("What an agent receives");
+    paragraph(`${data.scoring.preview}.`, 9.5, C.ink, "bold", 0, 1);
+    if (data.scoring.previewUrl) paragraph(`Fetched from ${data.scoring.previewUrl}`, 8.5, C.soft);
   }
-  for (const note of data.citations.notes) {
-    paragraph(note.issue, 9.5, C.ink, "bold", 0, 0.5);
-    paragraph(note.fix, 9, C.soft);
+
+  // ── AI citations ────────────────────────────────────────────────────────
+  if (data.citations.state !== "off") {
+    sectionTitle("AI citations");
+    paragraph(citationsSummary(data.citations), 9.5, C.ink, "bold", 0, 1);
+    if (data.citations.seconds !== undefined) paragraph(`AI citations check completed in ${data.citations.seconds.toFixed(1)}s`, 8, C.muted);
+    y += 1;
+    for (const row of data.citations.rows) {
+      const pillW = 20;
+      const textW = W - pillW - 4;
+      font(10, "normal");
+      const q = wrap(`"${row.query}"`, textW);
+      font(7.5);
+      const metaLine = [row.tier, row.engine].filter(Boolean).join("  ·  ");
+      font(8.5);
+      const cited = row.citedUrl ? wrap(`Cited URL: ${row.citedUrl}`, textW) : [];
+      const instead = row.competingDomains.length ? wrap(`Cited instead: ${row.competingDomains.join(", ")}`, textW) : [];
+      const height = q.length * lineH(10) + lineH(7.5) + (cited.length + instead.length) * lineH(8.5) + 6;
+      ensure(height);
+      const top = y;
+      font(10, "normal", C.ink);
+      drawLines(q, M, 10);
+      font(7.5, "normal", C.muted);
+      drawLines([clean(metaLine)], M, 7.5);
+      font(8.5, "normal", C.soft);
+      if (cited.length) drawLines(cited, M, 8.5);
+      if (instead.length) drawLines(instead, M, 8.5);
+      // Cited / Not cited pill on the right.
+      const label = row.cited ? "Cited" : "Not cited";
+      doc.setLineWidth(0.25);
+      doc.setDrawColor(...C.line);
+      if (row.cited) {
+        doc.setFillColor(...C.panel);
+        doc.roundedRect(PAGE_W - M - pillW, top + 0.5, pillW, 5.5, 2.75, 2.75, "F");
+        font(7.5, "bold", C.panelFg);
+      } else {
+        doc.roundedRect(PAGE_W - M - pillW, top + 0.5, pillW, 5.5, 2.75, 2.75, "S");
+        font(7.5, "normal", C.soft);
+      }
+      doc.text(label, PAGE_W - M - pillW / 2, top + 4.2, { align: "center" });
+      y += 2;
+      doc.setDrawColor(...C.line);
+      doc.setLineWidth(0.2);
+      doc.line(M, y, PAGE_W - M, y);
+      y += 3;
+    }
+    for (const note of data.citations.notes) {
+      paragraph(note.issue, 9.5, C.ink, "bold", 0, 0.5);
+      paragraph(note.fix, 9, C.soft);
+    }
   }
 
   // ── Recommendations ─────────────────────────────────────────────────────
@@ -436,7 +451,7 @@ export async function renderPdf(data: ExportReport, options: PdfOptions = {}): P
   }
 
   y += 4;
-  paragraph("Lensy checked this one page, not the whole site. AI citation results change from run to run.", 8, C.muted, "normal", 0, 0.5);
+  paragraph(`Lensy checked this one page, not the whole site.${data.citations.state !== "off" ? " AI citation results change from run to run." : ""}`, 8, C.muted, "normal", 0, 0.5);
   font(8, "normal", C.accent);
   ensure(lineH(8));
   drawLines(["Made with Lensy by Perseverance AI · perseveranceai.com"], M, 8, { url: "https://perseveranceai.com" });

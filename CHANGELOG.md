@@ -5,11 +5,25 @@ All notable changes to the Lensy Documentation Auditor project will be documente
 ## [Unreleased]
 
 ### Added
+- **Two-score report page**: two score cards (AI search, Coding agents) replace the score and citations cards; clicking a card filters the checks to that score. A reachability banner (honest-agent status, the six AI search bots, the robots.txt/server mismatch warning) replaces the bot-access banner. Checks are grouped as Both audiences, Coding agents and AI search, each with points out of its max and its fix, plus a "What an agent receives" preview and unscored tips. Recommendations come from the scored checks. Reports saved before v2 keep the old view with a re-scan note (S-02, S-06, S-08 to S-10).
+- **Downloads show both scores**: Markdown and PDF carry both scores, reachability, the agent preview and the new groups (DL-01, DL-02); older reports download in the old format (DL-08).
+- **Citations flag**: `REACT_APP_CITATIONS_ENABLED`, off in `.env.gamma` and `.env.production`. Off hides the citations card and views, and downloads never run citations (DL-07). S-03 and DL-03 to DL-05 run on a build with the flag on.
+- **Feedback carries both scores**: the feedback widget sends the scanned URL and both scores from a report page, and the feedback email prints them.
+- **Scoring v2 backend (two readiness scores)**: `report.json` now carries `scoringVersion: 2`, `scores.codingAgents` (C1-C6), `scores.aiSearch` (S1-S6), a reachability `gate` (pass/warn), tips and an agent-preview summary, per `docs/two-score-readiness/spec.md`. `overallScore` is now the AI search score; `scoreBreakdown` is kept for the current UI. Audit rows add `codingScore`, `searchScore` and `scoringVersion`.
+- **Scoring fixtures**: saved responses for the 15 spec pages and `backend/scripts/capture-fixtures.mjs`; tests require the prototype's points for every check.
 - **`/bot` page**: what the Lensy checker is, its user agent and how to allow it through bot protection.
 - **Backend unit tests** (Jest, `backend/**/__tests__/`), run by the pre-push hook and PR CI. First test: REG-18.
 - **Cookie banner**: Google Analytics loads only after the visitor accepts; consent mode starts as denied, Decline sets `ga-disable` and removes `_ga` cookies, and **Cookie settings** in the footer changes the choice (CK-01 to CK-05).
 
+### Fixed
+- **REG-19**: Markdown listed in llms.txt now counts as discoverable (was hardcoded off).
+- **REG-20**: an H1 inside an article `<header>` is counted; only site-chrome headers are dropped.
+- **REG-21**: HTML soft-404s no longer pass as llms.txt, sitemap or `.md`.
+- **REG-22**: network errors are "couldn't check", not "not found".
+
 ### Changed
+- **Fix text for llms.txt and .md copies**: when the file exists but loses points, the fix says which part (too large, broken links, wrong format, or a .md copy nothing points to) instead of how to publish one.
+- **How it works and research copy**: the analysis tiles read AI search, Coding agents and Reachability; "two scores out of 100"; the unsupported "JSON-LD increases rich snippet visibility by 20 to 30%" claim is replaced with the Ahrefs controlled study.
 - **Honest fetcher (REG-18)**: Lensy now sends `Lensy/1.0 (+https://perseveranceai.com/bot)` first and retries once with the browser user agent on 403/429. Sites whose bot protection refuses both end with `blocked-by-bot-protection` and a "bot protection blocked our checker" card instead of "unreachable". Audit rows add `submittedUrl`, `finalUrl`, `httpStatus` and `ipHash`; the privacy page says so.
 - **Privacy page rewritten** to match the code: names Jina Reader, Perplexity, Amazon Bedrock, Google Analytics and Google Fonts; describes the contact form, feedback and hashed-IP usage limit; states real retention periods. Removed the unused `PrivacyPolicy.tsx` copy.
 - **Scan files expire after 30 days**: lifecycle rule on the analysis bucket, which the privacy page now promises.

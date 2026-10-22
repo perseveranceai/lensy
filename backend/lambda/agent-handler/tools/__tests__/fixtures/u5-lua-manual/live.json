@@ -1,0 +1,82 @@
+{
+ "url": "https://www.lua.org/manual/5.4/manual.html",
+ "gate": {
+  "honestStatus": 200,
+  "reachable": true,
+  "robotsBlocks": [],
+  "mismatch": null,
+  "state": "pass"
+ },
+ "coding": {
+  "total": 28,
+  "checks": {
+   "Content without JavaScript": {
+    "pts": 20,
+    "max": 20,
+    "detail": "45228 words in raw HTML"
+   },
+   "Markdown on Accept: text/markdown": {
+    "pts": 0,
+    "max": 15,
+    "detail": "got text/html"
+   },
+   ".md version discoverable": {
+    "pts": 0,
+    "max": 15,
+    "detail": "no .md version"
+   },
+   "llms.txt usable": {
+    "pts": 0,
+    "max": 20,
+    "detail": "not found"
+   },
+   "Page fits one fetch": {
+    "pts": 0,
+    "max": 15,
+    "detail": "263K chars received as HTML text"
+   },
+   "Sections findable": {
+    "pts": 8,
+    "max": 15,
+    "detail": "10 H1, 0 level skip(s), 0% of H2/H3 have ids, 0 generic heading(s)"
+   }
+  }
+ },
+ "search": {
+  "total": 63,
+  "checks": {
+   "AI search bots allowed": {
+    "pts": 20,
+    "max": 20,
+    "detail": "all 6 allowed (no robots.txt)"
+   },
+   "Content without JavaScript": {
+    "pts": 20,
+    "max": 20,
+    "detail": "45228 words in raw HTML"
+   },
+   "Indexable": {
+    "pts": 10,
+    "max": 25,
+    "detail": "indexable, canonical no, no sitemap found"
+   },
+   "Freshness declared": {
+    "pts": 0,
+    "max": 15,
+    "detail": "page date: none; sitemap lastmod: 0/0 URLs, 0 distinct dates; this URL no lastmod"
+   },
+   "Answer-ready sections": {
+    "pts": 13,
+    "max": 15,
+    "detail": "10 H1, 0 skip(s), median section 57 words (HTML)"
+   },
+   "JSON-LD": {
+    "pts": 0,
+    "max": 5,
+    "detail": "none"
+   }
+  }
+ },
+ "notes": [],
+ "netErrors": []
+}

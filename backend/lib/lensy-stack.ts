@@ -291,7 +291,8 @@ export class LensyStack extends cdk.Stack {
             runtime: lambda.Runtime.NODEJS_22_X,
             handler: 'index.handler',
             code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/agent-handler'), {
-                exclude: ['*.ts', 'tsconfig.json', '*.d.ts'],
+                // __tests__ holds Jest tests and scoring fixtures (about 2 MB); keep them out of the bundle.
+                exclude: ['*.ts', 'tsconfig.json', '*.d.ts', '__tests__'],
             }),
             timeout: cdk.Duration.minutes(15),
             memorySize: 1024,
