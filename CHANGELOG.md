@@ -20,6 +20,11 @@ All notable changes to the Lensy Documentation Auditor project will be documente
 - **REG-20**: an H1 inside an article `<header>` is counted; only site-chrome headers are dropped.
 - **REG-21**: HTML soft-404s no longer pass as llms.txt, sitemap or `.md`.
 - **REG-22**: network errors are "couldn't check", not "not found".
+- **REG-23**: the PDF prints the page check's minus sign as "-" instead of "?".
+- **REG-24**: a PDF heading always starts the page its content is on.
+- **REG-25**: two-score downloads list each fix once, under Fixes with its points; tips have no "Fix: Not scored." line (Markdown, PDF and the page).
+- **REG-26**: on phones the Feedback button is a small icon in the bottom-right corner, so it no longer covers the score cards.
+- **pre-cr**: installs the lambda packages (`npm run install:lambdas`, as CI does) when any are missing, so the backend unit tests can run on a fresh clone.
 
 ### Changed
 - **Fix text for llms.txt and .md copies**: when the file exists but loses points, the fix says which part (too large, broken links, wrong format, or a .md copy nothing points to) instead of how to publish one.

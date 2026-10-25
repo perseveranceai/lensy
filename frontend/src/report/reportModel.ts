@@ -94,7 +94,8 @@ export type Signal = {
   fix?: string;
 };
 
-export type Rec = { category?: string; priority?: string; issue?: string; title?: string; fix?: string; description?: string; codeSnippet?: string };
+// points: two-score fixes only, the check's "earned/max" so the fix list says what it costs.
+export type Rec = { category?: string; priority?: string; issue?: string; title?: string; fix?: string; description?: string; codeSnippet?: string; points?: string };
 
 export type SignalGroup = { title: string; key?: ScoreGroupKey; sections: Array<{ title: string; signals: Signal[] }> };
 
@@ -234,16 +235,21 @@ function v2Recommendations(v2: ScoringV2): Rec[] {
       if (seen.has(key)) continue;
       seen.add(key);
       const lost = x.max - x.points;
-      items.push({ category: key === "C1" ? "Both audiences" : category, priority: lost >= 10 ? "high" : lost >= 5 ? "medium" : "low", issue: `${x.label}: ${x.detail}`, fix: x.fix, lost });
+      const both = key === "C1";
+      const points = both
+        ? [v2.coding.checks.find((c) => c.id === "C1"), v2.search.checks.find((c) => c.id === "S2")].map((c, i) => c && `${i ? "Search" : "Coding"} ${pts(c)}`).filter(Boolean).join(" · ")
+        : pts(x);
+      items.push({ category: both ? "Both audiences" : category, priority: lost >= 10 ? "high" : lost >= 5 ? "medium" : "low", issue: `${x.label}: ${x.detail}`, fix: x.fix, points, lost });
     }
   }
   items.sort((a, b) => b.lost - a.lost);
-  // A tip reads "What we saw. Why it matters." Split it into the title and the body.
+  // A tip reads "What we saw. Why it matters." Split it into the title and the
+  // body. A tip has no fix: a one-sentence tip is the title alone (REG-25).
   const tips: Rec[] = v2.tips.map((t) => {
     const cut = t.indexOf(". ");
     return cut > 0
       ? { category: "Tip", priority: "best-practice", issue: t.slice(0, cut), fix: t.slice(cut + 2) }
-      : { category: "Tip", priority: "best-practice", issue: t, fix: "Not scored." };
+      : { category: "Tip", priority: "best-practice", issue: t, fix: "" };
   });
   return [...items.map(({ lost, ...r }) => r), ...tips];
 }
@@ -676,7 +682,7 @@ export function buildReportModel({ report, overallScoreData, detectionData, cita
     })));
   }
   const recIssue = (r: Rec) => r.issue || r.title || r.category || "Improvement needed";
-  const recFix = (r: Rec) => r.fix || r.description || "Review this area for potential improvements.";
+  const recFix = (r: Rec) => r.category === "Tip" ? r.fix || "" : r.fix || r.description || "Review this area for potential improvements.";
   const scoredRecs = allRecs.filter((r) => r.priority !== "best-practice");
   const quickWins = scoredRecs.filter((r) => r.priority === "high");
   const deeperImprovements = scoredRecs.filter((r) => r.priority !== "high");

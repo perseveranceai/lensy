@@ -2,7 +2,7 @@ import { createBrowserRouter, Link, Outlet, useLocation, useNavigate, useParams,
 import { Home } from "./Home";
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import { ArrowDown, ArrowLeft, ArrowRight, Check, Menu, Send, Monitor, Moon, Sun, X, CheckCircle2, AlertTriangle, Info, XCircle, MinusCircle } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, Check, Menu, Send, Monitor, Moon, Sun, X, CheckCircle2, AlertTriangle, Info, XCircle, MinusCircle, MessageSquare } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Tooltip from "@mui/material/Tooltip";
 import { trackEvent } from "./analytics";
@@ -425,12 +425,14 @@ export function FeedbackWidget() {
     }
   };
   useEffect(() => () => { if (closeTimer.current) window.clearTimeout(closeTimer.current); }, []);
-  return <div className="fixed bottom-5 left-5 z-40 flex max-w-[calc(100vw-2.5rem)] flex-col items-start">
+  // Below 640px the left-hand button sat on the score cards' text ("3 checks to
+  // improve"), so phones get a small icon in the right corner instead (REG-26).
+  return <div data-testid="feedback-widget" className="fixed bottom-4 right-4 z-40 flex max-w-[calc(100vw-2rem)] flex-col items-end sm:bottom-5 sm:left-5 sm:right-auto sm:max-w-[calc(100vw-2.5rem)] sm:items-start">
     {open && <div id="feedback-panel" className={`feedback-panel popup-shadow mb-2.5 w-[304px] max-w-full overflow-hidden rounded-[var(--radius-md)] border border-[var(--line-strong)] bg-[var(--bg)] ${closing ? "is-closing" : ""}`}>
       <div className="flex items-center justify-between border-b border-[var(--line)] px-3.5 py-2.5"><p className="text-[13px] font-medium tracking-[-.025em]">Share feedback</p><button type="button" onClick={close} aria-label="Close feedback" className="grid size-6 place-items-center rounded-[var(--radius-xs)] text-[var(--muted)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"><X className="size-3" strokeWidth={1.8} aria-hidden="true" /></button></div>
       {sent ? <div role="status" aria-live="polite" className="feedback-success flex items-center gap-3 px-4 py-5"><span className="grid size-7 place-items-center rounded-full bg-[var(--tint)] text-[var(--accent)]"><Check className="size-3.5" strokeWidth={1.9} aria-hidden="true" /></span><p className="text-[13px] font-medium tracking-[-.02em]">Feedback sent.</p></div> : <form onSubmit={submit} className="p-4"><label className="sr-only" htmlFor="feedback-message">Feedback</label><textarea id="feedback-message" value={message} onChange={(event) => setMessage(event.target.value)} placeholder="What would make Lensy more useful?" className="feedback-field min-h-28 w-full resize-y rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--surface)] px-3 py-2.5 text-[13px] leading-relaxed text-[var(--ink)] outline-none placeholder:text-[var(--placeholder)] focus:border-[var(--accent)]" /><label className="sr-only" htmlFor="feedback-email">Email address</label><input id="feedback-email" value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="Email (optional, for follow-up)" className="feedback-field mt-3 w-full rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--surface)] px-3 py-2.5 text-[13px] text-[var(--ink)] outline-none placeholder:text-[var(--placeholder)] focus:border-[var(--accent)]" /><button type="submit" disabled={!message.trim() || sending} className="feedback-submit btn-ink mt-3 flex w-full items-center justify-center gap-2 bg-[var(--panel-bg)] px-4 py-2.5 text-[13px] font-medium tracking-[-.02em] text-[var(--panel-fg)] disabled:cursor-not-allowed disabled:opacity-40">{sending ? "Sending…" : <>Send feedback <Send className="size-3" strokeWidth={1.8} aria-hidden="true" /></>}</button>{sendError && <p role="alert" className="mt-3 text-[12px] text-[var(--ink-soft)]">{sendError}</p>}</form>}
     </div>}
-    <button type="button" onClick={() => { if (open) { close(); } else { trackEvent("feedback_widget_opened", { pageUrl: window.location.href }); setOpen(true); } }} aria-expanded={open} aria-controls="feedback-panel" className="feedback-launch inline-flex rounded-[var(--radius-sm)] border border-[var(--line-strong)] bg-[var(--bg)] px-3 py-2 text-[13px] font-medium tracking-[-.02em] text-[var(--ink)]">Feedback</button>
+    <button type="button" onClick={() => { if (open) { close(); } else { trackEvent("feedback_widget_opened", { pageUrl: window.location.href }); setOpen(true); } }} aria-expanded={open} aria-controls="feedback-panel" aria-label="Feedback" className="feedback-launch inline-flex size-10 items-center justify-center rounded-full border border-[var(--line-strong)] bg-[var(--bg)] text-[13px] font-medium tracking-[-.02em] text-[var(--ink)] sm:size-auto sm:rounded-[var(--radius-sm)] sm:px-3 sm:py-2"><MessageSquare className="size-4 sm:hidden" strokeWidth={1.8} aria-hidden="true" /><span className="hidden sm:inline">Feedback</span></button>
   </div>;
 }
 
@@ -687,8 +689,9 @@ export function ScanReport({
           <span className={chipClass}>{impactLabel(rec)}</span>
           <span className={chipClass}>{effortLabel(rec)}</span>
           {rec.category && <span className={chipClass}>{rec.category}</span>}
+          {rec.points && <span data-testid="rec-points" className={`${chipClass} tabular-nums`}>Points {rec.points}</span>}
         </div>
-        <p className="mt-3 text-[13px] leading-relaxed text-[var(--ink-soft)]">{recFix(rec)}</p>
+        {recFix(rec) && <p className="mt-3 text-[13px] leading-relaxed text-[var(--ink-soft)]">{recFix(rec)}</p>}
         {link && <a href={link.href} target="_blank" rel="noopener noreferrer" onClick={() => trackEvent("generate_markdown_link_clicked", { ref: link.href })} className="group mt-2.5 inline-flex items-center gap-1 text-[12px] font-medium tracking-[-.02em] text-[var(--ink)]"><span style={{ textDecoration: "underline", textUnderlineOffset: "3px" }}>{link.label}</span><ArrowRight className="arrow-nudge size-3" strokeWidth={1.8} aria-hidden="true" /></a>}
         {rec.codeSnippet && <pre className="mt-4 overflow-x-auto rounded-[var(--radius-md)] text-[12px] leading-[1.7]" style={{ background: "var(--panel-bg)", color: "var(--panel-fg)", fontFamily: "var(--font-mono, ui-monospace, monospace)", whiteSpace: "pre-wrap", padding: "16px 18px" }}>{rec.codeSnippet}</pre>}
       </article>
@@ -1017,7 +1020,7 @@ export function ScanReport({
           <span className="text-[11px] font-medium tabular-nums text-[var(--muted)]">{thingsToWatch.length}</span>
         </div>
         <p className="mt-1.5 text-[11px] text-[var(--muted)]">Emerging patterns that don't affect your score</p>
-        <div className="mt-5 grid gap-3">{thingsToWatch.map((rec, i) => <article key={`ttw-${i}`} className="rounded-[var(--radius-md)] border border-dashed border-[var(--line)] bg-[var(--surface)] p-5"><p className="text-[15px] font-medium leading-snug tracking-[-.03em] text-[var(--ink)]">{recIssue(rec)}</p>{rec.category && <div className="mt-3"><span className={chipClass}>{rec.category}</span></div>}<p className="mt-3 text-[13px] leading-relaxed text-[var(--ink-soft)]">{recFix(rec)}</p></article>)}</div>
+        <div className="mt-5 grid gap-3">{thingsToWatch.map((rec, i) => <article key={`ttw-${i}`} className="rounded-[var(--radius-md)] border border-dashed border-[var(--line)] bg-[var(--surface)] p-5"><p className="text-[15px] font-medium leading-snug tracking-[-.03em] text-[var(--ink)]">{recIssue(rec)}</p>{rec.category && <div className="mt-3"><span className={chipClass}>{rec.category}</span></div>}{recFix(rec) && <p className="mt-3 text-[13px] leading-relaxed text-[var(--ink-soft)]">{recFix(rec)}</p>}</article>)}</div>
       </div>}
     </div>}
 

@@ -24,8 +24,8 @@ function signalMeta(sig: ExportSignal): string {
 
 function recBlock(rec: ExportRec, checkbox: boolean): string {
   const lines = [`${checkbox ? "- [ ] " : "- "}**${rec.issue}**`];
-  lines.push(`  - ${[rec.impact, rec.effort, rec.category].filter(Boolean).join(" · ")}`);
-  lines.push(`  - Fix: ${rec.fix}`);
+  lines.push(`  - ${[rec.impact, rec.effort, rec.category, rec.points && `Points: ${rec.points}`].filter(Boolean).join(" · ")}`);
+  if (rec.fix) lines.push(`  - Fix: ${rec.fix}`);
   if (rec.codeSnippet) lines.push("", fence(rec.codeSnippet).split("\n").map((l) => `  ${l}`).join("\n"));
   return lines.join("\n");
 }
@@ -83,9 +83,11 @@ export function renderMarkdown(data: ExportReport): string {
     "",
   );
 
-  // ── Fixes checklist: every non-passing signal, then every recommendation ──
+  // ── Fixes checklist: every recommendation, then (legacy reports only) every
+  // non-passing signal. A two-score report's fixes are built from the same
+  // failing checks, so listing the signals too printed each one twice (REG-25).
   push(`## Fixes (${data.recommendations.total} recommendation${data.recommendations.total === 1 ? "" : "s"})`, "");
-  const openSignals = data.groups.flatMap((g) => g.sections.flatMap((s) => s.signals.filter((sig) => sig.status === "warn" || sig.status === "fail").map((sig) => ({ group: g.title, sig }))));
+  const openSignals = sc ? [] : data.groups.flatMap((g) => g.sections.flatMap((s) => s.signals.filter((sig) => sig.status === "warn" || sig.status === "fail").map((sig) => ({ group: g.title, sig }))));
   const anyRecs = data.recommendations.total > 0;
   if (!openSignals.length && !anyRecs) push("Nothing to fix. This page is well-optimized for AI tools.", "");
   if (data.recommendations.quickWins.length) push("### Quick Wins", "", ...data.recommendations.quickWins.map((r) => recBlock(r, true)), "");
@@ -98,7 +100,7 @@ export function renderMarkdown(data: ExportReport): string {
     }
     push("");
   }
-  if (data.recommendations.watch.length) push("### Things to Watch (best practice, not scored)", "", ...data.recommendations.watch.map((r) => recBlock(r, false)), "");
+  if (data.recommendations.watch.length) push(sc ? "### Also worth knowing (not scored)" : "### Things to Watch (best practice, not scored)", "", ...data.recommendations.watch.map((r) => recBlock(r, false)), "");
 
   // ── Full report ──
   push("## Page check", "");
@@ -127,7 +129,8 @@ export function renderMarkdown(data: ExportReport): string {
       if (section.title) push(`#### ${section.title}`, "");
       for (const sig of section.signals) {
         push(`- **${sig.label}** [${STATUS_WORD[sig.status]}]${signalMeta(sig)}`, `  - ${sig.detail}`);
-        if (sig.fix) push(`  - Fix: ${sig.fix}`);
+        // A two-score report already gives each fix under Fixes.
+        if (sig.fix && !sc) push(`  - Fix: ${sig.fix}`);
         if (sig.note) push(`  - Note: ${sig.note}`);
       }
       push("");

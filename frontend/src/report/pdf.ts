@@ -62,6 +62,8 @@ export async function renderPdf(data: ExportReport, options: PdfOptions = {}): P
       .replace(/[‘’]/g, "'")
       .replace(/[“”]/g, '"')
       .replace(/…/g, "...")
+      // U+2212 MINUS SIGN is in neither font, so "(−1)" printed as "(?1)" (REG-23).
+      .replace(/\u2212/g, "-")
       .replace(/ /g, " ")
       .replace(/\t/g, "  ");
     const allowed = mono || family === "helvetica" ? /[^\n\x20-\x7E -ÿ–—•]/g : /[^\n\x20-\x7E -ɏ‐-‧←-↓]/g;
@@ -116,8 +118,10 @@ export async function renderPdf(data: ExportReport, options: PdfOptions = {}): P
     doc.line(M, y, PAGE_W - M, y);
     y += gapAfter;
   };
-  const sectionTitle = (title: string, status?: ReportSignalStatus) => {
-    ensure(18);
+  // keepWith: height of what follows the title, so a title never ends a page
+  // on its own (REG-24).
+  const sectionTitle = (title: string, status?: ReportSignalStatus, keepWith = 0) => {
+    ensure(18 + keepWith);
     y += 4;
     font(14, "bold", C.ink);
     const x = status ? M + 6.5 : M;
@@ -125,8 +129,9 @@ export async function renderPdf(data: ExportReport, options: PdfOptions = {}): P
     drawLines([clean(title)], x, 14);
     rule(1, 4);
   };
-  const eyebrow = (text: string) => {
-    ensure(lineH(7.5) + 3);
+  const eyebrowH = lineH(7.5) + 1.5;
+  const eyebrow = (text: string, keepWith = 0) => {
+    ensure(lineH(7.5) + 3 + keepWith);
     font(7.5, "bold", C.muted);
     doc.setCharSpace(0.4);
     drawLines([clean(text.toUpperCase())], M, 7.5);
@@ -251,8 +256,7 @@ export async function renderPdf(data: ExportReport, options: PdfOptions = {}): P
   }
 
   // ── Signals ─────────────────────────────────────────────────────────────
-  const signalRow = (sig: ExportSignal) => {
-    const textX = M + 6.5;
+  const signalLayout = (sig: ExportSignal) => {
     const textW = W - 6.5;
     const metaText = [sig.points ? `${sig.points} points` : "", sig.evidence, sig.audience, sig.impact ? `${sig.impact} impact` : ""].filter(Boolean).join("  ·  ");
     font(10, "bold");
@@ -265,7 +269,12 @@ export async function renderPdf(data: ExportReport, options: PdfOptions = {}): P
     font(8);
     const noteLines = sig.note ? wrap(sig.note, textW) : [];
     const height = labelLines.length * lineH(10) + metaLines.length * lineH(7.5) + detailLines.length * lineH(9) + fixLines.length * lineH(9) + noteLines.length * lineH(8) + 4;
-    ensure(Math.min(height, BOTTOM - TOP));
+    return { labelLines, metaLines, detailLines, fixLines, noteLines, height: Math.min(height, BOTTOM - TOP) };
+  };
+  const signalRow = (sig: ExportSignal) => {
+    const textX = M + 6.5;
+    const { labelLines, metaLines, detailLines, fixLines, noteLines, height } = signalLayout(sig);
+    ensure(height);
     statusIcon(sig.status, M + 2.2, y + 2.4, 1.8);
     font(10, "bold", C.ink);
     drawLines(labelLines, textX, 10);
@@ -296,9 +305,11 @@ export async function renderPdf(data: ExportReport, options: PdfOptions = {}): P
 
   if (data.groups.length) {
     for (const group of data.groups) {
-      sectionTitle(group.title, group.status);
+      const first = group.sections.find((sec) => sec.signals.length);
+      const firstH = first ? (first.title ? eyebrowH : 0) + signalLayout(first.signals[0]).height : 0;
+      sectionTitle(group.title, group.status, firstH);
       for (const section of group.sections) {
-        if (section.title) eyebrow(section.title);
+        if (section.title) eyebrow(section.title, section.signals.length ? signalLayout(section.signals[0]).height : 0);
         section.signals.forEach(signalRow);
       }
     }
@@ -363,18 +374,23 @@ export async function renderPdf(data: ExportReport, options: PdfOptions = {}): P
   }
 
   // ── Recommendations ─────────────────────────────────────────────────────
-  const recCard = (rec: ExportRec) => {
-    const pad = 4;
-    const innerW = W - pad * 2;
+  const pad = 4;
+  const innerW = W - pad * 2;
+  const recLayout = (rec: ExportRec) => {
     font(10.5, "bold");
     const title = wrap(rec.issue, innerW);
-    const chips = [rec.impact, rec.effort, rec.category].filter(Boolean) as string[];
+    const chips = [rec.impact, rec.effort, rec.category, rec.points && `Points ${rec.points}`].filter(Boolean) as string[];
     font(9);
-    const fix = wrap(rec.fix, innerW);
+    // A tip has no fix line (REG-25).
+    const fix = rec.fix ? wrap(rec.fix, innerW) : [];
     font(7.5, "normal", C.ink, true);
     const code = rec.codeSnippet ? (wrap(rec.codeSnippet, innerW - 6, true) as string[]) : [];
     const codeH = code.length ? code.length * lineH(7.5) + 6 : 0;
     const height = pad + title.length * lineH(10.5) + 7 + fix.length * lineH(9) + (codeH ? codeH + 3 : 0) + pad;
+    return { title, chips, fix, code, codeH, height };
+  };
+  const recCard = (rec: ExportRec) => {
+    const { title, chips, fix, code, codeH, height } = recLayout(rec);
     // A card taller than a page (a huge snippet) starts on a fresh page and
     // then flows; anything smaller always stays whole.
     ensure(Math.min(height, BOTTOM - TOP));
@@ -427,18 +443,21 @@ export async function renderPdf(data: ExportReport, options: PdfOptions = {}): P
     y += 3;
   };
 
-  sectionTitle(`All recommendations (${data.recommendations.total})`);
+  // Card heights are capped like recCard does, so a huge card never asks for
+  // more than a page.
+  const recH = (rec?: ExportRec) => (rec ? Math.min(recLayout(rec).height, BOTTOM - TOP - 18 - eyebrowH) : 0);
+  const firstRecs = [data.recommendations.quickWins, data.recommendations.deeper, data.recommendations.watch].find((r) => r.length);
+  sectionTitle(`All recommendations (${data.recommendations.total})`, undefined, firstRecs ? eyebrowH + recH(firstRecs[0]) : 0);
   if (!data.recommendations.total) paragraph("No recommendations. This page is well-optimized for AI tools.");
   const recGroup = (title: string, recs: ExportRec[]) => {
     if (!recs.length) return;
-    ensure(30);
-    eyebrow(title);
+    eyebrow(title, recH(recs[0]));
     recs.forEach(recCard);
     y += 2;
   };
   recGroup("Quick Wins", data.recommendations.quickWins);
   recGroup("Deeper Improvements", data.recommendations.deeper);
-  recGroup("Things to Watch", data.recommendations.watch);
+  recGroup(data.scoring ? "Also worth knowing (not scored)" : "Things to Watch", data.recommendations.watch);
 
   if (data.helpLinks.length) {
     sectionTitle("Need help?");

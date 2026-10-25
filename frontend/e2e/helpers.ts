@@ -1,6 +1,7 @@
 import { expect, Page } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
+import zlib from 'zlib';
 
 // Test URLs from docs/test-cases.md ("Test URLs"). Last confirmed 2026-10-08.
 export const URLS = {
@@ -104,4 +105,52 @@ export async function openSavedReport(page: Page, seed: { report: any; citations
   }, { ...seed, session: SAVED_SESSION });
   await page.goto('/results');
   await expect(page.getByText('What Lensy found')).toBeVisible();
+}
+
+// The text of a jsPDF file, one array of text runs per page, in drawing order.
+// jsPDF embeds the site fonts, so each run is a hex string of glyph ids; the
+// font's ToUnicode map turns them back into text. Enough for our own PDFs
+// (REG-23, REG-24), not a general PDF parser.
+export function pdfPages(pdf: Buffer): string[][] {
+  const src = pdf.toString('latin1');
+  const objects = new Map<string, { dict: string; stream?: string }>();
+  for (const m of src.matchAll(/(\d+) 0 obj\b/g)) {
+    const from = m.index! + m[0].length;
+    const end = src.indexOf('endobj', from);
+    const at = src.indexOf('stream', from);
+    const dict = src.slice(from, at > -1 && at < end ? at : end);
+    let stream: string | undefined;
+    if (at > -1 && at < end) {
+      const start = at + (src.startsWith('stream\r\n', at) ? 8 : 7);
+      const raw = pdf.subarray(start, src.indexOf('endstream', start));
+      stream = (/FlateDecode/.test(dict) ? zlib.inflateSync(raw) : raw).toString('latin1');
+    }
+    objects.set(m[1], { dict, stream });
+  }
+  const ref = (dict: string, key: string) => dict.match(new RegExp(`/${key} (\\d+) 0 R`))?.[1];
+  const cmaps = new Map<string, Map<string, string>>();
+  const fontMap = (id: string) => {
+    if (!cmaps.has(id)) {
+      const map = new Map<string, string>();
+      const cmap = objects.get(ref(objects.get(id)!.dict, 'ToUnicode')!)!.stream!;
+      for (const [, g, u] of cmap.matchAll(/<([0-9a-f]{4})>\s*<([0-9a-f]{4})>/gi)) map.set(g.toLowerCase(), String.fromCharCode(parseInt(u, 16)));
+      cmaps.set(id, map);
+    }
+    return cmaps.get(id)!;
+  };
+  // Font resource names (/F15) to font objects, from the shared resource dictionary.
+  const fonts = new Map<string, string>();
+  for (const { dict } of objects.values()) for (const [, name, id] of dict.matchAll(/\/(F\d+) (\d+) 0 R/g)) fonts.set(name, id);
+  const pages = [...objects.values()].filter((o) => /\/Type \/Page\b/.test(o.dict));
+  return pages.map((p) => {
+    const content = objects.get(ref(p.dict, 'Contents')!)!.stream!;
+    const runs: string[] = [];
+    let font = '';
+    for (const [, name, hex] of content.matchAll(/\/(F\d+) [\d.]+ Tf|<([0-9a-f]+)> Tj/gi)) {
+      if (name) { font = name; continue; }
+      const map = fontMap(fonts.get(font)!);
+      runs.push(hex.match(/.{4}/g)!.map((g) => map.get(g.toLowerCase()) ?? '?').join(''));
+    }
+    return runs;
+  });
 }

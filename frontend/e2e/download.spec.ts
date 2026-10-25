@@ -1,6 +1,6 @@
 import { expect, Page, test } from '@playwright/test';
 import fs from 'fs';
-import { CITATIONS_ENABLED, SAVED_SESSION as SESSION, fixture, openSavedReport, trackConsoleErrors } from './helpers';
+import { CITATIONS_ENABLED, SAVED_SESSION as SESSION, fixture, openSavedReport, pdfPages, trackConsoleErrors } from './helpers';
 
 // Report download (H-001): Markdown and PDF, built in the browser.
 //
@@ -119,6 +119,50 @@ test('DL-02: PDF downloads as a real, small PDF', async ({ page }) => {
   expect(body.length).toBeLessThan(1024 * 1024);
   // The embedded site font, not just the built-in Helvetica.
   expect(body.toString('latin1')).toContain('/FontName /');
+});
+
+// Checks of the first two-score downloads (2026-10-24).
+test('REG-23: the PDF prints the page check minus sign as "-", not "?"', async ({ page }) => {
+  await openSavedReport(page, { report: stripeV2 });
+  const text = pdfPages((await downloadAs(page, /^pdf/i)).body).flat().join('\n');
+  // agent-handler writes U+2212, which neither embedded font has.
+  expect(JSON.stringify(stripeV2.docConfidence)).toContain('\u2212');
+  expect(text).toContain('Feature/benefit grid layout (-1)');
+  expect(text).not.toMatch(/\(\?\d/);
+});
+
+test('REG-24: no PDF page ends on a heading whose content starts on the next page', async ({ page }) => {
+  await openSavedReport(page, { report: stripeV2 });
+  const pages = pdfPages((await downloadAs(page, /^pdf/i)).body);
+  expect(pages.length).toBeGreaterThan(1);
+  const chrome = /^(Lensy|AI readiness report .*|Report ID .*|Page \d+ of \d+)$/;
+  const heading = /^(Both audiences|Coding agents|AI search|Reachability|Page check|What an agent receives|All recommendations \(\d+\)|Quick Wins|Deeper Improvements|Also worth knowing \(not scored\)|Things to Watch)$/i;
+  for (const [i, runs] of pages.entries()) {
+    const body = runs.filter((r) => !chrome.test(r.trim()));
+    expect(body.at(-1)?.trim(), `page ${i + 1} ends on a heading`).not.toMatch(heading);
+  }
+});
+
+test('REG-25: a two-score download lists each fix once and tips carry no "Fix:" line', async ({ page }) => {
+  // One tip with no ". " used to get "Fix: Not scored.".
+  const report = { ...stripeV2, tips: [...stripeV2.tips, { id: 'one-sentence', text: 'This page has no meta description.' }] };
+  await page.route(/\/run-citations$|\/citations\//, (route) => route.abort());
+  await openSavedReport(page, { report });
+  const md = (await downloadAs(page, /markdown/i)).body.toString('utf8');
+  expect(md).not.toContain('Signals to improve');
+  expect(md).not.toContain('Not scored.');
+  expect(md).toContain('### Also worth knowing (not scored)');
+  for (const c of [...stripeV2.scores.aiSearch.checks, ...stripeV2.scores.codingAgents.checks]) {
+    if (c.status === 'pass' || !c.fix || c.id === 'S2') continue;
+    expect(md.split(`Fix: ${c.fix}`).length - 1, c.id).toBe(1);
+  }
+  const tip = md.slice(md.indexOf('**This page has no meta description.**'));
+  expect(tip.split('\n').slice(0, 3).join('\n')).not.toContain('Fix:');
+  const pdf = pdfPages((await downloadAs(page, /^pdf/i)).body).flat().join('\n');
+  expect(pdf).not.toContain('Not scored.');
+  await page.getByRole('button', { name: /View all \d+ recommendations/ }).click();
+  await expect(page.getByText('This page has no meta description.')).toBeVisible();
+  await expect(page.getByText('Not scored.')).toHaveCount(0);
 });
 
 // DL-03 to DL-05 cover running citations for a download. They run only on a
