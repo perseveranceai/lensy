@@ -28,6 +28,7 @@ export interface ExportRec {
   effort: string;
   category?: string;
   fix: string;
+  points?: string;
   codeSnippet?: string;
   helpLink?: { label: string; href: string };
 }
@@ -211,6 +212,7 @@ export function buildExportReport(input: ExportInput): ExportReport {
       effort: model.effortLabel(rec),
       category: rec.category,
       fix: model.recFix(rec),
+      points: rec.points,
       codeSnippet: rec.codeSnippet,
       helpLink,
     };

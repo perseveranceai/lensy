@@ -237,20 +237,20 @@
   .right-0 {
     right: 0px;
   }
+  .right-4 {
+    right: calc(var(--spacing) * 4);
+  }
   .bottom-3 {
     bottom: calc(var(--spacing) * 3);
   }
-  .bottom-5 {
-    bottom: calc(var(--spacing) * 5);
+  .bottom-4 {
+    bottom: calc(var(--spacing) * 4);
   }
   .left-0 {
     left: 0px;
   }
   .left-1\/2 {
     left: calc(1 / 2 * 100%);
-  }
-  .left-5 {
-    left: calc(var(--spacing) * 5);
   }
   .z-10 {
     z-index: 10;
@@ -414,6 +414,10 @@
     width: calc(var(--spacing) * 8);
     height: calc(var(--spacing) * 8);
   }
+  .size-10 {
+    width: calc(var(--spacing) * 10);
+    height: calc(var(--spacing) * 10);
+  }
   .size-\[60px\] {
     width: 60px;
     height: 60px;
@@ -496,8 +500,8 @@
   .max-w-\[1400px\] {
     max-width: 1400px;
   }
-  .max-w-\[calc\(100vw-2\.5rem\)\] {
-    max-width: calc(100vw - 2.5rem);
+  .max-w-\[calc\(100vw-2rem\)\] {
+    max-width: calc(100vw - 2rem);
   }
   .max-w-full {
     max-width: 100%;
@@ -1436,8 +1440,14 @@
     .sm\:right-5 {
       right: calc(var(--spacing) * 5);
     }
+    .sm\:right-auto {
+      right: auto;
+    }
     .sm\:bottom-5 {
       bottom: calc(var(--spacing) * 5);
+    }
+    .sm\:left-5 {
+      left: calc(var(--spacing) * 5);
     }
     .sm\:-mx-5 {
       margin-inline: calc(var(--spacing) * -5);
@@ -1448,8 +1458,21 @@
     .sm\:grid {
       display: grid;
     }
+    .sm\:hidden {
+      display: none;
+    }
+    .sm\:inline {
+      display: inline;
+    }
+    .sm\:size-auto {
+      width: auto;
+      height: auto;
+    }
     .sm\:w-\[360px\] {
       width: 360px;
+    }
+    .sm\:max-w-\[calc\(100vw-2\.5rem\)\] {
+      max-width: calc(100vw - 2.5rem);
     }
     .sm\:grid-cols-2 {
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1469,6 +1492,9 @@
     .sm\:items-end {
       align-items: flex-end;
     }
+    .sm\:items-start {
+      align-items: flex-start;
+    }
     .sm\:justify-between {
       justify-content: space-between;
     }
@@ -1480,6 +1506,9 @@
     }
     .sm\:self-end {
       align-self: flex-end;
+    }
+    .sm\:rounded-\[var\(--radius-sm\)\] {
+      border-radius: var(--radius-sm);
     }
     .sm\:border-t-0 {
       border-top-style: var(--tw-border-style);
@@ -1498,6 +1527,9 @@
     .sm\:p-10 {
       padding: calc(var(--spacing) * 10);
     }
+    .sm\:px-3 {
+      padding-inline: calc(var(--spacing) * 3);
+    }
     .sm\:px-5 {
       padding-inline: calc(var(--spacing) * 5);
     }
@@ -1506,6 +1538,9 @@
     }
     .sm\:px-10 {
       padding-inline: calc(var(--spacing) * 10);
+    }
+    .sm\:py-2 {
+      padding-block: calc(var(--spacing) * 2);
     }
     .sm\:py-12 {
       padding-block: calc(var(--spacing) * 12);

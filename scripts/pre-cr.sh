@@ -172,6 +172,18 @@ fi
 # ── Step 2: backend unit tests, then production build + CSS check + e2e ──────
 say "running the backend unit tests…"
 [ -d backend/node_modules ] || (cd backend && npm ci) || fail "npm ci failed in backend/"
+# The unit tests import lambda code, which has its own packages (CI runs the
+# same install). Install them when a lambda with dependencies has no
+# node_modules yet.
+lambdas_missing() {
+  for d in backend/lambda/*/ backend/lambda-layers/*/; do
+    grep -q '"dependencies"' "$d/package.json" 2>/dev/null && [ ! -d "$d/node_modules" ] && return 0
+  done
+  return 1
+}
+if lambdas_missing; then
+  (cd backend && npm run install:lambdas) || fail "npm run install:lambdas failed in backend/"
+fi
 npm --prefix backend test --silent || fail "the backend unit tests failed (details above).
 Fix the code or the test, commit, and push again."
 

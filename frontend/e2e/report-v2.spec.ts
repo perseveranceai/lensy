@@ -112,3 +112,27 @@ for (const theme of ['light', 'dark'] as const) {
     });
   }
 }
+
+test('REG-26: at 375px the Feedback button never covers a score card\'s "checks to improve" line', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 740 });
+  await openSavedReport(page, { report: stripeV2 });
+  const button = page.getByTestId('feedback-widget');
+  await expect(button.getByRole('button', { name: 'Feedback' })).toBeVisible();
+  const lines = page.getByText(/\d+ checks? to improve|Every check passes/);
+  await expect(lines).toHaveCount(2);
+  for (const line of await lines.all()) {
+    // Scroll the line to the button's height, where it used to sit underneath,
+    // then compare the button with the text itself (the span is card-wide).
+    const fb = (await button.boundingBox())!;
+    // The page scrolls smoothly, so jump there. A line above the fold can't
+    // scroll down that far, so it never goes under the button.
+    await line.evaluate((el, y) => window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - y, behavior: 'instant' }), fb.y);
+    const box = await line.evaluate((el) => { const r = document.createRange(); r.selectNodeContents(el); return r.getBoundingClientRect().toJSON(); });
+    const overlaps = box.x < fb.x + fb.width && fb.x < box.x + box.width && box.y < fb.y + fb.height && fb.y < box.y + box.height;
+    expect(overlaps, `${await line.textContent()} is under the Feedback button (${JSON.stringify({ box, fb })})`).toBe(false);
+  }
+  // Desktop keeps the labelled button in the left corner.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(button.getByText('Feedback', { exact: true })).toBeVisible();
+  expect((await button.boundingBox())!.x).toBeLessThan(40);
+});
