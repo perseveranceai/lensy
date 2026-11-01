@@ -2,5 +2,13 @@
   "hosted-zone:account=951411676525:domainName=perseveranceai.com:region=us-east-1": {
     "Id": "/hostedzone/Z0232150VQYAKXQMS0HH",
     "Name": "perseveranceai.com."
-  }
+  },
+  "availability-zones:account=951411676525:region=us-east-1": [
+    "us-east-1a",
+    "us-east-1b",
+    "us-east-1c",
+    "us-east-1d",
+    "us-east-1e",
+    "us-east-1f"
+  ]
 }

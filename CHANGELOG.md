@@ -5,6 +5,9 @@ All notable changes to the Lensy Documentation Auditor project will be documente
 ## [Unreleased]
 
 ### Added
+- **Fixed outbound IP for scans (REG-27)**: the agent Lambda runs in a VPC behind one NAT gateway with a static Elastic IP (one per environment), with S3 and DynamoDB gateway endpoints. The IP is the `LensyEgressIp` stack output and is served by the new `GET /bot-info`.
+- **`/bot` page update (REG-28)**: shows the user agent and this environment's scan IP (loaded from `/bot-info`), how to allow Lensy safely (user agent **and** IP, with a Cloudflare example), how to block it, and how Lensy treats robots.txt.
+
 - **Two-score report page**: two score cards (AI search, Coding agents) replace the score and citations cards; clicking a card filters the checks to that score. A reachability banner (honest-agent status, the six AI search bots, the robots.txt/server mismatch warning) replaces the bot-access banner. Checks are grouped as Both audiences, Coding agents and AI search, each with points out of its max and its fix, plus a "What an agent receives" preview and unscored tips. Recommendations come from the scored checks. Reports saved before v2 keep the old view with a re-scan note (S-02, S-06, S-08 to S-10).
 - **Downloads show both scores**: Markdown and PDF carry both scores, reachability, the agent preview and the new groups (DL-01, DL-02); older reports download in the old format (DL-08).
 - **Citations flag**: `REACT_APP_CITATIONS_ENABLED`, off in `.env.gamma` and `.env.production`. Off hides the citations card and views, and downloads never run citations (DL-07). S-03 and DL-03 to DL-05 run on a build with the flag on.
@@ -27,6 +30,8 @@ All notable changes to the Lensy Documentation Auditor project will be documente
 - **pre-cr**: installs the lambda packages (`npm run install:lambdas`, as CI does) when any are missing, so the backend unit tests can run on a fresh clone.
 
 ### Changed
+- **Blocked-scan message (REG-28)**: no longer tells visitors to allow the `Lensy/1.0` user agent or says AI agents may be blocked; it says nothing needs changing and points to /bot. The copy now lives in one place (`frontend/src/botBlockedCopy.ts`).
+- **One user agent (REG-27)**: removed the unused `tools/process-url.ts` (and its `.js`); `check-sitemap-health.ts` now uses `HONEST_UA`.
 - **Fix text for llms.txt and .md copies**: when the file exists but loses points, the fix says which part (too large, broken links, wrong format, or a .md copy nothing points to) instead of how to publish one.
 - **How it works and research copy**: the analysis tiles read AI search, Coding agents and Reachability; "two scores out of 100"; the unsupported "JSON-LD increases rich snippet visibility by 20 to 30%" claim is replaced with the Ahrefs controlled study.
 - **Honest fetcher (REG-18)**: Lensy now sends `Lensy/1.0 (+https://perseveranceai.com/bot)` first and retries once with the browser user agent on 403/429. Sites whose bot protection refuses both end with `blocked-by-bot-protection` and a "bot protection blocked our checker" card instead of "unreachable". Audit rows add `submittedUrl`, `finalUrl`, `httpStatus` and `ipHash`; the privacy page says so.

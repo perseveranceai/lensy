@@ -5,6 +5,7 @@ import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3
 
 import { writeSessionArtifact, readFromS3, writeToS3, ANALYSIS_BUCKET } from '../shared/s3-helpers';
 import { createProgressHelper } from './publish-progress';
+import { HONEST_UA } from '../shared/fetch-page';
 
 /**
  * Tool: Check Sitemap Health
@@ -28,7 +29,8 @@ import { createProgressHelper } from './publish-progress';
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
 
 // ─── Constants ───────────────────────────────────────────────
-const USER_AGENT = 'Mozilla/5.0 (compatible; Lensy Documentation Quality Auditor/1.0; +https://lensy.dev/bot)';
+// One public name for every outbound request (REG-27).
+const USER_AGENT = HONEST_UA;
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const MAX_SITEMAP_DEPTH = 3;
 const BATCH_SIZE = 10;

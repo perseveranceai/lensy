@@ -14,6 +14,7 @@ import { DownloadReportButton } from "./report/DownloadReportButton";
 import { CITATIONS_ENABLED } from "./report/flags";
 import { CookieBanner } from "./CookieBanner";
 import { openCookieSettings } from "./consent";
+import { BOT_BLOCKED_TITLE, botBlockedDescription } from "./botBlockedCopy";
 const logo = `${process.env.PUBLIC_URL}/logo.png`;
 
 // N-08: keep transient / non-canonical pages (404, empty results) out of search
@@ -576,10 +577,10 @@ export function ScanReport({
   // the error card never shows a raw status code. Falls back to the raw message.
   const describeScanError = (raw?: string): { title: string; description: string } => {
     const msg = (raw || "").trim();
-    // REG-18: a bot-protection block is not "unreachable"; say who refused and how to fix it.
+    // REG-18: a bot-protection block is not "unreachable". REG-28: copy lives in botBlockedCopy.ts.
     if (/blocked-by-bot-protection|bot protection blocked/i.test(msg)) {
       const status = (msg.match(/HTTP (\d{3})/) || [])[1] || "403";
-      return { title: "This site's bot protection blocked our checker", description: `HTTP ${status}. The site refused Lensy under its own name and as a browser. AI agents that name themselves may be refused the same way. To scan it, allow the Lensy/1.0 user agent in your bot protection.` };
+      return { title: BOT_BLOCKED_TITLE, description: botBlockedDescription(status) };
     }
     if (/\b400\b/.test(msg)) {
       return { title: "That doesn't look like a valid URL", description: "Please enter a valid documentation URL and try again." };
@@ -1727,19 +1728,52 @@ export function Privacy() {
 // Every statement here matches backend/lambda/agent-handler/shared/fetch-page.ts.
 export function BotInfo() {
   const code = "rounded-[var(--radius-xs)] bg-[var(--surface-2)] px-1.5 py-0.5 text-[13px]";
-  return <Page title={<>Lensy<br /><span className="text-[var(--accent)]">checker.</span></>} intro="What the Lensy checker is, when it visits your site, and how to let it through your bot protection.">
+  const userAgent = "Lensy/1.0 (+https://perseveranceai.com/bot)";
+  // The scan IP differs per environment and is only known after the stack deploys, so it comes
+  // from the API at runtime, never from the build.
+  const [egressIps, setEgressIps] = useState<string[] | null>(null);
+  const [ipError, setIpError] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_BASE_URL}/bot-info`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((d) => { if (!cancelled) setEgressIps(Array.isArray(d?.egressIps) ? d.egressIps : []); })
+      .catch(() => { if (!cancelled) setIpError(true); });
+    return () => { cancelled = true; };
+  }, []);
+  const ipList = egressIps && egressIps.length > 0 ? egressIps : null;
+  const ipForRule = ipList ? ipList.join(" ") : "<Lensy IP>";
+  return <Page title={<>Lensy<br /><span className="text-[var(--accent)]">checker.</span></>} intro="What the Lensy checker is, when it visits your site, and how to let it through your bot protection safely.">
     <article className="legal-prose prose-lensy max-w-[760px] py-12 sm:py-16">
       <h2>What it is</h2>
-      <p>Lensy checks whether a documentation page is ready for AI search engines and coding agents. When someone enters a URL on perseveranceai.com, Lensy fetches that page and a few public files on the same site, such as <code className={code}>robots.txt</code>, <code className={code}>llms.txt</code>, the sitemap and the page&apos;s Markdown version. It does not crawl your site on its own; each visit starts from a person&apos;s scan.</p>
+      <p>Lensy checks whether a documentation page is ready for AI search engines and coding agents. When someone enters a URL on perseveranceai.com, Lensy fetches that page and a few public files on the same site, such as <code className={code}>robots.txt</code>, <code className={code}>llms.txt</code>, the sitemap and the page&apos;s Markdown version. That&apos;s usually 10 to 25 requests per scan. It does not crawl your site on its own; each visit starts from a person&apos;s scan.</p>
 
-      <h2>User agent</h2>
+      <h2>How to recognise it</h2>
       <p>Lensy names itself in every request:</p>
-      <p><code className={code}>Lensy/1.0 (+https://perseveranceai.com/bot)</code></p>
-      <p>If the site refuses that request with HTTP 403 or 429, Lensy tries once more with a browser user agent that ends with the same <code className={code}>(+https://perseveranceai.com/bot)</code> link. If that is refused too, the scan stops and tells the person that the site&apos;s bot protection blocked the checker. The report says when only the browser request worked, because AI agents that name themselves may be blocked the same way.</p>
+      <p><code className={code} data-testid="bot-user-agent">{userAgent}</code></p>
+      <p>Every scan comes from this IP address:</p>
+      <p data-testid="bot-egress-ips">
+        {ipList ? ipList.map((ip) => <code key={ip} className={`${code} mr-2`}>{ip}</code>)
+          : ipError ? <span>We couldn&apos;t load the address just now. Please reload, or email us and we&apos;ll send it.</span>
+          : <span className="text-[var(--muted)]">Loading…</span>}
+      </p>
+      <p>We&apos;ll announce any change to this address on this page at least 14 days ahead.</p>
+      <p>If the site refuses the first request with HTTP 403 or 429, Lensy tries once more with a browser user agent that ends with the same <code className={code}>(+https://perseveranceai.com/bot)</code> link, from the same IP. If that is refused too, the scan stops and tells the person that the site&apos;s bot protection blocked the checker.</p>
       <p>Lensy never sends the names of other companies&apos; crawlers, such as GPTBot or ClaudeBot.</p>
+      <p>The open-source Lensy command-line tool identifies itself as <code className={code}>Lensy-CLI</code>. It runs on the user&apos;s own machine or CI runner, so it has no fixed IP.</p>
+
+      <h2>robots.txt</h2>
+      <p>A Lensy scan is a fetch a person asked for, like an AI assistant opening a page on a user&apos;s behalf, so Lensy doesn&apos;t apply your robots.txt rules to itself. It reads robots.txt to report what your rules tell AI bots. To stop Lensy visiting, use one of the options under &ldquo;How to block it&rdquo;.</p>
 
       <h2>How to allow it</h2>
-      <p>In your bot protection or firewall, allow requests whose <code className={code}>User-Agent</code> contains <code className={code}>Lensy/1.0</code>. Lensy runs on AWS in us-east-1 and has no fixed IP address, so a rule by IP will not work.</p>
+      <p>Match <strong>both</strong> the user agent and the IP address. A rule on the user agent alone lets in anyone who copies the name.</p>
+      <p>Cloudflare example: add a custom WAF rule with the action <strong>Skip</strong> (skip Super Bot Fight Mode and the managed rules) for this expression:</p>
+      <p><code className={code} data-testid="bot-allow-rule">{`(http.user_agent contains "Lensy/1.0") and (ip.src in {${ipForRule}})`}</code></p>
+      <p>On Cloudflare&apos;s free plan, Bot Fight Mode can&apos;t be skipped by a custom rule. Other firewalls and CDNs have an equivalent &ldquo;allow when user agent and source IP match&rdquo; rule.</p>
+      <p>You don&apos;t have to do this. A blocked scan doesn&apos;t mean verified AI crawlers are blocked, and we&apos;re working on getting Lensy onto Cloudflare&apos;s verified-bot list so it works without any change on your side.</p>
+
+      <h2>How to block it</h2>
+      <p>Block requests that match the user agent and IP above in your firewall, or email us and we&apos;ll stop scans of your domain.</p>
 
       <h2>Contact</h2>
       <p>Questions, or want Lensy to stop visiting your site? Email <a href="mailto:hello@perseveranceai.com" className="text-[var(--accent)] underline underline-offset-2">hello@perseveranceai.com</a>.</p>

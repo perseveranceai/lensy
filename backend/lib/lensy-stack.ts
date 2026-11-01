@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as apigwv2 from '@aws-cdk/aws-apigatewayv2-alpha';
 import * as apigwv2_integrations from '@aws-cdk/aws-apigatewayv2-integrations-alpha';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
@@ -286,6 +287,31 @@ export class LensyStack extends cdk.Stack {
 
         const aiReadinessChecker = createLambda('AIReadinessCheckerFunction', 'ai-readiness-checker', 60);
 
+        // Fixed outbound IP for scans. The agent Lambda fetches every customer page; outside a VPC it
+        // leaves AWS from a rotating shared IP, so sites can't allowlist it and some bot protection
+        // (Cloudflare at help.branch.io) refuses it. In a VPC behind one NAT gateway with a static
+        // Elastic IP, every scan comes from one published address (see the /bot page).
+        // One NAT keeps one IP to publish; it is a single-AZ dependency, accepted for now.
+        const egressEip = new ec2.CfnEIP(this, 'ScanEgressEip', {
+            domain: 'vpc',
+            tags: [{ key: 'Name', value: `lensy-scan-egress-${lensyEnv}` }],
+        });
+        const scanVpc = new ec2.Vpc(this, 'ScanVpc', {
+            maxAzs: 2,
+            natGateways: 1,
+            natGatewayProvider: ec2.NatProvider.gateway({ eipAllocationIds: [egressEip.attrAllocationId] }),
+            subnetConfiguration: [
+                { name: 'public', subnetType: ec2.SubnetType.PUBLIC, cidrMask: 24 },
+                { name: 'private', subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS, cidrMask: 22 },
+            ],
+            // S3 and DynamoDB traffic stays on the AWS network instead of paying NAT data charges.
+            gatewayEndpoints: {
+                S3: { service: ec2.GatewayVpcEndpointAwsService.S3 },
+                DynamoDB: { service: ec2.GatewayVpcEndpointAwsService.DYNAMODB },
+            },
+        });
+        const scanEgressIp = egressEip.attrPublicIp;
+
         // NEW: Agent Handler (LangGraph + Bedrock)
         const agentHandler = new lambda.Function(this, 'AgentHandlerFunction', {
             runtime: lambda.Runtime.NODEJS_22_X,
@@ -294,6 +320,10 @@ export class LensyStack extends cdk.Stack {
                 // __tests__ holds Jest tests and scoring fixtures (about 2 MB); keep them out of the bundle.
                 exclude: ['*.ts', 'tsconfig.json', '*.d.ts', '__tests__'],
             }),
+            // All outbound traffic (customer pages, Bedrock, Jina, API Gateway callbacks) leaves through
+            // the NAT gateway's Elastic IP.
+            vpc: scanVpc,
+            vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
             timeout: cdk.Duration.minutes(15),
             memorySize: 1024,
             environment: {
@@ -368,6 +398,9 @@ export class LensyStack extends cdk.Stack {
             USE_AGENT: useAgent,
             AGENT_FUNCTION_NAME: agentHandler.functionName,
             USAGE_TRACKING_TABLE: usageTrackingTable.tableName,
+            // Served by GET /bot-info so the /bot page shows this environment's real scan IP.
+            // (The prod frontend is built before the prod stack deploys, so it can't be baked in.)
+            SCAN_EGRESS_IP: scanEgressIp,
             // Prod: 100/day per IP. Originally 3, which proved far too
             // restrictive for a public free tier and was raised to 100 in the
             // console — this line is the code catching up. Do not "correct" it
@@ -434,6 +467,7 @@ export class LensyStack extends cdk.Stack {
         httpApi.addRoutes({ path: '/console/feedback', methods: [apigwv2.HttpMethod.POST], integration: apiIntegration });
         httpApi.addRoutes({ path: '/waitlist', methods: [apigwv2.HttpMethod.POST], integration: apiIntegration });
         httpApi.addRoutes({ path: '/usage', methods: [apigwv2.HttpMethod.GET], integration: apiIntegration });
+        httpApi.addRoutes({ path: '/bot-info', methods: [apigwv2.HttpMethod.GET], integration: apiIntegration });
 
         // 6b. Console Login Logger — records login events for audit trail
         const consoleLoginLogger = new lambda.Function(this, 'ConsoleLoginLoggerFunction', {
@@ -674,6 +708,11 @@ function handler(event) {
 
         alarmOnLambdaErrors('Agent', agentHandler, 'Agent');
         alarmOnLambdaErrors('Api', apiHandler, 'Api');
+
+        new cdk.CfnOutput(this, 'LensyEgressIp', {
+            value: scanEgressIp,
+            description: 'Fixed outbound IP for page scans (published on /bot)',
+        });
 
         new cdk.CfnOutput(this, 'HttpApiUrl', {
             value: httpApi.apiEndpoint,
