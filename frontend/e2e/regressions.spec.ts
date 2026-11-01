@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { URLS, blockAnalytics, startScan, expectReport, gaEvents, trackConsoleErrors } from './helpers';
+import { URLS, blockAnalytics, startScan, expectReport, gaEvents, trackConsoleErrors, setTheme } from './helpers';
 
 // Regression cases (REG-xx) from docs/test-cases.md. Each one is a bug that
 // reached gamma or prod. When you fix a new one, add its REG case to the doc
@@ -102,14 +102,46 @@ test('REG-18: a site behind bot protection shows the bot-protection card, not "u
 
   await startScan(page, 'https://help.branch.io/account-hub/onboarding-guide');
   await expect(page.getByText("This site's bot protection blocked our checker")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(/HTTP 403\. .*allow the Lensy\/1\.0 user agent/)).toBeVisible();
+  // REG-28: the card says nothing needs changing, and never tells the visitor to loosen
+  // their bot protection or that real AI agents are blocked.
+  await expect(page.getByText(/HTTP 403\. .*You don't need to change anything/)).toBeVisible();
+  await expect(page.getByText(/allow the Lensy\/1\.0 user agent in your bot protection/)).toHaveCount(0);
+  await expect(page.getByText(/AI agents that name themselves may be refused/)).toHaveCount(0);
   await expect(page.getByText("We couldn't reach that page")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
-test('REG-18: /bot explains the checker and its user agent', async ({ page }) => {
+test('REG-18 / REG-28: /bot shows the user agent, the scan IP and a rule that matches both', async ({ page }) => {
+  await page.route(/\/bot-info$/, (route) => route.fulfill({
+    json: { userAgent: 'Lensy/1.0 (+https://perseveranceai.com/bot)', egressIps: ['203.0.113.7'] },
+  }));
   await page.goto('/bot');
-  await expect(page.getByRole('heading', { name: 'User agent' })).toBeVisible();
-  await expect(page.getByText('Lensy/1.0 (+https://perseveranceai.com/bot)')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'How to recognise it' })).toBeVisible();
+  await expect(page.getByTestId('bot-user-agent')).toHaveText('Lensy/1.0 (+https://perseveranceai.com/bot)');
+  await expect(page.getByTestId('bot-egress-ips')).toContainText('203.0.113.7');
+  // The allow rule matches the user agent AND the IP; a user-agent-only rule is spoofable.
+  await expect(page.getByTestId('bot-allow-rule')).toHaveText('(http.user_agent contains "Lensy/1.0") and (ip.src in {203.0.113.7})');
+  await expect(page.getByText(/has no fixed IP address, so a rule by IP will not work/)).toHaveCount(0);
   await expect(page.getByText("This page does not exist.")).toHaveCount(0);
+});
+
+test('REG-28: /bot still explains the checker when the IP lookup fails', async ({ page }) => {
+  await page.route(/\/bot-info$/, (route) => route.fulfill({ status: 500, json: { error: 'boom' } }));
+  await page.goto('/bot');
+  await expect(page.getByTestId('bot-user-agent')).toBeVisible();
+  await expect(page.getByTestId('bot-egress-ips')).toContainText("We couldn't load the address");
+});
+
+test('REG-28: /bot fits a 375px screen in both themes', async ({ page }) => {
+  await page.route(/\/bot-info$/, (route) => route.fulfill({
+    json: { userAgent: 'Lensy/1.0 (+https://perseveranceai.com/bot)', egressIps: ['203.0.113.7'] },
+  }));
+  await page.setViewportSize({ width: 375, height: 812 });
+  for (const theme of ['light', 'dark'] as const) {
+    await setTheme(page, theme);
+    await page.goto('/bot');
+    await expect(page.getByTestId('bot-allow-rule')).toBeVisible();
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow, `horizontal scroll in ${theme} theme`).toBeLessThanOrEqual(0);
+  }
 });

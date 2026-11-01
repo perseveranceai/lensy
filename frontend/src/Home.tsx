@@ -11,6 +11,7 @@ import {
 } from "lucide-react"
 import { useAuditAllowance } from "./AppRoutes"
 import { trackEvent } from "./analytics"
+import { BOT_BLOCKED_TITLE, botBlockedDescription } from "./botBlockedCopy"
 
 type IconName = "arrow" | "plus" | "link" | "eye" | "chevronDown" | "chevronRight"
 function Icon({ name, className = "" }: { name: IconName; className?: string }) {
@@ -211,8 +212,8 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
                       if (/blocked-by-bot-protection|bot protection blocked/i.test(raw)) {
                         // REG-18: a bot-protection block is not "unreachable".
                         const status = (raw.match(/HTTP (\d{3})/) || [])[1] || "403";
-                        title = "This site's bot protection blocked our checker";
-                        description = `HTTP ${status}. The site refused Lensy under its own name and as a browser. AI agents that name themselves may be refused the same way. To scan it, allow the Lensy/1.0 user agent in your bot protection.`;
+                        title = BOT_BLOCKED_TITLE;
+                        description = botBlockedDescription(status);
                       } else if (/\b400\b/.test(raw) || /not a valid url/i.test(raw)) {
                         title = "That doesn't look like a valid URL";
                         description = "Please enter a valid documentation URL and try again.";

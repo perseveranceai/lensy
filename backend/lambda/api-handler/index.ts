@@ -13,6 +13,10 @@ const s3Client = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' })
 // ── Session JSON helpers (citations, H-001) ──
 const CITATIONS_RUN_TTL_MS = 3 * 60 * 1000;
 
+// The checker's public name, served by GET /bot-info. Keep in sync with HONEST_UA in
+// lambda/agent-handler/shared/fetch-page.ts (a REG-27 unit test fails if they differ).
+const LENSY_USER_AGENT = 'Lensy/1.0 (+https://perseveranceai.com/bot)';
+
 function isValidSessionId(id: unknown): id is string {
     return typeof id === 'string' && /^[A-Za-z0-9_-]{8,100}$/.test(id);
 }
@@ -451,6 +455,21 @@ export const handler: Handler<any, any> = async (event: any) => {
                     resetsAt: `${getTodayDate()}T23:59:59Z`,
                     waitlisted: rateLimit.waitlisted,
                 })
+            };
+        }
+
+        // Public facts about the checker for the /bot page: its name and this environment's fixed
+        // outbound IP. The user agent must match HONEST_UA in agent-handler/shared/fetch-page.ts
+        // (REG-27 checks they agree).
+        if (httpMethod === 'GET' && path === '/bot-info') {
+            const egressIp = process.env.SCAN_EGRESS_IP || '';
+            return {
+                statusCode: 200,
+                headers: { ...corsHeaders, 'Cache-Control': 'public, max-age=300' },
+                body: JSON.stringify({
+                    userAgent: LENSY_USER_AGENT,
+                    egressIps: egressIp ? [egressIp] : [],
+                }),
             };
         }
 
