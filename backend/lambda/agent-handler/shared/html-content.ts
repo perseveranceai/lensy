@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Turning raw HTML into what a crawler or agent actually reads.
  *

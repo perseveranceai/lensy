@@ -1,6 +1,6 @@
 // report.json v2 fields (spec §6.1, tasks 2.5), built from a captured fixture.
 import { collectSignalsV2 } from '../collect-signals-v2';
-import { buildScoringV2 } from '../generate-report';
+import { buildScoringV2 } from '../report-v2';
 import { loadFixture, pageInputFromFixture, replayFetch } from './replay';
 
 test('stripe-payments: scoringVersion 2, both scores, gate, tips and the agent preview', async () => {

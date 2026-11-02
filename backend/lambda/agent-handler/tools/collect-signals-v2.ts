@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Signal collection for the two-score readiness check (spec
  * docs/two-score-readiness/spec.md §4, §6.3). All network work for scoring v2
@@ -74,17 +75,24 @@ export interface SignalsV2 {
     platform: Platform;
     /** URLs that failed at the network level after retries: their checks are unknown, not "missing". */
     netErrors: string[];
+    /** Ids of the checks fed by a request that failed at the network level (C1-C6, S1-S6 order). */
+    netErrorChecks: string[];
 }
 
 export interface CollectOptions {
     /** Injected by the fixture tests; defaults to the global fetch. */
     fetchImpl?: typeof fetch;
     timeoutMs?: number;
+    /** Passed to fetchPage. The website leaves both unset; the CLI names itself and turns the fallback off. */
+    userAgent?: string;
+    browserFallback?: boolean;
     /** Fixed clock for the age shown in the report (tests). */
     now?: number;
 }
 
-interface Got { ok: boolean; status: number; url: string; contentType: string; headers: Headers; body: string }
+interface Got { ok: boolean; status: number; url: string; contentType: string; headers: Headers; body: string; netError?: boolean }
+
+const CHECK_ORDER = ['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6'];
 
 /**
  * robots.txt evaluation: pick the most specific matching group, longest matching rule wins.
@@ -131,10 +139,17 @@ const parseDate = (s: string) => { const d = new Date(s); return isNaN(d.getTime
 
 export async function collectSignalsV2(page: PageInput, opts: CollectOptions = {}): Promise<SignalsV2> {
     const netErrors: string[] = [];
-    const fetchOpts: FetchOptions = { fetchImpl: opts.fetchImpl, timeoutMs: opts.timeoutMs ?? 10000 };
+    const netChecks = new Set<string>();
+    const fetchOpts: FetchOptions = {
+        fetchImpl: opts.fetchImpl,
+        timeoutMs: opts.timeoutMs ?? 10000,
+        ...(opts.userAgent !== undefined ? { userAgent: opts.userAgent } : {}),
+        ...(opts.browserFallback !== undefined ? { browserFallback: opts.browserFallback } : {}),
+    };
 
     // GET/HEAD through the honest fetcher, retrying network failures like the prototype (3 tries).
-    async function get(url: string, accept: string, method: 'GET' | 'HEAD' = 'GET'): Promise<Got> {
+    // `feeds` names the checks this request feeds, so a network failure makes them unknown, not missing.
+    async function get(url: string, accept: string, method: 'GET' | 'HEAD' = 'GET', feeds: string[] = []): Promise<Got> {
         for (let attempt = 0; attempt < 3; attempt++) {
             const r = await fetchPage(url, { ...fetchOpts, accept, method });
             if (r.errorKind !== 'network') {
@@ -143,7 +158,8 @@ export async function collectSignalsV2(page: PageInput, opts: CollectOptions = {
             if (attempt < 2) await new Promise(res => setTimeout(res, opts.fetchImpl ? 0 : 800 * (attempt + 1)));
         }
         netErrors.push(url);
-        return { ok: false, status: 0, url, contentType: '', headers: new Headers(), body: '' };
+        feeds.forEach(id => netChecks.add(id));
+        return { ok: false, status: 0, url, contentType: '', headers: new Headers(), body: '', netError: true };
     }
 
     const finalUrl = page.finalUrl;
@@ -153,7 +169,7 @@ export async function collectSignalsV2(page: PageInput, opts: CollectOptions = {
     const pageHeaders = new Headers(page.headers);
 
     // ── robots.txt and the six AI search bots ──
-    const robotsRes = await get(origin + '/robots.txt', 'text/plain,*/*');
+    const robotsRes = await get(origin + '/robots.txt', 'text/plain,*/*', 'GET', ['S1']);
     const robots = robotsRes.ok && !/<html/i.test(robotsRes.body) ? robotsRes.body : '';
     const allowedBots = AI_SEARCH_BOTS.filter(b => robotsAllows(robots, b, path));
 
@@ -174,11 +190,13 @@ export async function collectSignalsV2(page: PageInput, opts: CollectOptions = {
     const llmsCands = [origin + '/llms.txt', ...(segs.length > 1 ? [origin + '/' + segs[0] + '/llms.txt'] : [])];
 
     const [cn, md, llmsFound] = await Promise.all([
-        get(finalUrl, 'text/markdown'),
-        get(mdCandidate, 'text/markdown,text/plain,*/*'),
+        // C5 and C6 depend on these too, but only when they would have supplied
+        // what the agent receives; that is decided after both return.
+        get(finalUrl, 'text/markdown', 'GET', ['C2']),
+        get(mdCandidate, 'text/markdown,text/plain,*/*', 'GET', ['C3']),
         (async () => {
             for (const c of llmsCands) {
-                const r = await get(c, 'text/plain,text/markdown,*/*');
+                const r = await get(c, 'text/plain,text/markdown,*/*', 'GET', ['C4', 'C3']);
                 if (r.ok && !looksLikeHtml(r.body) && r.body.length > 50) return { body: r.body, url: c };
             }
             return null;
@@ -186,6 +204,7 @@ export async function collectSignalsV2(page: PageInput, opts: CollectOptions = {
     ]);
     const cnOk = looksMarkdown(cn);
     const mdOk = looksMarkdown(md);
+    if (cn.netError || (!cnOk && md.netError)) { netChecks.add('C5'); netChecks.add('C6'); }
     const llms = llmsFound?.body || null;
     const llmsUrl = llmsFound?.url || null;
 
@@ -203,9 +222,9 @@ export async function collectSignalsV2(page: PageInput, opts: CollectOptions = {
         // One at a time, like the prototype: parallel probes trip rate limits.
         const resolved: boolean[] = [];
         for (const l of sample) {
-            const r = await get(l, '*/*', 'HEAD');
+            const r = await get(l, '*/*', 'HEAD', ['C4', 'C3']);
             if (r.status === 405 || r.status === 403) {
-                const g = await get(l, 'text/markdown,text/html,*/*');
+                const g = await get(l, 'text/markdown,text/html,*/*', 'GET', ['C4', 'C3']);
                 resolved.push(g.ok);
             } else {
                 resolved.push(r.ok);
@@ -235,7 +254,7 @@ export async function collectSignalsV2(page: PageInput, opts: CollectOptions = {
     const queue = [...roots];
     let filesRead = 0;
     while (queue.length && filesRead < MAX_SITEMAP_FILES) {
-        const r = await get(queue.shift()!, 'application/xml,text/xml,*/*');
+        const r = await get(queue.shift()!, 'application/xml,text/xml,*/*', 'GET', ['S3', 'S4']);
         filesRead++;
         if (!r.ok) continue;
         if (/<sitemapindex/i.test(r.body)) {
@@ -327,5 +346,6 @@ export async function collectSignalsV2(page: PageInput, opts: CollectOptions = {
         },
         platform: detectPlatform(html),
         netErrors,
+        netErrorChecks: CHECK_ORDER.filter(id => netChecks.has(id)),
     };
 }
