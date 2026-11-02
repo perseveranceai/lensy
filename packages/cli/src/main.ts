@@ -5,7 +5,8 @@ import { check, defaultUserAgent, isLocalUrl } from '@perseverance-ai/lensy-core
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import { readFileSync } from 'node:fs';
 import { createColors } from 'picocolors';
-import { PageResult, renderPage, renderSummary } from './render-text';
+import { largeRunNotice, uniquePages } from './pages';
+import { PageResult, renderBrief, renderPage, renderSummary } from './render-text';
 
 export const EXIT = { ok: 0, usage: 2, notChecked: 3 } as const;
 
@@ -74,8 +75,11 @@ export async function run(argv: string[], io: Io): Promise<number> {
       if (local) throw new UsageError(`${local} is a local address. Checking a local build comes in a later version.`);
 
       const c = createColors(o.color && !!io.stdout.isTTY && !io.env.NO_COLOR);
+      const { pages: toCheck } = uniquePages(list);
+      const notice = largeRunNotice(toCheck.length, o.concurrency);
+      if (notice) io.stdout.write(c.yellow(notice) + '\n\n');
       const userAgent = o.userAgent ?? defaultUserAgent(io.version);
-      const pages = await pool(list, o.concurrency, async (url): Promise<PageResult> => {
+      const pages = await pool(toCheck, o.concurrency, async (url): Promise<PageResult> => {
         try {
           return { url, report: await check(url, { userAgent, timeoutMs: o.timeout, fetchImpl: io.fetchImpl }) };
         } catch (e) {
@@ -84,9 +88,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
         }
       });
 
-      const parts = [];
-      if (pages.length > 1) parts.push(renderSummary(c, pages));
-      parts.push(...pages.map(p => renderPage(c, p)));
+      // One page: everything. Several: the table and top fixes; full details go in --html/--md.
+      const parts = pages.length === 1
+        ? [renderPage(c, pages[0])]
+        : [renderSummary(c, pages), ...pages.map(p => renderBrief(c, p)), c.dim('Full results: rerun with --html report.html or --md report.md.')];
       io.stdout.write(parts.join('\n\n') + '\n');
       exitCode = pages.every(p => p.report?.status === 'ok' && !p.internalError) ? EXIT.ok : EXIT.notChecked;
     });

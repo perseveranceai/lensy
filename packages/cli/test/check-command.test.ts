@@ -103,6 +103,41 @@ describe('several pages', () => {
   });
 });
 
+describe('several pages in the terminal (spec answers 9 and 10)', () => {
+  test('summary, top fixes per page and the report pointer, not every check', async () => {
+    const t = io(replayFetch(both));
+    await run(['check', vitest.expected.url, stripe.expected.url], t.io);
+    const out = t.out();
+    expect(out).toContain('Full results: rerun with --html report.html or --md report.md.');
+    expect((out.match(/Fix: /g) || []).length).toBeLessThanOrEqual(6); // 3 per page
+    expect(out).not.toMatch(/PASS\s+C1/); // no per-check rows
+  });
+
+  test('one page shows every check and no report pointer', async () => {
+    const t = io(replayFetch(vitest.entries));
+    await run(['check', vitest.expected.url], t.io);
+    expect(t.out()).toMatch(/PASS\s+C1/);
+    expect(t.out()).not.toContain('Full results:');
+  });
+
+  test('more than 15 URLs: every page is checked, after a notice with the count and time', async () => {
+    const requested = new Set<string>();
+    const impl = (async (input: any) => { requested.add(new URL(String(input)).pathname); throw new TypeError('fetch failed: ENOTFOUND'); }) as typeof fetch;
+    const list = Array.from({ length: 40 }, (_, i) => `https://docs.example.com/p${i}`);
+    const t = io(impl);
+    expect(await run(['check', ...list, list[0]], t.io)).toBe(EXIT.notChecked);
+    expect(requested.size).toBe(40);
+    expect(t.out().startsWith('Checking 40 pages, 2 at a time. This takes about 2 to 5 minutes.')).toBe(true);
+  });
+
+  test('15 pages or fewer: no notice', async () => {
+    const impl = (async () => { throw new TypeError('fetch failed'); }) as typeof fetch;
+    const t = io(impl);
+    await run(['check', ...Array.from({ length: 15 }, (_, i) => `https://docs.example.com/p${i}`)], t.io);
+    expect(t.out()).not.toContain('This takes about');
+  });
+});
+
 describe('invalid usage exits 2 before any request', () => {
   test.each([
     [[], 'Give at least one URL'],

@@ -3,7 +3,7 @@
 // No per-check code: labels, findings and fixes come from the report.
 import type { Check, Report, Score } from '@perseverance-ai/lensy-core';
 import type { Colors } from 'picocolors/types';
-import { bannerLine, previewLine } from './view';
+import { bannerLine, previewLine, topFixes } from './view';
 
 const STATUS_WORD: Record<Check['status'], string> = { pass: 'PASS', warn: 'WARN', fail: 'FAIL', unknown: 'UNKNOWN', skipped: 'SKIPPED' };
 
@@ -85,4 +85,16 @@ export function renderSummary(c: Colors, pages: PageResult[]): string {
   const w = head.map((h, i) => Math.max(h.length, ...rows.map(r => r[i].length)));
   const line = (cells: string[]) => cells.map((x, i) => pad(x, w[i])).join('  ').trimEnd();
   return [c.bold(line(head)), ...rows.map(line)].join('\n');
+}
+
+/** Several pages: one short block per page with its top fixes, not every check. */
+export function renderBrief(c: Colors, p: PageResult, fixes = 3): string {
+  const msg = statusMessage(p);
+  if (msg) return [c.bold(p.url), `  ${p.internalError ? c.red(msg) : c.yellow(msg)}`].join('\n');
+  const r = p.report!;
+  const lines = [c.bold(p.url), `  Coding agents ${scoreText(r.scores.codingAgents)}    AI search ${scoreText(r.scores.aiSearch)}`];
+  const top = topFixes(r, fixes);
+  if (!top.length) lines.push('  Every check passes.');
+  for (const f of top) lines.push(`  - ${f.issue}${f.points ? ` (${f.points})` : ''}`, `      Fix: ${f.fix}`);
+  return lines.join('\n');
 }
