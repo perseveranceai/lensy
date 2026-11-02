@@ -87,3 +87,38 @@ describe('REG-18: fetchPage honest user agent with browser fallback', () => {
         expect(calls.map(c => c.accept)).toEqual(['text/markdown', 'text/markdown']);
     });
 });
+
+// lensy-cli E1: the CLI names itself and never retries as a browser.
+describe('fetchPage userAgent and browserFallback options', () => {
+    const CLI_UA = 'Test-Agent/0.0 (+https://example.com/bot)';
+    function recording(status: number) {
+        const uas: string[] = [];
+        const impl = (async (_url: string, init: RequestInit) => {
+            uas.push((init.headers as Record<string, string>)['User-Agent']);
+            return new Response('x', { status, headers: { 'content-type': 'text/html' } });
+        }) as unknown as typeof fetch;
+        return { impl, uas };
+    }
+
+    test('the honest request uses the userAgent override', async () => {
+        const { impl, uas } = recording(200);
+        const r = await fetchPage('https://docs.example.com/', { fetchImpl: impl, userAgent: CLI_UA });
+        expect(r.ok).toBe(true);
+        expect(uas).toEqual([CLI_UA]);
+    });
+
+    test.each([403, 429])('browserFallback false: one request, %i gives errorKind blocked', async (status) => {
+        const { impl, uas } = recording(status);
+        const r = await fetchPage('https://docs.example.com/', { fetchImpl: impl, userAgent: CLI_UA, browserFallback: false });
+        expect(uas).toEqual([CLI_UA]);
+        expect(uas).not.toContain(BROWSER_UA);
+        expect(r).toMatchObject({ ok: false, status, via: 'honest', honestStatus: status, errorKind: 'blocked' });
+        expect(r.browserStatus).toBeUndefined();
+    });
+
+    test('browserFallback defaults to true (website behaviour unchanged)', async () => {
+        const { impl, uas } = recording(403);
+        await fetchPage('https://docs.example.com/', { fetchImpl: impl });
+        expect(uas).toEqual([HONEST_UA, BROWSER_UA]);
+    });
+});

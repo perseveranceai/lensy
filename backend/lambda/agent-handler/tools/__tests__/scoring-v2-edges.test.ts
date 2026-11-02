@@ -166,3 +166,42 @@ test('fix copy names what is wrong when llms.txt or a .md copy exists but loses 
     expect(c4.fix).toMatch(/^It is \d+K characters; keep it under 50K/);
     expect(c4.fix).not.toContain('Publish /llms.txt');
 });
+
+// lensy-cli E5: a request that fails at the network level names the checks it feeds.
+describe('netErrorChecks', () => {
+    const html = article(`<h1>Start</h1>${body}`);
+    async function withFailures(fails: (url: string, accept: string) => boolean, pages: Site = {}) {
+        const base = fetch404(site({ [PAGE]: { body: html }, ...pages }));
+        const impl = (async (input: any, init: RequestInit = {}) => {
+            const accept = (init.headers as Record<string, string>)?.['Accept'] || '';
+            if (fails(String(input), accept)) throw new TypeError('fetch failed: ECONNRESET');
+            return base(input, init);
+        }) as typeof fetch;
+        return collectSignalsV2({ finalUrl: PAGE, html, headers: { 'content-type': 'text/html' }, gate: { via: 'honest', honestStatus: 200 } }, { fetchImpl: impl, now: 0 });
+    }
+
+    test('no failures: empty', async () => {
+        expect((await withFailures(() => false)).netErrorChecks).toEqual([]);
+    });
+    test('robots.txt fails: S1', async () => {
+        expect((await withFailures(u => u.endsWith('/robots.txt'))).netErrorChecks).toEqual(['S1']);
+    });
+    test('sitemap fails: S3 and S4', async () => {
+        expect((await withFailures(u => u.endsWith('/sitemap.xml'))).netErrorChecks).toEqual(['S3', 'S4']);
+    });
+    test('llms.txt fails: C3 and C4', async () => {
+        expect((await withFailures(u => u.endsWith('/llms.txt'))).netErrorChecks).toEqual(['C3', 'C4']);
+    });
+    test('content negotiation fails: C2, C5 and C6', async () => {
+        expect((await withFailures((u, a) => u === PAGE && a === 'text/markdown')).netErrorChecks).toEqual(['C2', 'C5', 'C6']);
+    });
+    test('.md fails and negotiation returned no Markdown: C3, C5 and C6', async () => {
+        expect((await withFailures(u => u.endsWith('.md'))).netErrorChecks).toEqual(['C3', 'C5', 'C6']);
+    });
+    test('.md fails but negotiation returned Markdown: C3 only', async () => {
+        const md = `# Start\n\n## Install\n\n${words(120)}\n\n## Use\n\n${words(120)}\n`;
+        const s = await withFailures(u => u.endsWith('.md'), { [PAGE]: { body: md, type: 'text/markdown', accept: 'text/markdown' } });
+        expect(s.contentNegotiation.ok).toBe(true);
+        expect(s.netErrorChecks).toEqual(['C3']);
+    });
+});

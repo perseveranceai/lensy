@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Scoring v2: two readiness scores (spec docs/two-score-readiness/spec.md §4).
  *

@@ -12,7 +12,8 @@ export interface FixtureEntry {
     status?: number; finalUrl?: string; headers?: Record<string, string>; body?: string; error?: string;
 }
 
-const HONEST = /^Lensy\//;
+// Lensy/1.0 (website) and Lensy-CLI/<version> (CLI) are both the honest agent.
+const HONEST = /^Lensy(-CLI)?\//;
 const PAGE_ACCEPT = 'text/html,*/*;q=0.8'; // the prototype's page request
 
 export function findEntry(entries: FixtureEntry[], method: string, url: string, accept: string, ua: string) {

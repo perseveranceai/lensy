@@ -1,0 +1,35 @@
+{
+  "name": "@perseverance-ai/lensy-core",
+  "version": "0.0.0",
+  "description": "Lensy's engine API: score a docs page for coding agents and AI search, the same way perseveranceai.com does.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_LICENSES"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/perseveranceai/lensy.git",
+    "directory": "packages/core"
+  },
+  "scripts": {
+    "build": "tsup && node ../scripts/package-files.mjs ."
+  }
+}

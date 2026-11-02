@@ -1,0 +1,11 @@
+node_modules/
+dist/
+# Written into each package by scripts/package-files.mjs at build time.
+core/LICENSE
+cli/LICENSE
+core/THIRD_PARTY_LICENSES
+cli/THIRD_PARTY_LICENSES
+# The root .gitignore ignores *.test.ts outside __tests__/; the CLI keeps its tests in test/.
+!**/test/**/*.test.ts
+# The root .gitignore ignores *.html; the HTML report's golden file is a test fixture.
+!cli/test/golden/*.html

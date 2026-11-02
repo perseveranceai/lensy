@@ -1,0 +1,27 @@
+{
+  "name": "lensy-packages",
+  "private": true,
+  "description": "Workspace root for the Lensy CLI (@perseverance-ai/lensy) and its engine API (@perseverance-ai/lensy-core).",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "core",
+    "cli"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm run build -w core && npm run build -w cli",
+    "test": "vitest run",
+    "check:secrets": "gitleaks dir --no-banner --redact . && gitleaks dir --no-banner --redact core/dist && gitleaks dir --no-banner --redact cli/dist",
+    "docs:checks": "node scripts/docs-checks.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "esbuild": "^0.28.2",
+    "tsup": "^9.0.0",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.5"
+  }
+}

@@ -4,8 +4,7 @@ import { readSessionArtifact, writeSessionArtifact } from '../shared/s3-helpers'
 import { createProgressHelper } from './publish-progress';
 
 import type { AIReadinessResult } from './check-ai-readiness';
-import { scoreCodingAgents, scoreAiSearch, gateState, tipsV2, ScoreResult, GateResult, Tip } from './scoring-v2';
-import type { SignalsV2 } from './collect-signals-v2';
+import { buildScoringV2, ScoringV2Fields } from './report-v2';
 import type { AIDiscoverabilityResult } from './check-ai-discoverability';
 
 /**
@@ -87,43 +86,9 @@ const SIGNAL_IMPACT: Record<string, 'high' | 'medium' | 'low'> = {
 
 // ── Report Types ──────────────────────────────────────────────────────────
 
-/** "What an agent receives" preview under the Coding agents card (spec §8.2). */
-export interface AgentPreview {
-    format: 'markdown' | 'html';
-    chars: number;
-    approxTokens: number;
-    /** Share of the page a 100K-character fetch window covers (1 = all of it). */
-    windowShare: number;
-    url: string;
-}
-
-/** The v2 part of report.json (spec §6.1). Absent on reports scored before v2. */
-export interface ScoringV2Fields {
-    scoringVersion: 2;
-    scores: { codingAgents: ScoreResult; aiSearch: ScoreResult };
-    gate: GateResult;
-    tips: Tip[];
-    agentPreview: AgentPreview;
-}
-
-const AGENT_WINDOW_CHARS = 100000;
-
-export function buildScoringV2(signals: SignalsV2): ScoringV2Fields {
-    const r = signals.received;
-    return {
-        scoringVersion: 2,
-        scores: { codingAgents: scoreCodingAgents(signals), aiSearch: scoreAiSearch(signals) },
-        gate: gateState(signals),
-        tips: tipsV2(signals),
-        agentPreview: {
-            format: r.format,
-            chars: r.chars,
-            approxTokens: Math.round(r.chars / 4),
-            windowShare: r.chars <= AGENT_WINDOW_CHARS ? 1 : Math.round((AGENT_WINDOW_CHARS / r.chars) * 100) / 100,
-            url: r.format === 'markdown' ? (signals.contentNegotiation.ok ? signals.finalUrl : signals.markdownUrl.url) : signals.finalUrl,
-        },
-    };
-}
+// Moved to report-v2.ts (pure, shared with the Lensy CLI); re-exported for existing importers.
+export { buildScoringV2, AGENT_WINDOW_CHARS } from './report-v2';
+export type { AgentPreview, ScoringV2Fields } from './report-v2';
 
 interface AIReadinessReport extends Partial<ScoringV2Fields> {
     /** AI search score when scoringVersion is 2 (kept for legacy readers until the UI migrates); else the v1 total. */

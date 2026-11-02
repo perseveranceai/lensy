@@ -1,0 +1,8 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    // The tests reuse the backend's fixture replayer, which uses fetch's DOM types (HeadersInit).
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": ["src", "test", "tsup.config.ts"]
+}

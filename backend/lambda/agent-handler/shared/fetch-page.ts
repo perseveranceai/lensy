@@ -1,10 +1,11 @@
+// SPDX-License-Identifier: MIT
 /**
  * One fetch helper for every request Lensy makes to the site it scans
  * (spec: docs/two-score-readiness/spec.md §7).
  *
  * Lensy used to send a Chrome user agent. Bot protection such as Cloudflare
  * refuses clients that claim to be Chrome but don't behave like one, so honest
- * docs sites were rejected as "unreachable" (Branch, 2026-10-21, REG-18).
+ * docs sites were rejected as "unreachable" (2026-10-21, REG-18).
  * Now Lensy names itself first and only retries with the browser user agent
  * when that is refused with 403 or 429.
  *
@@ -52,6 +53,10 @@ export interface FetchOptions {
     headers?: Record<string, string>;
     /** Injected in tests; defaults to the global fetch. */
     fetchImpl?: typeof fetch;
+    /** Honest user agent; defaults to HONEST_UA. The CLI passes its own name. */
+    userAgent?: string;
+    /** Retry once with BROWSER_UA on 403/429 (default true). The CLI sets false: it never poses as a browser. */
+    browserFallback?: boolean;
 }
 
 const isRefused = (status: number) => status === 403 || status === 429;
@@ -85,12 +90,15 @@ async function attempt(url: string, ua: string, opts: FetchOptions): Promise<{ r
  * Response unread so callers can stream or cap the body themselves.
  */
 export async function fetchWithFallback(url: string, opts: FetchOptions = {}): Promise<FetchAttempt> {
-    const honest = await attempt(url, HONEST_UA, opts);
+    const honest = await attempt(url, opts.userAgent ?? HONEST_UA, opts);
     if (!honest.res) {
         return { response: null, via: 'honest', honestStatus: 0, errorKind: 'network', error: honest.error };
     }
     if (!isRefused(honest.res.status)) {
         return { response: honest.res, via: 'honest', honestStatus: honest.res.status };
+    }
+    if (opts.browserFallback === false) {
+        return { response: honest.res, via: 'honest', honestStatus: honest.res.status, errorKind: 'blocked' };
     }
 
     // Drain the refused body so the connection can be reused.
