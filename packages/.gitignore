@@ -5,3 +5,5 @@ core/LICENSE
 cli/LICENSE
 core/THIRD_PARTY_LICENSES
 cli/THIRD_PARTY_LICENSES
+# The root .gitignore ignores *.test.ts outside __tests__/; the CLI keeps its tests in test/.
+!**/test/**/*.test.ts
