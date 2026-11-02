@@ -2,8 +2,8 @@ name: CLI
 
 # PR checks for the Lensy CLI (packages/). Runs when the CLI changes, and when
 # the engine or report-view files it runs in place change, so the website can't
-# drift from the CLI unnoticed (.kiro/specs/lensy-cli design "Keeping the website
-# and the CLI in step"). Like ci.yml: no AWS credentials, no secrets, read-only.
+# drift from the CLI unnoticed. Like ci.yml: no AWS credentials, no secrets,
+# read-only.
 
 on:
   pull_request:
