@@ -5,7 +5,7 @@
  *
  * Lensy used to send a Chrome user agent. Bot protection such as Cloudflare
  * refuses clients that claim to be Chrome but don't behave like one, so honest
- * docs sites were rejected as "unreachable" (Branch, 2026-10-21, REG-18).
+ * docs sites were rejected as "unreachable" (2026-10-21, REG-18).
  * Now Lensy names itself first and only retries with the browser user agent
  * when that is refused with 403 or 429.
  *
