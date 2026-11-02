@@ -64,6 +64,8 @@ export async function renderPdf(data: ExportReport, options: PdfOptions = {}): P
       .replace(/…/g, "...")
       // U+2212 MINUS SIGN is in neither font, so "(−1)" printed as "(?1)" (REG-23).
       .replace(/\u2212/g, "-")
+      // AFDocs details say "280K HTML → 44K markdown"; Helvetica has no arrow.
+      .replace(/\u2192/g, "->")
       .replace(/ /g, " ")
       .replace(/\t/g, "  ");
     const allowed = mono || family === "helvetica" ? /[^\n\x20-\x7E -ÿ–—•]/g : /[^\n\x20-\x7E -ɏ‐-‧←-↓]/g;

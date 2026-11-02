@@ -85,15 +85,16 @@ URL stops behaving as described, replace it and note the date.
 | ID | Steps | Expected |
 |---|---|---|
 | S-01 [auto] | Open home in light theme, then dark theme | Light: white background, dark text. Dark: dark background, light text. Font is Plus Jakarta Sans. No console errors |
-| S-02 [auto] | Scan U-1; and a saved two-score report (`report-v2.spec.ts`) | Progress log is **open by default** while scanning; report loads with **two** score cards (AI search, Coding agents), the reachability banner with the six AI search bots, three signal groups (Both audiences, Coding agents, AI search), points on each signal, the "What an agent receives" preview and a recommendation count. On gamma the live scan must be two-score; a PR build scans gamma's current backend and accepts either view |
+| S-02 [auto] | Scan U-1; and a saved two-score report (`report-v2.spec.ts`) | Progress log is **open by default** while scanning; report loads with **two** score cards (AI search, Coding agents), the reachability banner with the six AI search bots, Coding agents selected with two signal groups (Both audiences, Coding agents), points on each signal, the "What an agent receives" preview and a recommendation count. On gamma the live scan must be two-score; a PR build scans gamma's current backend and accepts either view |
 | S-03 [auto] | On the report, click **Run citation check** | **Retired while citations are off** (`REACT_APP_CITATIONS_ENABLED=false` in `.env.gamma` and `.env.production`, spec `docs/two-score-readiness/spec.md` §8.3). Meanwhile the check is that no citations card renders. On a build with the flag on: spinner, then a results table: engine column named "Perplexity", High/Mid/Low intent tags, "Cited: X / Y" matches the rows |
 | S-04 [auto] | Submit U-9, then U-8, from the home page | Friendly error card on the home page (not raw "HTTP 400"), with Try again / Try another URL / Report an issue |
 | S-05 [auto] | `/contact`, submit the empty form | Three separate field messages (URL, name, email); no network request sent |
 | S-06 [auto] | At 375px: open the menu; open a two-score report (and, with citations on, run the citation check) | Beta badge shows in the mobile menu; both score cards, the reachability banner and the agent preview fit with no horizontal scroll; with citations on, the Cited/Not cited pill is fully visible |
 | S-07 [auto] | Open `/this-page-does-not-exist` | 404 page has header and footer; exactly one `<meta name="robots">` and it says `noindex` |
 | S-08 [auto] | After S-02, reload `/results` | The same report is still there, with both scores |
-| S-09 [auto] | On a two-score report, click the AI search card, then Coding agents, then Coding agents again | Each card shows only its score's checks (Both audiences keeps the rows that feed that score; the agent preview shows with Coding agents); the second click shows all three groups again |
+| S-09 [auto] | On a two-score report, click the AI search card, then Coding agents | Each card shows only its score's checks (Both audiences keeps the rows that feed that score; the agent preview shows with Coding agents) |
 | S-10 [auto] | Load a report saved before two scores (`report-stripe.json`) at `/results` | The legacy single-score view with "Re-scan to see the new scores" and a Re-scan button; no two-score cards |
+| S-11 [auto] | Load a report whose Coding agents score came from AFDocs (`report-stripe-afdocs.json`) | Coding agents card shows that score; Both audiences has "Content without JavaScript" and "Headings an agent can navigate"; the Coding agents group lists every other AFDocs check with points, failing checks first; AI search is unchanged |
 
 ## Report download (H-001)
 
@@ -109,6 +110,7 @@ Run against saved fixtures from real gamma scans (`frontend/e2e/fixtures/`, U-1 
 | DL-06 [auto] | 375px | The download menu fits on screen |
 | DL-07 [auto] | Citations off: download Markdown, then PDF | Both save at once; no `/run-citations` or `/citations/` request; no citations section or `citations:` key in the file |
 | DL-08 [auto] | Report saved before two scores → Markdown | The old format: `readiness_score`, the three old signal groups, AI bot access, every recommendation |
+| DL-09 [auto] | AFDocs-based report → Markdown and PDF | Markdown has the Coding agents score and every AFDocs check label with points; the PDF prints AFDocs' "→" as "->", never "?" |
 
 ## Cookie consent and privacy
 
@@ -157,6 +159,7 @@ Google Analytics may only load on the live site after the visitor accepts in the
 | REG-27 [auto] | Scans left AWS from rotating shared IPs, so sites could not safely allowlist Lensy, and Branch's Cloudflare refused every prod scan from Oct 26 (honest 403, browser 403). Dead code also kept an old "Lensy Documentation Quality Auditor" name | Jest: `backend/lib/__tests__/scan-egress.test.ts` (synth: one Elastic IP on the only NAT gateway, S3/DynamoDB gateway endpoints, agent Lambda in the VPC, `LensyEgressIp` output, `SCAN_EGRESS_IP` on the API, `GET /bot-info` route) and `single-user-agent.test.ts` (one Lensy user agent in agent-handler; `/bot-info` advertises the same one). After a gamma deploy: compare the `LensyEgressIp` output with `curl $API/bot-info` | Every scan leaves from the one published IP; every request is named `Lensy/1.0 (+https://perseveranceai.com/bot)` |
 | REG-28 [auto] | The blocked-scan card told visitors to allow the `Lensy/1.0` user agent in their bot protection (unsafe: anyone can send that name) and said AI agents may be refused too; `/bot` said Lensy had no fixed IP | Playwright (`regressions.spec.ts`): mocked blocked status; `/bot` with `/bot-info` mocked, failing, and at 375px in both themes | The card says nothing needs changing and links to /bot; `/bot` shows the user agent, the IP, and an allow rule that matches both, and the free-plan IP Access rule option |
 | REG-29 [auto] | The published prod scan IP could change: the Elastic IP had the default delete policy, so deleting or replacing it would silently break every site owner's allow rule | Jest: `backend/lib/__tests__/scan-egress.test.ts` synthesises prod (EIP `ScanEgressEip` has DeletionPolicy and UpdateReplacePolicy Retain) and gamma (Delete) | The prod IP survives stack changes; the logical ID stays `ScanEgressEip` |
+| REG-30 [auto] | The report's first view showed three signal groups, then two after clicking either score card (found 2026-10-29) | Playwright (`report-v2.spec.ts`): open a saved two-score report, check the groups, click AI search twice | Coding agents is selected on arrival; every view shows two groups (Both audiences plus the selected score); clicking the selected card keeps it selected |
 
 ---
 

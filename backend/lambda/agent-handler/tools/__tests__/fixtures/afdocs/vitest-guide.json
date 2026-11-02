@@ -1,0 +1,308 @@
+{
+  "version": "0.22.2",
+  "url": "https://vitest.dev/guide/",
+  "results": [
+    {
+      "id": "llms-txt-exists",
+      "category": "content-discoverability",
+      "status": "pass",
+      "message": "llms.txt found at https://vitest.dev/llms.txt"
+    },
+    {
+      "id": "llms-txt-valid",
+      "category": "content-discoverability",
+      "status": "pass",
+      "message": "llms.txt follows the proposed structure (H1, blockquote, heading-delimited link sections)"
+    },
+    {
+      "id": "llms-txt-size",
+      "category": "content-discoverability",
+      "status": "pass",
+      "message": "llms.txt is 11,773 characters (under 50,000 threshold)"
+    },
+    {
+      "id": "llms-txt-links-resolve",
+      "category": "content-discoverability",
+      "status": "skip",
+      "message": "No HTTP(S) links found in llms.txt"
+    },
+    {
+      "id": "llms-txt-links-markdown",
+      "category": "content-discoverability",
+      "status": "skip",
+      "message": "No HTTP(S) links found in llms.txt"
+    },
+    {
+      "id": "llms-txt-directive-html",
+      "category": "content-discoverability",
+      "status": "fail",
+      "message": "No llms.txt directive found in HTML of any of 1 pages"
+    },
+    {
+      "id": "llms-txt-directive-md",
+      "category": "content-discoverability",
+      "status": "fail",
+      "message": "No llms.txt directive found in markdown of any of 1 pages"
+    },
+    {
+      "id": "markdown-url-support",
+      "category": "markdown-availability",
+      "status": "pass",
+      "message": "1/1 pages support .md URLs (100%)"
+    },
+    {
+      "id": "content-negotiation",
+      "category": "markdown-availability",
+      "status": "fail",
+      "message": "Server ignores Accept: text/markdown header (0/1 pages return markdown)"
+    },
+    {
+      "id": "rendering-strategy",
+      "category": "page-size",
+      "status": "pass",
+      "message": "All 1 pages contain server-rendered content"
+    },
+    {
+      "id": "page-size-markdown",
+      "category": "page-size",
+      "status": "pass",
+      "message": "All 1 pages under 50K chars (median 8K, max 8K)"
+    },
+    {
+      "id": "page-size-html",
+      "category": "page-size",
+      "status": "pass",
+      "message": "All 1 pages under 50K chars (median 76K HTML ΓåÆ 13K markdown (83% boilerplate))"
+    },
+    {
+      "id": "page-size-transfer",
+      "category": "page-size",
+      "status": "pass",
+      "message": "All 1 pages serve under 1MB (median 76KB served ΓåÆ 13KB content (~6:1))"
+    },
+    {
+      "id": "content-start-position",
+      "category": "page-size",
+      "status": "pass",
+      "message": "Content starts within first 10% on all 1 pages (median 6%)"
+    },
+    {
+      "id": "single-fetch-completeness",
+      "category": "page-size",
+      "status": "pass",
+      "message": "All 1 markdown pages deliver complete content in one fetch (no pagination detected)"
+    },
+    {
+      "id": "tabbed-content-serialization",
+      "category": "content-structure",
+      "status": "pass",
+      "message": "No tabbed content detected across 1 pages"
+    },
+    {
+      "id": "section-header-quality",
+      "category": "content-structure",
+      "status": "pass",
+      "message": "No tabbed content found; header quality check not applicable"
+    },
+    {
+      "id": "markdown-code-fence-validity",
+      "category": "content-structure",
+      "status": "pass",
+      "message": "All 10 code fences properly closed across 2 pages"
+    },
+    {
+      "id": "markdown-link-portability",
+      "category": "content-structure",
+      "status": "warn",
+      "message": "1 of 1 markdown pages carry links that lose their target once the base URL is gone (root-relative links (1))"
+    },
+    {
+      "id": "embedded-data-serialization",
+      "category": "content-structure",
+      "status": "pass",
+      "message": "No bulk data elements detected across 1 pages"
+    },
+    {
+      "id": "http-status-codes",
+      "category": "url-stability",
+      "status": "pass",
+      "message": "All 1 pages return proper error codes for bad URLs"
+    },
+    {
+      "id": "redirect-behavior",
+      "category": "url-stability",
+      "status": "pass",
+      "message": "No redirects detected across 1 pages"
+    },
+    {
+      "id": "llms-txt-coverage",
+      "category": "observability",
+      "status": "skip",
+      "message": "No sitemap found; cannot assess llms.txt coverage without a sitemap as ground truth"
+    },
+    {
+      "id": "markdown-content-parity",
+      "category": "observability",
+      "status": "pass",
+      "message": "All 1 pages have equivalent markdown and HTML content (avg 0% missing)"
+    },
+    {
+      "id": "cache-header-hygiene",
+      "category": "observability",
+      "status": "pass",
+      "message": "All 2 endpoints have appropriate cache headers"
+    },
+    {
+      "id": "auth-gate-detection",
+      "category": "authentication",
+      "status": "pass",
+      "message": "All 1 pages are publicly accessible"
+    },
+    {
+      "id": "auth-alternative-access",
+      "category": "authentication",
+      "status": "skip",
+      "message": "All docs pages are publicly accessible; no alternative access paths needed"
+    },
+    {
+      "id": "bot-protection-interference",
+      "category": "authentication",
+      "status": "pass",
+      "message": "No bot-protection interference observed across 26 requests; limited evidence: only 26 requests observed"
+    }
+  ],
+  "score": {
+    "overall": 86,
+    "checkScores": {
+      "llms-txt-exists": {
+        "earnedScore": 10,
+        "maxScore": 10,
+        "scoreDisplayMode": "numeric"
+      },
+      "llms-txt-valid": {
+        "earnedScore": 4,
+        "maxScore": 4,
+        "scoreDisplayMode": "numeric"
+      },
+      "llms-txt-size": {
+        "earnedScore": 7,
+        "maxScore": 7,
+        "scoreDisplayMode": "numeric"
+      },
+      "llms-txt-directive-html": {
+        "earnedScore": 0,
+        "maxScore": 7,
+        "scoreDisplayMode": "numeric"
+      },
+      "llms-txt-directive-md": {
+        "earnedScore": 0,
+        "maxScore": 4,
+        "scoreDisplayMode": "numeric"
+      },
+      "markdown-url-support": {
+        "earnedScore": 7,
+        "maxScore": 7,
+        "scoreDisplayMode": "numeric"
+      },
+      "content-negotiation": {
+        "earnedScore": 0,
+        "maxScore": 4,
+        "scoreDisplayMode": "numeric"
+      },
+      "rendering-strategy": {
+        "earnedScore": 10,
+        "maxScore": 10,
+        "scoreDisplayMode": "numeric"
+      },
+      "page-size-markdown": {
+        "earnedScore": 0,
+        "maxScore": 0,
+        "scoreDisplayMode": "numeric"
+      },
+      "page-size-html": {
+        "earnedScore": 7,
+        "maxScore": 7,
+        "scoreDisplayMode": "numeric"
+      },
+      "page-size-transfer": {
+        "earnedScore": 4,
+        "maxScore": 4,
+        "scoreDisplayMode": "numeric"
+      },
+      "content-start-position": {
+        "earnedScore": 4,
+        "maxScore": 4,
+        "scoreDisplayMode": "numeric"
+      },
+      "single-fetch-completeness": {
+        "earnedScore": 0,
+        "maxScore": 0,
+        "scoreDisplayMode": "numeric"
+      },
+      "tabbed-content-serialization": {
+        "earnedScore": 4,
+        "maxScore": 4,
+        "scoreDisplayMode": "numeric"
+      },
+      "section-header-quality": {
+        "earnedScore": 2,
+        "maxScore": 2,
+        "scoreDisplayMode": "numeric"
+      },
+      "markdown-code-fence-validity": {
+        "earnedScore": 0,
+        "maxScore": 0,
+        "scoreDisplayMode": "numeric"
+      },
+      "markdown-link-portability": {
+        "earnedScore": 0,
+        "maxScore": 0,
+        "scoreDisplayMode": "numeric"
+      },
+      "embedded-data-serialization": {
+        "earnedScore": 4,
+        "maxScore": 4,
+        "scoreDisplayMode": "numeric"
+      },
+      "http-status-codes": {
+        "earnedScore": 7,
+        "maxScore": 7,
+        "scoreDisplayMode": "numeric"
+      },
+      "redirect-behavior": {
+        "earnedScore": 4,
+        "maxScore": 4,
+        "scoreDisplayMode": "numeric"
+      },
+      "markdown-content-parity": {
+        "earnedScore": 0,
+        "maxScore": 0,
+        "scoreDisplayMode": "numeric"
+      },
+      "cache-header-hygiene": {
+        "earnedScore": 2,
+        "maxScore": 2,
+        "scoreDisplayMode": "numeric"
+      },
+      "auth-gate-detection": {
+        "earnedScore": 10,
+        "maxScore": 10,
+        "scoreDisplayMode": "numeric"
+      },
+      "bot-protection-interference": {
+        "earnedScore": 7,
+        "maxScore": 7,
+        "scoreDisplayMode": "numeric"
+      }
+    },
+    "resolutions": {
+      "llms-txt-directive-html": "No agent-facing directive pointing to llms.txt was detected in the HTML of any tested page. Add a visually-hidden element near the top of each page (e.g., a div with CSS clip-rect) containing a link to your llms.txt. If your site serves markdown versions of pages, mention that in the directive too so agents know to request it.",
+      "llms-txt-directive-md": "No llms.txt directive was detected in the markdown of any tested page. Add a blockquote near the top of each markdown page (e.g., \"> For the complete documentation index, see [llms.txt](/llms.txt)\").",
+      "content-negotiation": "Your server ignores Accept: text/markdown and returns HTML. Some agents (Claude Code, Cursor, OpenCode) request markdown this way. Configure your server to honor content negotiation.",
+      "markdown-link-portability": "1 of 1 markdown pages link in a way that depends on the base URL (root-relative links on 1). Emit absolute URLs when generating markdown: the canonical host is known at build time, so absolute links cost nothing to produce. Root-relative links resolve only while the fetch URL is still around, and agent pipelines lose it routinely, to summarization, to RAG chunking, or to content being pasted somewhere else."
+    }
+  },
+  "requests": 26,
+  "ms": 0,
+  "capturedAt": "2026-10-29T04:20:54.932Z"
+}

@@ -36,7 +36,7 @@ test('S-02, S-08, REG-06, REG-09: scan, progress log, report, reload', async ({ 
   if (process.env.E2E_BASE_URL) expect(twoScores, 'gamma should serve two-score reports').toBe(true);
   if (twoScores) {
     await expect(page.getByTestId('reachability-banner')).toBeVisible();
-    await expect(page.getByTestId('signal-groups').locator('section')).toHaveCount(3);
+    await expect(page.getByTestId('signal-groups').locator('section')).toHaveCount(2);
     await expect(page.getByTestId('signal-points').first()).toBeVisible();
   } else {
     await expect(page.getByText(/Bot access/).first()).toBeVisible();

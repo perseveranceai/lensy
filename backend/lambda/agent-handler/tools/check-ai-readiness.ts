@@ -9,6 +9,7 @@ import { DetectionReport } from './detection-types';
 import { fetchPage, headersToRecord, ACCEPT_HTML, FetchVia } from '../shared/fetch-page';
 import { stripNonContent, looksLikeHtml } from '../shared/html-content';
 import { collectSignalsV2, SignalsV2, FetchGateInput } from './collect-signals-v2';
+import { runAfdocsOnPage, AfdocsRun } from './afdocs-page';
 
 // ── AI Bot Registry ─────────────────────────────────────────────────────
 const AI_BOTS = [
@@ -104,6 +105,8 @@ export interface AIReadinessResult {
     fetchGate?: { via: FetchVia; honestStatus: number; browserStatus?: number };
     /** Signals for the two readiness scores (scored in generate-report) */
     signalsV2?: SignalsV2;
+    /** AFDocs run on this page; feeds the Coding agents score (absent if it failed) */
+    afdocs?: AfdocsRun;
     recommendations: Recommendation[];
     // Legacy fields for backward compat during rollout
     overallScore: number;
@@ -256,7 +259,8 @@ async function checkAIReadiness(domain: string, targetUrl: string, sessionId: st
     console.log(`[AIReadiness v2] Phase 1 complete: ${signals.llmsTxtHintUrls.length} llms.txt hints, ${signals.blockedCrawlers.length} blocked crawlers`);
 
     // Phase 2 (v2 parallel probes) + existing categories run concurrently
-    const [probeResults, botAccess, discoverabilityAndConsumability, signalsV2] = await Promise.all([
+    await progress.info('Running agent-friendly docs checks (AFDocs) on this page...');
+    const [probeResults, botAccess, discoverabilityAndConsumability, signalsV2, afdocs] = await Promise.all([
         // v2: All probes fire in parallel (~5s wall clock)
         executeProbes(baseUrl, targetUrl, signals, robotsCheck.content || null),
         // Existing Category 1: Bot Access (sync, no HTTP)
@@ -273,6 +277,8 @@ async function checkAIReadiness(domain: string, targetUrl: string, sessionId: st
             headers: v2.rawHeaders ?? targetHeadersRecord ?? {},
             gate: v2.fetchGate ?? { via: 'honest', honestStatus: targetHtml ? 200 : 0 },
         }).catch(e => { console.warn('[AIReadiness v2] signal collection failed:', (e as Error).message); return undefined; }),
+        // Coding agents score. Never throws; without it the score falls back to C1-C6.
+        runAfdocsOnPage(targetUrl),
     ]);
     const [discoverability, consumabilityData] = discoverabilityAndConsumability;
 
@@ -311,6 +317,7 @@ async function checkAIReadiness(domain: string, targetUrl: string, sessionId: st
         detection,
         recommendations,
         ...(signalsV2 ? { signalsV2 } : {}),
+        ...(afdocs ? { afdocs } : {}),
         overallScore: 0, // Scoring added in generate-report
     };
 }

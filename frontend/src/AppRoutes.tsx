@@ -534,9 +534,11 @@ export function ScanReport({
   const navigate = useNavigate();
   const urlParam = params.get("url") || analysisState?.report?.url || url || "";
   const { hostname } = getScanProfile(urlParam);
-  // "coding" and "search" are the readiness view filtered to one score's checks.
-  const [view, setView] = useState<"readiness" | "coding" | "search" | "citations-loading" | "citations" | "recommendations">("readiness");
-  const isReadinessView = view === "readiness" || view === "coding" || view === "search";
+  const [view, setView] = useState<"readiness" | "citations-loading" | "citations" | "recommendations">("readiness");
+  // REG-30: the score cards are tabs, so one score is always selected. An
+  // unfiltered first view showed 3 groups, then 2 after any card click.
+  const [scoreTab, setScoreTab] = useState<"coding" | "search">("coding");
+  const isReadinessView = view === "readiness";
   const citationRequestStarted = useRef(false);
   useEffect(() => {
     if (citationsLoading) citationRequestStarted.current = true;
@@ -670,12 +672,12 @@ export function ScanReport({
     if (!citationsLoading) onRunCitations?.("card");
   };
   const backToReadiness = () => setView("readiness");
-  // Clicking a score card shows that score's checks; clicking it again shows all.
-  const toggleScore = (key: "coding" | "search") => {
-    trackEvent("score_card_clicked", { score: key, active: view !== key });
-    setView(view === key ? "readiness" : key);
+  const selectScore = (key: "coding" | "search") => {
+    trackEvent("score_card_clicked", { score: key, active: !(isReadinessView && scoreTab === key) });
+    setScoreTab(key);
+    setView("readiness");
   };
-  const shownGroups = v2 && (view === "coding" || view === "search") ? filterGroups(signalGroups, view) : signalGroups;
+  const shownGroups = v2 && isReadinessView ? filterGroups(signalGroups, scoreTab) : signalGroups;
   const heading = view === "recommendations" ? "All recommendations" : view === "citations" || view === "citations-loading" ? "Where am I invisible?" : "What Lensy found";
 
   // A single scored recommendation card: title, impact/effort/category chips,
@@ -833,11 +835,11 @@ export function ScanReport({
         {([
           ["search", "AI search", v2.search, "Can AI search (ChatGPT, Perplexity, Claude) find and quote this page?"],
           ["coding", "Coding agents", v2.coding, "Can Claude Code, Cursor and other coding agents fetch and use this page?"],
-        ] as const).map(([key, title, score, about]) => <button key={key} data-testid={`score-card-${key}`} aria-pressed={view === key} onClick={() => toggleScore(key)} className={`rounded-[var(--radius-md)] border p-6 text-left transition-colors sm:p-7 ${view === key ? "border-[var(--ink)] bg-[var(--panel-bg)] text-[var(--panel-fg)]" : "border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-2)]"}`}>
+        ] as const).map(([key, title, score, about]) => <button key={key} data-testid={`score-card-${key}`} aria-pressed={isReadinessView && scoreTab === key} onClick={() => selectScore(key)} className={`rounded-[var(--radius-md)] border p-6 text-left transition-colors sm:p-7 ${isReadinessView && scoreTab === key ? "border-[var(--ink)] bg-[var(--panel-bg)] text-[var(--panel-fg)]" : "border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-2)]"}`}>
           <span className="text-[11px] font-medium tracking-[-.025em] opacity-65">{title}</span>
           <span className="mt-6 block text-[clamp(2.7rem,5vw,4.4rem)] font-medium leading-none tracking-[-.08em]">{score.score}<span className="ml-1 text-[15px] tracking-normal opacity-60">/100</span></span>
           <span className="mt-3 block text-[13px] leading-relaxed opacity-75">{about}</span>
-          <span className="mt-2 block text-[12px] leading-relaxed opacity-65">{score.toImprove ? `${score.toImprove} check${score.toImprove === 1 ? "" : "s"} to improve` : "Every check passes"}{view === key ? " · showing these checks" : ""}</span>
+          <span className="mt-2 block text-[12px] leading-relaxed opacity-65">{score.toImprove ? `${score.toImprove} check${score.toImprove === 1 ? "" : "s"} to improve` : "Every check passes"}{isReadinessView && scoreTab === key ? " · showing these checks" : ""}</span>
         </button>)}
         {CITATIONS_ENABLED && (
           <button onClick={startCitationTest} className={`rounded-[var(--radius-md)] border p-6 text-left transition-colors sm:p-7 ${view === "citations" || view === "citations-loading" ? "border-[var(--ink)] bg-[var(--panel-bg)] text-[var(--panel-fg)]" : "border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-2)]"}`}>
@@ -1725,7 +1727,8 @@ export function Privacy() {
 }
 
 // /bot: the page Lensy's user agent points to (spec docs/two-score-readiness §7.5).
-// Every statement here matches backend/lambda/agent-handler/shared/fetch-page.ts.
+// Every statement here matches backend/lambda/agent-handler/shared/fetch-page.ts
+// and AFDOCS_OPTIONS in backend/lambda/agent-handler/tools/afdocs-page.ts.
 export function BotInfo() {
   const code = "rounded-[var(--radius-xs)] bg-[var(--surface-2)] px-1.5 py-0.5 text-[13px]";
   const userAgent = "Lensy/1.0 (+https://perseveranceai.com/bot)";

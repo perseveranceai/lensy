@@ -8,18 +8,20 @@ import { CITATIONS_ENABLED, fixture, openSavedReport, setTheme, trackConsoleErro
 const stripeV2 = fixture('report-stripe-v2.json');
 const stripeV1 = fixture('report-stripe.json');
 
-test('S-02: two score cards, the reachability banner, three signal groups, points on each signal', async ({ page }) => {
+test('S-02: two score cards, the reachability banner, the selected score\'s signal groups, points on each signal', async ({ page }) => {
   const errors = trackConsoleErrors(page);
   await openSavedReport(page, { report: stripeV2 });
   await expect(page.getByTestId('score-card-search')).toContainText(`${stripeV2.scores.aiSearch.score}/100`);
   await expect(page.getByTestId('score-card-coding')).toContainText(`${stripeV2.scores.codingAgents.score}/100`);
   await expect(page.getByTestId('reachability-banner')).toContainText('an honest AI agent can read this page (HTTP 200)');
   await expect(page.getByTestId('reachability-banner')).toContainText('robots.txt allows all 6 AI search bots');
+  // Coding agents is selected on arrival (REG-30).
+  await expect(page.getByTestId('score-card-coding')).toHaveAttribute('aria-pressed', 'true');
   const groups = page.getByTestId('signal-groups').locator('section');
-  await expect(groups).toHaveCount(3);
-  await expect(groups.locator('h2')).toHaveText(['Both audiences', 'Coding agents', 'AI search']);
-  // Every row carries points: 11 checks, with C1 and S2 sharing one row.
-  await expect(page.getByTestId('signal-points')).toHaveCount(11);
+  await expect(groups).toHaveCount(2);
+  await expect(groups.locator('h2')).toHaveText(['Both audiences', 'Coding agents']);
+  // Every row carries points: C1-C6, with C1 sharing its row with S2.
+  await expect(page.getByTestId('signal-points')).toHaveCount(6);
   await expect(page.getByTestId('agent-preview')).toContainText('Markdown, 1,926 characters (about 482 tokens), fits in one fetch');
   await expect(page.getByText(/^Fix:/).first()).toBeVisible();
   for (const tip of stripeV2.tips) await expect(page.getByTestId('report-tips')).toContainText(tip.text);
@@ -54,10 +56,48 @@ test('S-09: clicking a score card filters the signals to that score', async ({ p
   await expect(page.getByText('Answer-ready sections')).toHaveCount(0);
   await expect(page.getByTestId('agent-preview')).toBeVisible();
 
-  // A second click on the same card shows everything again.
-  await page.getByTestId('score-card-coding').click();
-  await expect(page.getByTestId('score-card-coding')).toHaveAttribute('aria-pressed', 'false');
-  await expect(groupTitles).toHaveText(['Both audiences', 'Coding agents', 'AI search']);
+});
+
+test('S-11: an AFDocs-based Coding agents score lists the AFDocs checks with points, failing first', async ({ page }) => {
+  const stripeAfdocs = fixture('report-stripe-afdocs.json');
+  const coding = stripeAfdocs.scores.codingAgents;
+  const errors = trackConsoleErrors(page);
+  await openSavedReport(page, { report: stripeAfdocs });
+  await expect(page.getByTestId('score-card-coding')).toContainText(`${coding.score}/100`);
+  const groups = page.getByTestId('signal-groups').locator('section');
+  await expect(groups.locator('h2')).toHaveText(['Both audiences', 'Coding agents']);
+  // Both audiences: the shared JavaScript row and Lensy's headings check.
+  await expect(groups.nth(0)).toContainText('Content without JavaScript');
+  await expect(groups.nth(0)).toContainText('Headings an agent can navigate');
+  // Coding agents: every other AFDocs check, with points, failures first.
+  const rows = coding.checks.filter((c: any) => c.id !== 'rendering-strategy' && c.id !== 'lensy-headings');
+  await expect(groups.nth(1).getByTestId('signal-points')).toHaveCount(rows.length);
+  const firstFail = rows.find((c: any) => c.status === 'fail');
+  await expect(groups.nth(1).locator('li').first()).toContainText(firstFail.label);
+  await expect(groups.nth(1)).toContainText('Page points agents to llms.txt (Markdown)');
+  await expect(page.getByTestId('agent-preview')).toBeVisible();
+  // AI search is unchanged.
+  await page.getByTestId('score-card-search').click();
+  await expect(page.getByTestId('score-card-search')).toContainText(`${stripeAfdocs.scores.aiSearch.score}/100`);
+  await expect(page.getByText('Answer-ready sections')).toBeVisible();
+  expect(errors, errors.join('\n')).toEqual([]);
+});
+
+test('REG-30: the report opens with one score selected and always shows two signal groups', async ({ page }) => {
+  // The first view showed three groups, and any card click switched to two.
+  await openSavedReport(page, { report: stripeV2 });
+  const groupTitles = page.getByTestId('signal-groups').locator('section h2');
+  await expect(groupTitles).toHaveText(['Both audiences', 'Coding agents']);
+  await expect(page.getByTestId('score-card-coding')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('score-card-search')).toHaveAttribute('aria-pressed', 'false');
+
+  await page.getByTestId('score-card-search').click();
+  await expect(groupTitles).toHaveText(['Both audiences', 'AI search']);
+  await expect(page.getByTestId('signal-points')).toHaveCount(6);
+  // Clicking the selected card again keeps it selected.
+  await page.getByTestId('score-card-search').click();
+  await expect(page.getByTestId('score-card-search')).toHaveAttribute('aria-pressed', 'true');
+  await expect(groupTitles).toHaveText(['Both audiences', 'AI search']);
 });
 
 test('S-10: an older single-score report shows the legacy view with a re-scan note', async ({ page }) => {

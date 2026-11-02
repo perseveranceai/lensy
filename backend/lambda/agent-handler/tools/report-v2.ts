@@ -6,6 +6,8 @@
  * agent preview. See .kiro/steering/lensy-engine.md.
  */
 import { scoreCodingAgents, scoreAiSearch, gateState, tipsV2, ScoreResult, GateResult, Tip } from './scoring-v2';
+import { scoreCodingAgentsAfdocs, AfdocsScoreResult } from './scoring-afdocs';
+import type { AfdocsRun } from './afdocs-page';
 import type { SignalsV2 } from './collect-signals-v2';
 
 /** "What an agent receives" preview under the Coding agents card (spec §8.2). */
@@ -21,7 +23,8 @@ export interface AgentPreview {
 /** The v2 part of report.json (spec §6.1). Absent on reports scored before v2. */
 export interface ScoringV2Fields {
     scoringVersion: 2;
-    scores: { codingAgents: ScoreResult; aiSearch: ScoreResult };
+    /** codingAgents carries source 'afdocs' when AFDocs ran; otherwise Lensy's C1-C6. */
+    scores: { codingAgents: ScoreResult | AfdocsScoreResult; aiSearch: ScoreResult };
     gate: GateResult;
     tips: Tip[];
     agentPreview: AgentPreview;
@@ -29,11 +32,14 @@ export interface ScoringV2Fields {
 
 export const AGENT_WINDOW_CHARS = 100000;
 
-export function buildScoringV2(signals: SignalsV2): ScoringV2Fields {
+export function buildScoringV2(signals: SignalsV2, afdocs?: AfdocsRun): ScoringV2Fields {
     const r = signals.received;
     return {
         scoringVersion: 2,
-        scores: { codingAgents: scoreCodingAgents(signals), aiSearch: scoreAiSearch(signals) },
+        scores: {
+            codingAgents: afdocs ? scoreCodingAgentsAfdocs(afdocs, signals) : scoreCodingAgents(signals),
+            aiSearch: scoreAiSearch(signals),
+        },
         gate: gateState(signals),
         tips: tipsV2(signals),
         agentPreview: {

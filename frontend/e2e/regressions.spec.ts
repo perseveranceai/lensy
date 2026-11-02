@@ -25,6 +25,9 @@ test('REG-03: a JavaScript-rendered page is named as such, not "not documentatio
 test('REG-05: a site with no robots.txt is not reported as "10/10 allowed"', async ({ page }) => {
   await startScan(page, URLS.noRobots);
   await expectReport(page);
+  // The robots.txt row (S1) is in the AI search group; Coding agents opens first (REG-30).
+  const searchCard = page.getByTestId('score-card-search');
+  if (await searchCard.count()) await searchCard.click();
   await expect(page.getByText(/no robots\.txt/i).first()).toBeVisible();
   await expect(page.getByText(/10\s*\/\s*10 allowed/)).toHaveCount(0);
 });

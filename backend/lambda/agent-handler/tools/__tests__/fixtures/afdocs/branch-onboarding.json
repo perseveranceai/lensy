@@ -1,0 +1,310 @@
+{
+  "version": "0.22.2",
+  "url": "https://help.branch.io/account-hub/onboarding-guide",
+  "results": [
+    {
+      "id": "llms-txt-exists",
+      "category": "content-discoverability",
+      "status": "pass",
+      "message": "llms.txt found at 3 locations; using https://help.branch.io/account-hub/onboarding-guide/llms.txt as canonical"
+    },
+    {
+      "id": "llms-txt-valid",
+      "category": "content-discoverability",
+      "status": "pass",
+      "message": "llms.txt follows the proposed structure (H1, blockquote, heading-delimited link sections)"
+    },
+    {
+      "id": "llms-txt-size",
+      "category": "content-discoverability",
+      "status": "pass",
+      "message": "llms.txt is 6,433 characters (under 50,000 threshold)"
+    },
+    {
+      "id": "llms-txt-links-resolve",
+      "category": "content-discoverability",
+      "status": "skip",
+      "message": "llms.txt contains 32 links, but none are under /account-hub/onboarding-guide"
+    },
+    {
+      "id": "llms-txt-links-markdown",
+      "category": "content-discoverability",
+      "status": "skip",
+      "message": "llms.txt contains 32 links, but none are under /account-hub/onboarding-guide"
+    },
+    {
+      "id": "llms-txt-directive-html",
+      "category": "content-discoverability",
+      "status": "pass",
+      "message": "llms.txt directive found in HTML of all 1 pages, near the top of content"
+    },
+    {
+      "id": "llms-txt-directive-md",
+      "category": "content-discoverability",
+      "status": "pass",
+      "message": "llms.txt directive found in markdown of all 1 pages, near the top of content"
+    },
+    {
+      "id": "markdown-url-support",
+      "category": "markdown-availability",
+      "status": "pass",
+      "message": "1/1 pages support .md URLs (100%)"
+    },
+    {
+      "id": "content-negotiation",
+      "category": "markdown-availability",
+      "status": "pass",
+      "message": "1/1 pages support content negotiation (100%)"
+    },
+    {
+      "id": "rendering-strategy",
+      "category": "page-size",
+      "status": "pass",
+      "message": "All 1 pages contain server-rendered content"
+    },
+    {
+      "id": "page-size-markdown",
+      "category": "page-size",
+      "status": "pass",
+      "message": "All 1 pages under 50K chars (median 29K, max 29K)"
+    },
+    {
+      "id": "page-size-html",
+      "category": "page-size",
+      "status": "pass",
+      "message": "All 1 pages under 50K chars (median 280K HTML ΓåÆ 44K markdown (84% boilerplate))"
+    },
+    {
+      "id": "page-size-transfer",
+      "category": "page-size",
+      "status": "pass",
+      "message": "All 1 pages serve under 1MB (median 280KB served ΓåÆ 44KB content (~6:1))"
+    },
+    {
+      "id": "content-start-position",
+      "category": "page-size",
+      "status": "pass",
+      "message": "Content starts within first 10% on all 1 pages (median 0%)"
+    },
+    {
+      "id": "single-fetch-completeness",
+      "category": "page-size",
+      "status": "pass",
+      "message": "All 1 markdown pages deliver complete content in one fetch (no pagination detected)"
+    },
+    {
+      "id": "tabbed-content-serialization",
+      "category": "content-structure",
+      "status": "pass",
+      "message": "No tabbed content detected across 1 pages"
+    },
+    {
+      "id": "section-header-quality",
+      "category": "content-structure",
+      "status": "pass",
+      "message": "No tabbed content found; header quality check not applicable"
+    },
+    {
+      "id": "markdown-code-fence-validity",
+      "category": "content-structure",
+      "status": "pass",
+      "message": "All 0 code fences properly closed across 4 pages"
+    },
+    {
+      "id": "markdown-link-portability",
+      "category": "content-structure",
+      "status": "pass",
+      "message": "All 101 links across 1 markdown pages are absolute; 50 sampled links resolve to the expected representation"
+    },
+    {
+      "id": "embedded-data-serialization",
+      "category": "content-structure",
+      "status": "pass",
+      "message": "No bulk data elements detected across 1 pages"
+    },
+    {
+      "id": "http-status-codes",
+      "category": "url-stability",
+      "status": "pass",
+      "message": "All 1 pages return proper error codes for bad URLs"
+    },
+    {
+      "id": "redirect-behavior",
+      "category": "url-stability",
+      "status": "pass",
+      "message": "No redirects detected across 1 pages"
+    },
+    {
+      "id": "llms-txt-coverage",
+      "category": "observability",
+      "status": "fail",
+      "message": "llms.txt covers 0/1 sitemap doc pages (0%); 1 missing"
+    },
+    {
+      "id": "markdown-content-parity",
+      "category": "observability",
+      "status": "pass",
+      "message": "All 1 pages have equivalent markdown and HTML content (avg 0% missing)"
+    },
+    {
+      "id": "cache-header-hygiene",
+      "category": "observability",
+      "status": "pass",
+      "message": "All 4 endpoints have appropriate cache headers"
+    },
+    {
+      "id": "auth-gate-detection",
+      "category": "authentication",
+      "status": "pass",
+      "message": "All 1 pages are publicly accessible"
+    },
+    {
+      "id": "auth-alternative-access",
+      "category": "authentication",
+      "status": "skip",
+      "message": "All docs pages are publicly accessible; no alternative access paths needed"
+    },
+    {
+      "id": "bot-protection-interference",
+      "category": "authentication",
+      "status": "pass",
+      "message": "No bot-protection interference observed across 67 requests"
+    }
+  ],
+  "score": {
+    "overall": 97,
+    "checkScores": {
+      "llms-txt-exists": {
+        "earnedScore": 10,
+        "maxScore": 10,
+        "scoreDisplayMode": "numeric"
+      },
+      "llms-txt-valid": {
+        "earnedScore": 4,
+        "maxScore": 4,
+        "scoreDisplayMode": "numeric"
+      },
+      "llms-txt-size": {
+        "earnedScore": 7,
+        "maxScore": 7,
+        "scoreDisplayMode": "numeric"
+      },
+      "llms-txt-directive-html": {
+        "earnedScore": 7,
+        "maxScore": 7,
+        "scoreDisplayMode": "numeric"
+      },
+      "llms-txt-directive-md": {
+        "earnedScore": 4,
+        "maxScore": 4,
+        "scoreDisplayMode": "numeric"
+      },
+      "markdown-url-support": {
+        "earnedScore": 7,
+        "maxScore": 7,
+        "scoreDisplayMode": "numeric"
+      },
+      "content-negotiation": {
+        "earnedScore": 4,
+        "maxScore": 4,
+        "scoreDisplayMode": "numeric"
+      },
+      "rendering-strategy": {
+        "earnedScore": 10,
+        "maxScore": 10,
+        "scoreDisplayMode": "numeric"
+      },
+      "page-size-markdown": {
+        "earnedScore": 7,
+        "maxScore": 7,
+        "scoreDisplayMode": "numeric"
+      },
+      "page-size-html": {
+        "earnedScore": 7,
+        "maxScore": 7,
+        "scoreDisplayMode": "numeric"
+      },
+      "page-size-transfer": {
+        "earnedScore": 4,
+        "maxScore": 4,
+        "scoreDisplayMode": "numeric"
+      },
+      "content-start-position": {
+        "earnedScore": 4,
+        "maxScore": 4,
+        "scoreDisplayMode": "numeric"
+      },
+      "single-fetch-completeness": {
+        "earnedScore": 4,
+        "maxScore": 4,
+        "scoreDisplayMode": "numeric"
+      },
+      "tabbed-content-serialization": {
+        "earnedScore": 4,
+        "maxScore": 4,
+        "scoreDisplayMode": "numeric"
+      },
+      "section-header-quality": {
+        "earnedScore": 2,
+        "maxScore": 2,
+        "scoreDisplayMode": "numeric"
+      },
+      "markdown-code-fence-validity": {
+        "earnedScore": 4,
+        "maxScore": 4,
+        "scoreDisplayMode": "numeric"
+      },
+      "markdown-link-portability": {
+        "earnedScore": 4,
+        "maxScore": 4,
+        "scoreDisplayMode": "numeric"
+      },
+      "embedded-data-serialization": {
+        "earnedScore": 4,
+        "maxScore": 4,
+        "scoreDisplayMode": "numeric"
+      },
+      "http-status-codes": {
+        "earnedScore": 7,
+        "maxScore": 7,
+        "scoreDisplayMode": "numeric"
+      },
+      "redirect-behavior": {
+        "earnedScore": 4,
+        "maxScore": 4,
+        "scoreDisplayMode": "numeric"
+      },
+      "llms-txt-coverage": {
+        "earnedScore": 0,
+        "maxScore": 4,
+        "scoreDisplayMode": "numeric"
+      },
+      "markdown-content-parity": {
+        "earnedScore": 4,
+        "maxScore": 4,
+        "scoreDisplayMode": "numeric"
+      },
+      "cache-header-hygiene": {
+        "earnedScore": 2,
+        "maxScore": 2,
+        "scoreDisplayMode": "numeric"
+      },
+      "auth-gate-detection": {
+        "earnedScore": 10,
+        "maxScore": 10,
+        "scoreDisplayMode": "numeric"
+      },
+      "bot-protection-interference": {
+        "earnedScore": 7,
+        "maxScore": 7,
+        "scoreDisplayMode": "numeric"
+      }
+    },
+    "resolutions": {
+      "llms-txt-coverage": "Your llms.txt covers 0% of your site's pages (below 80% threshold). 1 live pages are missing from the index. If unintentional, regenerate llms.txt from your sitemap or build pipeline. If intentional, lower the threshold or set it to 0 to make the check informational."
+    }
+  },
+  "requests": 67,
+  "ms": 0,
+  "capturedAt": "2026-10-29T04:19:21.752Z"
+}
