@@ -14,7 +14,8 @@
   "scripts": {
     "build": "npm run build -w core && npm run build -w cli",
     "test": "vitest run",
-    "check:secrets": "gitleaks dir --no-banner --redact . && gitleaks dir --no-banner --redact core/dist && gitleaks dir --no-banner --redact cli/dist"
+    "check:secrets": "gitleaks dir --no-banner --redact . && gitleaks dir --no-banner --redact core/dist && gitleaks dir --no-banner --redact cli/dist",
+    "docs:checks": "node scripts/docs-checks.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",

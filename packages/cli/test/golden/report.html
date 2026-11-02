@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lensy report: 3 pages</title>
+<meta name="lensy:reportVersion" content="1">
+<meta name="lensy:tool" content="lensy">
+<meta name="lensy:toolVersion" content="0.0.0-test">
+<meta name="lensy:engineCommit" content="test">
+<meta name="lensy:checkedAt" content="2026-10-22T12:00:00.000Z">
+<meta name="lensy:mode" content="url">
+<meta name="lensy:pages" content="[{&quot;url&quot;:&quot;https://docs.stripe.com/payments&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;codingAgents&quot;:87,&quot;aiSearch&quot;:80},{&quot;url&quot;:&quot;https://vitest.dev/guide/&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;codingAgents&quot;:85,&quot;aiSearch&quot;:68},{&quot;url&quot;:&quot;https://blocked.example.com/docs&quot;,&quot;status&quot;:&quot;blocked&quot;,&quot;codingAgents&quot;:null,&quot;aiSearch&quot;:null}]">
+<style>:root{--bg:#ffffff;--ink:#141414;--muted:#6b6f73;--accent:#697075;--line:#e6e6e6;--surface:#f7f7f7;--pass:#2f7d4f;--warn:#9a6a00;--fail:#b3261e;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1011;--ink:#ededed;--muted:#9a9ea3;--accent:#a3a9ae;--line:#2a2c2f;--surface:#17181a;--pass:#6cc58f;--warn:#e0b44c;--fail:#f08a80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+main{max-width:1040px;margin:0 auto;padding:40px 24px 64px}
+h1{font-size:28px;letter-spacing:-.03em;margin:0 0 4px}
+h2{font-size:20px;letter-spacing:-.02em;margin:48px 0 8px;padding-top:24px;border-top:1px solid var(--line);overflow-wrap:anywhere}
+h3{font-size:13px;text-transform:none;color:var(--muted);margin:28px 0 8px;font-weight:600}
+.meta{color:var(--muted);font-size:13px}
+.scores{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}
+.score{border:1px solid var(--line);border-radius:10px;padding:14px 18px;min-width:200px;background:var(--surface)}
+.score b{display:block;font-size:30px;letter-spacing:-.04em}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+th{color:var(--muted);font-weight:600}
+.s{font-weight:600;white-space:nowrap}
+.PASS{color:var(--pass)}.WARN{color:var(--warn)}.FAIL{color:var(--fail)}.UNKNOWN,.SKIPPED,.INFO{color:var(--muted)}
+ul{padding-left:20px}
+li{margin:6px 0}
+.fix{color:var(--muted)}
+.msg{border:1px solid var(--line);border-radius:10px;padding:12px 16px;background:var(--surface)}
+@media print{body{background:#fff;color:#000;font-size:12px}main{padding:0;max-width:none}h2{break-before:page;border:0}h2:first-of-type{break-before:auto}.score,.msg{background:none}tr{break-inside:avoid}}</style>
+</head>
+<body>
+<main>
+<header>
+<h1>Lensy report: 3 pages</h1>
+<p class="meta">Checked 2026-10-22T12:00:00.000Z by lensy 0.0.0-test (engine test), report version 1, mode url.</p>
+</header>
+<section><h2>https://docs.stripe.com/payments</h2>
+<h3>Summary</h3>
+<div class="scores"><div class="score">Coding agents<b>87/100</b></div><div class="score">AI search<b>80/100</b></div></div>
+<p>Reachability: an honest AI agent can read this page (HTTP 200). robots.txt allows all 6 AI search bots.</p>
+<p>What an agent receives: Markdown, 5,155 characters (about 1,289 tokens), fits in one fetch</p>
+<h3>Both audiences</h3>
+<table><thead><tr><th>ID</th><th>Check</th><th>Status</th><th>Points</th><th>Max</th><th>Finding</th></tr></thead><tbody><tr><td>C1, S2</td><td>Content without JavaScript</td><td class="s PASS">PASS</td><td>20 / 20</td><td>20 / 20</td><td>418 words in raw HTML</td></tr><tr><td>C6</td><td>Sections findable</td><td class="s WARN">WARN</td><td>11.3</td><td>15</td><td>1 H1, 1 level skip(s), 83% of H2/H3 have ids, 0 generic heading(s)</td></tr><tr><td>S5</td><td>Answer-ready sections</td><td class="s PASS">PASS</td><td>15</td><td>15</td><td>1 H1, 0 skip(s), median section 53 words (HTML)</td></tr></tbody></table>
+<h3>Coding agents</h3>
+<table><thead><tr><th>ID</th><th>Check</th><th>Status</th><th>Points</th><th>Max</th><th>Finding</th></tr></thead><tbody><tr><td>C2</td><td>Markdown on request</td><td class="s PASS">PASS</td><td>15</td><td>15</td><td>served text/markdown</td></tr><tr><td>C3</td><td>.md version discoverable</td><td class="s WARN">WARN</td><td>8</td><td>15</td><td>https://docs.stripe.com/payments.md (not advertised)</td></tr><tr><td>C4</td><td>llms.txt usable</td><td class="s WARN">WARN</td><td>18</td><td>20</td><td>https://docs.stripe.com/llms.txt, 527 links, 100% of 8 sampled resolve, 97K chars</td></tr><tr><td>C5</td><td>Page fits one fetch</td><td class="s PASS">PASS</td><td>15</td><td>15</td><td>5K chars received as Markdown</td></tr></tbody></table>
+<h3>AI search</h3>
+<table><thead><tr><th>ID</th><th>Check</th><th>Status</th><th>Points</th><th>Max</th><th>Finding</th></tr></thead><tbody><tr><td>S1</td><td>AI search bots allowed</td><td class="s PASS">PASS</td><td>20</td><td>20</td><td>all 6 allowed</td></tr><tr><td>S3</td><td>Indexable</td><td class="s PASS">PASS</td><td>25</td><td>25</td><td>indexable, canonical yes, in sitemap: yes (4968 URLs read)</td></tr><tr><td>S4</td><td>Freshness declared</td><td class="s FAIL">FAIL</td><td>0</td><td>15</td><td>page date: none; sitemap lastmod: 0/4968 URLs, 0 distinct dates; this URL no lastmod</td></tr><tr><td>S6</td><td>JSON-LD</td><td class="s FAIL">FAIL</td><td>0</td><td>5</td><td>none</td></tr></tbody></table>
+<h3>Fixes</h3>
+<ul><li><b>S4</b> (+15 points) Freshness declared: page date: none; sitemap lastmod: 0/4968 URLs, 0 distinct dates; this URL no lastmod<br><span class="fix">Fix: Declare when the page changed: a visible &quot;Last updated&quot; date or dateModified in JSON-LD, plus accurate &lt;lastmod&gt; values in the sitemap.</span></li><li><b>C3</b> (+7 points) .md version discoverable: https://docs.stripe.com/payments.md (not advertised)<br><span class="fix">Fix: A Markdown copy exists at https://docs.stripe.com/payments.md, but nothing points to it. Add &lt;link rel=&quot;alternate&quot; type=&quot;text/markdown&quot; href=&quot;https://docs.stripe.com/payments.md&quot;&gt; to the page head, or list it in llms.txt.</span></li><li><b>S6</b> (+5 points) JSON-LD: none<br><span class="fix">Fix: Add a JSON-LD block (for example TechArticle) with dateModified. It carries little weight for AI citations, so do this last.</span></li><li><b>C6</b> (+3.7 points) Sections findable: 1 H1, 1 level skip(s), 83% of H2/H3 have ids, 0 generic heading(s)<br><span class="fix">Fix: Use one H1, nest headings without skipping levels (H2 then H3), and give H2/H3 headings id attributes so sections can be linked and found.</span></li><li><b>C4</b> (+2 points) llms.txt usable: https://docs.stripe.com/llms.txt, 527 links, 100% of 8 sampled resolve, 97K chars<br><span class="fix">Fix: It is 97K characters; keep it under 50K by moving full page text into llms-full.txt.</span></li></ul>
+</section>
+<section><h2>https://vitest.dev/guide/</h2>
+<h3>Summary</h3>
+<div class="scores"><div class="score">Coding agents<b>85/100</b></div><div class="score">AI search<b>68/100</b></div></div>
+<p>Reachability: an honest AI agent can read this page (HTTP 200). robots.txt allows all 6 AI search bots.</p>
+<p>What an agent receives: Markdown, 7,693 characters (about 1,923 tokens), fits in one fetch</p>
+<h3>Both audiences</h3>
+<table><thead><tr><th>ID</th><th>Check</th><th>Status</th><th>Points</th><th>Max</th><th>Finding</th></tr></thead><tbody><tr><td>C1, S2</td><td>Content without JavaScript</td><td class="s PASS">PASS</td><td>20 / 20</td><td>20 / 20</td><td>688 words in raw HTML</td></tr><tr><td>C6</td><td>Sections findable</td><td class="s PASS">PASS</td><td>15</td><td>15</td><td>1 H1, 0 level skip(s), 100% of H2/H3 have ids, 1 generic heading(s)</td></tr><tr><td>S5</td><td>Answer-ready sections</td><td class="s WARN">WARN</td><td>12</td><td>15</td><td>1 H1, 0 skip(s), median section 38 words (HTML)</td></tr></tbody></table>
+<h3>Coding agents</h3>
+<table><thead><tr><th>ID</th><th>Check</th><th>Status</th><th>Points</th><th>Max</th><th>Finding</th></tr></thead><tbody><tr><td>C2</td><td>Markdown on request</td><td class="s FAIL">FAIL</td><td>0</td><td>15</td><td>got text/html</td></tr><tr><td>C3</td><td>.md version discoverable</td><td class="s PASS">PASS</td><td>15</td><td>15</td><td>https://vitest.dev/guide.md (listed in llms.txt)</td></tr><tr><td>C4</td><td>llms.txt usable</td><td class="s PASS">PASS</td><td>20</td><td>20</td><td>https://vitest.dev/llms.txt, 215 links, 100% of 8 sampled resolve, 12K chars</td></tr><tr><td>C5</td><td>Page fits one fetch</td><td class="s PASS">PASS</td><td>15</td><td>15</td><td>8K chars received as Markdown</td></tr></tbody></table>
+<h3>AI search</h3>
+<table><thead><tr><th>ID</th><th>Check</th><th>Status</th><th>Points</th><th>Max</th><th>Finding</th></tr></thead><tbody><tr><td>S1</td><td>AI search bots allowed</td><td class="s PASS">PASS</td><td>20</td><td>20</td><td>all 6 allowed</td></tr><tr><td>S3</td><td>Indexable</td><td class="s WARN">WARN</td><td>10</td><td>25</td><td>indexable, canonical no, no sitemap found</td></tr><tr><td>S4</td><td>Freshness declared</td><td class="s WARN">WARN</td><td>6</td><td>15</td><td>page date: &lt;time&gt;; sitemap lastmod: 0/0 URLs, 0 distinct dates; this URL no lastmod</td></tr><tr><td>S6</td><td>JSON-LD</td><td class="s FAIL">FAIL</td><td>0</td><td>5</td><td>none</td></tr></tbody></table>
+<h3>Fixes</h3>
+<ul><li><b>C2</b> (+15 points) Markdown on request: got text/html<br><span class="fix">Fix: VitePress has no content negotiation built in. Generate .md copies of each page (for example with vitepress-plugin-llms) and have your host return them for Accept: text/markdown.</span></li><li><b>S3</b> (+15 points) Indexable: indexable, canonical no, no sitemap found<br><span class="fix">Fix: Add &lt;link rel=&quot;canonical&quot;&gt; to the page head and list the page in your sitemap (referenced from robots.txt).</span></li><li><b>S4</b> (+9 points) Freshness declared: page date: &lt;time&gt;; sitemap lastmod: 0/0 URLs, 0 distinct dates; this URL no lastmod<br><span class="fix">Fix: Set lastUpdated: true in the VitePress config. It shows a visible date and gives the sitemap git-based &lt;lastmod&gt; values.</span></li><li><b>S6</b> (+5 points) JSON-LD: none<br><span class="fix">Fix: Add a JSON-LD block (for example TechArticle) with dateModified. It carries little weight for AI citations, so do this last.</span></li><li><b>S5</b> (+3 points) Answer-ready sections: 1 H1, 0 skip(s), median section 38 words (HTML)<br><span class="fix">Fix: Use one H1 and split the page into H2/H3 sections of about 40 to 500 words, so each section can stand alone as an answer.</span></li></ul>
+<h3>Tips</h3>
+<ul><li>Last updated about 1 month ago (from the page date).</li><li>10 code block(s) have no language class. Language hints may help coding agents (plausible, not yet measured).</li></ul>
+</section>
+<section><h2>https://blocked.example.com/docs</h2>
+<p class="msg">This site&#39;s bot protection refused Lensy-CLI (HTTP 403), so this page wasn&#39;t checked. Run the audit at https://perseveranceai.com instead.</p></section>
+</main>
+</body>
+</html>
