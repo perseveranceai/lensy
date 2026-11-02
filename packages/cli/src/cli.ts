@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT
-declare const __LENSY_CLI_VERSION__: string;
+import { run } from './main';
 
-// Commands land in task 7.1. Until then the binary only reports its version.
+declare const __LENSY_CLI_VERSION__: string;
 const version = typeof __LENSY_CLI_VERSION__ === 'string' ? __LENSY_CLI_VERSION__ : '0.0.0';
-const args = process.argv.slice(2);
-if (args[0] === '--version' || args[0] === '-v') {
-  process.stdout.write(`${version}\n`);
-} else {
-  process.stdout.write(`lensy ${version}: commands are not available yet.\n`);
-  process.exitCode = 2;
-}
+
+run(process.argv.slice(2), { stdout: process.stdout, stderr: process.stderr, env: process.env, version })
+  .then(code => { process.exitCode = code; })
+  .catch(e => {
+    process.stderr.write(`lensy: ${(e as Error).message}\n`);
+    if (process.env.LENSY_DEBUG === '1') process.stderr.write(`${(e as Error).stack}\n`);
+    process.exitCode = 1;
+  });
