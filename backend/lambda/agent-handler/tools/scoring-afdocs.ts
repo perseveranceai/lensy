@@ -1,6 +1,6 @@
 /**
  * Coding agents score from an AFDocs run on the scanned page, plus Lensy's own
- * checks in the same tiers. Spec: .context/specs/coding-agents-afdocs.md.
+ * checks in the same tiers. Spec: docs/coding-agents-afdocs/spec.md.
  *
  * AFDocs' formula: every check earns a share of its weight (10/7/4/2 by tier,
  * warns earn a fraction), the score is earned over possible, and some critical

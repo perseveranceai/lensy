@@ -1,7 +1,7 @@
 /**
  * Runs AFDocs on the one page being scanned. AFDocs implements the
  * Agent-Friendly Documentation Spec and is the engine behind Fern's,
- * Mintlify's and Document360's agent scores. Spec: .context/specs/coding-agents-afdocs.md.
+ * Mintlify's and Document360's agent scores. Spec: docs/coding-agents-afdocs/spec.md.
  *
  * Single-page mode (samplingStrategy 'none') is documented in the AFDocs CLI
  * reference, and its scoring treats it as a full run (the under-5-pages rule

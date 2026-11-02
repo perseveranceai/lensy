@@ -1,4 +1,4 @@
-// Coding agents score from AFDocs (spec .context/specs/coding-agents-afdocs.md).
+// Coding agents score from AFDocs (spec docs/coding-agents-afdocs/spec.md).
 // Fixtures are real AFDocs 0.22.2 single-page runs captured on 2026-10-29.
 import fs from 'fs';
 import path from 'path';

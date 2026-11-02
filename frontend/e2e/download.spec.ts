@@ -253,7 +253,7 @@ test('DL-06: at 375px the download menu fits on screen', async ({ page }) => {
   expect(box!.x + box!.width).toBeLessThanOrEqual(375);
 });
 
-// AFDocs-based Coding agents score (.context/specs/coding-agents-afdocs.md).
+// AFDocs-based Coding agents score (docs/coding-agents-afdocs/spec.md).
 // report-stripe-afdocs.json is report-stripe-v2.json with codingAgents built by
 // scoreCodingAgentsAfdocs from a real AFDocs 0.22.2 run on U-1's sibling page.
 const stripeAfdocs = fixture('report-stripe-afdocs.json');
