@@ -121,6 +121,10 @@ test('REG-18 / REG-28: /bot shows the user agent, the scan IP and a rule that ma
   await expect(page.getByTestId('bot-egress-ips')).toContainText('203.0.113.7');
   // The allow rule matches the user agent AND the IP; a user-agent-only rule is spoofable.
   await expect(page.getByTestId('bot-allow-rule')).toHaveText('(http.user_agent contains "Lensy/1.0") and (ip.src in {203.0.113.7})');
+  // Free plan: Bot Fight Mode can't be skipped by a custom rule, so /bot offers an IP Access
+  // rule for the dedicated scan IP instead (Cloudflare docs, checked 2026-11-01).
+  await expect(page.getByTestId('bot-free-plan')).toContainText('IP Access rule');
+  await expect(page.getByTestId('bot-free-plan')).toContainText('203.0.113.7');
   await expect(page.getByText(/has no fixed IP address, so a rule by IP will not work/)).toHaveCount(0);
   await expect(page.getByText("This page does not exist.")).toHaveCount(0);
 });
