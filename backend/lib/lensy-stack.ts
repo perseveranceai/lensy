@@ -296,6 +296,11 @@ export class LensyStack extends cdk.Stack {
             domain: 'vpc',
             tags: [{ key: 'Name', value: `lensy-scan-egress-${lensyEnv}` }],
         });
+        // The prod IP is published on /bot and site owners allowlist it, so it must never change.
+        // RETAIN keeps the address if the stack is deleted or the resource replaced. Gamma follows
+        // the stack's usual gamma policy (DESTROY). Never rename the 'ScanEgressEip' logical ID:
+        // a new ID means a new resource, i.e. a new IP (the old one would be orphaned, not reused).
+        egressEip.applyRemovalPolicy(isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY);
         const scanVpc = new ec2.Vpc(this, 'ScanVpc', {
             maxAzs: 2,
             natGateways: 1,

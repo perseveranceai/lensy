@@ -1767,9 +1767,10 @@ export function BotInfo() {
 
       <h2>How to allow it</h2>
       <p>Match <strong>both</strong> the user agent and the IP address. A rule on the user agent alone lets in anyone who copies the name.</p>
-      <p>Cloudflare example: add a custom WAF rule with the action <strong>Skip</strong> (skip Super Bot Fight Mode and the managed rules) for this expression:</p>
+      <p><strong>Cloudflare Pro and above:</strong> add a custom WAF rule with the action <strong>Skip</strong> for this expression, and choose to skip Super Bot Fight Mode, the managed rules, Browser Integrity Check and Security Level:</p>
       <p><code className={code} data-testid="bot-allow-rule">{`(http.user_agent contains "Lensy/1.0") and (ip.src in {${ipForRule}})`}</code></p>
-      <p>On Cloudflare&apos;s free plan, Bot Fight Mode can&apos;t be skipped by a custom rule. Other firewalls and CDNs have an equivalent &ldquo;allow when user agent and source IP match&rdquo; rule.</p>
+      <p data-testid="bot-free-plan"><strong>Cloudflare free plan:</strong> Bot Fight Mode can&apos;t be skipped by a custom rule. Instead, add an <strong>IP Access rule</strong> with the action <strong>Allow</strong> for {ipList ? ipList.join(", ") : "the IP above"}; Bot Fight Mode doesn&apos;t act on requests an IP Access rule allows. This matches the IP only, which is reasonable here because that address is dedicated to Lensy and used by nothing else.</p>
+      <p>Other firewalls and CDNs have an equivalent &ldquo;allow when user agent and source IP match&rdquo; rule.</p>
       <p>You don&apos;t have to do this. A blocked scan doesn&apos;t mean verified AI crawlers are blocked, and we&apos;re working on getting Lensy onto Cloudflare&apos;s verified-bot list so it works without any change on your side.</p>
 
       <h2>How to block it</h2>
