@@ -1,0 +1,30 @@
+{
+  "name": "@perseverance-ai/lensy",
+  "version": "0.0.0",
+  "description": "Check whether AI search engines and coding agents can find and read your docs, from your terminal.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "lensy": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_LICENSES"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/perseveranceai/lensy.git",
+    "directory": "packages/cli"
+  },
+  "scripts": {
+    "build": "node build.mjs && node ../scripts/package-files.mjs ."
+  }
+}

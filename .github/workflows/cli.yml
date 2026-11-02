@@ -1,0 +1,88 @@
+name: CLI
+
+# PR checks for the Lensy CLI (packages/). Runs when the CLI changes, and when
+# the engine or report-view files it runs in place change, so the website can't
+# drift from the CLI unnoticed (.kiro/specs/lensy-cli design "Keeping the website
+# and the CLI in step"). Like ci.yml: no AWS credentials, no secrets, read-only.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packages/**'
+      - 'backend/lambda/agent-handler/shared/fetch-page.ts'
+      - 'backend/lambda/agent-handler/shared/html-content.ts'
+      - 'backend/lambda/agent-handler/shared/markdown-source.ts'
+      - 'backend/lambda/agent-handler/tools/collect-signals-v2.ts'
+      - 'backend/lambda/agent-handler/tools/source-signals.ts'
+      - 'backend/lambda/agent-handler/tools/scoring-v2.ts'
+      - 'backend/lambda/agent-handler/tools/report-v2.ts'
+      - 'backend/lambda/agent-handler/tools/check-registry.ts'
+      - 'backend/lambda/agent-handler/tools/__tests__/replay.ts'
+      - 'backend/lambda/agent-handler/tools/__tests__/fixtures/**'
+      - 'frontend/src/report/report-view.ts'
+      - 'frontend/src/report/markdown.ts'
+      - '.github/workflows/cli.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cli-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  GITLEAKS_VERSION: '8.30.1'
+  GITLEAKS_SHA256: '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb'
+
+jobs:
+  cli:
+    name: CLI build, tests and secrets scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the drift check diffs against the PR base
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: packages/package-lock.json
+
+      - name: Install
+        working-directory: packages
+        run: npm ci
+
+      - name: Build
+        working-directory: packages
+        run: npm run build
+
+      - name: Test
+        working-directory: packages
+        run: npm test
+
+      - name: Install gitleaks
+        # Pinned release, verified by checksum, instead of a third-party action.
+        run: |
+          curl -sSfL -o /tmp/gitleaks.tgz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tgz" | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks
+          sudo mv /tmp/gitleaks /usr/local/bin/gitleaks
+
+      - name: Secrets scan (source and built bundles)
+        # packages/ is published to npm and the repo is public (Req 4.11).
+        working-directory: packages
+        run: npm run check:secrets
+
+      - name: Report renderer drift (advisory)
+        # The website's Markdown download changed but the CLI's renderer didn't.
+        # A warning, never a failure (Req 6.7).
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          changed=$(git diff --name-only "$base"...HEAD)
+          if echo "$changed" | grep -qx 'frontend/src/report/markdown.ts' \
+             && ! echo "$changed" | grep -qx 'packages/cli/src/render-md.ts'; then
+            echo "::warning file=frontend/src/report/markdown.ts::The website's Markdown download changed but packages/cli/src/render-md.ts didn't. Check whether the CLI's Markdown report needs the same change."
+          fi
