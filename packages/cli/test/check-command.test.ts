@@ -94,7 +94,7 @@ describe('several pages', () => {
     const t = io(impl);
     const code = await run(['check', vitest.expected.url, 'https://blocked.example.com/docs'], t.io);
     expect(code).toBe(EXIT.notChecked);
-    expect(t.out()).toContain("This site's bot protection refused Lensy-CLI (HTTP 403), so this page wasn't checked. Run the audit at https://perseveranceai.com instead.");
+    expect(t.out()).toContain("This site's bot protection refused lensy-cli (HTTP 403), so this page wasn't checked. Run the audit at https://perseveranceai.com instead.");
     const blockedSection = t.out().slice(t.out().lastIndexOf('https://blocked.example.com/docs\n'));
     expect(blockedSection).not.toMatch(/allow|whitelist|disable|user.agent/i);
     expect(t.out()).toMatch(/blocked\.example\.com\S*\s+-\s+-\s+blocked/);

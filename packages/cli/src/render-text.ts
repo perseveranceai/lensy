@@ -29,7 +29,7 @@ export function statusMessage(p: PageResult): string | null {
   const http = r.gate.honestStatus ? `HTTP ${r.gate.honestStatus}` : null;
   switch (r.status) {
     case 'ok': return null;
-    case 'blocked': return `This site's bot protection refused Lensy-CLI${http ? ` (${http})` : ''}, so this page wasn't checked. Run the audit at https://perseveranceai.com instead.`;
+    case 'blocked': return `This site's bot protection refused lensy-cli${http ? ` (${http})` : ''}, so this page wasn't checked. Run the audit at https://perseveranceai.com instead.`;
     case 'unreachable': return `Lensy couldn't fetch this page${http ? ` (${http})` : ' (network error)'}, so it wasn't checked.`;
     case 'not-html': return `This URL didn't return an HTML page${http ? ` (${http})` : ''}, so it wasn't checked.`;
   }

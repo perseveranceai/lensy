@@ -179,5 +179,5 @@ pages:
 
 ## https://blocked.example.com/docs
 
-This site's bot protection refused Lensy-CLI (HTTP 403), so this page wasn't checked. Run the audit at https://perseveranceai.com instead.
+This site's bot protection refused lensy-cli (HTTP 403), so this page wasn't checked. Run the audit at https://perseveranceai.com instead.
 
