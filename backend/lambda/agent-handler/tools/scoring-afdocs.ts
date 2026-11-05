@@ -13,39 +13,11 @@
 import type { AfdocsRun } from './afdocs-page';
 import type { SignalsV2 } from './collect-signals-v2';
 import type { CheckResult, ScoreResult } from './scoring-v2';
+import { CHECKS_BY_ID } from './check-registry';
 
-export const AFDOCS_LABELS: Record<string, string> = {
-    'llms-txt-exists': 'llms.txt exists',
-    'llms-txt-valid': 'llms.txt format',
-    'llms-txt-size': 'llms.txt size',
-    'llms-txt-links-resolve': 'llms.txt links resolve',
-    'llms-txt-links-markdown': 'llms.txt links point to Markdown',
-    'llms-txt-directive-html': 'Page points agents to llms.txt (HTML)',
-    'llms-txt-directive-md': 'Page points agents to llms.txt (Markdown)',
-    'llms-txt-coverage': 'llms.txt covers the sitemap',
-    'markdown-url-support': '.md version of the page',
-    'content-negotiation': 'Markdown on request',
-    'rendering-strategy': 'Content without JavaScript',
-    'page-size-markdown': 'Markdown size',
-    'page-size-html': 'HTML size',
-    'page-size-transfer': 'Download size',
-    'content-start-position': 'Content starts near the top',
-    'single-fetch-completeness': 'Complete in one fetch',
-    'tabbed-content-serialization': 'Tabbed content readable',
-    'section-header-quality': 'Headers inside tabs',
-    'markdown-code-fence-validity': 'Code fences closed',
-    'markdown-link-portability': 'Links work outside the site',
-    'embedded-data-serialization': 'Embedded data size',
-    'markdown-content-parity': 'Markdown matches HTML',
-    'cache-header-hygiene': 'Cache headers',
-    'http-status-codes': 'Real 404s for missing pages',
-    'redirect-behavior': 'Redirects',
-    'auth-gate-detection': 'Public without login',
-    'auth-alternative-access': 'Alternative access to gated docs',
-    'bot-protection-interference': 'Bot protection lets agents in',
-};
+// Labels live in the check registry, shared with the CLI and the report.
+const labelOf = (id: string) => CHECKS_BY_ID[id]?.label ?? id.replace(/-/g, ' ').replace(/^./, c => c.toUpperCase());
 
-const titleCase = (id: string) => id.replace(/-/g, ' ').replace(/^./, c => c.toUpperCase());
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const statusOf = (share: number): CheckResult['status'] => share >= 1 ? 'pass' : share <= 0 ? 'fail' : 'warn';
 
@@ -103,7 +75,7 @@ export function scoreCodingAgentsAfdocs(run: AfdocsRun, signals?: SignalsV2): Af
         scored.push({
             check: {
                 id: r.id,
-                label: AFDOCS_LABELS[r.id] || titleCase(r.id),
+                label: labelOf(r.id),
                 category: r.category,
                 points: round1(cs.earnedScore),
                 max: round1(cs.maxScore),
