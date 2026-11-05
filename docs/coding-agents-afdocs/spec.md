@@ -1,48 +1,73 @@
 # Coding agents score from AFDocs
 
-Status: built on `feat/coding-agents-afdocs`, not pushed. Parked while the CLI (`feat/lensy-cli`) is built.
+Status: built on `feat/coding-agents-afdocs`, in review.
 Owner: Rakesh. Builder: Mahesh.
 
 ## Problem
 
-Lensy's Coding agents score is six of our own checks (C1-C6). Fern, Mintlify, Document360 and Documentation.ai all score coding-agent readiness with AFDocs, the open Agent-Friendly Documentation checks. Rakesh asked (WhatsApp, 2026-10-29) to use AFDocs for this score, add what it misses from our checks, and park AI search until this is done.
+Lensy's Coding agents score was six of our own checks (C1-C6). Fern, Mintlify, Document360 and Documentation.ai score coding-agent readiness with AFDocs, the open Agent-Friendly Documentation checks. Rakesh asked to build the Coding agents score on AFDocs, keep the Lensy checks AFDocs doesn't cover, and leave AI search as it is. This applies to the website and the CLI.
 
-## Decisions (2026-10-29)
+## Decisions
 
-- Score the one page the user submits, not a 50-page site sample, so both scores describe the same page.
-- Use AFDocs' own formula (option A), plus Lensy checks in the same tiers.
-- Show one Coding agents score. AFDocs' own number is stored as `afdocsScore`, not shown.
-- AI search stays unchanged and parked.
-- AFDocs checks may count even though "another tool has them". `docs/two-score-readiness/design.md` says otherwise; Rakesh's message overrides it for coding agents.
-- Only one Lensy extra is scored: one H1 and no skipped heading levels (4 points). H2/H3 ids, AGENTS.md, MCP config and code-language hints stay tips.
+From Rakesh, 2026-11-03:
+
+- Lensy wraps AFDocs. Users only ever run `lensy`; there is no AFDocs command.
+- AFDocs runs on the one page the user submits (curated sampling with only that URL), so both scores describe the same page. Site sampling comes later.
+- AFDocs is pinned at exactly 0.23.0, loaded with a dynamic `import()` in the Lambda and bundled into lensy-core for the CLI. Upgrades are deliberate and re-capture the fixtures.
+- AFDocs checks get `source: 'afdocs'` in the check registry. AFDocs' MIT notice ships in `THIRD_PARTY_LICENSES`.
+- The website shows AFDocs checks in the Coding agents list with an "AFDocs" label. No new sections.
+- The column-bug test on this branch is REG-30.
+
+From Mahesh, 2026-11-03:
+
+- The score uses AFDocs' own formula: each check earns a share of its tier weight (critical 10, high 7, medium 4, low 2; a warning earns part), the score is weight earned over weight possible, and some critical failures cap it (no llms.txt caps it at 59). Lensy's own checks are added in the same tiers. Skipped checks leave both sides of the ratio, which is what a local build check needs later.
+- AFDocs' `rendering-strategy` replaces C1 in Coding agents. S2 stays in AI search. The report shows them as one "Content without JavaScript" row with no AFDocs label, because the row mixes both.
+- The only Lensy check added is `lensy-headings` (one H1, no skipped heading levels, weight 4). AFDocs' `section-header-quality` only looks inside tabs. H2/H3 ids, AGENTS.md, MCP config and code-language hints stay tips.
+- `llms-txt-coverage` stays skipped. It reads the whole sitemap, which is about the site rather than the page and is the slowest part of a run.
+- Speed settings: 20 llms.txt links, 200 ms between requests, 3 requests at a time.
+
+## How fetching works
+
+AFDocs has no option for a fetch function or a user agent, and sends every request through `globalThis.fetch` (`dist/http.js`). While an AFDocs run is active, `globalThis.fetch` is a dispatcher (`tools/afdocs-page.ts`). Requests made inside the run, tracked with `AsyncLocalStorage`, go through `honestFetch` in `shared/fetch-page.ts`, so they carry the caller's user agent (`Lensy/1.0` on the website, `lensy-cli/<version>` in the CLI) and never retry as a browser. Every other caller in the process gets the original fetch. The dispatcher is reference-counted, so overlapping CLI pages don't restore it early, and it is removed when the last run's work has finished, including after a timeout. `redirect: 'manual'` is passed through, so AFDocs' redirect check still works.
 
 ## Acceptance criteria
 
-1. A scan runs AFDocs 0.22.2 on the submitted page only (`samplingStrategy: 'none'`), not a site sample.
-2. The Coding agents score uses AFDocs' formula (10/7/4/2 tiers, warn fractions, caps such as "no llms.txt caps at 59"), with Lensy's headings check added at 4 points.
-3. With no Lensy checks added, our scorer gives exactly AFDocs' own score (fixtures: Branch 97, Stripe 90, Docusaurus 59, Vitest 86, React 92).
-4. One Coding agents score is shown; AFDocs' own number is stored, not shown.
-5. If AFDocs fails or takes over 150 s, the scan still completes with the old C1-C6 score.
-6. The report lists every scored AFDocs check with points, failing checks first; skipped checks are left out.
-7. Markdown and PDF downloads carry the same checks; the PDF has no "?" for AFDocs' arrows.
-8. AI search score is unchanged.
-9. The /bot page says AFDocs requests are sent as `afdocs/0.22.2` and what they fetch.
+1. A website scan and `lensy check <url>` run AFDocs 0.23.0 on the submitted page only and give the same Coding agents checks and score.
+2. Every AFDocs request carries the caller's user agent and goes through `fetch-page.ts`; nothing goes out as `afdocs/...`.
+3. `globalThis.fetch` is the original again after every run, including when AFDocs throws or times out, and with overlapping runs.
+4. `redirect: 'manual'` reaches the server unchanged.
+5. Coding agents is AFDocs' checks plus `lensy-headings`, scored with AFDocs' formula.
+6. If AFDocs fails or takes over 150 s, the scan still completes with C1-C6.
+7. Every AFDocs check is in the registry with `source: 'afdocs'`, a label, its weight, what it measures and why.
+8. Website report: AFDocs checks in the Coding agents group with an "AFDocs" label; Markdown and PDF downloads match the page; AI search unchanged.
+9. CLI terminal, `--md` and `--html` show the AFDocs checks with the same label.
+10. `THIRD_PARTY_LICENSES` in lensy-core lists AFDocs and every package bundled with it.
+11. The report opens on one score tab and always shows two groups (REG-30).
+12. Backend Jest, CLI Vitest and frontend e2e pass on a production build.
 
-Verified on 2026-10-29: backend Jest 263/263 (`scoring-afdocs.test.ts` covers 2, 3, 5), frontend e2e 45/45 on a production build (S-11 covers 6 and 8, DL-09 covers 7).
+## How each criterion is tested
+
+| Criterion | Test |
+|---|---|
+| 1 | `packages/core/test/parity.test.ts`: on the 5 pages with saved AFDocs runs, the CLI and the website engine give the same checks, points, findings, fixes and score |
+| 2 | `afdocs-fetch.test.ts` (recording fetch, website and CLI user agents); `packages/core/test/check.test.ts` runs the real AFDocs module offline and fails if a request bypasses the CLI's fetch |
+| 3, 4 | `afdocs-fetch.test.ts` |
+| 5, 6 | `scoring-afdocs.test.ts` |
+| 7 | `check-registry.test.ts`, `packages/core/test/registry.test.ts` |
+| 8 | e2e S-11 and DL-09 |
+| 9 | CLI golden files `packages/cli/test/golden/report.md` and `report.html`, `check-command.test.ts` |
+| 10 | `packages/scripts/package-files.mjs` fails the build when a bundled package has no licence it can find |
+| 11 | e2e REG-30 |
+| 12 | pre-push suite |
+
+The 5 saved AFDocs runs are in `backend/lambda/agent-handler/tools/__tests__/fixtures/afdocs/`. AFDocs 0.23.0 alone scores them Branch 100, Stripe 91, Docusaurus 59 (capped), Vitest 86, React 92.
 
 ## Out of scope
 
 - Site-level sampling.
-- Changing AI search.
-- Letter grades.
-- Overriding AFDocs' user agent (its API has no option for it).
-
-## Before this branch can merge
-
-1. **Rebase onto main.** Main now uses REG-27 to REG-29 (fixed outbound IP, PR #49 and #50). This branch's column-bug test is also called REG-27; renumber it to the next free id and fix its row in `docs/test-cases.md`.
-2. **Engine rules from `feat/lensy-cli`** (`.kiro/steering/lensy-engine.md`) conflict with AFDocs: every request must go through `shared/fetch-page.ts`, and the CLI must name itself `Lensy-CLI/<version>`. AFDocs uses its own HTTP client and always sends `afdocs/0.22.2`. Rakesh decides whether AFDocs is website-only or the rule changes.
-3. **Speed.** AFDocs adds about 5 to 30 s per page (15 to 55 requests, 28 checks run one after another, 200 ms between requests). Decide on the options below.
-4. Scan the 5 spike pages on gamma after merge and compare scores and times; bot protection may treat AWS traffic differently from a laptop.
+- Changes to AI search.
+- Checking a local build (`--serve`), which is the next spec.
+- An upstream change to AFDocs.
 
 ## Speed: tested, not built
 
@@ -56,15 +81,13 @@ AFDocs' checks fall into 5 dependency waves (declared `dependsOn` plus hidden re
 | 4 | markdown-content-parity |
 | 5 | bot-protection-interference |
 
-`llms-txt-directive-md` must stay in wave 1: AFDocs runs it before its dependencies, so it acts in standalone mode. Placing it later changed Docusaurus from fail to skip.
+`llms-txt-directive-md` has to stay in wave 1: AFDocs runs it before its dependencies, so it works in standalone mode. Moving it later changed Docusaurus from fail to skip.
 
-Results on 5 pages, 2 runs each, all requests capped at 3 in flight across the run: every check status matched AFDocs' sequential run in all 10 runs; parallel was faster in 8 of 10 (about 10 to 65 percent). Without the run-wide cap, one Stripe run took 85 s and dropped from 91 to 87 (throttled). Costs: relies on AFDocs internals (`ctx.http`, `ctx.previousResults`), about 2 extra requests per scan, and the wave list must be rechecked on every AFDocs upgrade.
-
-Other options, each needing Rakesh's OK: 10 llms.txt links instead of 20; 50 ms instead of 200 ms between requests; a cap of 5 instead of 3.
+On 5 pages, 2 runs each, with at most 3 requests in flight across the run, every check status matched AFDocs' sequential run, and running waves in parallel was faster in 8 of 10 runs (about 10 to 65 percent). Without the run-wide limit, one Stripe run took 85 s and dropped from 91 to 87 because the site throttled it. The costs: it depends on AFDocs internals (`ctx.http`, `ctx.previousResults`), adds about 2 requests per scan, and the wave list has to be rechecked on every AFDocs upgrade. Not built until asked.
 
 ## Notes
 
-Spike (2026-10-29, laptop, curated single page, 50 links, coverage on):
+Spike on 0.22.2 (2026-10-29, laptop, 50 links, coverage on):
 
 | Page | AFDocs | Old C1-C6 | Time | Requests |
 |---|---|---|---|---|
@@ -74,4 +97,6 @@ Spike (2026-10-29, laptop, curated single page, 50 links, coverage on):
 | Vitest guide | 86 | 85 | 9 s | 26 |
 | React learn | 92 | 95 | 26 s | 76 |
 
-With the shipped options (20 links, `llms-txt-coverage` skipped), through the compiled Lambda code: Vitest 86 in 27 s / 18 requests, Stripe 91 in 32 s / 55 requests.
+With the shipped options (20 links, `llms-txt-coverage` skipped): Vitest 86 in 27 s with 18 requests and Stripe 91 in 32 s with 55 requests through the compiled Lambda code. The CLI checks Vitest in 11 s.
+
+After merge, scan these 5 pages on gamma and compare scores and times with the laptop runs. Bot protection may treat AWS traffic differently.
