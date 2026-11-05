@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { URLS, blockAnalytics, startScan, expectReport, gaEvents, trackConsoleErrors, setTheme } from './helpers';
+import { URLS, blockAnalytics, startScan, expectReport, gaEvents, trackConsoleErrors, setTheme, fixture, openSavedReport } from './helpers';
 
 // Regression cases (REG-xx) from docs/test-cases.md. Each one is a bug that
 // reached gamma or prod. When you fix a new one, add its REG case to the doc
@@ -22,14 +22,23 @@ test('REG-03: a JavaScript-rendered page is named as such, not "not documentatio
   await expect(page.getByText("This doesn't look like a documentation page")).toHaveCount(0);
 });
 
+// REG-05 used to scan www.lua.org live. That site often doesn't answer in time, so the
+// test failed for a reason that had nothing to do with Lensy (CI and the gamma gate,
+// 2026-11-05). It now opens a saved report for a page with no robots.txt. The backend
+// side is checked on the saved lua.org responses in scoring-v2-edges.test.ts.
 test('REG-05: a site with no robots.txt is not reported as "10/10 allowed"', async ({ page }) => {
-  await startScan(page, URLS.noRobots);
-  await expectReport(page);
+  const report = fixture('report-stripe-v2.json');
+  report.categories.botAccess.robotsTxtFound = false;
+  report.categories.discoverability.sitemapXml.referencedInRobotsTxt = false;
+  const s1 = report.scores.aiSearch.checks.find((c: { id: string }) => c.id === 'S1');
+  s1.detail = 'all 6 allowed (no robots.txt)';
+  await openSavedReport(page, { report });
   // The robots.txt row (S1) is in the AI search group; Coding agents opens first (REG-30).
   const searchCard = page.getByTestId('score-card-search');
   if (await searchCard.count()) await searchCard.click();
   await expect(page.getByText(/no robots\.txt/i).first()).toBeVisible();
   await expect(page.getByText(/10\s*\/\s*10 allowed/)).toHaveCount(0);
+  await expect(page.getByText(/\d+\s*\/\s*\d+ allowed/)).toHaveCount(0);
 });
 
 test('REG-08: generated llms.txt, sitemap and article markdown are complete', async ({ request }) => {

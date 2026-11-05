@@ -2,7 +2,7 @@
 // is a small site served by replayFetch, scored end to end (collector + scorer).
 import { collectSignalsV2, robotsAllows } from '../collect-signals-v2';
 import { scoreCodingAgents, scoreAiSearch, gateState, CheckId } from '../scoring-v2';
-import { FixtureEntry, replayFetch } from './replay';
+import { FixtureEntry, loadFixture, pageInputFromFixture, replayFetch } from './replay';
 
 const ORIGIN = 'https://docs.example.com';
 const PAGE = `${ORIGIN}/guide/start`;
@@ -204,4 +204,15 @@ describe('netErrorChecks', () => {
         expect(s.contentNegotiation.ok).toBe(true);
         expect(s.netErrorChecks).toEqual(['C3']);
     });
+});
+
+// REG-05: a site with no robots.txt says so, and never claims a count of bots it
+// allowed. The saved lua.org responses have no robots.txt (fixture u5-lua-manual).
+test('REG-05: no robots.txt is reported as not found, with all 6 bots allowed by default', async () => {
+    const { entries, expected } = loadFixture('u5-lua-manual');
+    const signals = await collectSignalsV2(pageInputFromFixture(entries, expected.url), { fetchImpl: replayFetch(entries), now: Date.parse('2026-10-22T12:00:00Z') });
+    expect(signals.robots.found).toBe(false);
+    const s1 = scoreAiSearch(signals).checks.find(c => c.id === 'S1')!;
+    expect(s1.detail).toBe('all 6 allowed (no robots.txt)');
+    expect(s1.points).toBe(s1.max);
 });
