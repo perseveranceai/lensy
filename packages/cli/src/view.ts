@@ -11,7 +11,7 @@ export function toView(r: Report): ScoringV2 | null {
   return readScoringV2({
     scoringVersion: 2,
     scores: {
-      codingAgents: { score: r.scores.codingAgents.score, checks: r.scores.codingAgents.checks },
+      codingAgents: { score: r.scores.codingAgents.score, checks: r.scores.codingAgents.checks, source: r.scores.codingAgents.source },
       aiSearch: { score: r.scores.aiSearch.score, checks: r.scores.aiSearch.checks },
     },
     gate: r.gate,

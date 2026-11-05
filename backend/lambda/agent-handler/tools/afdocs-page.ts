@@ -117,9 +117,14 @@ export function withHonestFetch<T>(opts: { userAgent?: string; fetchImpl?: typeo
 /** Never throws: a missing run falls back to Lensy's own Coding agents checks. */
 export async function runAfdocsOnPage(
     url: string,
-    opts: { load?: () => Promise<AfdocsModule>; timeoutMs?: number; userAgent?: string; fetchImpl?: typeof fetch } = {},
+    opts: {
+        load?: () => Promise<AfdocsModule>; timeoutMs?: number; userAgent?: string; fetchImpl?: typeof fetch;
+        /** The Lambda logs to CloudWatch; the CLI passes a silent logger so stdout stays the report. */
+        log?: Pick<Console, 'log' | 'warn'>;
+    } = {},
 ): Promise<AfdocsRun | undefined> {
     const started = Date.now();
+    const log = opts.log ?? console;
     let timer: NodeJS.Timeout | undefined;
     try {
         const afdocs = await (opts.load || loadAfdocs)();
@@ -143,10 +148,10 @@ export async function runAfdocsOnPage(
             ...(report.requestSummary?.requests !== undefined ? { requests: report.requestSummary.requests } : {}),
             ms: Date.now() - started,
         };
-        console.log(`[AFDocs] ${url}: ${run.score.overall}${run.score.cap ? ` (capped by ${run.score.cap.checkId})` : ''}, ${run.results.length} checks, ${run.requests ?? '?'} requests, ${run.ms}ms`);
+        log.log(`[AFDocs] ${url}: ${run.score.overall}${run.score.cap ? ` (capped by ${run.score.cap.checkId})` : ''}, ${run.results.length} checks, ${run.requests ?? '?'} requests, ${run.ms}ms`);
         return run;
     } catch (e) {
-        console.warn(`[AFDocs] run failed for ${url} after ${Date.now() - started}ms, using Lensy checks:`, (e as Error).message);
+        log.warn(`[AFDocs] run failed for ${url} after ${Date.now() - started}ms, using Lensy checks:`, (e as Error).message);
         return undefined;
     } finally {
         if (timer) clearTimeout(timer);

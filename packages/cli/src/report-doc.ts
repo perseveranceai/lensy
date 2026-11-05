@@ -5,7 +5,7 @@
 // and preview wording come from the website's report view, so the files say
 // what the website says. No per-check code: labels and text come from reports.
 import type { Check, Report, Score } from '@perseverance-ai/lensy-core';
-import { v2Recommendations, v2SignalGroups } from '../../../frontend/src/report/report-view';
+import { SOURCE_LABELS, v2Recommendations, v2SignalGroups } from '../../../frontend/src/report/report-view';
 import { bannerLine, previewLine, toView } from './view';
 import { statusMessage, scoreText } from './render-text';
 
@@ -21,7 +21,8 @@ export interface DocMeta {
   pages: { url: string; status: Report['status'] | 'internal-error'; codingAgents: number | null; aiSearch: number | null }[];
 }
 
-export interface DocRow { id: string; check: string; status: string; points: string; max: string; finding: string }
+/** source: "AFDocs" for AFDocs checks, empty for Lensy's own (the website's SOURCE_LABELS). */
+export interface DocRow { id: string; check: string; status: string; points: string; max: string; finding: string; source: string }
 export interface DocFix { id: string; issue: string; fix: string; gain: number }
 export interface DocSkipped { id: string; check: string; status: string; reason: string }
 
@@ -65,6 +66,7 @@ function page(input: DocInput): DocPage {
         points: checks.map(c => (c.points === null ? '-' : String(c.points))).join(' / '),
         max: checks.map(c => String(c.max)).join(' / '),
         finding: sig.detail,
+        source: (sig.source && SOURCE_LABELS[sig.source]) || '',
       };
     }),
   }));

@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT
 // The `lensy` command. run() takes its inputs (arguments, streams, fetch,
 // environment) as parameters so tests drive it in process with saved fixtures.
-import { check, CHECKS, defaultUserAgent, ENGINE_COMMIT, isLocalUrl } from '@perseverance-ai/lensy-core';
+import { check, defaultUserAgent, ENGINE_COMMIT, isLocalUrl } from '@perseverance-ai/lensy-core';
+import type { CheckOptions } from '@perseverance-ai/lensy-core';
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { createColors } from 'picocolors';
-import { explainCheck } from './explain';
+import { ALL_CHECKS, explainCheck } from './explain';
 import { largeRunNotice, uniquePages } from './pages';
 import { buildReportDoc } from './report-doc';
 import { renderHtml } from './render-html';
@@ -20,6 +21,8 @@ export interface Io {
   stderr: { write(s: string): unknown };
   env: Record<string, string | undefined>;
   fetchImpl?: typeof fetch;
+  /** tests replay saved AFDocs runs (core CheckOptions.loadAfdocs) */
+  loadAfdocs?: CheckOptions['loadAfdocs'];
   version: string;
   /** fixed clock for tests */
   now?: () => number;
@@ -102,7 +105,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
       const userAgent = o.userAgent ?? defaultUserAgent(io.version);
       const pages = await pool(toCheck, o.concurrency, async (url): Promise<PageResult> => {
         try {
-          return { url, report: await check(url, { userAgent, timeoutMs: o.timeout, fetchImpl: io.fetchImpl }) };
+          return { url, report: await check(url, { userAgent, timeoutMs: o.timeout, fetchImpl: io.fetchImpl, loadAfdocs: io.loadAfdocs }) };
         } catch (e) {
           if (io.env.LENSY_DEBUG === '1') io.stderr.write(`${(e as Error).stack}\n`);
           return { url, internalError: (e as Error).message };
@@ -129,10 +132,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
 
   program.command('explain')
     .description('Explain one check: what it measures, its points, why it matters and the evidence.')
-    .argument('<checkId>', 'a check id, for example C4 or S3')
+    .argument('<checkId>', 'a check id, for example llms-txt-exists or S3')
     .action((id: string) => {
       const text = explainCheck(id);
-      if (!text) throw new UsageError(`No check called "${id}". Checks: ${CHECKS.map(x => x.id).join(', ')}.`);
+      if (!text) throw new UsageError(`No check called "${id}". Checks: ${ALL_CHECKS.map(x => x.id).join(', ')}.`);
       io.stdout.write(text + '\n');
     });
 

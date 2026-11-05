@@ -3,6 +3,7 @@
 // No per-check code: labels, findings and fixes come from the report.
 import type { Check, Report, Score } from '@perseverance-ai/lensy-core';
 import type { Colors } from 'picocolors/types';
+import { SOURCE_LABELS } from '../../../frontend/src/report/report-view';
 import { bannerLine, previewLine, topFixes } from './view';
 
 const STATUS_WORD: Record<Check['status'], string> = { pass: 'PASS', warn: 'WARN', fail: 'FAIL', unknown: 'UNKNOWN', skipped: 'SKIPPED' };
@@ -39,12 +40,18 @@ function colorStatus(c: Colors, s: Check['status']): string {
   return s === 'pass' ? c.green(w) : s === 'fail' ? c.red(w) : s === 'warn' ? c.yellow(w) : c.dim(w);
 }
 
+// Same label as the website's source badge; Lensy's own checks show none.
+const sourceTag = (x: Check) => (x.source && SOURCE_LABELS[x.source] ? ` ${SOURCE_LABELS[x.source]}` : '');
+
 function renderChecks(c: Colors, title: string, s: Score): string[] {
   const lines = [``, c.bold(`  ${title}  ${scoreText(s)}`)];
-  const width = Math.max(...s.checks.map(x => x.label.length));
+  const idWidth = Math.max(3, ...s.checks.map(x => x.id.length));
+  const width = Math.max(...s.checks.map(x => x.label.length + sourceTag(x).length));
   for (const x of s.checks) {
     const pts = x.points === null ? `-/${x.max}` : `${x.points}/${x.max}`;
-    lines.push(`    ${colorStatus(c, x.status)} ${pad(x.id, 3)} ${pad(x.label, width)}  ${pad(pts, 7)} ${x.detail}`);
+    const tag = sourceTag(x);
+    const label = x.label + (tag ? c.dim(tag) : '') + ' '.repeat(Math.max(0, width - x.label.length - tag.length));
+    lines.push(`    ${colorStatus(c, x.status)} ${pad(x.id, idWidth)} ${label}  ${pad(pts, 7)} ${x.detail}`);
     if (x.note) lines.push(c.dim(`          ${x.note}`));
     if (x.fix) lines.push(`          Fix: ${x.fix}`);
   }

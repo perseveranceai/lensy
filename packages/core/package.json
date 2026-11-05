@@ -31,5 +31,8 @@
   },
   "scripts": {
     "build": "tsup && node ../scripts/package-files.mjs ."
+  },
+  "devDependencies": {
+    "afdocs": "0.23.0"
   }
 }
