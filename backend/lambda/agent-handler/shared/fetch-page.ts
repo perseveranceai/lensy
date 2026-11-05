@@ -118,6 +118,21 @@ export async function fetchWithFallback(url: string, opts: FetchOptions = {}): P
     };
 }
 
+/**
+ * A fetch() for third-party code that takes no fetch option (AFDocs): it sends
+ * the honest user agent and passes everything else through unchanged (method,
+ * headers, redirect, signal), so the library's own redirect and bot-protection
+ * checks still see what the server really answered. No browser fallback.
+ */
+export function honestFetch(opts: { userAgent?: string; fetchImpl: typeof fetch }): typeof fetch {
+    const ua = opts.userAgent ?? HONEST_UA;
+    return ((input: any, init: RequestInit = {}) => {
+        const headers = new Headers(init.headers);
+        headers.set('User-Agent', ua);
+        return opts.fetchImpl(input, { ...init, headers });
+    }) as typeof fetch;
+}
+
 /** fetchWithFallback plus the body read as text. */
 export async function fetchPage(url: string, opts: FetchOptions = {}): Promise<FetchPageResult> {
     const a = await fetchWithFallback(url, opts);

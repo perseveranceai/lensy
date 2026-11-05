@@ -12,6 +12,9 @@
 // Pinned exactly; upgrade on purpose and re-capture the fixtures (Rakesh, 2026-11-03).
 export const AFDOCS_VERSION = '0.23.0';
 
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { honestFetch } from '../shared/fetch-page';
+
 export type AfdocsStatus = 'pass' | 'warn' | 'fail' | 'skip' | 'error';
 
 export interface AfdocsCheckResult {
@@ -68,10 +71,53 @@ const DEFAULT_TIMEOUT_MS = 150000;
 const loadAfdocs = (): Promise<AfdocsModule> =>
     (new Function('m', 'return import(m)') as (m: string) => Promise<AfdocsModule>)('afdocs');
 
+// AFDocs has no fetch or user-agent option and sends every request through
+// globalThis.fetch (dist/http.js). While a run is active, globalThis.fetch is a
+// dispatcher: requests made inside an AFDocs run (tracked with
+// AsyncLocalStorage) go through honestFetch from fetch-page.ts, so they carry
+// Lensy's user agent and the caller's fetchImpl; every other caller in the
+// process, including Lensy's own collector running alongside, gets the
+// original fetch. The original is put back when the last run's work has
+// actually finished, so a run that timed out still can't send requests under
+// AFDocs' own name.
+const route = new AsyncLocalStorage<typeof fetch>();
+let original: typeof fetch | undefined;
+let active = 0;
+
+// The routed fetch runs outside the AFDocs context, so a fetchImpl that itself
+// calls globalThis.fetch reaches the original instead of looping back here.
+const dispatcher = ((input: any, init?: RequestInit) => {
+    const routed = route.getStore();
+    return routed ? route.exit(() => routed(input, init)) : original!(input, init);
+}) as typeof fetch;
+
+function acquire(): typeof fetch {
+    if (active++ === 0) {
+        original = globalThis.fetch;
+        globalThis.fetch = dispatcher;
+    }
+    return original!;
+}
+
+function release(): void {
+    if (--active === 0) {
+        globalThis.fetch = original!;
+        original = undefined;
+    }
+}
+
+/** Runs fn with AFDocs' requests going through honestFetch. Exported for tests. */
+export function withHonestFetch<T>(opts: { userAgent?: string; fetchImpl?: typeof fetch }, fn: () => Promise<T>): Promise<T> {
+    const base = acquire();
+    const work = route.run(honestFetch({ userAgent: opts.userAgent, fetchImpl: opts.fetchImpl ?? base }), fn);
+    work.then(release, release);
+    return work;
+}
+
 /** Never throws: a missing run falls back to Lensy's own Coding agents checks. */
 export async function runAfdocsOnPage(
     url: string,
-    opts: { load?: () => Promise<AfdocsModule>; timeoutMs?: number } = {},
+    opts: { load?: () => Promise<AfdocsModule>; timeoutMs?: number; userAgent?: string; fetchImpl?: typeof fetch } = {},
 ): Promise<AfdocsRun | undefined> {
     const started = Date.now();
     let timer: NodeJS.Timeout | undefined;
@@ -80,7 +126,8 @@ export async function runAfdocsOnPage(
         const timeout = new Promise<never>((_, reject) => {
             timer = setTimeout(() => reject(new Error(`timed out after ${opts.timeoutMs ?? DEFAULT_TIMEOUT_MS}ms`)), opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
         });
-        const report = await Promise.race([afdocs.runChecks(url, { ...AFDOCS_OPTIONS, curatedPages: [url] }), timeout]);
+        const work = withHonestFetch(opts, () => afdocs.runChecks(url, { ...AFDOCS_OPTIONS, curatedPages: [url] }));
+        const report = await Promise.race([work, timeout]);
         const score = afdocs.computeScore(report);
         const run: AfdocsRun = {
             version: AFDOCS_VERSION,
