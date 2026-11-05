@@ -418,11 +418,12 @@
   "scoringVersion": 2,
   "scores": {
     "codingAgents": {
-      "score": 90,
+      "score": 92,
       "checks": [
         {
           "id": "llms-txt-exists",
           "label": "llms.txt exists",
+          "source": "afdocs",
           "category": "content-discoverability",
           "points": 10,
           "max": 10,
@@ -432,6 +433,7 @@
         {
           "id": "llms-txt-valid",
           "label": "llms.txt format",
+          "source": "afdocs",
           "category": "content-discoverability",
           "points": 2.4,
           "max": 3.2,
@@ -442,34 +444,38 @@
         {
           "id": "llms-txt-size",
           "label": "llms.txt size",
+          "source": "afdocs",
           "category": "content-discoverability",
           "points": 3.5,
           "max": 7,
           "status": "warn",
-          "detail": "llms.txt is 97,190 characters (between 50,000 and 1,00,000; consider splitting)",
-          "fix": "Your llms.txt is 97,190 characters, which may be truncated on some agent platforms. If it grows further, split into nested llms.txt files with a root index under 50,000 characters."
+          "detail": "llms.txt is 97,407 characters (between 50,000 and 1,00,000; consider splitting)",
+          "fix": "Your llms.txt is 97,407 characters, which may be truncated on some agent platforms. If it grows further, split into nested llms.txt files with a root index under 50,000 characters."
         },
         {
           "id": "llms-txt-links-resolve",
           "label": "llms.txt links resolve",
+          "source": "afdocs",
           "category": "content-discoverability",
           "points": 5.6,
           "max": 5.6,
           "status": "pass",
-          "detail": "All 50 same-origin sampled links resolve (492 total links)"
+          "detail": "All 20 same-origin sampled links resolve (493 total links)"
         },
         {
           "id": "llms-txt-links-markdown",
           "label": "llms.txt links point to Markdown",
+          "source": "afdocs",
           "category": "content-discoverability",
           "points": 5.6,
           "max": 5.6,
           "status": "pass",
-          "detail": "50/50 same-origin sampled links point to markdown content (100%) (1 external link excluded)"
+          "detail": "20/20 same-origin sampled links point to markdown content (100%) (1 external link excluded)"
         },
         {
           "id": "llms-txt-directive-html",
           "label": "Page points agents to llms.txt (HTML)",
+          "source": "afdocs",
           "category": "content-discoverability",
           "points": 7,
           "max": 7,
@@ -480,6 +486,7 @@
         {
           "id": "llms-txt-directive-md",
           "label": "Page points agents to llms.txt (Markdown)",
+          "source": "afdocs",
           "category": "content-discoverability",
           "points": 0,
           "max": 4,
@@ -490,6 +497,7 @@
         {
           "id": "markdown-url-support",
           "label": ".md version of the page",
+          "source": "afdocs",
           "category": "markdown-availability",
           "points": 7,
           "max": 7,
@@ -499,6 +507,7 @@
         {
           "id": "content-negotiation",
           "label": "Markdown on request",
+          "source": "afdocs",
           "category": "markdown-availability",
           "points": 4,
           "max": 4,
@@ -508,6 +517,7 @@
         {
           "id": "rendering-strategy",
           "label": "Content without JavaScript",
+          "source": "afdocs",
           "category": "page-size",
           "points": 10,
           "max": 10,
@@ -517,6 +527,7 @@
         {
           "id": "page-size-markdown",
           "label": "Markdown size",
+          "source": "afdocs",
           "category": "page-size",
           "points": 7,
           "max": 7,
@@ -526,34 +537,38 @@
         {
           "id": "page-size-html",
           "label": "HTML size",
+          "source": "afdocs",
           "category": "page-size",
           "points": 7,
           "max": 7,
           "status": "pass",
-          "detail": "All 1 pages under 50K chars (median 798K HTML ΓåÆ 6K markdown (99% boilerplate))"
+          "detail": "All 1 pages under 50K chars (median 801K HTML → 6K markdown (99% boilerplate))"
         },
         {
           "id": "page-size-transfer",
           "label": "Download size",
+          "source": "afdocs",
           "category": "page-size",
           "points": 4,
           "max": 4,
           "status": "pass",
-          "detail": "All 1 pages serve under 1MB (median 810KB served ΓåÆ 6KB content (~134:1))"
+          "detail": "All 1 pages serve under 1MB (median 813KB served → 6KB content (~135:1))"
         },
         {
           "id": "content-start-position",
           "label": "Content starts near the top",
+          "source": "afdocs",
           "category": "page-size",
           "points": 2,
           "max": 4,
           "status": "warn",
-          "detail": "1 of 1 pages have content starting at 10ΓÇô50% (worst 40%)",
+          "detail": "1 of 1 pages have content starting at 10–50% (worst 40%)",
           "fix": "1 of 1 pages have documentation content starting 10-50% into the converted output. Reduce navigation, breadcrumb, and sidebar markup that precedes the content area."
         },
         {
           "id": "single-fetch-completeness",
           "label": "Complete in one fetch",
+          "source": "afdocs",
           "category": "page-size",
           "points": 4,
           "max": 4,
@@ -563,6 +578,7 @@
         {
           "id": "tabbed-content-serialization",
           "label": "Tabbed content readable",
+          "source": "afdocs",
           "category": "content-structure",
           "points": 4,
           "max": 4,
@@ -572,6 +588,7 @@
         {
           "id": "section-header-quality",
           "label": "Headers inside tabs",
+          "source": "afdocs",
           "category": "content-structure",
           "points": 2,
           "max": 2,
@@ -581,6 +598,7 @@
         {
           "id": "markdown-code-fence-validity",
           "label": "Code fences closed",
+          "source": "afdocs",
           "category": "content-structure",
           "points": 4,
           "max": 4,
@@ -590,15 +608,17 @@
         {
           "id": "markdown-link-portability",
           "label": "Links work outside the site",
+          "source": "afdocs",
           "category": "content-structure",
           "points": 4,
           "max": 4,
           "status": "pass",
-          "detail": "All 40 links across 1 markdown pages are absolute; 40 sampled links resolve to the expected representation"
+          "detail": "All 40 links across 1 markdown pages are absolute; 20 sampled links resolve to the expected representation"
         },
         {
           "id": "embedded-data-serialization",
           "label": "Embedded data size",
+          "source": "afdocs",
           "category": "content-structure",
           "points": 4,
           "max": 4,
@@ -608,6 +628,7 @@
         {
           "id": "http-status-codes",
           "label": "Real 404s for missing pages",
+          "source": "afdocs",
           "category": "url-stability",
           "points": 7,
           "max": 7,
@@ -617,6 +638,7 @@
         {
           "id": "redirect-behavior",
           "label": "Redirects",
+          "source": "afdocs",
           "category": "url-stability",
           "points": 4,
           "max": 4,
@@ -624,18 +646,9 @@
           "detail": "No redirects detected across 1 pages"
         },
         {
-          "id": "llms-txt-coverage",
-          "label": "llms.txt covers the sitemap",
-          "category": "observability",
-          "points": 0.6,
-          "max": 3.2,
-          "status": "fail",
-          "detail": "llms.txt covers 88/489 sitemap doc pages (18%); 401 missing",
-          "fix": "Your llms.txt covers 18% of your site's pages (below 80% threshold). 401 live pages are missing from the index. If unintentional, regenerate llms.txt from your sitemap or build pipeline. If intentional, lower the threshold or set it to 0 to make the check informational."
-        },
-        {
           "id": "markdown-content-parity",
           "label": "Markdown matches HTML",
+          "source": "afdocs",
           "category": "observability",
           "points": 4,
           "max": 4,
@@ -645,6 +658,7 @@
         {
           "id": "cache-header-hygiene",
           "label": "Cache headers",
+          "source": "afdocs",
           "category": "observability",
           "points": 0,
           "max": 2,
@@ -655,6 +669,7 @@
         {
           "id": "auth-gate-detection",
           "label": "Public without login",
+          "source": "afdocs",
           "category": "authentication",
           "points": 10,
           "max": 10,
@@ -664,11 +679,12 @@
         {
           "id": "bot-protection-interference",
           "label": "Bot protection lets agents in",
+          "source": "afdocs",
           "category": "authentication",
           "points": 7,
           "max": 7,
           "status": "pass",
-          "detail": "No bot-protection interference observed across 107 requests"
+          "detail": "No bot-protection interference observed across 55 requests"
         },
         {
           "id": "lensy-headings",
@@ -681,8 +697,8 @@
         }
       ],
       "source": "afdocs",
-      "afdocsVersion": "0.22.2",
-      "afdocsScore": 90
+      "afdocsVersion": "0.23.0",
+      "afdocsScore": 91
     },
     "aiSearch": {
       "score": 76,
@@ -764,5 +780,5 @@
     "windowShare": 1,
     "url": "https://docs.stripe.com/api"
   },
-  "codingScore": 90
+  "codingScore": 92
 }

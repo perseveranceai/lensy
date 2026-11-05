@@ -18,6 +18,8 @@ export interface CheckResult {
     id: CheckId | string;
     /** AFDocs category (content-discoverability, ...) or 'lensy'. Only on AFDocs-based scores. */
     category?: string;
+    /** 'afdocs' for AFDocs checks; the report labels them. Absent means Lensy. */
+    source?: 'afdocs';
     label: string;
     points: number;
     max: number;

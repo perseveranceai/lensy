@@ -75,6 +75,10 @@ test('S-11: an AFDocs-based Coding agents score lists the AFDocs checks with poi
   const firstFail = rows.find((c: any) => c.status === 'fail');
   await expect(groups.nth(1).locator('li').first()).toContainText(firstFail.label);
   await expect(groups.nth(1)).toContainText('Page points agents to llms.txt (Markdown)');
+  // Every AFDocs row is labelled AFDocs; Lensy's own headings check isn't.
+  await expect(groups.nth(1).getByTestId('source-badge')).toHaveCount(rows.length);
+  await expect(groups.nth(1).getByTestId('source-badge').first()).toHaveText('AFDocs');
+  await expect(groups.nth(0).locator('li', { hasText: 'Headings an agent can navigate' }).getByTestId('source-badge')).toHaveCount(0);
   await expect(page.getByTestId('agent-preview')).toBeVisible();
   // AI search is unchanged.
   await page.getByTestId('score-card-search').click();

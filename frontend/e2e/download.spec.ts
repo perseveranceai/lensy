@@ -269,6 +269,7 @@ test('DL-09: an AFDocs-based report downloads every AFDocs check with its points
   }
   expect(md).toContain('Page points agents to llms.txt (Markdown)');
   expect(md).toMatch(/0\/4|0\/10/);
+  expect(md).toContain('Source: AFDocs');
 
   const text = pdfPages((await downloadAs(page, /^pdf/i)).body).flat().join('\n');
   expect(text).toContain('llms.txt size');

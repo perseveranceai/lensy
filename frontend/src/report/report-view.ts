@@ -47,6 +47,8 @@ export type Signal = {
   points?: string;
   checkIds?: string[];
   fix?: string;
+  /** Where the check comes from, when it isn't Lensy ("afdocs"). */
+  source?: string;
 };
 
 // points: two-score fixes only, the check's "earned/max" so the fix list says what it costs.
@@ -66,7 +68,12 @@ export interface ScoreCheck {
   status: "pass" | "warn" | "fail";
   detail: string;
   fix?: string;
+  /** "afdocs" for AFDocs checks (docs/coding-agents-afdocs/spec.md). */
+  source?: string;
 }
+
+// The label a check row shows for where the check comes from. Lensy's own checks show none.
+export const SOURCE_LABELS: Record<string, string> = { afdocs: "AFDocs" };
 
 export interface ScoringV2 {
   // source "afdocs": checks are AFDocs ids (llms-txt-exists, ...) plus Lensy's
@@ -150,7 +157,7 @@ function afdocsSignalGroups(v2: ScoringV2): SignalGroup[] {
   const js = v2.coding.checks.find((x) => x.id === AFDOCS_JS_CHECK);
   const headings = v2.coding.checks.find((x) => x.id === "lensy-headings");
   const row = (x: ScoreCheck | undefined, audience?: string, info?: string): Signal[] => x
-    ? [{ label: x.label, detail: x.detail, status: x.status, points: pts(x), checkIds: [x.id], fix: x.fix, audience, info }]
+    ? [{ label: x.label, detail: x.detail, status: x.status, points: pts(x), checkIds: [x.id], fix: x.fix, audience, info, ...(x.source ? { source: x.source } : {}) }]
     : [];
   const both: Signal[] = [];
   if (js || s.S2) {

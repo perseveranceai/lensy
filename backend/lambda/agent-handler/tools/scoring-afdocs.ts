@@ -76,6 +76,7 @@ export function scoreCodingAgentsAfdocs(run: AfdocsRun, signals?: SignalsV2): Af
             check: {
                 id: r.id,
                 label: labelOf(r.id),
+                source: 'afdocs',
                 category: r.category,
                 points: round1(cs.earnedScore),
                 max: round1(cs.maxScore),

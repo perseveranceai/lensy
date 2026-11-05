@@ -260,7 +260,7 @@ export async function renderPdf(data: ExportReport, options: PdfOptions = {}): P
   // ── Signals ─────────────────────────────────────────────────────────────
   const signalLayout = (sig: ExportSignal) => {
     const textW = W - 6.5;
-    const metaText = [sig.points ? `${sig.points} points` : "", sig.evidence, sig.audience, sig.impact ? `${sig.impact} impact` : ""].filter(Boolean).join("  ·  ");
+    const metaText = [sig.source || "", sig.points ? `${sig.points} points` : "", sig.evidence, sig.audience, sig.impact ? `${sig.impact} impact` : ""].filter(Boolean).join("  ·  ");
     font(10, "bold");
     const labelLines = wrap(sig.label, textW);
     font(7.5);

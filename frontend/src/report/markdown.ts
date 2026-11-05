@@ -18,7 +18,7 @@ function fence(code: string): string {
 }
 
 function signalMeta(sig: ExportSignal): string {
-  const meta = [sig.points && `Points: ${sig.points}`, sig.evidence && `Evidence: ${sig.evidence}`, sig.audience && `Audience: ${sig.audience}`, sig.impact && `Impact: ${sig.impact}`].filter(Boolean);
+  const meta = [sig.source && `Source: ${sig.source}`, sig.points && `Points: ${sig.points}`, sig.evidence && `Evidence: ${sig.evidence}`, sig.audience && `Audience: ${sig.audience}`, sig.impact && `Impact: ${sig.impact}`].filter(Boolean);
   return meta.length ? ` (${meta.join("; ")})` : "";
 }
 
