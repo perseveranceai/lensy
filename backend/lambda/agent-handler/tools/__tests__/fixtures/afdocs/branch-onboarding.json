@@ -1,5 +1,5 @@
 {
-  "version": "0.22.2",
+  "version": "0.23.0",
   "url": "https://help.branch.io/account-hub/onboarding-guide",
   "results": [
     {
@@ -72,13 +72,13 @@
       "id": "page-size-html",
       "category": "page-size",
       "status": "pass",
-      "message": "All 1 pages under 50K chars (median 280K HTML ΓåÆ 44K markdown (84% boilerplate))"
+      "message": "All 1 pages under 50K chars (median 280K HTML → 44K markdown (84% boilerplate))"
     },
     {
       "id": "page-size-transfer",
       "category": "page-size",
       "status": "pass",
-      "message": "All 1 pages serve under 1MB (median 280KB served ΓåÆ 44KB content (~6:1))"
+      "message": "All 1 pages serve under 1MB (median 280KB served → 44KB content (~6:1))"
     },
     {
       "id": "content-start-position",
@@ -114,7 +114,7 @@
       "id": "markdown-link-portability",
       "category": "content-structure",
       "status": "pass",
-      "message": "All 101 links across 1 markdown pages are absolute; 50 sampled links resolve to the expected representation"
+      "message": "All 101 links across 1 markdown pages are absolute; 20 sampled links resolve to the expected representation"
     },
     {
       "id": "embedded-data-serialization",
@@ -137,8 +137,8 @@
     {
       "id": "llms-txt-coverage",
       "category": "observability",
-      "status": "fail",
-      "message": "llms.txt covers 0/1 sitemap doc pages (0%); 1 missing"
+      "status": "skip",
+      "message": "Check explicitly skipped"
     },
     {
       "id": "markdown-content-parity",
@@ -168,11 +168,11 @@
       "id": "bot-protection-interference",
       "category": "authentication",
       "status": "pass",
-      "message": "No bot-protection interference observed across 67 requests"
+      "message": "No bot-protection interference observed across 35 requests; limited evidence: only 35 requests observed"
     }
   ],
   "score": {
-    "overall": 97,
+    "overall": 100,
     "checkScores": {
       "llms-txt-exists": {
         "earnedScore": 10,
@@ -274,11 +274,6 @@
         "maxScore": 4,
         "scoreDisplayMode": "numeric"
       },
-      "llms-txt-coverage": {
-        "earnedScore": 0,
-        "maxScore": 4,
-        "scoreDisplayMode": "numeric"
-      },
       "markdown-content-parity": {
         "earnedScore": 4,
         "maxScore": 4,
@@ -300,11 +295,9 @@
         "scoreDisplayMode": "numeric"
       }
     },
-    "resolutions": {
-      "llms-txt-coverage": "Your llms.txt covers 0% of your site's pages (below 80% threshold). 1 live pages are missing from the index. If unintentional, regenerate llms.txt from your sitemap or build pipeline. If intentional, lower the threshold or set it to 0 to make the check informational."
-    }
+    "resolutions": {}
   },
-  "requests": 67,
+  "requests": 35,
   "ms": 0,
-  "capturedAt": "2026-10-29T04:19:21.752Z"
+  "capturedAt": "2026-11-05T07:06:00.460Z"
 }

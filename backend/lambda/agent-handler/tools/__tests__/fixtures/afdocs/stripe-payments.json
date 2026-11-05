@@ -1,5 +1,5 @@
 {
-  "version": "0.22.2",
+  "version": "0.23.0",
   "url": "https://docs.stripe.com/payments",
   "results": [
     {
@@ -18,19 +18,19 @@
       "id": "llms-txt-size",
       "category": "content-discoverability",
       "status": "warn",
-      "message": "llms.txt is 97,190 characters (between 50,000 and 1,00,000; consider splitting)"
+      "message": "llms.txt is 97,407 characters (between 50,000 and 1,00,000; consider splitting)"
     },
     {
       "id": "llms-txt-links-resolve",
       "category": "content-discoverability",
       "status": "pass",
-      "message": "All 50 same-origin sampled links resolve (492 total links)"
+      "message": "All 20 same-origin sampled links resolve (493 total links)"
     },
     {
       "id": "llms-txt-links-markdown",
       "category": "content-discoverability",
       "status": "pass",
-      "message": "50/50 same-origin sampled links point to markdown content (100%) (1 external link excluded)"
+      "message": "20/20 same-origin sampled links point to markdown content (100%) (1 external link excluded)"
     },
     {
       "id": "llms-txt-directive-html",
@@ -72,19 +72,19 @@
       "id": "page-size-html",
       "category": "page-size",
       "status": "pass",
-      "message": "All 1 pages under 50K chars (median 798K HTML ΓåÆ 6K markdown (99% boilerplate))"
+      "message": "All 1 pages under 50K chars (median 801K HTML → 6K markdown (99% boilerplate))"
     },
     {
       "id": "page-size-transfer",
       "category": "page-size",
       "status": "pass",
-      "message": "All 1 pages serve under 1MB (median 810KB served ΓåÆ 6KB content (~134:1))"
+      "message": "All 1 pages serve under 1MB (median 813KB served → 6KB content (~135:1))"
     },
     {
       "id": "content-start-position",
       "category": "page-size",
       "status": "warn",
-      "message": "1 of 1 pages have content starting at 10ΓÇô50% (worst 40%)"
+      "message": "1 of 1 pages have content starting at 10–50% (worst 40%)"
     },
     {
       "id": "single-fetch-completeness",
@@ -114,7 +114,7 @@
       "id": "markdown-link-portability",
       "category": "content-structure",
       "status": "pass",
-      "message": "All 40 links across 1 markdown pages are absolute; 40 sampled links resolve to the expected representation"
+      "message": "All 40 links across 1 markdown pages are absolute; 20 sampled links resolve to the expected representation"
     },
     {
       "id": "embedded-data-serialization",
@@ -137,8 +137,8 @@
     {
       "id": "llms-txt-coverage",
       "category": "observability",
-      "status": "fail",
-      "message": "llms.txt covers 88/489 sitemap doc pages (18%); 401 missing"
+      "status": "skip",
+      "message": "Check explicitly skipped"
     },
     {
       "id": "markdown-content-parity",
@@ -168,11 +168,11 @@
       "id": "bot-protection-interference",
       "category": "authentication",
       "status": "pass",
-      "message": "No bot-protection interference observed across 107 requests"
+      "message": "No bot-protection interference observed across 55 requests"
     }
   ],
   "score": {
-    "overall": 90,
+    "overall": 91,
     "checkScores": {
       "llms-txt-exists": {
         "earnedScore": 10,
@@ -284,11 +284,6 @@
         "maxScore": 4,
         "scoreDisplayMode": "numeric"
       },
-      "llms-txt-coverage": {
-        "earnedScore": 0.576,
-        "maxScore": 3.2,
-        "scoreDisplayMode": "numeric"
-      },
       "markdown-content-parity": {
         "earnedScore": 4,
         "maxScore": 4,
@@ -312,15 +307,14 @@
     },
     "resolutions": {
       "llms-txt-valid": "Your llms.txt contains parseable links but doesn't follow the standard structure. Add an H1 title as the first line and a blockquote summary (lines starting with >) to improve agent parsing.",
-      "llms-txt-size": "Your llms.txt is 97,190 characters, which may be truncated on some agent platforms. If it grows further, split into nested llms.txt files with a root index under 50,000 characters.",
+      "llms-txt-size": "Your llms.txt is 97,407 characters, which may be truncated on some agent platforms. If it grows further, split into nested llms.txt files with a root index under 50,000 characters.",
       "llms-txt-directive-html": "An llms.txt directive was found in the HTML of some pages but is missing from others, or is buried deep in the page. Ensure the directive appears near the top of every documentation page.",
       "llms-txt-directive-md": "No llms.txt directive was detected in the markdown of any tested page. Add a blockquote near the top of each markdown page (e.g., \"> For the complete documentation index, see [llms.txt](/llms.txt)\").",
       "content-start-position": "1 of 1 pages have documentation content starting 10-50% into the converted output. Reduce navigation, breadcrumb, and sidebar markup that precedes the content area.",
-      "llms-txt-coverage": "Your llms.txt covers 18% of your site's pages (below 80% threshold). 401 live pages are missing from the index. If unintentional, regenerate llms.txt from your sitemap or build pipeline. If intentional, lower the threshold or set it to 0 to make the check informational.",
       "cache-header-hygiene": "3 endpoints have aggressive caching (>24h) or missing cache headers. Set max-age under 3600 or add must-revalidate with ETag/Last-Modified so content updates reach agents promptly."
     }
   },
-  "requests": 107,
+  "requests": 55,
   "ms": 0,
-  "capturedAt": "2026-10-29T04:20:38.173Z"
+  "capturedAt": "2026-11-05T07:06:19.299Z"
 }

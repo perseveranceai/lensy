@@ -1,5 +1,5 @@
 {
-  "version": "0.22.2",
+  "version": "0.23.0",
   "url": "https://react.dev/learn",
   "results": [
     {
@@ -24,13 +24,13 @@
       "id": "llms-txt-links-resolve",
       "category": "content-discoverability",
       "status": "pass",
-      "message": "All 50 same-origin links resolve (180 total links)"
+      "message": "All 20 same-origin sampled links resolve (180 total links)"
     },
     {
       "id": "llms-txt-links-markdown",
       "category": "content-discoverability",
       "status": "pass",
-      "message": "50/50 same-origin links point to markdown content (100%)"
+      "message": "20/20 same-origin sampled links point to markdown content (100%)"
     },
     {
       "id": "llms-txt-directive-html",
@@ -72,19 +72,19 @@
       "id": "page-size-html",
       "category": "page-size",
       "status": "pass",
-      "message": "All 1 pages under 50K chars (median 265K HTML ΓåÆ 27K markdown (90% boilerplate))"
+      "message": "All 1 pages under 50K chars (median 265K HTML → 27K markdown (90% boilerplate))"
     },
     {
       "id": "page-size-transfer",
       "category": "page-size",
       "status": "pass",
-      "message": "All 1 pages serve under 1MB (median 265KB served ΓåÆ 27KB content (~10:1))"
+      "message": "All 1 pages serve under 1MB (median 265KB served → 27KB content (~10:1))"
     },
     {
       "id": "content-start-position",
       "category": "page-size",
       "status": "warn",
-      "message": "1 of 1 pages have content starting at 10ΓÇô50% (worst 26%)"
+      "message": "1 of 1 pages have content starting at 10–50% (worst 26%)"
     },
     {
       "id": "single-fetch-completeness",
@@ -138,7 +138,7 @@
       "id": "llms-txt-coverage",
       "category": "observability",
       "status": "skip",
-      "message": "No sitemap found; cannot assess llms.txt coverage without a sitemap as ground truth"
+      "message": "Check explicitly skipped"
     },
     {
       "id": "markdown-content-parity",
@@ -168,7 +168,7 @@
       "id": "bot-protection-interference",
       "category": "authentication",
       "status": "pass",
-      "message": "No bot-protection interference observed across 76 requests"
+      "message": "No bot-protection interference observed across 38 requests; limited evidence: only 38 requests observed"
     }
   ],
   "score": {
@@ -313,7 +313,7 @@
       "markdown-link-portability": "1 of 1 markdown pages link in a way that depends on the base URL (root-relative links on 1). Emit absolute URLs when generating markdown: the canonical host is known at build time, so absolute links cost nothing to produce. Root-relative links resolve only while the fetch URL is still around, and agent pipelines lose it routinely, to summarization, to RAG chunking, or to content being pasted somewhere else."
     }
   },
-  "requests": 76,
+  "requests": 38,
   "ms": 0,
-  "capturedAt": "2026-10-29T04:21:12.653Z"
+  "capturedAt": "2026-11-05T07:06:38.697Z"
 }

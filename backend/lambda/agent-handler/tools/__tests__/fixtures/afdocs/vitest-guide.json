@@ -1,5 +1,5 @@
 {
-  "version": "0.22.2",
+  "version": "0.23.0",
   "url": "https://vitest.dev/guide/",
   "results": [
     {
@@ -18,7 +18,7 @@
       "id": "llms-txt-size",
       "category": "content-discoverability",
       "status": "pass",
-      "message": "llms.txt is 11,773 characters (under 50,000 threshold)"
+      "message": "llms.txt is 11,919 characters (under 50,000 threshold)"
     },
     {
       "id": "llms-txt-links-resolve",
@@ -72,13 +72,13 @@
       "id": "page-size-html",
       "category": "page-size",
       "status": "pass",
-      "message": "All 1 pages under 50K chars (median 76K HTML ΓåÆ 13K markdown (83% boilerplate))"
+      "message": "All 1 pages under 50K chars (median 76K HTML → 13K markdown (83% boilerplate))"
     },
     {
       "id": "page-size-transfer",
       "category": "page-size",
       "status": "pass",
-      "message": "All 1 pages serve under 1MB (median 76KB served ΓåÆ 13KB content (~6:1))"
+      "message": "All 1 pages serve under 1MB (median 76KB served → 13KB content (~6:1))"
     },
     {
       "id": "content-start-position",
@@ -138,7 +138,7 @@
       "id": "llms-txt-coverage",
       "category": "observability",
       "status": "skip",
-      "message": "No sitemap found; cannot assess llms.txt coverage without a sitemap as ground truth"
+      "message": "Check explicitly skipped"
     },
     {
       "id": "markdown-content-parity",
@@ -168,7 +168,7 @@
       "id": "bot-protection-interference",
       "category": "authentication",
       "status": "pass",
-      "message": "No bot-protection interference observed across 26 requests; limited evidence: only 26 requests observed"
+      "message": "No bot-protection interference observed across 18 requests; limited evidence: only 18 requests observed"
     }
   ],
   "score": {
@@ -302,7 +302,7 @@
       "markdown-link-portability": "1 of 1 markdown pages link in a way that depends on the base URL (root-relative links on 1). Emit absolute URLs when generating markdown: the canonical host is known at build time, so absolute links cost nothing to produce. Root-relative links resolve only while the fetch URL is still around, and agent pipelines lose it routinely, to summarization, to RAG chunking, or to content being pasted somewhere else."
     }
   },
-  "requests": 26,
+  "requests": 18,
   "ms": 0,
-  "capturedAt": "2026-10-29T04:20:54.932Z"
+  "capturedAt": "2026-11-05T07:06:29.686Z"
 }

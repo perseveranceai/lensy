@@ -1,5 +1,5 @@
 // Coding agents score from AFDocs (spec docs/coding-agents-afdocs/spec.md).
-// Fixtures are real AFDocs 0.22.2 single-page runs captured on 2026-10-29.
+// Fixtures are real AFDocs 0.23.0 single-page runs (curated, the Lambda's options) captured on 2026-11-03.
 import fs from 'fs';
 import path from 'path';
 import { scoreCodingAgentsAfdocs, headingsShare, HEADINGS_ID } from '../scoring-afdocs';
@@ -13,7 +13,7 @@ const signals = (h: Partial<SignalsV2['receivedHeadings']>) =>
     ({ receivedHeadings: { count: 6, h1Count: 1, skips: 0, generic: 0, ...h } }) as SignalsV2;
 
 describe('scoreCodingAgentsAfdocs without Lensy checks equals AFDocs\' own score', () => {
-    for (const [name, expected] of [['branch-onboarding', 97], ['stripe-payments', 90], ['docusaurus-docs', 59], ['vitest-guide', 86], ['react-learn', 92]] as const) {
+    for (const [name, expected] of [['branch-onboarding', 100], ['stripe-payments', 91], ['docusaurus-docs', 59], ['vitest-guide', 86], ['react-learn', 92]] as const) {
         test(name, () => {
             const r = scoreCodingAgentsAfdocs(run(name));
             expect(r.score).toBe(expected);
@@ -69,7 +69,7 @@ describe('runAfdocsOnPage', () => {
         });
         const r = await runAfdocsOnPage('https://docs.example.com/a', { load });
         expect(calls[0][0]).toBe('https://docs.example.com/a');
-        expect(calls[0][1]).toMatchObject({ samplingStrategy: 'none', skipCheckIds: AFDOCS_OPTIONS.skipCheckIds });
+        expect(calls[0][1]).toMatchObject({ samplingStrategy: 'curated', curatedPages: ['https://docs.example.com/a'], skipCheckIds: AFDOCS_OPTIONS.skipCheckIds });
         expect(r?.results[0]).toEqual({ id: 'llms-txt-exists', category: 'content-discoverability', status: 'pass', message: 'ok' });
         expect(r?.score.checkScores['llms-txt-exists']).toEqual({ earnedScore: 10, maxScore: 10, scoreDisplayMode: 'numeric' });
         expect(r?.requests).toBe(3);

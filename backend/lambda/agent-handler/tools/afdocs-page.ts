@@ -4,12 +4,13 @@
  * Agent-Friendly Documentation Spec and is the engine behind Fern's,
  * Mintlify's and Document360's agent scores. Spec: docs/coding-agents-afdocs/spec.md.
  *
- * Single-page mode (samplingStrategy 'none') is documented in the AFDocs CLI
+ * Page only: curated sampling with just the given URL, documented in the AFDocs CLI
  * reference, and its scoring treats it as a full run (the under-5-pages rule
  * only applies to random/deterministic sampling).
  */
 
-export const AFDOCS_VERSION = '0.22.2';
+// Pinned exactly; upgrade on purpose and re-capture the fixtures (Rakesh, 2026-11-03).
+export const AFDOCS_VERSION = '0.23.0';
 
 export type AfdocsStatus = 'pass' | 'warn' | 'fail' | 'skip' | 'error';
 
@@ -51,7 +52,7 @@ export interface AfdocsModule {
 export const AFDOCS_SKIP = ['llms-txt-coverage'];
 
 export const AFDOCS_OPTIONS = {
-    samplingStrategy: 'none',
+    samplingStrategy: 'curated',
     // llms.txt link checks sample this many links (AFDocs default 50).
     maxLinksToTest: 20,
     maxConcurrency: 3,
@@ -79,7 +80,7 @@ export async function runAfdocsOnPage(
         const timeout = new Promise<never>((_, reject) => {
             timer = setTimeout(() => reject(new Error(`timed out after ${opts.timeoutMs ?? DEFAULT_TIMEOUT_MS}ms`)), opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
         });
-        const report = await Promise.race([afdocs.runChecks(url, { ...AFDOCS_OPTIONS }), timeout]);
+        const report = await Promise.race([afdocs.runChecks(url, { ...AFDOCS_OPTIONS, curatedPages: [url] }), timeout]);
         const score = afdocs.computeScore(report);
         const run: AfdocsRun = {
             version: AFDOCS_VERSION,

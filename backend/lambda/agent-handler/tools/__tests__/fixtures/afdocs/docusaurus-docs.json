@@ -1,5 +1,5 @@
 {
-  "version": "0.22.2",
+  "version": "0.23.0",
   "url": "https://docusaurus.io/docs",
   "results": [
     {
@@ -72,19 +72,19 @@
       "id": "page-size-html",
       "category": "page-size",
       "status": "pass",
-      "message": "All 1 pages under 50K chars (median 51K HTML ΓåÆ 17K markdown (65% boilerplate))"
+      "message": "All 1 pages under 50K chars (median 51K HTML → 17K markdown (65% boilerplate))"
     },
     {
       "id": "page-size-transfer",
       "category": "page-size",
       "status": "pass",
-      "message": "All 1 pages serve under 1MB (median 51KB served ΓåÆ 17KB content (~3:1))"
+      "message": "All 1 pages serve under 1MB (median 51KB served → 17KB content (~3:1))"
     },
     {
       "id": "content-start-position",
       "category": "page-size",
       "status": "warn",
-      "message": "1 of 1 pages have content starting at 10ΓÇô50% (worst 11%)"
+      "message": "1 of 1 pages have content starting at 10–50% (worst 11%)"
     },
     {
       "id": "single-fetch-completeness",
@@ -138,7 +138,7 @@
       "id": "llms-txt-coverage",
       "category": "observability",
       "status": "skip",
-      "message": "Skipped: dependency check did not pass"
+      "message": "Check explicitly skipped"
     },
     {
       "id": "markdown-content-parity",
@@ -276,5 +276,5 @@
   },
   "requests": 14,
   "ms": 0,
-  "capturedAt": "2026-10-29T04:20:45.978Z"
+  "capturedAt": "2026-11-05T07:06:24.378Z"
 }
