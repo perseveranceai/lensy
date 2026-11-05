@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Runs AFDocs on the one page being scanned. AFDocs implements the
  * Agent-Friendly Documentation Spec and is the engine behind Fern's,

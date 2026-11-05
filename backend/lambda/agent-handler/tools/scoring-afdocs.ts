@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Coding agents score from an AFDocs run on the scanned page, plus Lensy's own
  * checks in the same tiers. Spec: docs/coding-agents-afdocs/spec.md.
