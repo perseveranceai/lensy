@@ -252,3 +252,27 @@ test('DL-06: at 375px the download menu fits on screen', async ({ page }) => {
   expect(box!.x).toBeGreaterThanOrEqual(0);
   expect(box!.x + box!.width).toBeLessThanOrEqual(375);
 });
+
+// AFDocs-based Coding agents score (docs/coding-agents-afdocs/spec.md).
+// report-stripe-afdocs.json is report-stripe-v2.json with codingAgents built by
+// scoreCodingAgentsAfdocs from a real AFDocs 0.22.2 run on U-1's sibling page.
+const stripeAfdocs = fixture('report-stripe-afdocs.json');
+
+test('DL-09: an AFDocs-based report downloads every AFDocs check with its points, and the PDF prints no "?"', async ({ page }) => {
+  await openSavedReport(page, { report: stripeAfdocs });
+  const coding = stripeAfdocs.scores.codingAgents;
+  const md = (await downloadAs(page, /markdown/i)).body.toString('utf8');
+  expect(md).toContain(`coding_agents_score: ${coding.score}`);
+  for (const c of coding.checks) {
+    if (c.id === 'rendering-strategy') continue; // shares the "Content without JavaScript" row with S2
+    expect(md).toContain(c.label);
+  }
+  expect(md).toContain('Page points agents to llms.txt (Markdown)');
+  expect(md).toMatch(/0\/4|0\/10/);
+  expect(md).toContain('Source: AFDocs');
+
+  const text = pdfPages((await downloadAs(page, /^pdf/i)).body).flat().join('\n');
+  expect(text).toContain('llms.txt size');
+  // AFDocs writes "798K HTML → 6K markdown"; the arrow has no glyph in Helvetica.
+  expect(text).not.toMatch(/HTML \? /);
+});

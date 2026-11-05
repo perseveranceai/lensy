@@ -11,9 +11,11 @@
 export interface CheckMeta {
     /** 'C1' … 'S6'. A string, not a closed union, so other sources can add ids later. */
     id: string;
-    source: 'lensy';
+    /** Who defines the check. AFDocs checks keep AFDocs' ids and descriptions. */
+    source: 'lensy' | 'afdocs';
     score: 'codingAgents' | 'aiSearch';
     label: string;
+    /** Lensy checks: points out of 100. AFDocs checks: the tier weight (critical 10, high 7, medium 4, low 2); a run can give less when AFDocs applies a cluster coefficient. */
     max: number;
     /** How much of the result comes from the web server or CDN rather than the docs build. */
     hostDependent: 'full' | 'partial' | false;
@@ -129,4 +131,185 @@ export const CHECKS: CheckMeta[] = [
     },
 ];
 
-export const CHECKS_BY_ID: Record<string, CheckMeta> = Object.fromEntries(CHECKS.map(c => [c.id, c]));
+// Coding agents checks when AFDocs ran (docs/coding-agents-afdocs/spec.md). The
+// descriptions are AFDocs' own (MIT). Host dependence is read from what each
+// check requests; confirm it against a local build before --serve ships.
+export const AFDOCS_CHECKS: CheckMeta[] = [
+    {
+        id: 'llms-txt-exists', source: 'afdocs', score: 'codingAgents', label: 'llms.txt exists', max: 10,
+        hostDependent: false,
+        measures: 'Whether llms.txt is discoverable at any of the candidate locations.', why: 'Coding agents look for llms.txt to find the right page. Without it they guess URLs. AFDocs caps the score at 59 when it is missing.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: llms-txt-exists', url: 'https://agentdocsspec.com/spec/web/content-discoverability/#llms-txt-exists' }],
+    },
+    {
+        id: 'llms-txt-valid', source: 'afdocs', score: 'codingAgents', label: 'llms.txt format', max: 4,
+        hostDependent: false,
+        measures: 'Whether llms.txt follows the proposed structure from llmstxt.org.', why: 'A predictable structure (an H1, then Markdown links) is what agents and tools parse.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: llms-txt-valid', url: 'https://agentdocsspec.com/spec/web/content-discoverability/#llms-txt-valid' }],
+    },
+    {
+        id: 'llms-txt-size', source: 'afdocs', score: 'codingAgents', label: 'llms.txt size', max: 7,
+        hostDependent: false,
+        measures: 'Whether llms.txt fits within agent truncation limits.', why: 'Agents read about 100,000 characters per fetch; a larger index is cut off.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: llms-txt-size', url: 'https://agentdocsspec.com/spec/web/content-discoverability/#llms-txt-size' }],
+    },
+    {
+        id: 'llms-txt-links-resolve', source: 'afdocs', score: 'codingAgents', label: 'llms.txt links resolve', max: 7,
+        hostDependent: false,
+        measures: 'Whether the URLs listed in llms.txt actually resolve.', why: 'A broken link in the index sends an agent to a dead end.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: llms-txt-links-resolve', url: 'https://agentdocsspec.com/spec/web/content-discoverability/#llms-txt-links-resolve' }],
+    },
+    {
+        id: 'llms-txt-links-markdown', source: 'afdocs', score: 'codingAgents', label: 'llms.txt links point to Markdown', max: 7,
+        hostDependent: false,
+        measures: 'Whether the URLs in llms.txt point to markdown content.', why: 'Markdown is far smaller than HTML, so more of the page fits in what the agent reads.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: llms-txt-links-markdown', url: 'https://agentdocsspec.com/spec/web/content-discoverability/#llms-txt-links-markdown' }],
+    },
+    {
+        id: 'llms-txt-directive-html', source: 'afdocs', score: 'codingAgents', label: 'Page points agents to llms.txt (HTML)', max: 7,
+        hostDependent: false,
+        measures: 'Whether HTML pages include a directive pointing to llms.txt.', why: 'An agent that lands on one page learns where the index of the whole site is.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: llms-txt-directive-html', url: 'https://agentdocsspec.com/spec/web/content-discoverability/#llms-txt-directive-html' }],
+    },
+    {
+        id: 'llms-txt-directive-md', source: 'afdocs', score: 'codingAgents', label: 'Page points agents to llms.txt (Markdown)', max: 4,
+        hostDependent: false,
+        measures: 'Whether markdown pages include a directive pointing to llms.txt.', why: 'Agents that read the Markdown copy see the pointer too.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: llms-txt-directive-md', url: 'https://agentdocsspec.com/spec/web/content-discoverability/#llms-txt-directive-md' }],
+    },
+    {
+        id: 'markdown-url-support', source: 'afdocs', score: 'codingAgents', label: '.md version of the page', max: 7,
+        hostDependent: 'partial', hostNote: 'A rewrite from <page> to <page>.md can be set by your host rather than your build.',
+        measures: 'Whether appending .md to page URLs returns valid markdown.', why: 'Agents guess <page>.md; a Markdown copy is much smaller than the HTML.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: markdown-url-support', url: 'https://agentdocsspec.com/spec/web/markdown-availability/#markdown-url-support' }],
+    },
+    {
+        id: 'content-negotiation', source: 'afdocs', score: 'codingAgents', label: 'Markdown on request', max: 4,
+        hostDependent: 'full', hostNote: 'Your web server or CDN decides what to return for Accept: text/markdown.',
+        measures: 'Whether the server responds to Accept: text/markdown.', why: 'Claude Code, Cursor and OpenCode ask for Markdown first.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: content-negotiation', url: 'https://agentdocsspec.com/spec/web/markdown-availability/#content-negotiation' }],
+    },
+    {
+        id: 'rendering-strategy', source: 'afdocs', score: 'codingAgents', label: 'Content without JavaScript', max: 10,
+        hostDependent: false,
+        measures: 'Whether pages contain server-rendered content or are client-side rendered SPA shells.', why: 'AI crawlers and most coding agents do not run JavaScript, so content rendered in the browser is invisible to them.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: rendering-strategy', url: 'https://agentdocsspec.com/spec/web/page-size/#rendering-strategy' }],
+    },
+    {
+        id: 'page-size-markdown', source: 'afdocs', score: 'codingAgents', label: 'Markdown size', max: 7,
+        hostDependent: false,
+        measures: 'Character count of page when served as markdown.', why: 'Agents read about 100,000 characters per fetch and have to page or give up beyond it.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: page-size-markdown', url: 'https://agentdocsspec.com/spec/web/page-size/#page-size-markdown' }],
+    },
+    {
+        id: 'page-size-html', source: 'afdocs', score: 'codingAgents', label: 'HTML size', max: 7,
+        hostDependent: false,
+        measures: 'Character count of HTML response and post-conversion size.', why: 'Agents that read HTML convert it to text; past about 100,000 characters the rest is cut off.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: page-size-html', url: 'https://agentdocsspec.com/spec/web/page-size/#page-size-html' }],
+    },
+    {
+        id: 'page-size-transfer', source: 'afdocs', score: 'codingAgents', label: 'Download size', max: 4,
+        hostDependent: false,
+        measures: 'Served byte size of the HTML document after transfer decoding.', why: 'Very large documents can exceed an agent\'s fetch buffer before any text is read.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: page-size-transfer', url: 'https://agentdocsspec.com/spec/web/page-size/#page-size-transfer' }],
+    },
+    {
+        id: 'content-start-position', source: 'afdocs', score: 'codingAgents', label: 'Content starts near the top', max: 4,
+        hostDependent: false,
+        measures: 'How far into content the actual documentation begins.', why: 'Navigation before the content uses up the part of the page an agent reads first.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: content-start-position', url: 'https://agentdocsspec.com/spec/web/page-size/#content-start-position' }],
+    },
+    {
+        id: 'single-fetch-completeness', source: 'afdocs', score: 'codingAgents', label: 'Complete in one fetch', max: 4,
+        hostDependent: false,
+        measures: 'Whether markdown responses are complete in one fetch or declare a working continuation.', why: 'An agent that gets half a page and no way to the rest works from half the facts.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: single-fetch-completeness', url: 'https://agentdocsspec.com/spec/web/page-size/#single-fetch-completeness' }],
+    },
+    {
+        id: 'tabbed-content-serialization', source: 'afdocs', score: 'codingAgents', label: 'Tabbed content readable', max: 4,
+        hostDependent: false,
+        measures: 'Whether tabbed/accordion content serializes into oversized output.', why: 'Tabs flatten into one long text for an agent; every variant counts toward the size limit.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: tabbed-content-serialization', url: 'https://agentdocsspec.com/spec/web/content-structure/#tabbed-content-serialization' }],
+    },
+    {
+        id: 'section-header-quality', source: 'afdocs', score: 'codingAgents', label: 'Headers inside tabs', max: 2,
+        hostDependent: false,
+        measures: 'Whether headers in tabbed sections include variant context.', why: 'Flattened tabs repeat the same headings; without the variant name an agent can\'t tell them apart.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: section-header-quality', url: 'https://agentdocsspec.com/spec/web/content-structure/#section-header-quality' }],
+    },
+    {
+        id: 'markdown-code-fence-validity', source: 'afdocs', score: 'codingAgents', label: 'Code fences closed', max: 4,
+        hostDependent: false,
+        measures: 'Whether markdown contains unclosed code fences.', why: 'An unclosed fence turns the rest of the page into code for the agent.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: markdown-code-fence-validity', url: 'https://agentdocsspec.com/spec/web/content-structure/#markdown-code-fence-validity' }],
+    },
+    {
+        id: 'markdown-link-portability', source: 'afdocs', score: 'codingAgents', label: 'Links work outside the site', max: 4,
+        hostDependent: false,
+        measures: 'Whether links in served markdown are absolute and resolve to what they promise.', why: 'Relative links break once the Markdown is read outside the site, as agents do.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: markdown-link-portability', url: 'https://agentdocsspec.com/spec/web/content-structure/#markdown-link-portability' }],
+    },
+    {
+        id: 'embedded-data-serialization', source: 'afdocs', score: 'codingAgents', label: 'Embedded data size', max: 4,
+        hostDependent: false,
+        measures: 'Whether machine-generated bulk data (large tables, data blobs) dominates oversized pages.', why: 'Bulk data can push the actual explanation past what an agent reads.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: embedded-data-serialization', url: 'https://agentdocsspec.com/spec/web/content-structure/#embedded-data-serialization' }],
+    },
+    {
+        id: 'http-status-codes', source: 'afdocs', score: 'codingAgents', label: 'Real 404s for missing pages', max: 7,
+        hostDependent: 'full', hostNote: 'Status codes for missing pages are set by your web server or host.',
+        measures: 'Whether error pages return correct HTTP status codes.', why: 'A "not found" page served with 200 looks like real content to an agent.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: http-status-codes', url: 'https://agentdocsspec.com/spec/web/url-stability/#http-status-codes' }],
+    },
+    {
+        id: 'redirect-behavior', source: 'afdocs', score: 'codingAgents', label: 'Redirects', max: 4,
+        hostDependent: 'full', hostNote: 'Redirects are configured on your host or CDN.',
+        measures: 'Whether redirects are same-host HTTP redirects.', why: 'Cross-host or JavaScript redirects lose agents that follow links.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: redirect-behavior', url: 'https://agentdocsspec.com/spec/web/url-stability/#redirect-behavior' }],
+    },
+    {
+        id: 'llms-txt-coverage', source: 'afdocs', score: 'codingAgents', label: 'llms.txt covers the sitemap', max: 4,
+        hostDependent: false,
+        measures: 'How much of the site is represented in llms.txt.', why: 'Pages missing from the index are found less often. Lensy skips it: it is about the whole site, not the page.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: llms-txt-coverage', url: 'https://agentdocsspec.com/spec/web/observability/#llms-txt-coverage' }],
+    },
+    {
+        id: 'markdown-content-parity', source: 'afdocs', score: 'codingAgents', label: 'Markdown matches HTML', max: 4,
+        hostDependent: false,
+        measures: 'Whether markdown and HTML versions contain equivalent content.', why: 'A Markdown copy that drops content gives agents a different page than people see.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: markdown-content-parity', url: 'https://agentdocsspec.com/spec/web/observability/#markdown-content-parity' }],
+    },
+    {
+        id: 'cache-header-hygiene', source: 'afdocs', score: 'codingAgents', label: 'Cache headers', max: 2,
+        hostDependent: 'full', hostNote: 'Cache headers are set by your web server or CDN.',
+        measures: 'Whether cache headers allow timely updates.', why: 'Long caching keeps agents reading old versions after you fix a page.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: cache-header-hygiene', url: 'https://agentdocsspec.com/spec/web/observability/#cache-header-hygiene' }],
+    },
+    {
+        id: 'auth-gate-detection', source: 'afdocs', score: 'codingAgents', label: 'Public without login', max: 10,
+        hostDependent: 'full', hostNote: 'Login walls are enforced by your host.',
+        measures: 'Whether documentation pages require authentication to access content.', why: 'Agents can\'t log in, so gated docs are invisible to them.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: auth-gate-detection', url: 'https://agentdocsspec.com/spec/web/authentication/#auth-gate-detection' }],
+    },
+    {
+        id: 'auth-alternative-access', source: 'afdocs', score: 'codingAgents', label: 'Alternative access to gated docs', max: 4,
+        hostDependent: 'full', hostNote: 'Access rules are enforced by your host.',
+        measures: 'Whether an auth-gated documentation site provides alternative access paths for agents.', why: 'When docs need a login, an alternative path lets agents read them anyway.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: auth-alternative-access', url: 'https://agentdocsspec.com/spec/web/authentication/#auth-alternative-access' }],
+    },
+    {
+        id: 'bot-protection-interference', source: 'afdocs', score: 'codingAgents', label: 'Bot protection lets agents in', max: 7,
+        hostDependent: 'full', hostNote: 'Bot protection runs on your host or CDN, not in your build.',
+        measures: 'Whether bot-protection systems interfere with automated fetching of documentation content.', why: 'Bot protection that refuses honest agents keeps the docs out of their answers.',
+        evidence: [{ title: 'Agent-Friendly Documentation Spec: bot-protection-interference', url: 'https://agentdocsspec.com/spec/web/authentication/#bot-protection-interference' }],
+    },
+    {
+        id: 'lensy-headings', source: 'lensy', score: 'codingAgents', label: 'Headings an agent can navigate', max: 4,
+        hostDependent: false,
+        measures: 'On what an agent receives: exactly one H1 (half the points; more than one, a fifth) and an outline with no skipped heading levels (half; one skip, a quarter), counted only with at least 2 headings.',
+        why: 'A URL #fragment never reaches the server, so agents find sections by heading text. AFDocs\' section-header-quality only looks inside tabs.',
+        evidence: [EV.claudeFetch],
+    },
+];
+
+export const CHECKS_BY_ID: Record<string, CheckMeta> = Object.fromEntries([...CHECKS, ...AFDOCS_CHECKS].map(c => [c.id, c]));

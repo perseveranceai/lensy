@@ -41,3 +41,40 @@ test('no customer names in the published registry', () => {
     // The first site that reported the bot-protection issue; already named in docs/two-score-readiness.
     expect(src).not.toMatch(/branch\.io|\bBranch\b/i);
 });
+
+// AFDocs checks (docs/coding-agents-afdocs/spec.md criterion 7).
+describe('AFDocs checks in the registry', () => {
+    const { AFDOCS_CHECKS } = require('../check-registry');
+    const { scoreCodingAgentsAfdocs } = require('../scoring-afdocs');
+    const run = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'afdocs', 'stripe-payments.json'), 'utf8'));
+    const afdocs = AFDOCS_CHECKS.filter((c: any) => c.source === 'afdocs');
+
+    test('every check AFDocs 0.23.0 runs has an entry, and nothing else', () => {
+        expect(afdocs.map((c: any) => c.id).sort()).toEqual(run.results.map((r: any) => r.id).sort());
+    });
+
+    test('labels are the ones the scorer shows; max is at least what a run can earn', () => {
+        const scored = scoreCodingAgentsAfdocs(run, { receivedHeadings: { count: 5, h1Count: 1, skips: 0, generic: 0 } } as any);
+        for (const c of scored.checks) {
+            const meta = CHECKS_BY_ID[c.id];
+            expect(meta).toBeDefined();
+            expect(meta.label).toBe(c.label);
+            expect(meta.max).toBeGreaterThanOrEqual(c.max);
+            expect(meta.score).toBe('codingAgents');
+        }
+    });
+
+    test('tier weights only, measures and why, an https spec link, a note when host-dependent', () => {
+        for (const c of afdocs) {
+            expect([10, 7, 4, 2]).toContain(c.max);
+            expect(c.measures.length).toBeGreaterThan(20);
+            expect(c.why.length).toBeGreaterThan(20);
+            expect(c.evidence[0].url).toMatch(/^https:\/\/agentdocsspec\.com\/spec\/web\/[a-z-]+\/#[a-z-]+$/);
+            if (c.hostDependent) expect(c.hostNote).toBeTruthy();
+        }
+    });
+
+    test('Lensy checks kept alongside AFDocs: lensy-headings', () => {
+        expect(AFDOCS_CHECKS.filter((c: any) => c.source === 'lensy').map((c: any) => c.id)).toEqual(['lensy-headings']);
+    });
+});

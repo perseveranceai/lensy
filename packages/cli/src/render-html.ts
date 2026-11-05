@@ -58,7 +58,7 @@ function renderPage(p: DocPage): string {
   if (s.banner) out.push(`<p>${esc(s.banner)}</p>`);
   if (s.preview) out.push(`<p>What an agent receives: ${esc(s.preview)}</p>`);
   for (const g of p.groups) {
-    out.push(`<h3>${esc(g.title)}</h3>`, table(['ID', 'Check', 'Status', 'Points', 'Max', 'Finding'], g.rows.map(r => [r.id, r.check, r.status, r.points, r.max, r.finding])));
+    out.push(`<h3>${esc(g.title)}</h3>`, table(['ID', 'Check', 'Status', 'Points', 'Max', 'Finding', 'Source'], g.rows.map(r => [r.id, r.check, r.status, r.points, r.max, r.finding, r.source])));
   }
   out.push('<h3>Fixes</h3>');
   out.push(p.fixes.length

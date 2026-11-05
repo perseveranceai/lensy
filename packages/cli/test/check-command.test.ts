@@ -8,6 +8,7 @@ import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { EXIT, Io, normalizeUrl, run } from '../src/main';
 import { loadFixture, replayFetch, FixtureEntry } from '../../../backend/lambda/agent-handler/tools/__tests__/replay';
+import { loadAfdocsRun, replayAfdocs } from '../../core/test/afdocs-replay';
 
 function io(fetchImpl?: typeof fetch, opts: { tty?: boolean; env?: Record<string, string> } = {}) {
   let out = '';
@@ -17,6 +18,8 @@ function io(fetchImpl?: typeof fetch, opts: { tty?: boolean; env?: Record<string
     stderr: { write: (s: string) => { err += s; } },
     env: opts.env ?? {},
     fetchImpl,
+    // Saved AFDocs runs for the two fixture pages; any other page falls back to C1-C6.
+    loadAfdocs: replayAfdocs('vitest-guide', 'stripe-payments'),
     version: '0.0.0-test',
   };
   return { io: value, out: () => out, err: () => err };
@@ -25,6 +28,7 @@ function io(fetchImpl?: typeof fetch, opts: { tty?: boolean; env?: Record<string
 const vitest = loadFixture('vitest-guide');
 const stripe = loadFixture('stripe-payments');
 const both: FixtureEntry[] = [...vitest.entries, ...stripe.entries];
+const vitestAfdocs = loadAfdocsRun('vitest-guide');
 
 describe('one page', () => {
   test('prints both scores, the banner, the agent preview and every check with points', async () => {
@@ -32,11 +36,16 @@ describe('one page', () => {
     const code = await run(['check', vitest.expected.url], t.io);
     expect(code).toBe(EXIT.ok);
     const out = t.out();
-    expect(out).toContain(`Coding agents ${vitest.expected.coding.total}/100`);
+    expect(out).toMatch(/Coding agents \d+\/100/);
     expect(out).toContain(`AI search ${vitest.expected.search.total}/100`);
     expect(out).toContain('Reachability: an honest AI agent can read this page');
     expect(out).toContain('What an agent receives:');
-    for (const id of ['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6']) expect(out).toMatch(new RegExp(`\\b${id}\\b`));
+    // Coding agents comes from AFDocs, with its label; AI search is S1-S6.
+    for (const r of vitestAfdocs.results.filter(x => ['pass', 'warn', 'fail'].includes(x.status))) expect(out).toContain(r.id);
+    expect(out).toMatch(/llms\.txt exists AFDocs/);
+    expect(out).toContain('lensy-headings');
+    expect(out).not.toMatch(/\bC[1-6]\b/);
+    for (const id of ['S1', 'S2', 'S3', 'S4', 'S5', 'S6']) expect(out).toMatch(new RegExp(`\\b${id}\\b`));
     expect(out).toMatch(/Fix: /);
     expect(out).not.toMatch(/Page\s+Coding agents\s+AI search\s+Status/); // no summary table for one page
   });
@@ -73,7 +82,7 @@ describe('several pages', () => {
     expect(out).toMatch(/Page\s+Coding agents\s+AI search\s+Status/);
     const summary = out.indexOf('Status');
     expect(out.indexOf(vitest.expected.url, summary + 10)).toBeGreaterThan(summary);
-    expect(out).toContain(`${stripe.expected.coding.total}/100`);
+    expect(out).toContain(`${stripe.expected.search.total}/100`);
   });
 
   test('a blocked page: exit 3, the perseveranceai.com pointer, and no advice to weaken bot protection', async () => {
@@ -110,13 +119,13 @@ describe('several pages in the terminal (spec answers 9 and 10)', () => {
     const out = t.out();
     expect(out).toContain('Full results: rerun with --html report.html or --md report.md.');
     expect((out.match(/Fix: /g) || []).length).toBeLessThanOrEqual(6); // 3 per page
-    expect(out).not.toMatch(/PASS\s+C1/); // no per-check rows
+    expect(out).not.toMatch(/PASS\s+llms-txt-exists/); // no per-check rows
   });
 
   test('one page shows every check and no report pointer', async () => {
     const t = io(replayFetch(vitest.entries));
     await run(['check', vitest.expected.url], t.io);
-    expect(t.out()).toMatch(/PASS\s+C1/);
+    expect(t.out()).toMatch(/PASS\s+llms-txt-exists/);
     expect(t.out()).not.toContain('Full results:');
   });
 

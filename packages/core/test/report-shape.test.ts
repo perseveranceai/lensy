@@ -6,6 +6,7 @@ import { buildScoringV2, collectSignalsV2 } from '../src/engine';
 import { checkFromPage } from '../src/check';
 import { MAPPED_FIELDS, WEBSITE_ONLY } from '../src/report';
 import { loadFixture, pageInputFromFixture, replayFetch } from '../../../backend/lambda/agent-handler/tools/__tests__/replay';
+import { replayAfdocs } from './afdocs-replay';
 
 test('every ScoringV2Fields key is mapped or website-only', async () => {
   const { entries, expected } = loadFixture('stripe-payments');
@@ -17,7 +18,7 @@ test('every ScoringV2Fields key is mapped or website-only', async () => {
 
 test('report has the reportVersion 1 fields', async () => {
   const { entries, expected } = loadFixture('stripe-payments');
-  const r = await checkFromPage(pageInputFromFixture(entries, expected.url), { fetchImpl: replayFetch(entries), now: 0 });
+  const r = await checkFromPage(pageInputFromFixture(entries, expected.url), { fetchImpl: replayFetch(entries), now: 0, loadAfdocs: replayAfdocs('stripe-payments') });
   expect(Object.keys(r).sort()).toEqual(['agentPreview', 'checkedAt', 'engine', 'finalUrl', 'gate', 'mode', 'netErrors', 'notes', 'platform', 'reportVersion', 'scope', 'scores', 'status', 'tips', 'url'].sort());
   expect(r).toMatchObject({ reportVersion: 1, mode: 'url', scope: 'page', engine: { scoringVersion: 2 } });
 });

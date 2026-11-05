@@ -2,7 +2,7 @@
 // (H-001): Markdown for coding agents (./markdown.ts) and PDF for people
 // (./pdf.ts). Everything comes from buildReportModel(), the same function the
 // results page renders from, so a file never shows something the page doesn't.
-import { buildReportModel, gateBannerText, previewSummary, EVIDENCE_LABELS, AUDIENCE_LABELS, TIER_LABELS } from "./reportModel";
+import { buildReportModel, gateBannerText, previewSummary, EVIDENCE_LABELS, AUDIENCE_LABELS, TIER_LABELS, SOURCE_LABELS } from "./reportModel";
 import { CITATIONS_ENABLED } from "./flags";
 import type { ReportSignalStatus, DetectionData, Rec } from "./reportModel";
 
@@ -20,6 +20,8 @@ export interface ExportSignal {
   note?: string;
   /** Scoring v2: points out of the check's max, e.g. "11/15". */
   points?: string;
+  /** Where the check comes from, when it isn't Lensy, e.g. "AFDocs". */
+  source?: string;
 }
 
 export interface ExportRec {
@@ -194,6 +196,7 @@ export function buildExportReport(input: ExportInput): ExportReport {
           fix: failing ? sig.fix ?? model.fixForSignal(sig.label) : undefined,
           note: sig.signal?.note || undefined,
           points: sig.points,
+          source: sig.source ? SOURCE_LABELS[sig.source] || sig.source : undefined,
         };
       }),
     })),

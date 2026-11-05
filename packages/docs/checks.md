@@ -2,9 +2,351 @@
 
 Generated from the engine's check registry (`backend/lambda/agent-handler/tools/check-registry.ts`) by `npm run docs:checks`. Don't edit by hand.
 
-Lensy gives two scores out of 100. Each check below is worth the points shown in one of them. `lensy explain <id>` prints the same text.
+Lensy gives two scores out of 100. The Coding agents score comes from AFDocs, the Agent-Friendly Documentation checks, plus Lensy's own heading check; if AFDocs can't run, it falls back to Lensy's C1-C6. AI search is Lensy's S1-S6. `lensy explain <id>` prints the same text.
 
-## Coding agents
+## Coding agents (AFDocs)
+
+Each check earns a share of its weight (critical 10, high 7, medium 4, low 2; a warning earns part of it). The score is the weight earned over the weight of the checks that ran, out of 100. Some critical failures cap the score: with no llms.txt it is at most 59.
+
+| ID | Check | Source | Weight |
+|---|---|---|---|
+| llms-txt-exists | llms.txt exists | AFDocs | 10 |
+| llms-txt-valid | llms.txt format | AFDocs | 4 |
+| llms-txt-size | llms.txt size | AFDocs | 7 |
+| llms-txt-links-resolve | llms.txt links resolve | AFDocs | 7 |
+| llms-txt-links-markdown | llms.txt links point to Markdown | AFDocs | 7 |
+| llms-txt-directive-html | Page points agents to llms.txt (HTML) | AFDocs | 7 |
+| llms-txt-directive-md | Page points agents to llms.txt (Markdown) | AFDocs | 4 |
+| markdown-url-support | .md version of the page | AFDocs | 7 |
+| content-negotiation | Markdown on request | AFDocs | 4 |
+| rendering-strategy | Content without JavaScript | AFDocs | 10 |
+| page-size-markdown | Markdown size | AFDocs | 7 |
+| page-size-html | HTML size | AFDocs | 7 |
+| page-size-transfer | Download size | AFDocs | 4 |
+| content-start-position | Content starts near the top | AFDocs | 4 |
+| single-fetch-completeness | Complete in one fetch | AFDocs | 4 |
+| tabbed-content-serialization | Tabbed content readable | AFDocs | 4 |
+| section-header-quality | Headers inside tabs | AFDocs | 2 |
+| markdown-code-fence-validity | Code fences closed | AFDocs | 4 |
+| markdown-link-portability | Links work outside the site | AFDocs | 4 |
+| embedded-data-serialization | Embedded data size | AFDocs | 4 |
+| http-status-codes | Real 404s for missing pages | AFDocs | 7 |
+| redirect-behavior | Redirects | AFDocs | 4 |
+| llms-txt-coverage | llms.txt covers the sitemap | AFDocs | 4 |
+| markdown-content-parity | Markdown matches HTML | AFDocs | 4 |
+| cache-header-hygiene | Cache headers | AFDocs | 2 |
+| auth-gate-detection | Public without login | AFDocs | 10 |
+| auth-alternative-access | Alternative access to gated docs | AFDocs | 4 |
+| bot-protection-interference | Bot protection lets agents in | AFDocs | 7 |
+| lensy-headings | Headings an agent can navigate | Lensy | 4 |
+
+### llms-txt-exists llms.txt exists (10 weight)
+
+**What it measures:** Whether llms.txt is discoverable at any of the candidate locations.
+
+**Why it matters:** Coding agents look for llms.txt to find the right page. Without it they guess URLs. AFDocs caps the score at 59 when it is missing.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: llms-txt-exists](https://agentdocsspec.com/spec/web/content-discoverability/#llms-txt-exists)
+
+### llms-txt-valid llms.txt format (4 weight)
+
+**What it measures:** Whether llms.txt follows the proposed structure from llmstxt.org.
+
+**Why it matters:** A predictable structure (an H1, then Markdown links) is what agents and tools parse.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: llms-txt-valid](https://agentdocsspec.com/spec/web/content-discoverability/#llms-txt-valid)
+
+### llms-txt-size llms.txt size (7 weight)
+
+**What it measures:** Whether llms.txt fits within agent truncation limits.
+
+**Why it matters:** Agents read about 100,000 characters per fetch; a larger index is cut off.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: llms-txt-size](https://agentdocsspec.com/spec/web/content-discoverability/#llms-txt-size)
+
+### llms-txt-links-resolve llms.txt links resolve (7 weight)
+
+**What it measures:** Whether the URLs listed in llms.txt actually resolve.
+
+**Why it matters:** A broken link in the index sends an agent to a dead end.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: llms-txt-links-resolve](https://agentdocsspec.com/spec/web/content-discoverability/#llms-txt-links-resolve)
+
+### llms-txt-links-markdown llms.txt links point to Markdown (7 weight)
+
+**What it measures:** Whether the URLs in llms.txt point to markdown content.
+
+**Why it matters:** Markdown is far smaller than HTML, so more of the page fits in what the agent reads.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: llms-txt-links-markdown](https://agentdocsspec.com/spec/web/content-discoverability/#llms-txt-links-markdown)
+
+### llms-txt-directive-html Page points agents to llms.txt (HTML) (7 weight)
+
+**What it measures:** Whether HTML pages include a directive pointing to llms.txt.
+
+**Why it matters:** An agent that lands on one page learns where the index of the whole site is.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: llms-txt-directive-html](https://agentdocsspec.com/spec/web/content-discoverability/#llms-txt-directive-html)
+
+### llms-txt-directive-md Page points agents to llms.txt (Markdown) (4 weight)
+
+**What it measures:** Whether markdown pages include a directive pointing to llms.txt.
+
+**Why it matters:** Agents that read the Markdown copy see the pointer too.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: llms-txt-directive-md](https://agentdocsspec.com/spec/web/content-discoverability/#llms-txt-directive-md)
+
+### markdown-url-support .md version of the page (7 weight)
+
+**What it measures:** Whether appending .md to page URLs returns valid markdown.
+
+**Why it matters:** Agents guess <page>.md; a Markdown copy is much smaller than the HTML.
+
+**Depends on your hosting:** A rewrite from <page> to <page>.md can be set by your host rather than your build.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: markdown-url-support](https://agentdocsspec.com/spec/web/markdown-availability/#markdown-url-support)
+
+### content-negotiation Markdown on request (4 weight)
+
+**What it measures:** Whether the server responds to Accept: text/markdown.
+
+**Why it matters:** Claude Code, Cursor and OpenCode ask for Markdown first.
+
+**Depends on your hosting:** Your web server or CDN decides what to return for Accept: text/markdown.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: content-negotiation](https://agentdocsspec.com/spec/web/markdown-availability/#content-negotiation)
+
+### rendering-strategy Content without JavaScript (10 weight)
+
+**What it measures:** Whether pages contain server-rendered content or are client-side rendered SPA shells.
+
+**Why it matters:** AI crawlers and most coding agents do not run JavaScript, so content rendered in the browser is invisible to them.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: rendering-strategy](https://agentdocsspec.com/spec/web/page-size/#rendering-strategy)
+
+### page-size-markdown Markdown size (7 weight)
+
+**What it measures:** Character count of page when served as markdown.
+
+**Why it matters:** Agents read about 100,000 characters per fetch and have to page or give up beyond it.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: page-size-markdown](https://agentdocsspec.com/spec/web/page-size/#page-size-markdown)
+
+### page-size-html HTML size (7 weight)
+
+**What it measures:** Character count of HTML response and post-conversion size.
+
+**Why it matters:** Agents that read HTML convert it to text; past about 100,000 characters the rest is cut off.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: page-size-html](https://agentdocsspec.com/spec/web/page-size/#page-size-html)
+
+### page-size-transfer Download size (4 weight)
+
+**What it measures:** Served byte size of the HTML document after transfer decoding.
+
+**Why it matters:** Very large documents can exceed an agent's fetch buffer before any text is read.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: page-size-transfer](https://agentdocsspec.com/spec/web/page-size/#page-size-transfer)
+
+### content-start-position Content starts near the top (4 weight)
+
+**What it measures:** How far into content the actual documentation begins.
+
+**Why it matters:** Navigation before the content uses up the part of the page an agent reads first.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: content-start-position](https://agentdocsspec.com/spec/web/page-size/#content-start-position)
+
+### single-fetch-completeness Complete in one fetch (4 weight)
+
+**What it measures:** Whether markdown responses are complete in one fetch or declare a working continuation.
+
+**Why it matters:** An agent that gets half a page and no way to the rest works from half the facts.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: single-fetch-completeness](https://agentdocsspec.com/spec/web/page-size/#single-fetch-completeness)
+
+### tabbed-content-serialization Tabbed content readable (4 weight)
+
+**What it measures:** Whether tabbed/accordion content serializes into oversized output.
+
+**Why it matters:** Tabs flatten into one long text for an agent; every variant counts toward the size limit.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: tabbed-content-serialization](https://agentdocsspec.com/spec/web/content-structure/#tabbed-content-serialization)
+
+### section-header-quality Headers inside tabs (2 weight)
+
+**What it measures:** Whether headers in tabbed sections include variant context.
+
+**Why it matters:** Flattened tabs repeat the same headings; without the variant name an agent can't tell them apart.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: section-header-quality](https://agentdocsspec.com/spec/web/content-structure/#section-header-quality)
+
+### markdown-code-fence-validity Code fences closed (4 weight)
+
+**What it measures:** Whether markdown contains unclosed code fences.
+
+**Why it matters:** An unclosed fence turns the rest of the page into code for the agent.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: markdown-code-fence-validity](https://agentdocsspec.com/spec/web/content-structure/#markdown-code-fence-validity)
+
+### markdown-link-portability Links work outside the site (4 weight)
+
+**What it measures:** Whether links in served markdown are absolute and resolve to what they promise.
+
+**Why it matters:** Relative links break once the Markdown is read outside the site, as agents do.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: markdown-link-portability](https://agentdocsspec.com/spec/web/content-structure/#markdown-link-portability)
+
+### embedded-data-serialization Embedded data size (4 weight)
+
+**What it measures:** Whether machine-generated bulk data (large tables, data blobs) dominates oversized pages.
+
+**Why it matters:** Bulk data can push the actual explanation past what an agent reads.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: embedded-data-serialization](https://agentdocsspec.com/spec/web/content-structure/#embedded-data-serialization)
+
+### http-status-codes Real 404s for missing pages (7 weight)
+
+**What it measures:** Whether error pages return correct HTTP status codes.
+
+**Why it matters:** A "not found" page served with 200 looks like real content to an agent.
+
+**Depends on your hosting:** Status codes for missing pages are set by your web server or host.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: http-status-codes](https://agentdocsspec.com/spec/web/url-stability/#http-status-codes)
+
+### redirect-behavior Redirects (4 weight)
+
+**What it measures:** Whether redirects are same-host HTTP redirects.
+
+**Why it matters:** Cross-host or JavaScript redirects lose agents that follow links.
+
+**Depends on your hosting:** Redirects are configured on your host or CDN.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: redirect-behavior](https://agentdocsspec.com/spec/web/url-stability/#redirect-behavior)
+
+### llms-txt-coverage llms.txt covers the sitemap (4 weight)
+
+**What it measures:** How much of the site is represented in llms.txt.
+
+**Why it matters:** Pages missing from the index are found less often. Lensy skips it: it is about the whole site, not the page.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: llms-txt-coverage](https://agentdocsspec.com/spec/web/observability/#llms-txt-coverage)
+
+### markdown-content-parity Markdown matches HTML (4 weight)
+
+**What it measures:** Whether markdown and HTML versions contain equivalent content.
+
+**Why it matters:** A Markdown copy that drops content gives agents a different page than people see.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: markdown-content-parity](https://agentdocsspec.com/spec/web/observability/#markdown-content-parity)
+
+### cache-header-hygiene Cache headers (2 weight)
+
+**What it measures:** Whether cache headers allow timely updates.
+
+**Why it matters:** Long caching keeps agents reading old versions after you fix a page.
+
+**Depends on your hosting:** Cache headers are set by your web server or CDN.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: cache-header-hygiene](https://agentdocsspec.com/spec/web/observability/#cache-header-hygiene)
+
+### auth-gate-detection Public without login (10 weight)
+
+**What it measures:** Whether documentation pages require authentication to access content.
+
+**Why it matters:** Agents can't log in, so gated docs are invisible to them.
+
+**Depends on your hosting:** Login walls are enforced by your host.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: auth-gate-detection](https://agentdocsspec.com/spec/web/authentication/#auth-gate-detection)
+
+### auth-alternative-access Alternative access to gated docs (4 weight)
+
+**What it measures:** Whether an auth-gated documentation site provides alternative access paths for agents.
+
+**Why it matters:** When docs need a login, an alternative path lets agents read them anyway.
+
+**Depends on your hosting:** Access rules are enforced by your host.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: auth-alternative-access](https://agentdocsspec.com/spec/web/authentication/#auth-alternative-access)
+
+### bot-protection-interference Bot protection lets agents in (7 weight)
+
+**What it measures:** Whether bot-protection systems interfere with automated fetching of documentation content.
+
+**Why it matters:** Bot protection that refuses honest agents keeps the docs out of their answers.
+
+**Depends on your hosting:** Bot protection runs on your host or CDN, not in your build.
+
+**Evidence:**
+
+- [Agent-Friendly Documentation Spec: bot-protection-interference](https://agentdocsspec.com/spec/web/authentication/#bot-protection-interference)
+
+### lensy-headings Headings an agent can navigate (4 weight)
+
+**What it measures:** On what an agent receives: exactly one H1 (half the points; more than one, a fifth) and an outline with no skipped heading levels (half; one skip, a quarter), counted only with at least 2 headings.
+
+**Why it matters:** A URL #fragment never reaches the server, so agents find sections by heading text. AFDocs' section-header-quality only looks inside tabs.
+
+**Evidence:**
+
+- [How Claude Code eats the web](https://giuseppegurgone.com/claude-webfetch)
+
+## Coding agents without AFDocs (C1-C6)
 
 | ID | Check | Points |
 |---|---|---|

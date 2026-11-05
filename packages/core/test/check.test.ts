@@ -52,22 +52,37 @@ describe('pages that cannot be checked', () => {
 });
 
 describe('a checked page', () => {
-  test('every request carries the CLI user agent, and --user-agent overrides it', async () => {
+  // Runs the real AFDocs module (spec criterion 2). Its requests that have no
+  // fixture fail, which is fine: only the user agent is checked. Anything that
+  // bypasses the wrapper reaches the guard instead of the network.
+  test('every request, AFDocs ones included, carries the CLI user agent, and --user-agent overrides it', async () => {
     const { entries, expected } = loadFixture('vitest-guide');
     const replay = replayFetch(entries);
     const uas = new Set<string>();
+    let afdocsUrls = 0;
     const impl = (async (input: any, init: RequestInit = {}) => {
-      uas.add((init.headers as Record<string, string>)['User-Agent']);
+      const h = new Headers(init.headers as HeadersInit);
+      uas.add(h.get('user-agent') ?? '(none)');
+      if (h.get('accept')?.includes('text/markdown') || /llms\.txt$/.test(String(input))) afdocsUrls++;
       return replay(input, init);
     }) as typeof fetch;
-    const r = await check(expected.url, { fetchImpl: impl, now: 0 });
-    expect(r.status).toBe('ok');
-    expect([...uas]).toEqual([defaultUserAgent()]);
+    const escaped: string[] = [];
+    const real = globalThis.fetch;
+    globalThis.fetch = (async (input: any) => { escaped.push(String(input)); throw new TypeError('guard: request bypassed fetchImpl'); }) as typeof fetch;
+    try {
+      const r = await check(expected.url, { fetchImpl: impl, now: 0 });
+      expect(r.status).toBe('ok');
+      expect([...uas]).toEqual([defaultUserAgent()]);
+      expect(afdocsUrls).toBeGreaterThan(0);
 
-    uas.clear();
-    await check(expected.url, { fetchImpl: impl, now: 0, userAgent: 'Lensy-CLI/9.9.9 (test)' });
-    expect([...uas]).toEqual(['Lensy-CLI/9.9.9 (test)']);
-  });
+      uas.clear();
+      await check(expected.url, { fetchImpl: impl, now: 0, userAgent: 'Lensy-CLI/9.9.9 (test)' });
+      expect([...uas]).toEqual(['Lensy-CLI/9.9.9 (test)']);
+      expect(escaped).toEqual([]);
+    } finally {
+      globalThis.fetch = real;
+    }
+  }, 120000);
 
   test('a sub-request network error makes its checks unknown and the score partial', async () => {
     const { entries, expected } = loadFixture('vitest-guide');
@@ -76,7 +91,7 @@ describe('a checked page', () => {
       if (String(input).endsWith('/robots.txt')) throw new TypeError('fetch failed: ECONNRESET');
       return replay(input, init);
     }) as typeof fetch;
-    const r = await check(expected.url, { fetchImpl: impl, now: 0 });
+    const r = await check(expected.url, { fetchImpl: impl, now: 0, afdocs: false });
     const s1 = r.scores.aiSearch.checks.find(c => c.id === 'S1')!;
     expect(s1).toMatchObject({ status: 'unknown', points: null });
     expect(s1.note).toMatch(/^network error: .*robots\.txt$/);

@@ -32,6 +32,8 @@ export interface Score {
   /** Req 7.2; unused in phase 1 */
   categories?: { id: string; label: string; score: number }[];
   checks: Check[];
+  /** 'afdocs' when Coding agents comes from AFDocs (docs/coding-agents-afdocs/spec.md); absent for Lensy's C1-C6 */
+  source?: 'afdocs';
 }
 
 export interface Report {
@@ -61,7 +63,7 @@ const sum = (ns: number[]) => ns.reduce((a, b) => a + b, 0);
 
 function toCheck(c: CheckResult, unknown: boolean, failedUrl?: string): Check {
   const meta = CHECKS_BY_ID[c.id];
-  const base = { id: c.id, source: meta?.source ?? 'lensy', label: c.label, max: c.max, detail: c.detail };
+  const base = { id: c.id, source: c.source ?? meta?.source ?? 'lensy', label: c.label, max: c.max, detail: c.detail };
   if (unknown) {
     return { ...base, points: null, status: 'unknown', note: `network error${failedUrl ? `: ${failedUrl}` : ''}` };
   }
@@ -70,11 +72,12 @@ function toCheck(c: CheckResult, unknown: boolean, failedUrl?: string): Check {
 
 export function toScore(engine: ScoreResult, unknownIds: Set<string>, failedUrl?: string): Score {
   const checks = engine.checks.map(c => toCheck(c, unknownIds.has(c.id), failedUrl));
+  const source = 'source' in engine && engine.source === 'afdocs' ? { source: 'afdocs' as const } : {};
   const ran = checks.filter(c => c.points !== null);
-  if (ran.length === checks.length) return { score: engine.score, coveredMax: 100, checks };
+  if (ran.length === checks.length) return { score: engine.score, coveredMax: 100, checks, ...source };
   const coveredMax = sum(ran.map(c => c.max));
   const earned = sum(ran.map(c => c.points as number));
-  return { score: coveredMax ? Math.round((100 * earned) / coveredMax) : 0, label: 'partial', coveredMax, checks };
+  return { score: coveredMax ? Math.round((100 * earned) / coveredMax) : 0, label: 'partial', coveredMax, checks, ...source };
 }
 
 const emptyScore = (): Score => ({ score: null, coveredMax: 0, checks: [] });

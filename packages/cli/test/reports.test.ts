@@ -10,8 +10,8 @@ import { buildReportDoc, DocInput } from '../src/report-doc';
 import { renderHtml } from '../src/render-html';
 import { renderMarkdown } from '../src/render-md';
 import { EXIT, Io, run } from '../src/main';
-import { explainCheck } from '../src/explain';
-import { CHECKS } from '@perseverance-ai/lensy-core';
+import { ALL_CHECKS, explainCheck } from '../src/explain';
+import { replayAfdocs } from '../../core/test/afdocs-replay';
 import { loadFixture, pageInputFromFixture, replayFetch } from '../../../backend/lambda/agent-handler/tools/__tests__/replay';
 
 const NOW = Date.parse('2026-10-22T12:00:00Z');
@@ -22,7 +22,7 @@ async function inputs(): Promise<DocInput[]> {
   const out: DocInput[] = [];
   for (const name of ['stripe-payments', 'vitest-guide']) {
     const { entries, expected } = loadFixture(name);
-    out.push({ url: expected.url, report: await checkFromPage(pageInputFromFixture(entries, expected.url), { fetchImpl: replayFetch(entries), now: NOW }) });
+    out.push({ url: expected.url, report: await checkFromPage(pageInputFromFixture(entries, expected.url), { fetchImpl: replayFetch(entries), now: NOW, loadAfdocs: replayAfdocs(name) }) });
   }
   out.push({ url: 'https://blocked.example.com/docs', report: { ...out[0].report!, status: 'blocked', gate: { state: 'blocked', honestStatus: 403, robotsBlocks: [] } } });
   return out;
@@ -64,7 +64,8 @@ describe('report structure (reportVersion 1)', () => {
     const gains = doc.pages[0].fixes.map(f => f.gain);
     expect([...gains].sort((a, b) => b - a)).toEqual(gains);
     expect(new Set(doc.pages[0].fixes.map(f => f.fix)).size).toBe(gains.length);
-    expect(doc.pages[0].fixes.every(f => /^[CS]\d/.test(f.id))).toBe(true);
+    const ids = new Set(ALL_CHECKS.map(c => c.id));
+    expect(doc.pages[0].fixes.every(f => f.id.split(', ').every(id => ids.has(id)))).toBe(true);
     expect(renderMarkdown(doc)).toMatch(/^- \[ \] \*\*S4\*\* \(\+15 points\)/m);
   });
 });
@@ -95,7 +96,7 @@ describe('HTML loads nothing and runs nothing', () => {
 
 function io(fetchImpl?: typeof fetch) {
   let out = '', err = '';
-  const v: Io = { stdout: { write: (s: string) => { out += s; } }, stderr: { write: (s: string) => { err += s; } }, env: {}, fetchImpl, version: '0.0.0-test', now: () => NOW };
+  const v: Io = { stdout: { write: (s: string) => { out += s; } }, stderr: { write: (s: string) => { err += s; } }, env: {}, fetchImpl, loadAfdocs: replayAfdocs('vitest-guide'), version: '0.0.0-test', now: () => NOW };
   return { io: v, out: () => out, err: () => err };
 }
 
@@ -124,7 +125,7 @@ describe('lensy check --html / --md', () => {
 });
 
 describe('lensy explain', () => {
-  test.each(CHECKS.map(c => c.id))('%s', async (id) => {
+  test.each(ALL_CHECKS.map(c => c.id))('%s', async (id) => {
     const t = io();
     expect(await run(['explain', id.toLowerCase()], t.io)).toBe(EXIT.ok);
     expect(t.out()).toBe(explainCheck(id) + '\n');

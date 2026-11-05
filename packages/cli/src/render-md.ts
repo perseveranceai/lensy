@@ -45,8 +45,8 @@ function renderPage(p: DocPage): string {
   if (s.preview) out.push(`- What an agent receives: ${text(s.preview)}`);
 
   for (const g of p.groups) {
-    out.push('', `### ${g.title}`, '', '| ID | Check | Status | Points | Max | Finding |', '|---|---|---|---|---|---|');
-    for (const r of g.rows) out.push(`| ${cell(r.id)} | ${cell(r.check)} | ${r.status} | ${cell(r.points)} | ${cell(r.max)} | ${cell(r.finding)} |`);
+    out.push('', `### ${g.title}`, '', '| ID | Check | Status | Points | Max | Finding | Source |', '|---|---|---|---|---|---|---|');
+    for (const r of g.rows) out.push(`| ${cell(r.id)} | ${cell(r.check)} | ${r.status} | ${cell(r.points)} | ${cell(r.max)} | ${cell(r.finding)} | ${cell(r.source)} |`);
   }
 
   out.push('', '### Fixes', '');

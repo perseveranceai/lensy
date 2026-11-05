@@ -14,7 +14,12 @@ import { SignalsV2, AI_SEARCH_BOTS, Platform } from './collect-signals-v2';
 export type CheckId = 'C1' | 'C2' | 'C3' | 'C4' | 'C5' | 'C6' | 'S1' | 'S2' | 'S3' | 'S4' | 'S5' | 'S6';
 
 export interface CheckResult {
-    id: CheckId;
+    /** C1-C6 / S1-S6, or an AFDocs check id (llms-txt-exists, ...) when the Coding agents score comes from AFDocs. */
+    id: CheckId | string;
+    /** AFDocs category (content-discoverability, ...) or 'lensy'. Only on AFDocs-based scores. */
+    category?: string;
+    /** 'afdocs' for AFDocs checks; the report labels them. Absent means Lensy. */
+    source?: 'afdocs';
     label: string;
     points: number;
     max: number;

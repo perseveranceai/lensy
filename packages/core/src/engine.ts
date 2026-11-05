@@ -9,5 +9,7 @@ export type { PageInput, SignalsV2, Platform } from '../../../backend/lambda/age
 export { buildScoringV2 } from '../../../backend/lambda/agent-handler/tools/report-v2';
 export type { ScoringV2Fields } from '../../../backend/lambda/agent-handler/tools/report-v2';
 export type { CheckResult, ScoreResult, GateResult } from '../../../backend/lambda/agent-handler/tools/scoring-v2';
-export { CHECKS, CHECKS_BY_ID } from '../../../backend/lambda/agent-handler/tools/check-registry';
+export { CHECKS, CHECKS_BY_ID, AFDOCS_CHECKS } from '../../../backend/lambda/agent-handler/tools/check-registry';
+export { runAfdocsOnPage } from '../../../backend/lambda/agent-handler/tools/afdocs-page';
+export type { AfdocsModule } from '../../../backend/lambda/agent-handler/tools/afdocs-page';
 export type { CheckMeta } from '../../../backend/lambda/agent-handler/tools/check-registry';

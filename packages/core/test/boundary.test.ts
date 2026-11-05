@@ -17,6 +17,8 @@ const ALLOWED = [
   'backend/lambda/agent-handler/tools/scoring-v2.ts',
   'backend/lambda/agent-handler/tools/report-v2.ts',
   'backend/lambda/agent-handler/tools/check-registry.ts',
+  'backend/lambda/agent-handler/tools/scoring-afdocs.ts',
+  'backend/lambda/agent-handler/tools/afdocs-page.ts',
   'frontend/src/report/report-view.ts',
 ];
 const FORBIDDEN = /@aws-sdk\/|@langchain\/|aws-lambda|s3-helpers|progress-publisher|publish-progress|from ['"]react['"]|process\.env/;

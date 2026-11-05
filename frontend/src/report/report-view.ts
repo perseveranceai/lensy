@@ -47,6 +47,8 @@ export type Signal = {
   points?: string;
   checkIds?: string[];
   fix?: string;
+  /** Where the check comes from, when it isn't Lensy ("afdocs"). */
+  source?: string;
 };
 
 // points: two-score fixes only, the check's "earned/max" so the fix list says what it costs.
@@ -66,10 +68,17 @@ export interface ScoreCheck {
   status: "pass" | "warn" | "fail";
   detail: string;
   fix?: string;
+  /** "afdocs" for AFDocs checks (docs/coding-agents-afdocs/spec.md). */
+  source?: string;
 }
 
+// The label a check row shows for where the check comes from. Lensy's own checks show none.
+export const SOURCE_LABELS: Record<string, string> = { afdocs: "AFDocs" };
+
 export interface ScoringV2 {
-  coding: { score: number; checks: ScoreCheck[]; toImprove: number };
+  // source "afdocs": checks are AFDocs ids (llms-txt-exists, ...) plus Lensy's
+  // own (lensy-headings), not C1-C6 (docs/coding-agents-afdocs/spec.md).
+  coding: { score: number; checks: ScoreCheck[]; toImprove: number; source?: "afdocs"; cap?: { cap: number; checkId: string; reason: string } };
   search: { score: number; checks: ScoreCheck[]; toImprove: number };
   gate: {
     state: "pass" | "warn";
@@ -99,7 +108,13 @@ export function readScoringV2(report: any): ScoringV2 | null {
   const blocked: string[] = Array.isArray(gate.robotsBlocks) ? gate.robotsBlocks : [];
   const p = report.agentPreview;
   return {
-    coding: { score: coding.score, checks: coding.checks || [], toImprove: toImprove(coding.checks || []) },
+    coding: {
+      score: coding.score,
+      checks: coding.checks || [],
+      toImprove: toImprove(coding.checks || []),
+      ...(coding.source === "afdocs" ? { source: "afdocs" as const } : {}),
+      ...(coding.cap ? { cap: coding.cap } : {}),
+    },
     search: { score: search.score, checks: search.checks || [], toImprove: toImprove(search.checks || []) },
     gate: { ...gate, robotsBlocks: blocked },
     bots: AI_SEARCH_BOTS.map((name) => ({ name, allowed: !blocked.includes(name) })),
@@ -131,8 +146,52 @@ const pts = (c?: ScoreCheck) => (c ? `${c.points}/${c.max}` : "");
 const worse = (a: ScoreCheck["status"], b: ScoreCheck["status"]): ReportSignalStatus =>
   a === "fail" || b === "fail" ? "fail" : a === "warn" || b === "warn" ? "warn" : "pass";
 
+// AFDocs' rendering-strategy and S2 are the same question (does the HTML carry
+// the content?), so they share the "Content without JavaScript" row like C1/S2.
+export const AFDOCS_JS_CHECK = "rendering-strategy";
+export const SHARED_JS_CHECKS = ["C1", AFDOCS_JS_CHECK];
+const STATUS_ORDER: Record<string, number> = { fail: 0, warn: 1, pass: 2 };
+
+function afdocsSignalGroups(v2: ScoringV2): SignalGroup[] {
+  const s = Object.fromEntries(v2.search.checks.map((x) => [x.id, x]));
+  const js = v2.coding.checks.find((x) => x.id === AFDOCS_JS_CHECK);
+  const headings = v2.coding.checks.find((x) => x.id === "lensy-headings");
+  const row = (x: ScoreCheck | undefined, audience?: string, info?: string): Signal[] => x
+    ? [{ label: x.label, detail: x.detail, status: x.status, points: pts(x), checkIds: [x.id], fix: x.fix, audience, info, ...(x.source ? { source: x.source } : {}) }]
+    : [];
+  const both: Signal[] = [];
+  if (js || s.S2) {
+    const a = js || s.S2;
+    both.push({
+      label: "Content without JavaScript",
+      detail: [js?.detail, s.S2?.detail].filter(Boolean).join(". "),
+      status: worse(js?.status || "pass", s.S2?.status || "pass"),
+      points: [js && `Coding ${pts(js)}`, s.S2 && `Search ${pts(s.S2)}`].filter(Boolean).join(" · "),
+      checkIds: [js && js.id, s.S2 && "S2"].filter(Boolean) as string[],
+      fix: js?.fix || a.fix,
+      audience: "both",
+      info: "AI crawlers and coding agents read the raw HTML. Most do not run JavaScript.",
+    });
+  }
+  both.push(...row(headings, "coding_agents", "One H1 and no skipped levels, so an agent can find a section by its heading."));
+  both.push(...row(s.S5, "ai_search", "AI search quotes sections, so each H2/H3 section should answer one question on its own."));
+  // Failing checks first, so the list starts with what to fix.
+  const coding = v2.coding.checks
+    .filter((x) => x.id !== AFDOCS_JS_CHECK && x.id !== "lensy-headings")
+    .map((x, i) => ({ x, i }))
+    .sort((a, b) => STATUS_ORDER[a.x.status] - STATUS_ORDER[b.x.status] || a.i - b.i)
+    .flatMap(({ x }) => row(x));
+  const search = ["S1", "S3", "S4", "S6"].flatMap((id) => row(s[id]));
+  return [
+    { title: "Both audiences", key: "both", sections: [{ title: "", signals: both }] },
+    { title: "Coding agents", key: "coding", sections: [{ title: "", signals: coding }] },
+    { title: "AI search", key: "search", sections: [{ title: "", signals: search }] },
+  ];
+}
+
 // Three cards: what both audiences need, then each score's own checks (§8.2).
 function v2SignalGroups(v2: ScoringV2): SignalGroup[] {
+  if (v2.coding.source === "afdocs") return afdocsSignalGroups(v2);
   const c = Object.fromEntries(v2.coding.checks.map((x) => [x.id, x]));
   const s = Object.fromEntries(v2.search.checks.map((x) => [x.id, x]));
   // The audience chip is only shown in "Both audiences"; elsewhere the card title says it.
@@ -168,12 +227,14 @@ function v2SignalGroups(v2: ScoringV2): SignalGroup[] {
 // plus that score's own card.
 export function filterGroups(groups: SignalGroup[], filter: ScoreFilter): SignalGroup[] {
   if (!filter) return groups;
-  const prefix = filter === "coding" ? "C" : "S";
+  // AI search checks are S1-S6; everything else (C1-C6, AFDocs ids, Lensy extras) feeds Coding agents.
+  const isSearch = (id: string) => /^S\d$/.test(id);
+  const belongs = (id: string) => (filter === "search" ? isSearch(id) : !isSearch(id));
   return groups
     .filter((g) => g.key === "both" || g.key === filter)
     .map((g) => g.key !== "both" ? g : {
       ...g,
-      sections: g.sections.map((sec) => ({ ...sec, signals: sec.signals.filter((sig) => (sig.checkIds || []).some((id) => id.startsWith(prefix))) })),
+      sections: g.sections.map((sec) => ({ ...sec, signals: sec.signals.filter((sig) => (sig.checkIds || []).some(belongs)) })),
     });
 }
 
@@ -185,16 +246,19 @@ function v2Recommendations(v2: ScoringV2): Rec[] {
   for (const [category, checks] of [["Coding agents", v2.coding.checks], ["AI search", v2.search.checks]] as const) {
     for (const x of checks) {
       if (x.status === "pass" || !x.fix) continue;
-      // C1 and S2 are the same check scored twice; list its fix once.
-      const key = x.id === "S2" ? "C1" : x.id;
+      // C1 (or AFDocs rendering-strategy) and S2 are the same check scored twice; list its fix once.
+      const key = x.id === "S2" || SHARED_JS_CHECKS.includes(x.id) ? "js" : x.id;
       if (seen.has(key)) continue;
       seen.add(key);
       const lost = x.max - x.points;
-      const both = key === "C1";
+      const both = key === "js";
       const points = both
-        ? [v2.coding.checks.find((c) => c.id === "C1"), v2.search.checks.find((c) => c.id === "S2")].map((c, i) => c && `${i ? "Search" : "Coding"} ${pts(c)}`).filter(Boolean).join(" · ")
+        ? [v2.coding.checks.find((c) => SHARED_JS_CHECKS.includes(c.id)), v2.search.checks.find((c) => c.id === "S2")].map((c, i) => c && `${i ? "Search" : "Coding"} ${pts(c)}`).filter(Boolean).join(" · ")
         : pts(x);
-      items.push({ category: both ? "Both audiences" : category, priority: lost >= 10 ? "high" : lost >= 5 ? "medium" : "low", issue: `${x.label}: ${x.detail}`, fix: x.fix, points, lost });
+      // AFDocs checks weigh 2 to 10 points, so the same points lost means more.
+      const afdocs = category === "Coding agents" && v2.coding.source === "afdocs";
+      const [high, medium] = afdocs ? [7, 3] : [10, 5];
+      items.push({ category: both ? "Both audiences" : category, priority: lost >= high ? "high" : lost >= medium ? "medium" : "low", issue: `${x.label}: ${x.detail}`, fix: x.fix, points, lost });
     }
   }
   items.sort((a, b) => b.lost - a.lost);

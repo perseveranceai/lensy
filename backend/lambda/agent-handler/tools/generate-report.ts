@@ -175,7 +175,7 @@ export const generateReportTool = tool(
             let v2: ScoringV2Fields | null = null;
             if (readinessResults?.signalsV2) {
                 try {
-                    v2 = buildScoringV2(readinessResults.signalsV2);
+                    v2 = buildScoringV2(readinessResults.signalsV2, readinessResults.afdocs);
                 } catch (e) {
                     console.warn('[generate_report] scoring v2 failed, writing a v1 report:', (e as Error).message);
                 }

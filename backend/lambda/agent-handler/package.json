@@ -17,11 +17,12 @@
     "@langchain/aws": "^1.2.3",
     "@langchain/core": "^1.1.16",
     "@langchain/langgraph": "^1.1.5",
+    "afdocs": "0.23.0",
     "jsdom": "^23.0.0",
+    "langsmith": "^0.3.0",
     "turndown": "^7.2.2",
     "turndown-plugin-gfm": "^1.0.2",
     "xml2js": "^0.6.2",
-    "langsmith": "^0.3.0",
     "zod": "^3.25.32"
   },
   "devDependencies": {

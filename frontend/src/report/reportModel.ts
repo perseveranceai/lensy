@@ -12,7 +12,7 @@
 import { AI_SEARCH_BOTS, AGENT_WINDOW_CHARS, readScoringV2, gateBannerText, previewSummary, filterGroups, v2SignalGroups, v2Recommendations } from "./report-view";
 import type { ReportSignalStatus, EvidenceStatus, DetectionSignal, Signal, Rec, SignalGroup, ScoreGroupKey, ScoreFilter, ScoreCheck, ScoringV2 } from "./report-view";
 // Re-exported so existing importers keep working.
-export { AI_SEARCH_BOTS, AGENT_WINDOW_CHARS, readScoringV2, gateBannerText, previewSummary, filterGroups } from "./report-view";
+export { AI_SEARCH_BOTS, AGENT_WINDOW_CHARS, readScoringV2, gateBannerText, previewSummary, filterGroups, SOURCE_LABELS } from "./report-view";
 export type { ReportSignalStatus, EvidenceStatus, DetectionSignal, Signal, Rec, SignalGroup, ScoreGroupKey, ScoreFilter, ScoreCheck, ScoringV2 } from "./report-view";
 type SignalStatus = ReportSignalStatus;
 
