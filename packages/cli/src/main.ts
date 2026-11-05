@@ -83,7 +83,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
     .description('Check one or more live docs pages and print both scores.')
     .argument('[urls...]', 'pages to check')
     .option('--urls-file <path>', 'read page URLs from a file, one per line')
-    .option('--user-agent <string>', 'send this user agent instead of Lensy-CLI/<version>')
+    .option('--user-agent <string>', 'send this user agent instead of lensy-cli/<version>')
     .option('--timeout <ms>', 'timeout per request in milliseconds', int('--timeout', 1000, 120000))
     .option('--concurrency <n>', 'pages checked at once (default 2)', int('--concurrency', 1, 5), 2)
     .option('--html <file>', 'write the full report as one offline HTML file')

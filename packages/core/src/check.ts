@@ -11,10 +11,10 @@ declare const __ENGINE_COMMIT__: string;
 export const VERSION: string = typeof __LENSY_CORE_VERSION__ === 'string' ? __LENSY_CORE_VERSION__ : '0.0.0';
 export const ENGINE_COMMIT: string = typeof __ENGINE_COMMIT__ === 'string' ? __ENGINE_COMMIT__ : 'unknown';
 
-export const defaultUserAgent = (version = VERSION) => `Lensy-CLI/${version} (+https://perseveranceai.com/bot)`;
+export const defaultUserAgent = (version = VERSION) => `lensy-cli/${version} (+https://perseveranceai.com/bot)`;
 
 export interface CheckOptions {
-  /** default `Lensy-CLI/<version> (+https://perseveranceai.com/bot)` */
+  /** default `lensy-cli/<version> (+https://perseveranceai.com/bot)` */
   userAgent?: string;
   /** tests inject the fixture replayer */
   fetchImpl?: typeof fetch;

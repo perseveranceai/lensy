@@ -129,6 +129,13 @@ test('REG-18 / REG-28: /bot shows the user agent, the scan IP and a rule that ma
   await expect(page.getByTestId('bot-free-plan')).toContainText('IP Access rule');
   await expect(page.getByTestId('bot-free-plan')).toContainText('203.0.113.7');
   await expect(page.getByText(/has no fixed IP address, so a rule by IP will not work/)).toHaveCount(0);
+  // The command-line tool has its own section: its user agent in small letters, no fixed IP, no browser retry,
+  // and an allow rule that pairs the user agent with the owner's own runner IP.
+  await expect(page.getByRole('heading', { name: 'Command-line tool' })).toBeVisible();
+  await expect(page.getByTestId('bot-cli-user-agent')).toHaveText('lensy-cli/<version> (+https://perseveranceai.com/bot)');
+  await expect(page.getByText(/never retries with a browser user agent/)).toBeVisible();
+  await expect(page.getByTestId('bot-cli-allow')).toContainText('allow that runner\'s IP address together with the user agent');
+  await expect(page.getByText(/Lensy-CLI/)).toHaveCount(0);
   await expect(page.getByText("This page does not exist.")).toHaveCount(0);
 });
 
@@ -148,6 +155,11 @@ test('REG-28: /bot fits a 375px screen in both themes', async ({ page }) => {
     await setTheme(page, theme);
     await page.goto('/bot');
     await expect(page.getByTestId('bot-allow-rule')).toBeVisible();
+    const cli = page.getByTestId('bot-cli-user-agent');
+    await cli.scrollIntoViewIfNeeded();
+    await expect(cli).toBeVisible();
+    const box = await cli.boundingBox();
+    expect(box!.x + box!.width, `CLI user agent wider than the screen in ${theme} theme`).toBeLessThanOrEqual(375);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow, `horizontal scroll in ${theme} theme`).toBeLessThanOrEqual(0);
   }

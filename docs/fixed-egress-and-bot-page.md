@@ -36,7 +36,7 @@ Plain, short, factual. Sections:
 2. **How to recognise it:**
    - User agent: `Lensy/1.0 (+https://perseveranceai.com/bot)`.
    - Outbound IPs: the prod Elastic IP, from the stack output at build time (never hard-code a guess). Also say "we'll announce changes here at least 14 days ahead."
-   - Open-source CLI user agent: `Lensy-CLI/<version>`. It runs from the user's own machine, so it has no fixed IP.
+   - Open-source CLI user agent: `lensy-cli/<version>`. It runs from the user's own machine, so it has no fixed IP.
 3. **What it fetches, and how often:** only pages someone asked to scan, plus the related files above. Roughly 10 to 25 requests per scan. No crawling.
 4. **robots.txt:** be honest. A scan is a user-requested fetch (like ChatGPT-User), so Lensy doesn't apply robots.txt rules to itself today; it reports what robots.txt says to AI bots. **Decision for Rakesh:** keep that, or honour `User-agent: Lensy` Disallow rules (recommended: honour them; it's cheap and builds trust).
 5. **How to allow it (for site owners who want Lensy scans to work):**

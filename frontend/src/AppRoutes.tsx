@@ -1763,7 +1763,11 @@ export function BotInfo() {
       <p>We&apos;ll announce any change to this address on this page at least 14 days ahead.</p>
       <p>If the site refuses the first request with HTTP 403 or 429, Lensy tries once more with a browser user agent that ends with the same <code className={code}>(+https://perseveranceai.com/bot)</code> link, from the same IP. If that is refused too, the scan stops and tells the person that the site&apos;s bot protection blocked the checker.</p>
       <p>Lensy never sends the names of other companies&apos; crawlers, such as GPTBot or ClaudeBot.</p>
-      <p>The open-source Lensy command-line tool identifies itself as <code className={code}>Lensy-CLI</code>. It runs on the user&apos;s own machine or CI runner, so it has no fixed IP.</p>
+
+      <h2>Command-line tool</h2>
+      <p>The open-source Lensy command-line tool sends <code data-testid="bot-cli-user-agent" className={code}>lensy-cli/&lt;version&gt; (+https://perseveranceai.com/bot)</code>, with the version of the tool that is running. It fetches only the pages the person running it asked for, plus the files those checks need: robots.txt, the sitemap, llms.txt and the page&apos;s Markdown version. The coding agent checks from AFDocs go out under the same name.</p>
+      <p>It runs on that person&apos;s own machine or CI runner, so its requests come from their address and not from the one above. Unlike a scan from perseveranceai.com, it never retries with a browser user agent. If a site refuses it, it stops and reports that the page wasn&apos;t checked.</p>
+      <p data-testid="bot-cli-allow">A rule on the user agent alone can be copied by anyone. To let your own CI run the tool, allow that runner&apos;s IP address together with the user agent.</p>
 
       <h2>robots.txt</h2>
       <p>A Lensy scan is a fetch a person asked for, like an AI assistant opening a page on a user&apos;s behalf, so Lensy doesn&apos;t apply your robots.txt rules to itself. It reads robots.txt to report what your rules tell AI bots. To stop Lensy visiting, use one of the options under &ldquo;How to block it&rdquo;.</p>

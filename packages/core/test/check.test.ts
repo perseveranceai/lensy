@@ -52,6 +52,11 @@ describe('pages that cannot be checked', () => {
 });
 
 describe('a checked page', () => {
+  test('the default user agent is lowercase, with the version and the /bot link', () => {
+    expect(defaultUserAgent('0.1.0')).toBe('lensy-cli/0.1.0 (+https://perseveranceai.com/bot)');
+    expect(defaultUserAgent()).toMatch(/^lensy-cli\/\d+\.\d+\.\d+\S* \(\+https:\/\/perseveranceai\.com\/bot\)$/);
+  });
+
   // Runs the real AFDocs module (spec criterion 2). Its requests that have no
   // fixture fail, which is fine: only the user agent is checked. Anything that
   // bypasses the wrapper reaches the guard instead of the network.
@@ -76,8 +81,8 @@ describe('a checked page', () => {
       expect(afdocsUrls).toBeGreaterThan(0);
 
       uas.clear();
-      await check(expected.url, { fetchImpl: impl, now: 0, userAgent: 'Lensy-CLI/9.9.9 (test)' });
-      expect([...uas]).toEqual(['Lensy-CLI/9.9.9 (test)']);
+      await check(expected.url, { fetchImpl: impl, now: 0, userAgent: 'lensy-cli/9.9.9 (test)' });
+      expect([...uas]).toEqual(['lensy-cli/9.9.9 (test)']);
       expect(escaped).toEqual([]);
     } finally {
       globalThis.fetch = real;
