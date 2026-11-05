@@ -44,10 +44,12 @@ test('REG-05: a site with no robots.txt is not reported as "10/10 allowed"', asy
 test('REG-08: generated llms.txt, sitemap and article markdown are complete', async ({ request }) => {
   const sitemap = await (await request.get('/sitemap.xml')).text();
   expect(sitemap).toContain('/how-it-works');
+  expect(sitemap).toContain('/cli');
   expect(sitemap).not.toMatch(/\/about</);
 
   const llms = await (await request.get('/llms.txt')).text();
   expect(llms).toContain('/how-it-works');
+  expect(llms).toContain('/cli');
   // Article links in llms.txt are absolute for the build's environment; test
   // the same paths on whichever host we're running against.
   const articlePaths = [...llms.matchAll(/\]\((https?:\/\/[^)]+\/education\/[^)]+)\)/g)].map((m) => new URL(m[1]).pathname);
