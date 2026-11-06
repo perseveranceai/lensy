@@ -441,6 +441,33 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
       </section>
 
       <section
+        id="command-line"
+        data-reveal
+        className="mx-auto grid max-w-[1240px] gap-10 px-5 py-20 sm:px-8 lg:grid-cols-12 lg:py-28"
+      >
+        <div className="lg:col-span-4">
+          <p className="text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">Command line</p>
+          <h2 className="mt-5 text-[clamp(2.4rem,4.5vw,4.6rem)] font-medium leading-[.9] tracking-[-.065em]">
+            Check docs from your terminal.
+          </h2>
+        </div>
+        <div className="grid content-end gap-6 lg:col-span-6 lg:col-start-7">
+          <p className="text-[21px] leading-[1.28] tracking-[-.04em]">
+            Lensy also runs as a command, with the same two scores as this page.
+            Check one docs page or a list of them, and save the result as an
+            HTML or Markdown report.
+          </p>
+          <Link
+            to="/cli"
+            className="group mt-2 inline-flex w-fit items-center gap-2 border-b border-[var(--ink)] pb-1 text-[12px] font-medium tracking-[-.025em] text-[var(--ink)]"
+          >
+            Read the CLI guide{" "}
+            <Icon name="arrow" className="arrow-nudge size-3" />
+          </Link>
+        </div>
+      </section>
+
+      <section
         id="questions"
         data-reveal
         className="mx-auto grid max-w-[1240px] gap-10 px-5 py-20 sm:px-8 lg:grid-cols-12"

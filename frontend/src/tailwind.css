@@ -874,6 +874,9 @@
   .px-6 {
     padding-inline: calc(var(--spacing) * 6);
   }
+  .px-\[18px\] {
+    padding-inline: 18px;
+  }
   .py-0\.5 {
     padding-block: calc(var(--spacing) * 0.5);
   }
@@ -1418,6 +1421,16 @@
   .focus-visible\:text-\[var\(--ink\)\]:focus-visible {
     color: var(--ink);
   }
+  .focus-visible\:outline-2:focus-visible {
+    outline-style: var(--tw-outline-style);
+    outline-width: 2px;
+  }
+  .focus-visible\:outline-offset-2:focus-visible {
+    outline-offset: 2px;
+  }
+  .focus-visible\:outline-\[color\:var\(--accent\)\]:focus-visible {
+    outline-color: var(--accent);
+  }
   .disabled\:cursor-not-allowed:disabled {
     cursor: not-allowed;
   }
@@ -1626,6 +1639,9 @@
     }
     .lg\:mt-0 {
       margin-top: 0px;
+    }
+    .lg\:block {
+      display: block;
     }
     .lg\:grid-cols-2 {
       grid-template-columns: repeat(2, minmax(0, 1fr));

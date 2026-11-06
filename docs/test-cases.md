@@ -126,6 +126,17 @@ Google Analytics may only load on the live site after the visitor accepts in the
 
 ---
 
+## Command-line guide
+
+The `/cli` page and the "Command line" section on the home page. Spec: `.context/specs/cli-docs-page.md`. `packages/cli/test/guide.test.ts` also fails when the page and `lensy --help` disagree about an option.
+
+| ID | Steps | Expected |
+|---|---|---|
+| CLI-01 [auto] | Open `/`, find the Command line section, click **Read the CLI guide** | The section sits before "A few good questions"; the link opens `/cli` |
+| CLI-02 [auto] | Open `/cli`; click a side link | The nine sections are in order; the install command and `lensy-cli/<version>` user agent are shown; local addresses are said to be refused; the side link scrolls the section below the header; the bot page link opens `/bot` |
+| CLI-03 [auto] | At 375px, light and dark: `/` and `/cli` | No horizontal scroll; the longest command scrolls inside its box and can be focused |
+| CLI-04 [manual] | Before approving prod: `npm view @perseverance-ai/lensy dist-tags`, then run the Install commands from the page on a clean machine | The `next` tag exists and every command on the page works as written |
+
 ## Regression cases (from real incidents)
 
 | ID | Incident (when, PR) | How to check | Expected |

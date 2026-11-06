@@ -220,6 +220,7 @@ function generateLlmsTxt(articles) {
     lines.push('');
     lines.push(`- [Home](${baseUrl}/): AI readiness scanner for documentation pages`);
     lines.push(`- [How it works](${baseUrl}/how-it-works): How Lensy checks bot access, content structure, and discoverability`);
+    lines.push(`- [Command-line guide](${baseUrl}/cli): Install and run the Lensy CLI to check docs pages from a terminal or CI`);
     lines.push(`- [Education](${baseUrl}/education): Guides on optimizing docs for AI search`);
     lines.push(`- [Contact / Waitlist](${baseUrl}/contact): Join the waitlist for early access`);
     lines.push('');
@@ -243,6 +244,7 @@ function generateSitemap(articles) {
     const staticPages = [
         { loc: '/', priority: '1.0', changefreq: 'weekly' },
         { loc: '/how-it-works', priority: '0.9', changefreq: 'monthly' },
+        { loc: '/cli', priority: '0.7', changefreq: 'monthly' },
         { loc: '/education', priority: '0.9', changefreq: 'weekly' },
         { loc: '/contact', priority: '0.8', changefreq: 'monthly' },
         { loc: '/terms', priority: '0.3', changefreq: 'yearly' },
