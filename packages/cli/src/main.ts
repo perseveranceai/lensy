@@ -11,13 +11,14 @@ import { ALL_CHECKS, explainCheck } from './explain';
 import { largeRunNotice, uniquePages } from './pages';
 import { buildReportDoc } from './report-doc';
 import { renderHtml } from './render-html';
+import { renderJson } from './render-json';
 import { renderMarkdown } from './render-md';
 import { PageResult, renderBrief, renderPage, renderSummary } from './render-text';
 
 export const EXIT = { ok: 0, usage: 2, notChecked: 3 } as const;
 
 export interface Io {
-  stdout: { write(s: string): unknown; isTTY?: boolean };
+  stdout: { write(s: string): unknown; isTTY?: boolean; columns?: number };
   stderr: { write(s: string): unknown };
   env: Record<string, string | undefined>;
   fetchImpl?: typeof fetch;
@@ -88,8 +89,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
     .option('--concurrency <n>', 'pages checked at once (default 2)', int('--concurrency', 1, 5), 2)
     .option('--html <file>', 'write the full report as one offline HTML file')
     .option('--md <file>', 'write the full report as Markdown, for coding agents')
+    .option('--json <file>', 'write the results as JSON for scripts and CI; - prints only the JSON')
+    .option('--verbose', 'show every check with its points instead of what to fix first')
     .option('--no-color', 'plain text output')
-    .action(async (urls: string[], o: { urlsFile?: string; userAgent?: string; timeout?: number; concurrency: number; html?: string; md?: string; color: boolean }) => {
+    .action(async (urls: string[], o: { urlsFile?: string; userAgent?: string; timeout?: number; concurrency: number; html?: string; md?: string; json?: string; verbose?: boolean; color: boolean }) => {
       const raw = [...urls, ...(o.urlsFile ? readUrlsFile(o.urlsFile) : [])];
       if (!raw.length) throw new UsageError('Give at least one URL, for example: lensy check https://docs.example.com/guide');
       const list = raw.map(normalizeUrl);
@@ -97,11 +100,13 @@ export async function run(argv: string[], io: Io): Promise<number> {
       if (local) throw new UsageError(`${local} is a local address. Checking a local build comes in a later version.`);
       const htmlPath = reportPath('--html', o.html);
       const mdPath = reportPath('--md', o.md);
+      const jsonOnly = o.json === '-';
+      const jsonPath = jsonOnly ? undefined : reportPath('--json', o.json);
 
       const c = createColors(o.color && !!io.stdout.isTTY && !io.env.NO_COLOR);
       const { pages: toCheck } = uniquePages(list);
       const notice = largeRunNotice(toCheck.length, o.concurrency);
-      if (notice) io.stdout.write(c.yellow(notice) + '\n\n');
+      if (notice) (jsonOnly ? io.stderr : io.stdout).write((jsonOnly ? notice : c.yellow(notice)) + '\n\n');
       const userAgent = o.userAgent ?? defaultUserAgent(io.version);
       const pages = await pool(toCheck, o.concurrency, async (url): Promise<PageResult> => {
         try {
@@ -113,21 +118,29 @@ export async function run(argv: string[], io: Io): Promise<number> {
       });
 
       const written: string[] = [];
+      const checkedAt = new Date((io.now ?? Date.now)()).toISOString();
+      const json = o.json ? renderJson(pages, { toolVersion: io.version, engineCommit: ENGINE_COMMIT, checkedAt }) : '';
+      if (jsonPath) { writeFileSync(jsonPath, json); written.push(jsonPath); }
       if (htmlPath || mdPath) {
-        const doc = buildReportDoc(pages, { version: io.version, engineCommit: ENGINE_COMMIT, checkedAt: new Date((io.now ?? Date.now)()).toISOString() });
+        const doc = buildReportDoc(pages, { version: io.version, engineCommit: ENGINE_COMMIT, checkedAt });
         if (htmlPath) { writeFileSync(htmlPath, renderHtml(doc)); written.push(htmlPath); }
         if (mdPath) { writeFileSync(mdPath, renderMarkdown(doc)); written.push(mdPath); }
       }
 
-      // One page: everything. Several: the table and top fixes; full details go in --html/--md.
+      const allOk = pages.every(p => p.report?.status === 'ok' && !p.internalError);
+      exitCode = allOk ? EXIT.ok : EXIT.notChecked;
+      if (jsonOnly) { io.stdout.write(json); return; }
+
+      // One page: what to fix first (every check with --verbose). Several: the
+      // table and top fixes; full details go in --html/--md/--json.
+      const width = Math.min(Math.max(io.stdout.columns ?? 100, 80), 110);
       const pointer = written.length
         ? c.dim(written.map(p => `Report written to ${p}`).join('\n'))
-        : c.dim('Full results: rerun with --html report.html or --md report.md.');
+        : c.dim('Full results: rerun with --html report.html, --md report.md or --json report.json.');
       const parts = pages.length === 1
-        ? [renderPage(c, pages[0]), ...(written.length ? [pointer] : [])]
-        : [renderSummary(c, pages), ...pages.map(p => renderBrief(c, p)), pointer];
+        ? [renderPage(c, pages[0], { verbose: o.verbose, width }), ...(written.length ? [pointer] : [])]
+        : [renderSummary(c, pages), ...pages.map(p => (o.verbose ? renderPage(c, p, { verbose: true, width }) : renderBrief(c, p, 3, width))), pointer];
       io.stdout.write(parts.join('\n\n') + '\n');
-      exitCode = pages.every(p => p.report?.status === 'ok' && !p.internalError) ? EXIT.ok : EXIT.notChecked;
     });
 
   program.command('explain')
