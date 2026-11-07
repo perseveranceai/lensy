@@ -10,6 +10,8 @@ const y = (v: unknown) => JSON.stringify(v);
 // Text from the scanned site must not become Markdown or HTML structure.
 const text = (s: string) => s.replace(/\r?\n/g, ' ').replace(/([\\`*_[\]<>|])/g, '\\$1');
 const cell = (s: string) => text(s);
+/** The same escaping, for the other Markdown files Lensy writes (history.md). */
+export { text as mdText };
 
 function frontMatter(d: ReportDoc): string {
   const m = d.meta;
