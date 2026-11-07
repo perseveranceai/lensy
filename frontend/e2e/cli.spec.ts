@@ -30,7 +30,7 @@ test('CLI-02: /cli has the guide sections in order, the install command and the 
   const guide = page.getByTestId('cli-guide');
   await expect(guide.locator('h2')).toHaveText([
     'What it is', 'Install', 'Check a page', 'Check several pages', 'Save a report',
-    'Explain a check', 'Exit codes', 'What it sends', "What it can't do yet",
+    'Save and compare runs', 'Explain a check', 'Exit codes', 'What it sends', "What it can't do yet",
   ]);
   await expect(guide.getByLabel('Install command')).toContainText('npm install -g @perseverance-ai/lensy@next');
   // Check a page: the short view and its options, matching `lensy check --help` (guide.test.ts).

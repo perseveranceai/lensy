@@ -14,6 +14,7 @@ const SECTIONS: [string, string][] = [
   ["check-a-page", "Check a page"],
   ["check-several-pages", "Check several pages"],
   ["reports", "Save a report"],
+  ["save-and-compare", "Save and compare runs"],
   ["explain", "Explain a check"],
   ["exit-codes", "Exit codes"],
   ["what-it-sends", "What it sends"],
@@ -130,6 +131,10 @@ https://vitest.dev/guide/          87/100         68/100     ok`}</Block>
             The HTML report is one file that opens offline: no scripts and no external links, with light and dark themes. The Markdown report is for coding agents. It starts with the scores and the tool version, then lists each fix as a checkbox, ordered by how many points it gains, so you can hand it to an agent as a to-do list. Both reports hold the same content in the same structure, called report version 1. The JSON file is for scripts and CI: each page has its scores, its fixes ordered by points lost, and the full check results. Use <code>--json -</code> to print only the JSON, for example to pipe it to <code>jq</code>. The folder you name must already exist. If it doesn&apos;t, the command stops before it checks anything.
           </p>
 
+          <H2 id="save-and-compare">Save and compare runs</H2>
+          <p>
+            Lensy can keep each run in a <code>.lensy</code> folder in your project and compare every page with its last run. Use <code>--save</code> to save a run, <code>--save-dir</code> to choose another folder, and <code>--no-save</code> to skip saving.
+          </p>
           <H2 id="explain">Explain a check</H2>
           <Block label="Explain a check">{`lensy explain llms-txt-exists`}</Block>
           <p>

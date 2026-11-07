@@ -3,7 +3,7 @@
 // environment) as parameters so tests drive it in process with saved fixtures.
 import { check, defaultUserAgent, ENGINE_COMMIT, isLocalUrl } from '@perseverance-ai/lensy-core';
 import type { CheckOptions } from '@perseverance-ai/lensy-core';
-import { Command, CommanderError, InvalidArgumentError } from 'commander';
+import { Command, CommanderError, InvalidArgumentError, Option } from 'commander';
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { createColors } from 'picocolors';
@@ -27,6 +27,14 @@ export interface Io {
   version: string;
   /** fixed clock for tests */
   now?: () => number;
+  /** current working directory; cli.ts passes process.cwd() */
+  cwd?: string;
+  /** home folder for ~/.lensy; cli.ts passes os.homedir() */
+  home?: string;
+  /** where answers to the first-run question come from */
+  stdin?: NodeJS.ReadableStream;
+  /** stdin and stdout are both terminals; cli.ts sets it. Tests that don't set it never get asked. */
+  isInteractive?: boolean;
 }
 
 class UsageError extends Error {}
@@ -79,6 +87,12 @@ export async function run(argv: string[], io: Io): Promise<number> {
     .exitOverride()
     .configureOutput({ writeOut: s => io.stdout.write(s), writeErr: s => io.stderr.write(s) });
 
+  // commander treats --no-save as the opposite of --save and merges them into one
+  // value. Here they are three separate options (save, saveDir, noSave), so a run
+  // can tell "--no-save given" from "neither given", and both together is an error.
+  const noSave = new Option('--no-save', "don't save this run, and don't ask");
+  noSave.negate = false;
+
   let exitCode: number = EXIT.ok;
   program.command('check')
     .description('Check one or more live docs pages and print both scores.')
@@ -91,8 +105,15 @@ export async function run(argv: string[], io: Io): Promise<number> {
     .option('--md <file>', 'write the full report as Markdown, for coding agents')
     .option('--json <file>', 'write the results as JSON for scripts and CI; - prints only the JSON')
     .option('--verbose', 'show every check with its points instead of what to fix first')
+    .option('--save', 'save the results in .lensy/ and compare with the last run')
+    .option('--save-dir <dir>', 'save the results in <dir> instead of .lensy/')
+    .addOption(noSave)
     .option('--no-color', 'plain text output')
-    .action(async (urls: string[], o: { urlsFile?: string; userAgent?: string; timeout?: number; concurrency: number; html?: string; md?: string; json?: string; verbose?: boolean; color: boolean }) => {
+    .action(async (urls: string[], o: { urlsFile?: string; userAgent?: string; timeout?: number; concurrency: number; html?: string; md?: string; json?: string; verbose?: boolean; save?: boolean; saveDir?: string; noSave?: boolean; color: boolean }) => {
+      // Flag conflicts come first: nothing is read, asked or fetched before them.
+      if (o.save && o.noSave) throw new UsageError("--save and --no-save can't be used together.");
+      if (o.saveDir !== undefined && o.noSave) throw new UsageError("--save-dir and --no-save can't be used together.");
+      if (o.saveDir !== undefined && !o.saveDir.trim()) throw new UsageError('--save-dir needs a folder, for example --save-dir results/lensy.');
       const raw = [...urls, ...(o.urlsFile ? readUrlsFile(o.urlsFile) : [])];
       if (!raw.length) throw new UsageError('Give at least one URL, for example: lensy check https://docs.example.com/guide');
       const list = raw.map(normalizeUrl);
