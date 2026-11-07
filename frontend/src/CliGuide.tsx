@@ -133,8 +133,43 @@ https://vitest.dev/guide/          87/100         68/100     ok`}</Block>
 
           <H2 id="save-and-compare">Save and compare runs</H2>
           <p>
-            Lensy can keep each run in a <code>.lensy</code> folder in your project and compare every page with its last run. Use <code>--save</code> to save a run, <code>--save-dir</code> to choose another folder, and <code>--no-save</code> to skip saving.
+            Lensy can keep every run and compare each page with its last run, so you can see whether your docs got better or worse, what you fixed and what broke. The first time you run <code>lensy check</code> in a project, it asks:
           </p>
+          <Block label="The first-run question">{`Save Lensy results for this project in .lensy? Each run is compared with the last one, so you can see what changed. [Y/n]`}</Block>
+          <p>
+            Answer <code>y</code> and Lensy creates a <code>.lensy</code> folder at the root of your project (the folder with <code>.git</code>) and remembers the answer there. Answer <code>n</code> and nothing is created; Lensy remembers that in <code>~/.lensy/config.json</code> and doesn&apos;t ask again. It only asks in a terminal. In CI, in a script, or with <code>--json -</code>, it never asks, and saves only when told to.
+          </p>
+          <p>From the next run on, each page shows what changed since its last saved run:</p>
+          <Block label="Example comparison">{`https://vitepress.dev/guide/getting-started
+  Coding agents 87/100    AI search 95/100
+  Since Nov 2 (6 days ago): Coding agents 80 → 87 (+7)    AI search 95 → 95
+  Fixed: llms.txt exists`}</Block>
+          <p>
+            <code>New:</code> lists checks that passed last time and lose points now. With several pages, the summary table gets a <code>Change</code> column, such as <code>+7 / 0</code> or <code>first run</code>.
+          </p>
+          <p>The folder holds JSON for scripts and Markdown for people and coding agents:</p>
+          <Block label="The .lensy folder">{`.lensy/
+├── config.json      project settings
+├── latest.md        the last run, every page: hand it to a coding agent
+├── history.md       one row per page per run, newest first
+└── pages/
+    └── docs.example.com/guide/start/
+        ├── latest.json      the newest result for this page
+        ├── latest.md        the report for this page
+        └── runs/2026-11-08T183012Z.json   one file per run`}</Block>
+          <p>
+            Lensy keeps the newest 52 runs of each page. List the pages you check in <code>.lensy/config.json</code>, and <code>lensy check</code> with no URLs checks them all:
+          </p>
+          <Block label="Project settings">{`{
+  "configVersion": 1,
+  "save": true,
+  "keep": 52,
+  "pages": ["https://docs.example.com/guide/start", "https://docs.example.com/api"]
+}`}</Block>
+          <p>
+            For one run, <code>--save</code> saves even if you answered no, <code>--no-save</code> skips saving and the question, and <code>--save-dir</code> saves in another folder. Saved results stay on your machine. Commit <code>.lensy</code> to share the history with your team.
+          </p>
+
           <H2 id="explain">Explain a check</H2>
           <Block label="Explain a check">{`lensy explain llms-txt-exists`}</Block>
           <p>
@@ -144,9 +179,9 @@ https://vitest.dev/guide/          87/100         68/100     ok`}</Block>
           <H2 id="exit-codes">Exit codes</H2>
           <ul>
             <li><code>0</code>: every page was checked.</li>
-            <li><code>2</code>: the command was wrong. There was no URL, an option had a bad value, or a URL was a local address. Nothing was fetched.</li>
+            <li><code>2</code>: the command was wrong. There was no URL, an option had a bad value, a URL was a local address, <code>.lensy/config.json</code> had a problem, or results couldn&apos;t be saved where asked. Nothing was fetched.</li>
             <li><code>3</code>: at least one page couldn&apos;t be checked. It was unreachable, it wasn&apos;t an HTML page, or its bot protection refused the tool. The other pages still print.</li>
-            <li><code>1</code>: something unexpected failed. The message starts with <code>lensy:</code>.</li>
+            <li><code>1</code>: something unexpected failed, or the results of a run that was told to save couldn&apos;t be written. The message starts with <code>lensy:</code> or <code>Couldn&apos;t save results</code>.</li>
           </ul>
           <p>
             Scores never change the exit code, so a failing check doesn&apos;t fail a CI job. A page that couldn&apos;t be checked does. If a site&apos;s bot protection refuses the tool, it doesn&apos;t retry as a browser. It says the page wasn&apos;t checked and points you to the audit on perseveranceai.com.
@@ -157,7 +192,7 @@ https://vitest.dev/guide/          87/100         68/100     ok`}</Block>
             Every request carries <code>lensy-cli/&lt;version&gt; (+https://perseveranceai.com/bot)</code>. The <Link to="/bot">bot page</Link> explains what Lensy fetches and how a site owner can allow it.
           </p>
           <p>
-            For each page the tool fetches the page itself, robots.txt, the sitemap, llms.txt, a sample of the pages llms.txt links to, the Markdown version of the page, and a few other URLs that the AFDocs checks need. That is usually 15 to 60 requests per page. They go from your machine to the sites you named, and nowhere else.
+            For each page the tool fetches the page itself, robots.txt, the sitemap, llms.txt, a sample of the pages llms.txt links to, the Markdown version of the page, and a few other URLs that the AFDocs checks need. That is usually 15 to 60 requests per page. They go from your machine to the sites you named, and nowhere else. Saved results are written only to your own disk.
           </p>
           <p>
             <code>--user-agent</code> sends a different name, for example to test a rule on your own site. <code>--timeout</code> sets how long each request may take, in milliseconds, from 1000 to 120000.

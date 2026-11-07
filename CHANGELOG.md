@@ -5,6 +5,7 @@ All notable changes to the Lensy Documentation Auditor project will be documente
 ## [Unreleased]
 
 ### Added
+- **CLI guide (`/cli`)**: new "Save and compare runs" section (the first-run question, a comparison, the `.lensy` folder and `config.json` with `pages`), updated exit codes, and a note that saved results stay on the user's disk (CLI-05).
 - **CLI guide (`/cli`)**: describes the CLI's new short default view, `--verbose` and `--json`.
 - **Prod scan IP kept permanently (REG-29)**: the prod Elastic IP is retained if the stack is deleted or the resource replaced, so allow rules site owners write against the IP on /bot keep working. Gamma still cleans up.
 - **`/bot` WAF guidance**: Cloudflare free plan gets the IP Access rule option (Bot Fight Mode can't be skipped by a custom rule); the Pro Skip rule now also lists Browser Integrity Check and Security Level.
