@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 (2026-11-08)
+
+First early-access release, published under the npm `next` tag.
 
 - **Save and compare runs:**
   - The first `lensy check` in a terminal asks once whether to save results.
