@@ -82,18 +82,26 @@ lensy --version`}</Block>
           <H2 id="check-a-page">Check a page</H2>
           <Block label="Check one page">{`lensy check https://docs.example.com/guide`}</Block>
           <p>
-            A bare hostname such as <code>docs.example.com</code> works too and gets <code>https://</code> added. For one page, the terminal shows both scores, whether an honest AI agent can reach the page, how much of the page an agent receives, and every check with its points, what it found and how to fix it. Checks that come from AFDocs are marked <code>AFDocs</code>. A page takes about 10 to 30 seconds.
+            A bare hostname such as <code>docs.example.com</code> works too and gets <code>https://</code> added. For one page, the terminal shows both scores, whether an honest AI agent can reach the page and how much of the page an agent receives. Then it lists what to fix first, ordered by the points each fix is worth, with one line on what to do. The points add up to each score: fix everything listed and both scores reach 100. A page takes about 10 to 30 seconds.
           </p>
           <p>Example output, shortened:</p>
-          <Block label="Example output for one page">{`https://vitest.dev/guide/
-  Coding agents 87/100    AI search 68/100
+          <Block label="Example output for one page">{`https://vitepress.dev/guide/getting-started
+  Coding agents 87/100    AI search 95/100
   Reachability: an honest AI agent can read this page (HTTP 200). robots.txt allows all 6 AI search bots.
-  What an agent receives: Markdown, 7,693 characters (about 1,923 tokens), fits in one fetch
+  What an agent receives: Markdown, 6,235 characters (about 1,559 tokens), fits in one fetch
 
-  Coding agents  87/100
-    PASS    llms-txt-exists         llms.txt exists AFDocs      10/10   llms.txt found at https://vitest.dev/llms.txt
-    FAIL    content-negotiation     Markdown on request AFDocs  0/4     Server ignores Accept: text/markdown header
-          Fix: Your server ignores Accept: text/markdown and returns HTML. ...`}</Block>
+  Fix these first
+   1. Page points agents to llms.txt (HTML)       −6  Coding agents
+      Add a visually-hidden element near the top of each page containing a link to your llms.txt.
+   2. JSON-LD                                     −5  AI search
+      Add a JSON-LD block (for example TechArticle) with dateModified.
+   3. Page points agents to llms.txt (Markdown)   −4  Coding agents
+   4. Markdown on request                         −3  Coding agents
+
+  Passed: 20 of 25 Coding agents checks, 5 of 6 AI search checks.`}</Block>
+          <p>
+            Add <code>--verbose</code> to see every check instead: its id, its points, what it found and the full fix. Checks that come from AFDocs are marked <code>AFDocs</code>. AFDocs checks add up to more than 100 points, so the score scales them to 100, and the verbose view says so.
+          </p>
           <p>Colour is off when the output goes to a file or a pipe, when you pass <code>--no-color</code>, and when the <code>NO_COLOR</code> variable is set.</p>
 
           <H2 id="check-several-pages">Check several pages</H2>
@@ -116,16 +124,16 @@ https://vitest.dev/guide/          87/100         68/100     ok`}</Block>
           </p>
 
           <H2 id="reports">Save a report</H2>
-          <p>Add <code>--html</code> or <code>--md</code> to save the full result. Use both in one run if you like.</p>
-          <Block label="Save reports">{`lensy check https://docs.example.com/guide --html report.html --md report.md`}</Block>
+          <p>Add <code>--html</code>, <code>--md</code> or <code>--json</code> to save the full result. Use any of them together in one run.</p>
+          <Block label="Save reports">{`lensy check https://docs.example.com/guide --html report.html --md report.md --json report.json`}</Block>
           <p>
-            The HTML report is one file that opens offline: no scripts and no external links, with light and dark themes. The Markdown report is for coding agents. It starts with the scores and the tool version, then lists each fix as a checkbox, ordered by how many points it gains, so you can hand it to an agent as a to-do list. Both reports hold the same content in the same structure, called report version 1. The folder you name must already exist. If it doesn&apos;t, the command stops before it checks anything.
+            The HTML report is one file that opens offline: no scripts and no external links, with light and dark themes. The Markdown report is for coding agents. It starts with the scores and the tool version, then lists each fix as a checkbox, ordered by how many points it gains, so you can hand it to an agent as a to-do list. Both reports hold the same content in the same structure, called report version 1. The JSON file is for scripts and CI: each page has its scores, its fixes ordered by points lost, and the full check results. Use <code>--json -</code> to print only the JSON, for example to pipe it to <code>jq</code>. The folder you name must already exist. If it doesn&apos;t, the command stops before it checks anything.
           </p>
 
           <H2 id="explain">Explain a check</H2>
           <Block label="Explain a check">{`lensy explain llms-txt-exists`}</Block>
           <p>
-            This prints what the check measures, why it matters, how many points it is worth and the evidence behind it. Use any check id from a report. Ids are not case sensitive. They are the AFDocs names, such as <code>llms-txt-exists</code> and <code>rendering-strategy</code>, and <code>S1</code> to <code>S6</code> for AI search.
+            This prints what the check measures, why it matters, how many points it is worth and the evidence behind it. Use any check id from a report or from <code>--verbose</code>. Ids are not case sensitive. They are the AFDocs names, such as <code>llms-txt-exists</code> and <code>rendering-strategy</code>, and <code>S1</code> to <code>S6</code> for AI search.
           </p>
 
           <H2 id="exit-codes">Exit codes</H2>

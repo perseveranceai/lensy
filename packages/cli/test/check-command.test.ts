@@ -31,9 +31,9 @@ const both: FixtureEntry[] = [...vitest.entries, ...stripe.entries];
 const vitestAfdocs = loadAfdocsRun('vitest-guide');
 
 describe('one page', () => {
-  test('prints both scores, the banner, the agent preview and every check with points', async () => {
+  test('--verbose prints both scores, the banner, the agent preview and every check with points', async () => {
     const t = io(replayFetch(vitest.entries));
-    const code = await run(['check', vitest.expected.url], t.io);
+    const code = await run(['check', vitest.expected.url, '--verbose'], t.io);
     expect(code).toBe(EXIT.ok);
     const out = t.out();
     expect(out).toMatch(/Coding agents \d+\/100/);
@@ -48,6 +48,32 @@ describe('one page', () => {
     for (const id of ['S1', 'S2', 'S3', 'S4', 'S5', 'S6']) expect(out).toMatch(new RegExp(`\\b${id}\\b`));
     expect(out).toMatch(/Fix: /);
     expect(out).not.toMatch(/Page\s+Coding agents\s+AI search\s+Status/); // no summary table for one page
+    expect(out).toMatch(/Points below are out of \d+; the score scales them to 100\./);
+    expect(out).not.toMatch(/--parity|\b1 pages\b/);
+  });
+
+  test('by default: what to fix first, in points that add up to each score, with no check ids', async () => {
+    const t = io(replayFetch(vitest.entries));
+    const code = await run(['check', vitest.expected.url], t.io);
+    expect(code).toBe(EXIT.ok);
+    const out = t.out();
+    const coding = Number(out.match(/Coding agents (\d+)\/100/)![1]);
+    const search = Number(out.match(/AI search (\d+)\/100/)![1]);
+    expect(out).toContain('Fix these first');
+    const lost = [...out.matchAll(/−(\d+)\s+(Coding agents|AI search|Both audiences)/g)];
+    const sum = (a: string) => lost.filter(m => m[2] === a).reduce((n, m) => n + Number(m[1]), 0);
+    expect(sum('Coding agents')).toBe(100 - coding);
+    expect(sum('AI search')).toBe(100 - search);
+    // Sorted by points lost.
+    const n = lost.map(m => Number(m[1]));
+    expect([...n].sort((a, b) => b - a)).toEqual(n);
+    expect(out).toMatch(/Passed: \d+ of \d+ Coding agents checks, \d+ of \d+ AI search checks\./);
+    expect(out).toContain('add --verbose');
+    // No ids, no rows for passing checks, no site-sample wording, no other tools' options.
+    expect(out).not.toMatch(/llms-txt-exists|\bS[1-6]\b/);
+    expect(out).not.toMatch(/PASS\s/);
+    expect(out).not.toMatch(/\b1 pages\b/);
+    expect(out).not.toMatch(/--parity/);
   });
 
   test('no colour when stdout is not a terminal, with --no-color, or with NO_COLOR', async () => {
@@ -117,16 +143,57 @@ describe('several pages in the terminal (spec answers 9 and 10)', () => {
     const t = io(replayFetch(both));
     await run(['check', vitest.expected.url, stripe.expected.url], t.io);
     const out = t.out();
-    expect(out).toContain('Full results: rerun with --html report.html or --md report.md.');
-    expect((out.match(/Fix: /g) || []).length).toBeLessThanOrEqual(6); // 3 per page
+    expect(out).toContain('Full results: rerun with --html report.html, --md report.md or --json report.json.');
+    expect((out.match(/^  - .+\(−\d+\)/gm) || []).length).toBeLessThanOrEqual(6); // 3 per page
     expect(out).not.toMatch(/PASS\s+llms-txt-exists/); // no per-check rows
+    expect(out).toMatch(/\d+ more fix(es)?: lensy check https:\/\//);
   });
 
-  test('one page shows every check and no report pointer', async () => {
+  test('one page with --verbose shows every check and no report pointer', async () => {
     const t = io(replayFetch(vitest.entries));
-    await run(['check', vitest.expected.url], t.io);
+    await run(['check', vitest.expected.url, '--verbose'], t.io);
     expect(t.out()).toMatch(/PASS\s+llms-txt-exists/);
     expect(t.out()).not.toContain('Full results:');
+  });
+
+  test('several pages with --verbose: the table, then every check of each page', async () => {
+    const t = io(replayFetch(both));
+    await run(['check', vitest.expected.url, stripe.expected.url, '--verbose'], t.io);
+    expect(t.out()).toMatch(/Page\s+Coding agents\s+AI search\s+Status/);
+    expect((t.out().match(/PASS\s+llms-txt-exists/g) || []).length).toBe(2);
+  });
+});
+
+describe('--json', () => {
+  test('--json - prints only the JSON, with scores and fixes ordered by points lost', async () => {
+    const t = io(replayFetch(vitest.entries));
+    const code = await run(['check', vitest.expected.url, '--json', '-'], t.io);
+    expect(code).toBe(EXIT.ok);
+    const doc = JSON.parse(t.out());
+    expect(doc).toMatchObject({ reportVersion: 1, tool: 'lensy', toolVersion: '0.0.0-test' });
+    const page = doc.pages[0];
+    expect(page.status).toBe('ok');
+    expect(page.scores.aiSearch).toBe(vitest.expected.search.total);
+    expect(page.report.scores.codingAgents.checks.length).toBeGreaterThan(6);
+    const lost = page.fixes.map((f: { pointsLost: number }) => f.pointsLost);
+    expect([...lost].sort((a: number, b: number) => b - a)).toEqual(lost);
+    expect(page.fixes.filter((f: { audience: string }) => f.audience === 'AI search').reduce((n: number, f: { pointsLost: number }) => n + f.pointsLost, 0)).toBe(100 - page.scores.aiSearch);
+  });
+
+  test('--json <file> writes the file and keeps the terminal view; a blocked page is in it too', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lensy-json-'));
+    const file = path.join(dir, 'out.json');
+    const replay = replayFetch(vitest.entries);
+    const impl = (async (input: any, init?: RequestInit) =>
+      String(input).startsWith('https://blocked.example.com')
+        ? new Response('denied', { status: 403, headers: { 'content-type': 'text/html' } })
+        : replay(input, init)) as typeof fetch;
+    const t = io(impl);
+    const code = await run(['check', vitest.expected.url, 'https://blocked.example.com/', '--json', file], t.io);
+    expect(code).toBe(EXIT.notChecked);
+    expect(t.out()).toContain(`Report written to ${file}`);
+    const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
+    expect(doc.pages.map((p: { status: string }) => p.status)).toEqual(['ok', 'blocked']);
   });
 
   test('more than 15 URLs: every page is checked, after a notice with the count and time', async () => {

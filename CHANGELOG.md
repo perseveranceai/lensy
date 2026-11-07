@@ -5,6 +5,7 @@ All notable changes to the Lensy Documentation Auditor project will be documente
 ## [Unreleased]
 
 ### Added
+- **CLI guide (`/cli`)**: describes the CLI's new short default view, `--verbose` and `--json`.
 - **Prod scan IP kept permanently (REG-29)**: the prod Elastic IP is retained if the stack is deleted or the resource replaced, so allow rules site owners write against the IP on /bot keep working. Gamma still cleans up.
 - **`/bot` WAF guidance**: Cloudflare free plan gets the IP Access rule option (Bot Fight Mode can't be skipped by a custom rule); the Pro Skip rule now also lists Browser Integrity Check and Security Level.
 - **Fixed outbound IP for scans (REG-27)**: the agent Lambda runs in a VPC behind one NAT gateway with a static Elastic IP (one per environment), with S3 and DynamoDB gateway endpoints. The IP is the `LensyEgressIp` stack output and is served by the new `GET /bot-info`.

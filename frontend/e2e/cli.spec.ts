@@ -33,6 +33,11 @@ test('CLI-02: /cli has the guide sections in order, the install command and the 
     'Explain a check', 'Exit codes', 'What it sends', "What it can't do yet",
   ]);
   await expect(guide.getByLabel('Install command')).toContainText('npm install -g @perseverance-ai/lensy@next');
+  // Check a page: the short view and its options, matching `lensy check --help` (guide.test.ts).
+  await expect(guide.getByLabel('Example output for one page')).toContainText('Fix these first');
+  await expect(guide.getByText(/The points add up to each score/)).toBeVisible();
+  await expect(guide.locator('code', { hasText: '--verbose' }).first()).toBeVisible();
+  await expect(guide.getByLabel('Save reports')).toContainText('--json report.json');
   // What it can't do yet: no local builds, said plainly.
   await expect(guide.getByText(/local addresses are refused with exit code 2/)).toBeVisible();
   // The user agent matches the one /bot describes, and the link goes there.
