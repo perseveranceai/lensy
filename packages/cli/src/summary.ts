@@ -54,7 +54,7 @@ export interface FixItem {
 export interface NoteItem { label: string; finding: string }
 
 // C1/S2, and AFDocs rendering-strategy/S2, are the same question scored twice.
-const SHARED_JS = new Set(['C1', 'rendering-strategy', 'S2']);
+export const SHARED_JS = new Set(['C1', 'rendering-strategy', 'S2']);
 
 /**
  * Each check's points on the 0-100 scale of its score, rounded so they add up

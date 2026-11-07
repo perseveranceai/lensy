@@ -30,7 +30,7 @@ test('CLI-02: /cli has the guide sections in order, the install command and the 
   const guide = page.getByTestId('cli-guide');
   await expect(guide.locator('h2')).toHaveText([
     'What it is', 'Install', 'Check a page', 'Check several pages', 'Save a report',
-    'Explain a check', 'Exit codes', 'What it sends', "What it can't do yet",
+    'Save and compare runs', 'Explain a check', 'Exit codes', 'What it sends', "What it can't do yet",
   ]);
   await expect(guide.getByLabel('Install command')).toContainText('npm install -g @perseverance-ai/lensy@next');
   // Check a page: the short view and its options, matching `lensy check --help` (guide.test.ts).
@@ -44,6 +44,23 @@ test('CLI-02: /cli has the guide sections in order, the install command and the 
   await expect(guide.getByText('lensy-cli/<version> (+https://perseveranceai.com/bot)')).toBeVisible();
   await guide.getByRole('link', { name: 'bot page' }).click();
   await expect(page).toHaveURL(/\/bot$/);
+});
+
+test('CLI-05: "Save and compare runs" shows the question, a comparison, the folder and the settings', async ({ page }) => {
+  await page.goto('/cli');
+  const guide = page.getByTestId('cli-guide');
+  await expect(guide.getByLabel('The first-run question')).toContainText('Save Lensy results for this project in .lensy?');
+  await expect(guide.getByLabel('Example comparison')).toContainText('Since Nov 2 (6 days ago): Coding agents 80 → 87 (+7)');
+  await expect(guide.getByLabel('Example comparison')).toContainText('Fixed: llms.txt exists');
+  await expect(guide.getByLabel('The .lensy folder')).toContainText('history.md');
+  await expect(guide.getByLabel('Project settings')).toContainText('"pages"');
+  // The flags match `lensy check --help` (packages/cli/test/guide.test.ts checks every option).
+  for (const flag of ['--save', '--no-save', '--save-dir']) await expect(guide.locator('code', { hasText: flag }).first()).toBeVisible();
+  await expect(guide.getByText(/Saved results stay on your machine/)).toBeVisible();
+  // The side link lands on the section.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.getByRole('navigation', { name: 'On this page' }).getByRole('link', { name: 'Save and compare runs' }).click();
+  await expect(page).toHaveURL(/#save-and-compare$/);
 });
 
 test('CLI-02: the side links jump to a section', async ({ page }) => {

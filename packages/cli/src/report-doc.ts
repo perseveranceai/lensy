@@ -6,6 +6,9 @@
 // what the website says. No per-check code: labels and text come from reports.
 import type { Check, Report, Score } from '@perseverance-ai/lensy-core';
 import { SOURCE_LABELS, v2Recommendations, v2SignalGroups } from '../../../frontend/src/report/report-view';
+import { sinceLines } from './compare';
+import type { Change } from './compare';
+import { scaledLosses } from './summary';
 import { bannerLine, previewLine, toView } from './view';
 import { statusMessage, scoreText } from './render-text';
 
@@ -23,6 +26,7 @@ export interface DocMeta {
 
 /** source: "AFDocs" for AFDocs checks, empty for Lensy's own (the website's SOURCE_LABELS). */
 export interface DocRow { id: string; check: string; status: string; points: string; max: string; finding: string; source: string }
+/** gain: the points the fix is worth on the 0-100 scale of its score, the same numbers as the short view and --json (Req 4.9) */
 export interface DocFix { id: string; issue: string; fix: string; gain: number }
 export interface DocSkipped { id: string; check: string; status: string; reason: string }
 
@@ -36,11 +40,14 @@ export interface DocPage {
   tips: string[];
   skipped: DocSkipped[];
   notes: string[];
+  /** the "Since last run" lines; absent when results aren't saved (Req 5.5). Added at the end of the page, shown after the summary. */
+  since?: string[];
 }
 
 export interface ReportDoc { meta: DocMeta; pages: DocPage[] }
 
-export interface DocInput { url: string; report?: Report; internalError?: string }
+/** `change` is undefined when results aren't saved, null for a page with no previous run. */
+export interface DocInput { url: string; report?: Report; internalError?: string; change?: Change | null }
 
 const allChecks = (r: Report): Check[] => [...r.scores.codingAgents.checks, ...r.scores.aiSearch.checks];
 const STATUS = { pass: 'PASS', warn: 'WARN', fail: 'FAIL', neutral: 'INFO', unknown: 'UNKNOWN', skipped: 'SKIPPED' } as const;
@@ -48,8 +55,9 @@ const num = (s: Score) => s.score;
 
 function page(input: DocInput): DocPage {
   const empty: DocPage = { url: input.url, groups: [], fixes: [], tips: [], skipped: [], notes: [] };
+  const since = input.change === undefined ? {} : { since: sinceLines(input.change) };
   const message = statusMessage(input);
-  if (message) return { ...empty, message, notes: input.report?.notes ?? [] };
+  if (message) return { ...empty, message, notes: input.report?.notes ?? [], ...since };
   const r = input.report!;
   const view = toView(r)!;
   const byId = new Map(allChecks(r).map(c => [c.id, c]));
@@ -72,13 +80,17 @@ function page(input: DocInput): DocPage {
   }));
 
   // The website's fix list: each fix once, ordered by points lost, tips last.
+  // Points are worth what the short view says: scaled to 0-100 per score, so AFDocs checks (more than 100 raw points) agree.
+  const losses = [r.scores.codingAgents, r.scores.aiSearch].map(s => ({ checks: s.checks, lost: scaledLosses(s) }));
   const fixes = v2Recommendations(view)
     .filter(x => x.category !== 'Tip' && x.fix)
     .map(x => {
       const ids = allChecks(r).filter(c => c.fix === x.fix && c.points !== null).map(c => c.id);
-      const gain = ids.map(id => byId.get(id)!).reduce((n, c) => n + (c.max - (c.points as number)), 0);
-      return { id: ids.join(', '), issue: x.issue || '', fix: x.fix || '', gain: Math.round(gain * 10) / 10 };
-    });
+      const gain = losses.reduce((n, s) => n + s.checks.filter(c => c.fix === x.fix && c.points !== null).reduce((m, c) => m + (s.lost.get(c.id) ?? 0), 0), 0);
+      return { id: ids.join(', '), issue: x.issue || '', fix: x.fix || '', gain };
+    })
+    // The website orders by raw points; the files show scaled points, so order by those (a stable sort keeps the website's order for ties).
+    .sort((a, b) => b.gain - a.gain);
 
   return {
     url: input.url,
@@ -95,6 +107,7 @@ function page(input: DocInput): DocPage {
       .filter(c => c.status === 'unknown' || c.status === 'skipped')
       .map(c => ({ id: c.id, check: c.label, status: STATUS[c.status], reason: c.note || '' })),
     notes: r.notes,
+    ...since,
   };
 }
 

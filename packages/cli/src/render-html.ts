@@ -49,14 +49,18 @@ function table(head: string[], rows: string[][]): string {
 
 function renderPage(p: DocPage): string {
   const out = [`<section><h2>${esc(p.url)}</h2>`];
+  const since = (lines: string[]) => ['<h3>Since last run</h3>', `<ul>${lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>`];
   if (p.message) {
-    out.push(`<p class="msg">${esc(p.message)}</p></section>`);
+    out.push(p.since
+      ? [`<p class="msg">${esc(p.message)}</p>`, ...since(p.since), '</section>'].join('\n')
+      : `<p class="msg">${esc(p.message)}</p></section>`);
     return out.join('\n');
   }
   const s = p.summary!;
   out.push('<h3>Summary</h3>', `<div class="scores"><div class="score">Coding agents<b>${esc(s.codingAgents)}</b></div><div class="score">AI search<b>${esc(s.aiSearch)}</b></div></div>`);
   if (s.banner) out.push(`<p>${esc(s.banner)}</p>`);
   if (s.preview) out.push(`<p>What an agent receives: ${esc(s.preview)}</p>`);
+  if (p.since) out.push(...since(p.since));
   for (const g of p.groups) {
     out.push(`<h3>${esc(g.title)}</h3>`, table(['ID', 'Check', 'Status', 'Points', 'Max', 'Finding', 'Source'], g.rows.map(r => [r.id, r.check, r.status, r.points, r.max, r.finding, r.source])));
   }
