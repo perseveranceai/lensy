@@ -45,14 +45,16 @@ describe('each flag on its own is accepted', () => {
 });
 
 describe('--help', () => {
-  test('lists --save, --save-dir <dir> and --no-save, each with one short line', async () => {
+  test('lists --save, --save-dir <dir> and --no-save, each as one short line', async () => {
     const t = setup();
     await run(['check', '--help'], t.io);
     const lines = t.out().split('\n');
     for (const flag of ['--save', '--save-dir <dir>', '--no-save']) {
-      const line = lines.find(l => l.trimStart().startsWith(flag + ' '));
-      expect(line, `${flag} is missing from --help`).toBeDefined();
-      expect(line!.length).toBeLessThan(110);
+      const at = lines.findIndex(l => l.trimStart().startsWith(flag + ' '));
+      expect(at, `${flag} is missing from --help`).toBeGreaterThan(-1);
+      expect(lines[at].length).toBeLessThanOrEqual(80);
+      // The description did not wrap: the next line is another option (or the end of the list).
+      expect(lines[at + 1], `${flag} wraps onto a second line`).toMatch(/^\s{2}-|^$/);
     }
   });
 });
