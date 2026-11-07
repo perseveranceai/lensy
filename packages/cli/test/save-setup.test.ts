@@ -13,6 +13,8 @@ const tmp = useTempDirs();
 const QUESTION = 'Save Lensy results for this project in .lensy? Each run is compared with the last one, so you can see what changed. [Y/n] ';
 const f = vitest();
 const URL1 = f.expected.url;
+/** Files a run must never leave in the results folder: the lock, the write test and temporary files. */
+const strays = (files: string[]) => files.filter(n => /(^|\/)(\.lock|\.write-test-.*|.*\.tmp-.*)$/.test(n));
 
 /** A fetch that replays the fixture and records the URLs asked for, and what stderr held at the first request. */
 function spy(errAtFirst: () => string) {
@@ -45,7 +47,8 @@ describe('the first-run question (Req 2)', () => {
     expect(x.t.out()).not.toContain('Save Lensy results'); // stderr only
     expect(x.s.stderrAtFirstRequest()).toBe(QUESTION); // asked, and answered, before the first request
     expect(JSON.parse(fs.readFileSync(path.join(x.lensy(), 'config.json'), 'utf8'))).toEqual({ configVersion: 1, save: true });
-    expect(listFiles(x.lensy())).toEqual(['config.json']); // the write test left nothing behind
+    expect(listFiles(x.lensy())).toContain('config.json');
+    expect(strays(listFiles(x.lensy()))).toEqual([]); // the write test and the lock left nothing behind
     expect(fs.existsSync(userConfigFile(x.home))).toBe(false); // a yes is remembered in the project, not in the user settings
   });
 
@@ -185,11 +188,14 @@ describe('never asked (Req 2.6, 3.1)', () => {
 });
 
 describe('--save and --save-dir create the results folder, and only it', () => {
-  test('--save: .lensy is created, empty (the write test leaves nothing), and nothing is asked or remembered', async () => {
+  test('--save: .lensy is created and holds the run, with no config.json, no strays, and nothing asked or remembered', async () => {
     const x = setup({ interactive: false });
     expect(await run(['check', URL1, '--save'], x.t.io)).toBe(EXIT.ok);
     expect(fs.statSync(x.lensy()).isDirectory()).toBe(true);
-    expect(listFiles(x.lensy())).toEqual([]);
+    const files = listFiles(x.lensy());
+    expect(files).toContain('history.md');
+    expect(files).not.toContain('config.json'); // only an answer at the question writes it
+    expect(strays(files)).toEqual([]);
     expect(fs.existsSync(userConfigFile(x.home))).toBe(false);
   });
 

@@ -11,17 +11,24 @@ import { createColors } from 'picocolors';
 import { ALL_CHECKS, explainCheck } from './explain';
 import { largeRunNotice, uniquePages } from './pages';
 import { askYesNo } from './prompt';
+import { changeCell, compare, labelsOf } from './compare';
+import type { Change } from './compare';
 import { buildReportDoc } from './report-doc';
+import type { DocInput } from './report-doc';
 import { renderHtml } from './render-html';
-import { renderJson } from './render-json';
+import { jsonPage, renderJson } from './render-json';
 import { renderMarkdown } from './render-md';
 import { PageResult, renderBrief, renderPage, renderSummary } from './render-text';
+import type { ChangeView } from './render-text';
 import { ConfigError, DEFAULT_KEEP, decideSave, readProjectConfig, readUserConfig, rememberNoSave, writeSaveKey } from './settings';
 import type { ProjectConfig } from './settings';
-import { friendlyReason } from './store';
+import { friendlyReason, historyDate, readPrevious, saveRun, scrubPaths, withLock } from './store';
+import type { RunRecord, SaveItem } from './store';
+import { resolvePageFolder } from './page-folder';
 import { findProjectRoot, resultsFolder } from './workspace';
 
-export const EXIT = { ok: 0, usage: 2, notChecked: 3 } as const;
+// 1 is a save that failed after the pages were checked (Req 3.4); 3 is a page that couldn't be checked.
+export const EXIT = { ok: 0, saveFailed: 1, usage: 2, notChecked: 3 } as const;
 
 export interface Io {
   stdout: { write(s: string): unknown; isTTY?: boolean; columns?: number };
@@ -89,6 +96,38 @@ function ensureWritable(dir: string): void {
   const probe = join(dir, `.write-test-${process.pid}`);
   writeFileSync(probe, 'lensy');
   unlinkSync(probe);
+}
+
+const docInputs = (pages: PageResult[], changes?: (Change | null)[]): DocInput[] =>
+  pages.map((p, i) => (changes ? { ...p, change: changes[i] } : p));
+
+/** The previous run of a page, or null. A folder or file that can't be read never stops the run (Req 8.4). */
+function previousRun(resultsDir: string, url: string): RunRecord | null {
+  try { return readPrevious(resolvePageFolder(resultsDir, url).dir); } catch { return null; }
+}
+
+/** Req 4: the run records, latest files and history rows for one run, written while the lock is held. */
+function saveResults(resultsDir: string, startedAt: number, keep: number, pages: PageResult[], changes: (Change | null)[], tool: { version: string; engineCommit: string; checkedAt: string }): void {
+  const inputs = docInputs(pages, changes);
+  const items: SaveItem[] = pages.map((p, i) => {
+    const ok = p.report?.status === 'ok' && !p.internalError;
+    const change = changes[i];
+    return {
+      url: p.url,
+      record: { recordVersion: 1, tool: 'lensy', toolVersion: tool.version, engineCommit: tool.engineCommit, checkedAt: tool.checkedAt, page: jsonPage(p, change) },
+      markdown: renderMarkdown(buildReportDoc([inputs[i]], tool)),
+      row: {
+        date: historyDate(startedAt),
+        url: p.url,
+        coding: ok ? String(p.report!.scores.codingAgents.score) : '-',
+        search: ok ? String(p.report!.scores.aiSearch.score) : '-',
+        change: changeCell(change, ok, true),
+        fixed: labelsOf(change?.fixed ?? []),
+        added: labelsOf(change?.new ?? []),
+      },
+    };
+  });
+  saveRun(resultsDir, { startedAt, keep, items, markdown: renderMarkdown(buildReportDoc(inputs, tool)) });
 }
 
 async function pool<T, R>(items: T[], size: number, fn: (t: T) => Promise<R>): Promise<R[]> {
@@ -203,38 +242,65 @@ export async function run(argv: string[], io: Io): Promise<number> {
       const notice = largeRunNotice(toCheck.length, o.concurrency);
       if (notice) (jsonOnly ? io.stderr : io.stdout).write((jsonOnly ? notice : c.yellow(notice)) + '\n\n');
       const userAgent = o.userAgent ?? defaultUserAgent(io.version);
+      // One start time for the whole run: it names the run files and is "checked at" in every output.
+      const startedAt = (io.now ?? Date.now)();
+      const tool = { version: io.version, engineCommit: ENGINE_COMMIT, checkedAt: new Date(startedAt).toISOString() };
       const pages = await pool(toCheck, o.concurrency, async (url): Promise<PageResult> => {
         try {
           return { url, report: await check(url, { userAgent, timeoutMs: o.timeout, fetchImpl: io.fetchImpl, loadAfdocs: io.loadAfdocs }) };
         } catch (e) {
           if (io.env.LENSY_DEBUG === '1') io.stderr.write(`${(e as Error).stack}\n`);
-          return { url, internalError: (e as Error).message };
+          // Saved files never hold a path of this machine (Req 4.10), and an engine error can name one.
+          return { url, internalError: scrubPaths((e as Error).message, [cwd, root, home]) };
         }
       });
 
+      // Saving (Req 3-5, 8): compare each page with its last run, then write, holding the lock.
+      const state: { changes?: (Change | null)[]; savedIn?: string; saveFailed?: boolean } = {};
+      if (saving) {
+        try {
+          const outcome = withLock(resultsDir, startedAt, () => {
+            const current = pages.map(p => jsonPage(p, null));
+            state.changes = current.map((page, i) => compare(previousRun(resultsDir, pages[i].url), { toolVersion: tool.version, engineCommit: tool.engineCommit, checkedAt: tool.checkedAt, page }));
+            saveResults(resultsDir, startedAt, project?.keep ?? DEFAULT_KEEP, pages, state.changes, tool);
+          });
+          if (outcome.locked) state.savedIn = resultsShown;
+          else io.stderr.write(`Another lensy run is saving to ${resultsShown}; results from this run weren't saved.\n`);
+        } catch (e) {
+          state.saveFailed = true;
+          io.stderr.write(`Couldn't save results: ${friendlyReason(e)}\n`);
+        }
+      }
+      const changes = state.changes;
+
       const written: string[] = [];
-      const checkedAt = new Date((io.now ?? Date.now)()).toISOString();
-      const json = o.json ? renderJson(pages, { toolVersion: io.version, engineCommit: ENGINE_COMMIT, checkedAt }) : '';
+      const json = o.json ? renderJson(pages, { toolVersion: tool.version, engineCommit: tool.engineCommit, checkedAt: tool.checkedAt }, changes) : '';
       if (jsonPath) { writeFileSync(jsonPath, json); written.push(jsonPath); }
       if (htmlPath || mdPath) {
-        const doc = buildReportDoc(pages, { version: io.version, engineCommit: ENGINE_COMMIT, checkedAt });
+        const doc = buildReportDoc(docInputs(pages, changes), tool);
         if (htmlPath) { writeFileSync(htmlPath, renderHtml(doc)); written.push(htmlPath); }
         if (mdPath) { writeFileSync(mdPath, renderMarkdown(doc)); written.push(mdPath); }
       }
 
       const allOk = pages.every(p => p.report?.status === 'ok' && !p.internalError);
-      exitCode = allOk ? EXIT.ok : EXIT.notChecked;
-      if (jsonOnly) { io.stdout.write(json); return; }
+      exitCode = state.saveFailed ? EXIT.saveFailed : allOk ? EXIT.ok : EXIT.notChecked;
+      if (jsonOnly) {
+        io.stdout.write(json);
+        if (state.savedIn) io.stderr.write(`Results saved in ${state.savedIn}\n`);
+        return;
+      }
 
       // One page: what to fix first (every check with --verbose). Several: the
       // table and top fixes; full details go in --html/--md/--json.
       const width = Math.min(Math.max(io.stdout.columns ?? 100, 80), 110);
+      const view = (i: number): ChangeView | undefined => (changes ? { change: changes[i], now: startedAt } : undefined);
       const pointer = written.length
         ? c.dim(written.map(p => `Report written to ${p}`).join('\n'))
         : c.dim('Full results: rerun with --html report.html, --md report.md or --json report.json.');
       const parts = pages.length === 1
-        ? [renderPage(c, pages[0], { verbose: o.verbose, width }), ...(written.length ? [pointer] : [])]
-        : [renderSummary(c, pages), ...pages.map(p => (o.verbose ? renderPage(c, p, { verbose: true, width }) : renderBrief(c, p, 3, width))), pointer];
+        ? [renderPage(c, pages[0], { verbose: o.verbose, width, change: view(0) }), ...(written.length ? [pointer] : [])]
+        : [renderSummary(c, pages, changes), ...pages.map((p, i) => (o.verbose ? renderPage(c, p, { verbose: true, width, change: view(i) }) : renderBrief(c, p, 3, width, view(i)))), pointer];
+      if (state.savedIn) parts.push(c.dim(`Results saved in ${state.savedIn}`));
       io.stdout.write(parts.join('\n\n') + '\n');
     });
 

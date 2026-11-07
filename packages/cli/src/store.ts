@@ -267,6 +267,18 @@ export function saveRun(resultsDir: string, input: SaveInput): void {
   updateHistory(join(resultsDir, 'history.md'), input.items.map(i => historyRow(i.row)));
 }
 
+/**
+ * Removes the absolute paths of this machine from a message (Req 4.10): the folders
+ * given, then anything that looks like an absolute path. URLs are left alone.
+ */
+export function scrubPaths(text: string, folders: (string | undefined)[] = []): string {
+  let out = text;
+  for (const f of [...new Set(folders.filter((x): x is string => !!x && x.length > 1))].sort((a, b) => b.length - a.length)) out = out.split(f).join('<folder>');
+  return out
+    .replace(/(?<![\w:/.~-])\/(?:[\w.@+%-]+\/)+[\w.@+%-]*/g, '<path>') // /Users/me/project/file
+    .replace(/(?<![\w])[A-Za-z]:\\(?:[^\\\s'"]+\\)*[^\\\s'"]*/g, '<path>'); // C:\Users\me\file
+}
+
 const REASONS: Record<string, string> = {
   EACCES: 'permission denied',
   EPERM: 'permission denied',

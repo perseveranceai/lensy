@@ -39,12 +39,14 @@ function renderPage(p: DocPage): string {
   const out = [`## ${text(p.url)}`];
   if (p.message) {
     out.push('', text(p.message));
+    if (p.since) out.push('', '### Since last run', '', ...p.since.map(l => `- ${text(l)}`));
     return out.join('\n');
   }
   const s = p.summary!;
   out.push('', '### Summary', '', `- Coding agents: ${text(s.codingAgents)}`, `- AI search: ${text(s.aiSearch)}`);
   if (s.banner) out.push(`- ${text(s.banner)}`);
   if (s.preview) out.push(`- What an agent receives: ${text(s.preview)}`);
+  if (p.since) out.push('', '### Since last run', '', ...p.since.map(l => `- ${text(l)}`));
 
   for (const g of p.groups) {
     out.push('', `### ${g.title}`, '', '| ID | Check | Status | Points | Max | Finding | Source |', '|---|---|---|---|---|---|---|');

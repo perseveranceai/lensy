@@ -84,17 +84,17 @@ pages:
   Fix: Declare when the page changed: a visible "Last updated" date or dateModified in JSON-LD, plus accurate \<lastmod\> values in the sitemap.
 - [ ] **S6** (+5 points) JSON-LD: none
   Fix: Add a JSON-LD block (for example TechArticle) with dateModified. It carries little weight for AI citations, so do this last.
-- [ ] **llms-txt-directive-md** (+4 points) Page points agents to llms.txt (Markdown): No llms.txt directive found in markdown of any of 1 pages
+- [ ] **llms-txt-directive-md** (+3 points) Page points agents to llms.txt (Markdown): No llms.txt directive found in markdown of any of 1 pages
   Fix: No llms.txt directive was detected in the markdown of any tested page. Add a blockquote near the top of each markdown page (e.g., "\> For the complete documentation index, see \[llms.txt\](/llms.txt)").
-- [ ] **llms-txt-size** (+3.5 points) llms.txt size: llms.txt is 97,407 characters (between 50,000 and 1,00,000; consider splitting)
+- [ ] **llms-txt-size** (+2 points) llms.txt size: llms.txt is 97,407 characters (between 50,000 and 1,00,000; consider splitting)
   Fix: Your llms.txt is 97,407 characters, which may be truncated on some agent platforms. If it grows further, split into nested llms.txt files with a root index under 50,000 characters.
-- [ ] **content-start-position** (+2 points) Content starts near the top: 1 of 1 pages have content starting at 10–50% (worst 40%)
+- [ ] **content-start-position** (+1 points) Content starts near the top: 1 of 1 pages have content starting at 10–50% (worst 40%)
   Fix: 1 of 1 pages have documentation content starting 10-50% into the converted output. Reduce navigation, breadcrumb, and sidebar markup that precedes the content area.
-- [ ] **cache-header-hygiene** (+2 points) Cache headers: 3 of 3 endpoints have aggressive caching or missing cache headers
+- [ ] **cache-header-hygiene** (+1 points) Cache headers: 3 of 3 endpoints have aggressive caching or missing cache headers
   Fix: 3 endpoints have aggressive caching (\>24h) or missing cache headers. Set max-age under 3600 or add must-revalidate with ETag/Last-Modified so content updates reach agents promptly.
 - [ ] **lensy-headings** (+1 points) Headings an agent can navigate: 1 H1, 12 headings, 1 level skip(s) in what an agent receives
   Fix: Use exactly one H1 and nest headings without skipping levels (H2 then H3). Agents find sections by heading text.
-- [ ] **llms-txt-valid** (+0.8 points) llms.txt format: llms.txt contains parseable links but doesn't fully follow the proposed structure: https://docs.stripe.com/llms.txt: No blockquote summary found
+- [ ] **llms-txt-valid** (+1 points) llms.txt format: llms.txt contains parseable links but doesn't fully follow the proposed structure: https://docs.stripe.com/llms.txt: No blockquote summary found
   Fix: Your llms.txt contains parseable links but doesn't follow the standard structure. Add an H1 title as the first line and a blockquote summary (lines starting with \>) to improve agent parsing.
 - [ ] **llms-txt-directive-html** (+0 points) Page points agents to llms.txt (HTML): llms.txt directive found in HTML of 1 of 1 pages, but buried deep in the page (past 50%)
   Fix: An llms.txt directive was found in the HTML of some pages but is missing from others, or is buried deep in the page. Ensure the directive appears near the top of every documentation page.
@@ -159,13 +159,13 @@ pages:
   Fix: Add \<link rel="canonical"\> to the page head and list the page in your sitemap (referenced from robots.txt).
 - [ ] **S4** (+9 points) Freshness declared: page date: \<time\>; sitemap lastmod: 0/0 URLs, 0 distinct dates; this URL no lastmod
   Fix: Set lastUpdated: true in the VitePress config. It shows a visible date and gives the sitemap git-based \<lastmod\> values.
-- [ ] **llms-txt-directive-html** (+7 points) Page points agents to llms.txt (HTML): No llms.txt directive found in HTML of any of 1 pages
+- [ ] **llms-txt-directive-html** (+6 points) Page points agents to llms.txt (HTML): No llms.txt directive found in HTML of any of 1 pages
   Fix: No agent-facing directive pointing to llms.txt was detected in the HTML of any tested page. Add a visually-hidden element near the top of each page (e.g., a div with CSS clip-rect) containing a link to your llms.txt. If your site serves markdown versions of pages, mention that in the directive too so agents know to request it.
 - [ ] **S6** (+5 points) JSON-LD: none
   Fix: Add a JSON-LD block (for example TechArticle) with dateModified. It carries little weight for AI citations, so do this last.
 - [ ] **llms-txt-directive-md** (+4 points) Page points agents to llms.txt (Markdown): No llms.txt directive found in markdown of any of 1 pages
   Fix: No llms.txt directive was detected in the markdown of any tested page. Add a blockquote near the top of each markdown page (e.g., "\> For the complete documentation index, see \[llms.txt\](/llms.txt)").
-- [ ] **content-negotiation** (+4 points) Markdown on request: Server ignores Accept: text/markdown header (0/1 pages return markdown)
+- [ ] **content-negotiation** (+3 points) Markdown on request: Server ignores Accept: text/markdown header (0/1 pages return markdown)
   Fix: Your server ignores Accept: text/markdown and returns HTML. Some agents (Claude Code, Cursor, OpenCode) request markdown this way. Configure your server to honor content negotiation.
 - [ ] **S5** (+3 points) Answer-ready sections: 1 H1, 0 skip(s), median section 38 words (HTML)
   Fix: Use one H1 and split the page into H2/H3 sections of about 40 to 500 words, so each section can stand alone as an answer.
