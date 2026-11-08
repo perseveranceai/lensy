@@ -51,7 +51,11 @@ const sourceTag = (x: Check) => (x.source && SOURCE_LABELS[x.source] ? ` ${SOURC
 function renderChecks(c: Colors, title: string, s: Score): string[] {
   const lines = [``, c.bold(`  ${title}  ${scoreText(s)}`)];
   const possible = s.checks.filter(x => x.points !== null).reduce((n, x) => n + x.max, 0);
-  if (possible && possible !== 100 && s.score !== null) lines.push(c.dim(`    Points below are out of ${possible}; the score scales them to 100.`));
+  if (s.label === 'local' && s.score !== null) {
+    lines.push(c.dim(`    A local build: the score counts only the checks below that ran (skipped ones depend on your hosting).`));
+  } else if (possible && possible !== 100 && s.score !== null) {
+    lines.push(c.dim(`    Points below are out of ${possible}; the score scales them to 100.`));
+  }
   const idWidth = Math.max(3, ...s.checks.map(x => x.id.length));
   const width = Math.max(...s.checks.map(x => x.label.length + sourceTag(x).length));
   for (const x of s.checks) {

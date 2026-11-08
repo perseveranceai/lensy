@@ -141,7 +141,7 @@ describe('resultsFolder', () => {
     expect(resultsFolder('/p/root', undefined, '/p/root/docs')).toBe(path.join('/p/root', '.lensy'));
   });
   test('1.4: --save-dir is the folder itself, relative to the current folder', () => {
-    expect(resultsFolder('/p/root', 'out/lensy', '/p/root/docs')).toBe(path.join('/p/root/docs', 'out', 'lensy'));
+    expect(resultsFolder('/p/root', 'out/lensy', '/p/root/docs')).toBe(path.resolve('/p/root/docs', 'out', 'lensy')); // resolve, so Windows adds its drive letter on both sides
   });
   test('1.4: an absolute --save-dir is used as it is', () => {
     expect(resultsFolder('/p/root', '/elsewhere/results', '/p/root/docs')).toBe(path.resolve('/elsewhere/results'));

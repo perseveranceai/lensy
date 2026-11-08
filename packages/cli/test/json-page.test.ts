@@ -60,7 +60,7 @@ describe('jsonPage', () => {
   test('a checked page: url, status, scores, fixes, pointsLost, change and the report', async () => {
     const report = await reportOf('vitest-guide');
     const p = jsonPage({ url: report.url, report }, null);
-    expect(Object.keys(p)).toEqual(['url', 'status', 'scores', 'fixes', 'pointsLost', 'change', 'report']);
+    expect(Object.keys(p)).toEqual(['url', 'status', 'scores', 'fixes', 'pointsLost', 'change', 'report', 'mode']); // fields are only ever added at the end
     expect(p.status).toBe('ok');
     expect(p.scores).toEqual({ codingAgents: report.scores.codingAgents.score, aiSearch: report.scores.aiSearch.score });
     expect(p.change).toBeNull();

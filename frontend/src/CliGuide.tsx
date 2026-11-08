@@ -20,6 +20,7 @@ const SECTIONS: [string, string][] = [
   ["exit-codes", "Exit codes"],
   ["what-it-sends", "What it sends"],
   ["not-yet", "What it can't do yet"],
+  ["help", "Requirements and help"],
 ];
 
 // A command or sample output. It scrolls sideways inside its own box, so a long
@@ -235,8 +236,18 @@ lensy check --dir docs/.vitepress/dist --site-url https://docs.example.com --all
             <li>Check source files before you build.</li>
             <li>Check pages behind a login. The tool can&apos;t sign in, so it only checks public pages.</li>
           </ul>
+          <H2 id="help">Requirements and help</H2>
           <p>
-            Questions, or something here is wrong? Write to <a href="mailto:hello@perseveranceai.com">hello@perseveranceai.com</a>.
+            You need Node 22 or newer and npm. There&apos;s no account, API key or setup. For live pages, Lensy needs network access to the sites you check and nothing else. A local build check sends nothing off your machine.
+          </p>
+          <p>
+            <strong>Tested on.</strong> Every pull request runs the full test suite on Linux, macOS and Windows with Node 22 and 24. By hand, on macOS with Node 22, 24 and 26, we checked live pages on VitePress, Docusaurus, Mintlify, GitBook, Read the Docs, MkDocs Material, Nextra, Starlight and others, and local builds from VitePress 1.6 (with and without a base path), Docusaurus 3.10, Astro Starlight 0.42 and MkDocs Material 9.8. Windows and Linux desktops are covered by the automated tests, not yet by hand.
+          </p>
+          <p>
+            <strong>Known issues being fixed:</strong> Astro&apos;s <code>sitemap-index.xml</code> and sitemaps under a base path aren&apos;t read yet, and a canonical link written without quotes, as Docusaurus minifies it, isn&apos;t detected. Each costs some AI search points it shouldn&apos;t.
+          </p>
+          <p>
+            <strong>Found a problem?</strong> <a href="https://github.com/perseveranceai/lensy/issues/new?template=cli-bug.yml">Open an issue on GitHub</a>. The form asks for <code>lensy --version</code>, <code>node -v</code>, your operating system, the command and its output; add <code>LENSY_DEBUG=1</code> if it failed with an error. No GitHub account? Email <a href="mailto:hello@perseveranceai.com">hello@perseveranceai.com</a> with the same details. Report security problems by email, not as a public issue, and never paste tokens, internal hostnames or unpublished content.
           </p>
         </article>
       </div>

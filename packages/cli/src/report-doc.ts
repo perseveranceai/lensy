@@ -21,7 +21,7 @@ export interface DocMeta {
   engineCommit: string;
   checkedAt: string;
   mode: Report['mode'];
-  pages: { url: string; status: Report['status'] | 'internal-error'; codingAgents: number | null; aiSearch: number | null }[];
+  pages: { url: string; status: Report['status'] | 'internal-error'; codingAgents: number | null; aiSearch: number | null; codingAgentsOutOf?: number; aiSearchOutOf?: number }[];
 }
 
 /** source: "AFDocs" for AFDocs checks, empty for Lensy's own (the website's SOURCE_LABELS). */
@@ -131,6 +131,7 @@ export function buildReportDoc(inputs: DocInput[], tool: { version: string; engi
           status: i.internalError ? 'internal-error' : i.report!.status,
           codingAgents: ok ? num(i.report!.scores.codingAgents) : null,
           aiSearch: ok ? num(i.report!.scores.aiSearch) : null,
+          ...(ok && i.report!.mode === 'local' ? { codingAgentsOutOf: i.report!.scores.codingAgents.coveredMax, aiSearchOutOf: i.report!.scores.aiSearch.coveredMax } : {}),
         };
       }),
     },

@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { hasHtml, listPages, resolveRequest, startServer } from '../src/serve';
+import { hasHtml, listPages, pagesFromBuild, resolveRequest, startServer } from '../src/serve';
 import type { Served } from '../src/serve';
 import { useTempDirs } from './helpers';
 
@@ -89,5 +89,34 @@ describe('listPages and hasHtml', () => {
     fs.writeFileSync(path.join(dir, 'a.md'), '# A');
     expect(hasHtml(dir)).toBe(false);
     expect(hasHtml(SITE)).toBe(true);
+  });
+});
+
+describe('pagesFromBuild (--dir --all)', () => {
+  test("the build's sitemap gives the published paths", () => {
+    expect(pagesFromBuild(SITE)).toEqual(['/', '/guide/start']);
+  });
+  test('Docusaurus-style folders: the sitemap says /docs/intro, not /docs/intro/', () => {
+    const dir = tmp('lensy-docu-');
+    fs.mkdirSync(path.join(dir, 'docs', 'intro'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'docs', 'intro', 'index.html'), '<h1>Intro</h1>');
+    fs.writeFileSync(path.join(dir, 'sitemap.xml'), '<urlset><url><loc>https://docs.example.com/docs/intro</loc></url><url><loc>https://docs.example.com/gone</loc></url></urlset>');
+    expect(pagesFromBuild(dir)).toEqual(['/docs/intro']); // a <loc> with no page in the build is left out
+    expect(listPages(dir)).toEqual(['/docs/intro/']);
+  });
+  test("Astro's sitemap-index.xml and the sitemaps it names", () => {
+    const dir = tmp('lensy-astro-');
+    fs.mkdirSync(path.join(dir, 'guides'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'index.html'), '<h1>Home</h1>');
+    fs.writeFileSync(path.join(dir, 'guides', 'example.html'), '<h1>Example</h1>');
+    fs.writeFileSync(path.join(dir, 'sitemap-index.xml'), '<sitemapindex><sitemap><loc>https://docs.example.com/sitemap-0.xml</loc></sitemap></sitemapindex>');
+    fs.writeFileSync(path.join(dir, 'sitemap-0.xml'), '<urlset><url><loc>https://docs.example.com/</loc></url><url><loc>https://docs.example.com/guides/example/</loc></url></urlset>');
+    expect(pagesFromBuild(dir)).toEqual(['/', '/guides/example/']);
+  });
+  test('no sitemap: every page file', () => {
+    const dir = tmp('lensy-nosm-');
+    fs.writeFileSync(path.join(dir, 'index.html'), '<h1>x</h1>');
+    fs.writeFileSync(path.join(dir, 'a.html'), '<h1>a</h1>');
+    expect(pagesFromBuild(dir)).toEqual(['/', '/a']);
   });
 });

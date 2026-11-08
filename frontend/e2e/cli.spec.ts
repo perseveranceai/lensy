@@ -30,7 +30,7 @@ test('CLI-02: /cli has the guide sections in order, the install command and the 
   const guide = page.getByTestId('cli-guide');
   await expect(guide.locator('h2')).toHaveText([
     'What it is', 'Install', 'Check a page', 'Check several pages', 'Check a local build', 'Save a report',
-    'Save and compare runs', 'Explain a check', 'Exit codes', 'What it sends', "What it can't do yet",
+    'Save and compare runs', 'Explain a check', 'Exit codes', 'What it sends', "What it can't do yet", 'Requirements and help',
   ]);
   await expect(guide.getByLabel('Install command')).toContainText('npm install -g @perseverance-ai/lensy@next');
   // Check a page: the short view and its options, matching `lensy check --help` (guide.test.ts).
@@ -74,6 +74,16 @@ test('CLI-06: "Check a local build" shows --dir, --site-url, a points-checked re
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.getByRole('navigation', { name: 'On this page' }).getByRole('link', { name: 'Check a local build' }).click();
   await expect(page).toHaveURL(/#local-build$/);
+});
+
+test('CLI-07: "Requirements and help" says what is needed, where it was tested and how to report a problem', async ({ page }) => {
+  await page.goto('/cli');
+  const guide = page.getByTestId('cli-guide');
+  await expect(guide.getByText(/Node 22 or newer and npm/)).toBeVisible();
+  await expect(guide.getByText(/Linux, macOS and Windows with Node 22 and 24/)).toBeVisible();
+  const issue = guide.getByRole('link', { name: 'Open an issue on GitHub' });
+  await expect(issue).toHaveAttribute('href', 'https://github.com/perseveranceai/lensy/issues/new?template=cli-bug.yml');
+  await expect(guide.getByRole('link', { name: 'hello@perseveranceai.com' }).last()).toHaveAttribute('href', 'mailto:hello@perseveranceai.com');
 });
 
 test('CLI-02: the side links jump to a section', async ({ page }) => {

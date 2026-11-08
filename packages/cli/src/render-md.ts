@@ -28,7 +28,9 @@ function frontMatter(d: ReportDoc): string {
       `  - url: ${y(p.url)}`,
       `    status: ${y(p.status)}`,
       `    codingAgents: ${p.codingAgents ?? 'null'}`,
+      ...(p.codingAgentsOutOf !== undefined ? [`    codingAgentsOutOf: ${p.codingAgentsOutOf}`] : []),
       `    aiSearch: ${p.aiSearch ?? 'null'}`,
+      ...(p.aiSearchOutOf !== undefined ? [`    aiSearchOutOf: ${p.aiSearchOutOf}`] : []),
     ]),
     '---',
   ];

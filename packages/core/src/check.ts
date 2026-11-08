@@ -93,7 +93,13 @@ export async function checkFromPage(page: PageInput, opts: CheckOptions = {}, su
   if (mode !== 'local') return report;
   const coding = v2.scores.codingAgents as { cap?: { cap: number } };
   // Requests to other hosts were refused on purpose, not lost: say so instead of "re-scan".
-  const refused = [...new Set(report.netErrors.map(u => { try { return new URL(u).origin; } catch { return u; } }))];
+  const refused = [...new Set(report.netErrors.map(u => {
+    try {
+      const o = new URL(u).origin;
+      // AFDocs asks for "<origin>.md" for a home page: that is the site itself, not another host.
+      return o.endsWith('.md') && report.netErrors.some(v => { try { return new URL(v).origin === o.slice(0, -3); } catch { return false; } }) ? o.slice(0, -3) : o;
+    } catch { return u; }
+  }))];
   const tips = report.tips.map(t => t.id !== 'network' ? t : {
     id: 'local-refused',
     text: `A local check reaches only this machine, so ${report.netErrors.length} request(s) to ${refused.join(', ')} weren't sent and the checks that need them aren't counted.${opts.siteUrl ? '' : ' If that is your published docs address, add --site-url so they go to the local build.'}`,

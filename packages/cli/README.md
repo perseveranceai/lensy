@@ -141,6 +141,31 @@ Every request carries `lensy-cli/<version> (+https://perseveranceai.com/bot)`, A
 
 Not yet: checking source files before you build, or pages behind a login.
 
+## Requirements
+
+- Node 22 or newer, and npm. No account, no API key, nothing to configure.
+- For live pages: network access to the sites you check, and nothing else.
+- For a local build: your built site (a folder of HTML from any static docs tool). A local check sends nothing off your machine.
+
+## Tested on
+
+- **Every pull request** runs the full test suite (about 700 tests) on Linux, macOS and Windows with Node 22 and 24. A few tests of Unix file permissions and symlinks run on Linux and macOS only.
+- **By hand on macOS 26 (Apple silicon)** with Node 22.23, 24.22 and 26.12, on 2026-11-08:
+  - live pages on VitePress, Docusaurus, Mintlify, GitBook, Read the Docs, MkDocs Material, Nextra, Starlight, Stripe, GitHub Docs and MDN;
+  - local builds from VitePress 1.6.4 (with and without a `base` path), Docusaurus 3.10.2 (`--dir` and `docusaurus serve` gave the same scores), Astro Starlight 0.42 and MkDocs Material 9.8;
+  - folder paths with spaces, running from a subfolder, and a network sandbox that blocked every host except this machine.
+- Not yet tried by hand: Windows and Linux desktops (they're covered by the automated tests above).
+
+Known issues being fixed: Astro's `sitemap-index.xml` and sitemaps under a base path aren't read yet, and a canonical link written without quotes (as Docusaurus minifies it) isn't detected. Each costs some AI search points it shouldn't.
+
+## Report a problem
+
+- **Bugs and questions:** [open an issue on GitHub](https://github.com/perseveranceai/lensy/issues/new?template=cli-bug.yml). The form asks for `lensy --version`, `node -v`, your operating system, the command and its output (add `LENSY_DEBUG=1` if it failed with an error).
+- **No GitHub account?** Email hello@perseveranceai.com with the same details.
+- **Security problems:** email hello@perseveranceai.com, not a public issue.
+
+Don't paste anything private: no tokens, internal hostnames or unpublished content.
+
 ## License
 
 MIT. Questions or problems: hello@perseveranceai.com

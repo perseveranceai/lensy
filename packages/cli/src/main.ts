@@ -10,7 +10,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { createColors } from 'picocolors';
 import { ALL_CHECKS, explainCheck } from './explain';
 import { largeRunNotice } from './pages';
-import { hasHtml, listPages, startServer } from './serve';
+import { hasHtml, pagesFromBuild, startServer } from './serve';
 import type { Served } from './serve';
 import { sitemapPages } from './sitemap-pages';
 import { askYesNo } from './prompt';
@@ -214,9 +214,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
       const basePath = siteUrl?.pathname ?? '/';
       const dir = o.dir !== undefined ? resolve(cwd, o.dir) : undefined;
       if (dir !== undefined) {
-        let isDir = false;
-        try { isDir = statSync(dir).isDirectory(); } catch { /* reported below */ }
-        if (!isDir) throw new UsageError(`--dir ${o.dir}: there's no folder there.`);
+        let kind: 'dir' | 'file' | 'none' = 'none';
+        try { kind = statSync(dir).isDirectory() ? 'dir' : 'file'; } catch { /* reported below */ }
+        if (kind === 'file') throw new UsageError(`--dir ${o.dir} is a file. Give the build folder, for example --dir docs/.vitepress/dist.`);
+        if (kind === 'none') throw new UsageError(`--dir ${o.dir}: there's no folder there.`);
         if (!hasHtml(dir)) throw new UsageError(`--dir ${o.dir} has no .html pages. Point it at your build output, after building:\n${BUILD_HINTS}`);
       }
 
@@ -242,7 +243,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
           }
           const rel = r.replace(/^\/+/, '');
           return rel.startsWith(basePath.slice(1)) && basePath !== '/' ? '/' + rel : basePath + rel;
-        }) : o.all ? listPages(dir, basePath) : [basePath];
+        }) : o.all ? pagesFromBuild(dir, basePath) : [basePath];
         targets = paths.map(path => ({ url: siteUrl ? `${siteUrl.origin}${path}` : `http://localhost${path}`, path }));
       } else if (raw.length) {
         targets = raw.map(normalizeUrl).map(url => ({ url }));
@@ -301,8 +302,6 @@ export async function run(argv: string[], io: Io): Promise<number> {
       const seen = new Set<string>();
       const toCheck = targets.filter(t => (seen.has(t.url) ? false : (seen.add(t.url), true)));
       const out = jsonOnly ? io.stderr : io.stdout;
-      const notice = largeRunNotice(toCheck.length, o.concurrency);
-      if (notice) out.write((jsonOnly ? notice : c.yellow(notice)) + '\n\n');
       if (dir !== undefined || localPreviews.length) {
         const lines = [dir !== undefined
           ? `Checking the build in ${shown(cwd, dir)}${siteUrl ? ` as ${siteUrl.origin}${basePath === '/' ? '' : basePath}` : ''}. Checks that depend on your hosting are left out.`
@@ -310,6 +309,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
         if (!siteUrl) lines.push('Add --site-url with your published docs address so the sitemap, canonical and llms.txt links are matched to these pages.');
         out.write(lines.map(l => (jsonOnly ? l : c.dim(l))).join('\n') + '\n\n');
       }
+      const notice = largeRunNotice(toCheck.length, o.concurrency);
+      if (notice) out.write((jsonOnly ? notice : c.yellow(notice)) + '\n\n');
       const userAgent = o.userAgent ?? defaultUserAgent(io.version);
       // One start time for the whole run: it names the run files and is "checked at" in every output.
       const startedAt = (io.now ?? Date.now)();

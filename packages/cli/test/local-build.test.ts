@@ -43,6 +43,8 @@ describe('--dir', () => {
       expect(p.status).toBe('ok');
       expect(p.report.mode).toBe('local');
       expect(p.report.finalUrl).toBe(p.url); // never the server's random port
+      expect(p.mode).toBe('local');
+      expect(p.scoresOutOf.codingAgents).toBe(p.report.scores.codingAgents.coveredMax); // a script knows "out of what"
       const s = p.report.scores.codingAgents;
       expect(s.label).toBe('local');
       expect(s.score).toBeLessThanOrEqual(s.coveredMax);
@@ -77,6 +79,7 @@ describe('--dir', () => {
     [['--dir', 'no-such-folder'], "there's no folder there"],
     [['--dir', '.', '--site-url', 'http://localhost:3000'], 'not the local one'],
     [['--dir', SITE, 'https://elsewhere.example.com/a'], 'give pages as paths in the build'],
+    [['--dir', path.join(SITE, 'llms.txt')], 'is a file. Give the build folder'],
   ])('%j exits 2 before checking', async (args, message) => {
     const g = guardedFetch();
     const t = io(g.impl);
@@ -100,6 +103,20 @@ describe('--dir', () => {
     expect(await run(['check', 'sample-site', '--no-save'], t.io)).toBe(EXIT.usage);
     expect(t.err()).toContain('lensy check --dir sample-site');
     expect(g.hosts.size).toBe(0);
+  });
+});
+
+describe('--verbose and --md on a local build', () => {
+  test('no "scaled to 100" claim; the Markdown front matter says out of what', async () => {
+    const dir = tmp('lensy-md-out-');
+    const md = path.join(dir, 'r.md');
+    const t = io(guardedFetch().impl);
+    await run(['check', '--dir', SITE, '--site-url', 'https://docs.example.test', '/guide/start', '--verbose', '--md', md, '--no-save', '--no-color'], t.io);
+    expect(t.out()).not.toContain('the score scales them to 100');
+    expect(t.out()).toContain('A local build: the score counts only the checks below that ran');
+    const front = fs.readFileSync(md, 'utf8').split('---')[1];
+    expect(front).toMatch(/codingAgentsOutOf: \d+/);
+    expect(front).toMatch(/aiSearchOutOf: \d+/);
   });
 });
 

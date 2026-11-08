@@ -89,9 +89,9 @@ export function localScore(s: Score, cap?: number): Score {
     const meta = CHECKS_BY_ID[c.id];
     if (meta?.hostDependent === 'full' && c.points !== null) {
       const { fix: _fix, ...rest } = c;
-      return { ...rest, points: null, status: 'skipped', note: `depends on your hosting: ${meta.hostNote ?? 'decided by your web server or CDN'}` };
+      return { ...rest, points: null, status: 'skipped', detail: 'not checked on a local build', note: `depends on your hosting: ${meta.hostNote ?? 'decided by your web server or CDN'}` };
     }
-    if (meta?.hostDependent === 'partial' && meta.hostNote && !c.note) return { ...c, note: meta.hostNote };
+    if (meta?.hostDependent === 'partial' && meta.hostNote && !c.note) return { ...c, note: `your host can also affect this: ${meta.hostNote}` };
     return c;
   });
   const all = checks.filter(c => c.max > 0);

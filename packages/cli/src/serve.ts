@@ -37,9 +37,11 @@ export function resolveRequest(rootReal: string, basePath: string, rawPath: stri
     p = basePath;
   }
   const rel = p.slice(basePath.length);
-  const candidates = rel === '' || rel.endsWith('/')
-    ? [join(rel, 'index.html')]
-    : [rel, `${rel}.html`, join(rel, 'index.html')];
+  const candidates = rel === ''
+    ? ['index.html']
+    : rel.endsWith('/')
+      ? [join(rel, 'index.html'), `${rel.slice(0, -1)}.html`]
+      : [rel, `${rel}.html`, join(rel, 'index.html')];
   for (const cand of candidates) {
     const full = resolve(rootReal, '.' + sep + cand);
     if (!isFile(full)) continue;
@@ -98,4 +100,43 @@ export function listPages(dir: string, basePath = '/'): string[] {
 /** True when the folder has at least one .html file (a build, not a source folder). */
 export function hasHtml(dir: string): boolean {
   try { return listPages(dir).length > 0; } catch { return false; }
+}
+
+const LOC = /<loc>\s*([^<\s]+)\s*<\/loc>/gi;
+
+/**
+ * --dir --all: the pages the build's own sitemap lists (sitemap.xml, or Astro's
+ * sitemap-index.xml and the sitemaps it names), as paths that exist in the
+ * folder, so they match the addresses the docs tool publishes (Docusaurus
+ * lists /docs/intro, not /docs/intro/). Without a usable sitemap, every page
+ * file is listed instead.
+ */
+export function pagesFromBuild(dir: string, basePath = '/'): string[] {
+  const rootReal = realpathSync(dir);
+  const read = (rel: string): string | null => {
+    const file = resolveRequest(rootReal, basePath, basePath + rel);
+    try { return file ? readFileSync(file, 'utf8') : null; } catch { return null; }
+  };
+  const locsIn = (xml: string) => [...xml.matchAll(LOC)].map(m => m[1].replace(/&amp;/g, '&'));
+  const paths: string[] = [];
+  for (const name of ['sitemap.xml', 'sitemap-index.xml']) {
+    const xml = read(name);
+    if (!xml) continue;
+    let locs = locsIn(xml);
+    if (/<sitemapindex[\s>]/i.test(xml)) {
+      locs = locs.flatMap(loc => {
+        try {
+          const p = new URL(loc).pathname;
+          const child = p.startsWith(basePath) ? read(p.slice(basePath.length)) : read(p.replace(/^\//, ''));
+          return child ? locsIn(child) : [];
+        } catch { return []; }
+      });
+    }
+    for (const loc of locs) {
+      try { paths.push(new URL(loc, 'http://localhost').pathname); } catch { /* not a URL */ }
+    }
+    if (paths.length) break;
+  }
+  const found = [...new Set(paths)].filter(p => p.startsWith(basePath.replace(/\/$/, '')) && resolveRequest(rootReal, basePath, p));
+  return found.length ? found : listPages(dir, basePath);
 }
