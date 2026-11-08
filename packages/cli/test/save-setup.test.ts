@@ -9,6 +9,9 @@ import { EXIT, run } from '../src/main';
 import { userConfigFile } from '../src/settings';
 import { listFiles, makeIo, makeProject, replayFetch, useTempDirs, vitest } from './helpers';
 
+// Windows has no Unix file modes and needs admin rights for symlinks: tests of those run on macOS and Linux.
+const ON_WINDOWS = process.platform === 'win32';
+
 const tmp = useTempDirs();
 const QUESTION = 'Save Lensy results for this project in .lensy? Each run is compared with the last one, so you can see what changed. [Y/n] ';
 const f = vitest();
@@ -65,8 +68,10 @@ describe('the first-run question (Req 2)', () => {
     expect(fs.existsSync(x.lensy())).toBe(false);
     expect(JSON.parse(fs.readFileSync(userConfigFile(x.home), 'utf8'))).toEqual({ configVersion: 1, projects: { [x.root]: { save: false } } });
     if (process.platform !== 'win32') {
-      expect(fs.statSync(userConfigFile(x.home)).mode & 0o777).toBe(0o600);
-      expect(fs.statSync(path.dirname(userConfigFile(x.home))).mode & 0o700).toBe(0o700);
+      if (!ON_WINDOWS) {
+        expect(fs.statSync(userConfigFile(x.home)).mode & 0o777).toBe(0o600);
+        expect(fs.statSync(path.dirname(userConfigFile(x.home))).mode & 0o700).toBe(0o700);
+      }
     }
   });
 
@@ -226,7 +231,7 @@ describe("can't save: exit 2 before any request (Req 3.3)", () => {
     expect(fs.readFileSync(x.lensy(), 'utf8')).toBe('a file');
   });
 
-  test('also after a "y" at the question: nothing is remembered', async () => {
+  test.skipIf(ON_WINDOWS)('also after a "y" at the question: nothing is remembered', async () => {
     const x = setup({ interactive: true, answers: ['y'] });
     fs.writeFileSync(x.lensy(), 'a file');
     expect(await run(['check', URL1], x.t.io)).toBe(EXIT.usage);

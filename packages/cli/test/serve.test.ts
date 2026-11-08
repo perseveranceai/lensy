@@ -8,6 +8,9 @@ import { hasHtml, listPages, resolveRequest, startServer } from '../src/serve';
 import type { Served } from '../src/serve';
 import { useTempDirs } from './helpers';
 
+// Windows has no Unix file modes and needs admin rights for symlinks: tests of those run on macOS and Linux.
+const ON_WINDOWS = process.platform === 'win32';
+
 const SITE = path.join(__dirname, 'sample-site');
 const tmp = useTempDirs();
 
@@ -47,7 +50,7 @@ describe('nothing outside the folder', () => {
     expect(resolveRequest(fs.realpathSync(SITE), '/', p)).toBeNull();
   });
 
-  test('a symlink out of the folder is not followed', async () => {
+  test.skipIf(ON_WINDOWS)('a symlink out of the folder is not followed', async () => {
     const dir = tmp('lensy-serve-');
     fs.writeFileSync(path.join(dir, 'index.html'), '<h1>x</h1>');
     const outside = tmp('lensy-outside-');

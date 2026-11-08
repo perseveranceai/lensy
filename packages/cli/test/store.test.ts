@@ -11,6 +11,9 @@ import type { HistoryRow, RunRecord, SaveItem } from '../src/store';
 import { resolvePageFolder } from '../src/page-folder';
 import { DAY, T0, listFiles, useTempDirs } from './helpers';
 
+// Windows has no Unix file modes and needs admin rights for symlinks: tests of those run on macOS and Linux.
+const ON_WINDOWS = process.platform === 'win32';
+
 const tmp = useTempDirs();
 const MIN = 60_000;
 const modeOf = (p: string) => fs.statSync(p).mode & 0o777;
@@ -45,7 +48,7 @@ describe('writeAtomic (Req 8.2)', () => {
   test.skipIf(process.platform === 'win32')('applies the mode to the file', () => {
     const file = path.join(tmp(), 'f.txt');
     writeAtomic(file, 'x', 0o600);
-    expect(modeOf(file)).toBe(0o600);
+    if (!ON_WINDOWS) expect(modeOf(file)).toBe(0o600);
   });
 
   test('a failed rename leaves the target untouched and no temporary file', () => {

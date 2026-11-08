@@ -1,0 +1,47 @@
+name: Lensy CLI problem
+description: Something in the lensy command didn't work or looked wrong
+labels: ["cli"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please don't paste anything private: no tokens, no internal hostnames, no unpublished content. For a security problem, email hello@perseveranceai.com instead of opening an issue.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, and what you got.
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and output
+      description: The exact command, and its output. Run it again with LENSY_DEBUG=1 if it failed with an error.
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: lensy --version
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: node -v
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: macOS 15, Windows 11, Ubuntu 24.04
+    validations:
+      required: true
+  - type: input
+    id: tool
+    attributes:
+      label: Docs tool (for local builds)
+      placeholder: VitePress 1.6, Docusaurus 3.8, MkDocs Material 9, Starlight

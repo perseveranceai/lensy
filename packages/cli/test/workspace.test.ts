@@ -8,6 +8,9 @@ import { describe, expect, test } from 'vitest';
 import { findProjectRoot, resultsFolder } from '../src/workspace';
 import { useTempDirs } from './helpers';
 
+// Windows has no Unix file modes and needs admin rights for symlinks: tests of those run on macOS and Linux.
+const ON_WINDOWS = process.platform === 'win32';
+
 const tmp = useTempDirs();
 const mk = (...p: string[]) => { const d = path.join(...p); fs.mkdirSync(d, { recursive: true }); return d; };
 
@@ -89,7 +92,7 @@ describe('findProjectRoot', () => {
       expect(findProjectRoot(home, home)).toBe(home);
     });
 
-    test('the filesystem root is never chosen', () => {
+    test.skipIf(ON_WINDOWS)('the filesystem root is never chosen', () => {
       expect(findProjectRoot(path.parse(process.cwd()).root, tmp())).toBe(path.parse(process.cwd()).root);
       // From a normal folder, the walk reaches the root, finds no marker there, and falls back to the start.
       const cwd = mk(tmp(), 'x');
