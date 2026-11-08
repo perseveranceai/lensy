@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-11-08)
+
+Check a docs build before you publish it: `lensy check --dir <build folder> --site-url <your docs address> --all`.
 
 - **Check a local build:**
   - `lensy check --dir <build folder>` serves the folder on 127.0.0.1 for the run; `--site-url <published address>` matches the build's sitemap, llms.txt and canonical links to it; `--all` checks every page.
