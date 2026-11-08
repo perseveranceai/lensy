@@ -15,9 +15,17 @@ export function findCheck(id: string): CheckMeta | undefined {
 
 // AFDocs-scored checks earn a share of a tier weight; Lensy's C1-S6 are points out of 100.
 const inAfdocsScore = (c: CheckMeta) => AFDOCS_CHECKS.includes(c);
-const worth = (c: CheckMeta) => (inAfdocsScore(c)
-  ? `weight ${c.max} in the Coding agents score (AFDocs tiers: critical 10, high 7, medium 4, low 2)`
-  : `${c.max} of the ${SCORE[c.score]} score's 100 points`);
+const worth = (c: CheckMeta) => {
+  if (inAfdocsScore(c)) {
+    return c.source === 'afdocs'
+      ? `weight ${c.max} in the Coding agents score (AFDocs tiers: critical 10, high 7, medium 4, low 2)`
+      : `weight ${c.max} in the Coding agents score (Lensy's own check, scored alongside AFDocs)`;
+  }
+  // C1-C6 score Coding agents only when AFDocs can't run.
+  return c.score === 'codingAgents'
+    ? `${c.max} of 100 points in the Coding agents score when AFDocs can't run (the fallback)`
+    : `${c.max} of the ${SCORE[c.score]} score's 100 points`;
+};
 
 export function explainCheck(id: string): string | null {
   const c = findCheck(id);
@@ -25,16 +33,14 @@ export function explainCheck(id: string): string | null {
   const lines = [`${c.id} ${c.label}: ${worth(c)}`];
   if (c.source === 'afdocs') lines.push('', 'Source: AFDocs, the Agent-Friendly Documentation checks. The description is AFDocs\' own.');
   lines.push('', `What it measures: ${c.measures}`, '', `Why it matters: ${c.why}`);
-  if (c.hostNote) lines.push('', `Depends on your hosting: ${c.hostNote}`);
-  if (c.sourceNote) lines.push('', `Checking source files: ${c.sourceNote}`);
+  if (c.hostNote) lines.push('', `Depends on your hosting: ${c.hostNote} A local build (--dir or a localhost URL) ${c.hostDependent === 'full' ? "doesn't count this check" : 'counts this check, but your host can change the result'}.`);
   lines.push('', 'Evidence:', ...c.evidence.map(e => `  - ${e.title}: ${e.url}`));
   return lines.join('\n');
 }
 
 function section(out: string[], c: CheckMeta, unit: string) {
   out.push('', `### ${c.id} ${c.label} (${c.max} ${unit})`, '', `**What it measures:** ${c.measures}`, '', `**Why it matters:** ${c.why}`);
-  if (c.hostNote) out.push('', `**Depends on your hosting:** ${c.hostNote}`);
-  if (c.sourceNote) out.push('', `**Checking source files:** ${c.sourceNote}`);
+  if (c.hostNote) out.push('', `**Depends on your hosting:** ${c.hostNote} A local build (\`--dir\` or a localhost URL) ${c.hostDependent === 'full' ? "doesn't count this check" : 'counts this check, but your host can change the result'}.`);
   out.push('', '**Evidence:**', '', ...c.evidence.map(e => `- [${e.title}](${e.url})`));
 }
 

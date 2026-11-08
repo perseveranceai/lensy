@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Getting started | Acme Docs</title>
+<link rel="canonical" href="https://docs.example.test/guide/start">
+<link rel="alternate" type="text/markdown" href="/guide/start.md">
+<meta name="description" content="Install the Acme SDK and send your first event."></head>
+<body><main>
+<div style="position:absolute;clip:rect(0 0 0 0)">For the complete documentation index, see <a href="/llms.txt">llms.txt</a>. Every page is available as Markdown at its address with .md appended.</div>
+<h1 id="getting-started">Getting started</h1>
+<p>This guide takes you from an empty project to your first tracked event. You need an Acme account and a project key, which you can find under Settings in the dashboard. Store the key in an environment variable rather than in source code.</p>
+<h2 id="install">Install the SDK</h2>
+<p>Install the SDK with your package manager. The package works in Node 18 and later and in every modern browser, and has no runtime dependencies.</p>
+<pre><code class="language-bash">npm install @acme/sdk</code></pre>
+<h2 id="first-event">Send your first event</h2>
+<p>Create a client with your key and call track. Events show up in the dashboard within a few seconds. If nothing appears after a minute, check that the key belongs to the project you are looking at.</p>
+<pre><code class="language-js">const acme = new Acme({ key: process.env.ACME_KEY });
+await acme.track('signup', { plan: 'free' });</code></pre>
+<h2 id="next">Next steps</h2>
+<p>Read the API reference to send events from a server, and set up batching before you go to production.</p>
+</main></body></html>

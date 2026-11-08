@@ -2,7 +2,7 @@
 // check() behaviour (tasks 4.6, Req 1.4-1.8): honest user agent on every
 // request, no browser retry, and pages that can't be checked get no scores.
 import { describe, expect, test } from 'vitest';
-import { check, defaultUserAgent, isLocalUrl, LocalUrlError } from '../src/check';
+import { check, defaultUserAgent, isLocalUrl } from '../src/check';
 import { loadFixture, replayFetch } from '../../../backend/lambda/agent-handler/tools/__tests__/replay';
 
 const PAGE = 'https://docs.example.com/guide';
@@ -45,9 +45,11 @@ describe('pages that cannot be checked', () => {
     expect((await check(PAGE, { fetchImpl: impl })).status).toBe('not-html');
   });
 
-  test.each(['http://localhost:3000/', 'http://127.0.0.1:8080/docs', 'http://[::1]/'])('%s is refused until local builds ship', async (url) => {
+  test.each(['http://localhost:3000/', 'http://127.0.0.1:8080/docs', 'http://[::1]/', 'http://docs.localhost:4173/'])('%s is checked in local mode, and an empty local page is not HTML', async (url) => {
     expect(isLocalUrl(url)).toBe(true);
-    await expect(check(url, { fetchImpl: stub(() => new Response('')).impl })).rejects.toBeInstanceOf(LocalUrlError);
+    const r = await check(url, { fetchImpl: stub(() => new Response('')).impl, afdocs: false });
+    expect(r.mode).toBe('local');
+    expect(r.status).toBe('not-html');
   });
 });
 

@@ -9,6 +9,9 @@ import { EXIT, run } from '../src/main';
 import { userConfigFile } from '../src/settings';
 import { listFiles, makeIo, makeProject, replayFetch, useTempDirs, vitest } from './helpers';
 
+// Windows has no Unix file modes and needs admin rights for symlinks: tests of those run on macOS and Linux.
+const ON_WINDOWS = process.platform === 'win32';
+
 const tmp = useTempDirs();
 const QUESTION = 'Save Lensy results for this project in .lensy? Each run is compared with the last one, so you can see what changed. [Y/n] ';
 const f = vitest();
@@ -65,8 +68,10 @@ describe('the first-run question (Req 2)', () => {
     expect(fs.existsSync(x.lensy())).toBe(false);
     expect(JSON.parse(fs.readFileSync(userConfigFile(x.home), 'utf8'))).toEqual({ configVersion: 1, projects: { [x.root]: { save: false } } });
     if (process.platform !== 'win32') {
-      expect(fs.statSync(userConfigFile(x.home)).mode & 0o777).toBe(0o600);
-      expect(fs.statSync(path.dirname(userConfigFile(x.home))).mode & 0o700).toBe(0o700);
+      if (!ON_WINDOWS) {
+        expect(fs.statSync(userConfigFile(x.home)).mode & 0o777).toBe(0o600);
+        expect(fs.statSync(path.dirname(userConfigFile(x.home))).mode & 0o700).toBe(0o700);
+      }
     }
   });
 
@@ -226,7 +231,7 @@ describe("can't save: exit 2 before any request (Req 3.3)", () => {
     expect(fs.readFileSync(x.lensy(), 'utf8')).toBe('a file');
   });
 
-  test('also after a "y" at the question: nothing is remembered', async () => {
+  test.skipIf(ON_WINDOWS)('also after a "y" at the question: nothing is remembered', async () => {
     const x = setup({ interactive: true, answers: ['y'] });
     fs.writeFileSync(x.lensy(), 'a file');
     expect(await run(['check', URL1], x.t.io)).toBe(EXIT.usage);
@@ -303,7 +308,7 @@ describe('pages in .lensy/config.json (Req 6.2-6.4)', () => {
     for (const config of [null, { keep: 3 }, { pages: [] }]) {
       const x = config ? withConfig(config) : setup();
       expect(await run(['check'], x.t.io)).toBe(EXIT.usage);
-      expect(x.t.err()).toBe('Give at least one URL, for example: lensy check https://docs.example.com/guide\nOr list pages in .lensy/config.json under "pages".\n');
+      expect(x.t.err()).toBe('Give at least one URL, for example: lensy check https://docs.example.com/guide\nOr check a build folder: lensy check --dir docs/.vitepress/dist\nOr list pages in .lensy/config.json under "pages".\n');
       expect(x.s.calls).toEqual([]);
     }
   });
@@ -334,10 +339,10 @@ describe('pages in .lensy/config.json (Req 6.2-6.4)', () => {
     expect(x.s.calls).toEqual([]);
   });
 
-  test('a local address in pages is refused like one on the command line', async () => {
+  test('a local address in pages is checked in local mode, with the preview note', async () => {
     const x = withConfig({ pages: ['http://localhost:3000/'] });
-    expect(await run(['check'], x.t.io)).toBe(EXIT.usage);
-    expect(x.t.err()).toContain('is a local address');
+    await run(['check', '--no-save'], x.t.io);
+    expect(x.t.out()).toContain('Checking a server on your machine');
   });
 
   test('unknown keys: one warning on stderr, then the run goes on', async () => {

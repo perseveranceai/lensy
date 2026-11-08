@@ -4,7 +4,8 @@
 // browserFallback: false: the CLI never poses as a browser (Req 1.5).
 import { ACCEPT_HTML, buildScoringV2, collectSignalsV2, fetchPage, headersToRecord, runAfdocsOnPage } from './engine';
 import type { AfdocsModule, PageInput } from './engine';
-import { failedReport, okReport, Report, ReportBase } from './report';
+import { isLocalUrl, localScore, makeLocalFetch, publishedUrl } from './local';
+import { failedReport, okReport, Mode, Report, ReportBase } from './report';
 
 declare const __LENSY_CORE_VERSION__: string;
 declare const __ENGINE_COMMIT__: string;
@@ -30,6 +31,12 @@ export interface CheckOptions {
   afdocs?: boolean;
   /** tests replay a saved AFDocs run instead of loading the bundled module */
   loadAfdocs?: () => Promise<AfdocsModule>;
+  /**
+   * Local mode (a build served on this machine): the published site, so its
+   * sitemap, llms.txt and canonical links resolve against the local server.
+   * See local.ts.
+   */
+  siteUrl?: URL;
 }
 
 // A literal import, so tsup bundles AFDocs into core: users install nothing extra.
@@ -37,56 +44,72 @@ const loadAfdocs = () => import('afdocs') as unknown as Promise<AfdocsModule>;
 // stdout is the CLI's report; if AFDocs fails, Coding agents shows C1-C6 instead.
 const SILENT = { log: () => {}, warn: () => {} };
 
-const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
-
-/** Local builds are phase 2 (Mahesh, 2026-11-02). The CLI exits 2 on these before checking. */
-export function isLocalUrl(url: string): boolean {
-  try { return LOCAL_HOSTS.has(new URL(url).hostname); } catch { return false; }
-}
-
-export class LocalUrlError extends Error {
-  constructor(url: string) {
-    super(`${url} is a local address. Checking a local build comes in a later version.`);
-    this.name = 'LocalUrlError';
-  }
-}
+export { isLocalUrl };
 
 const isHtml = (contentType: string, body: string) =>
   /html/i.test(contentType) || (!contentType && /<html[\s>]/i.test(body));
 
-function base(url: string, finalUrl: string, opts: CheckOptions): ReportBase {
-  return { url, finalUrl, mode: 'url', commit: ENGINE_COMMIT, checkedAt: new Date(opts.now ?? Date.now()).toISOString() };
+function base(url: string, finalUrl: string, opts: CheckOptions, mode: Mode = 'url'): ReportBase {
+  return { url, finalUrl, mode, commit: ENGINE_COMMIT, checkedAt: new Date(opts.now ?? Date.now()).toISOString() };
 }
 
 export async function check(url: string, opts: CheckOptions = {}): Promise<Report> {
-  if (isLocalUrl(url)) throw new LocalUrlError(url);
+  const local = isLocalUrl(url);
+  const mode: Mode = local ? 'local' : 'url';
   const userAgent = opts.userAgent ?? defaultUserAgent();
+  // Local mode: only the local server (and the published site, mapped to it) is reachable.
+  const fetchImpl = local ? makeLocalFetch(new URL(url).origin, opts.siteUrl, opts.fetchImpl ?? fetch) : opts.fetchImpl;
   const r = await fetchPage(url, {
     accept: ACCEPT_HTML,
     timeoutMs: opts.timeoutMs ?? 8000,
     userAgent,
     browserFallback: false,
-    fetchImpl: opts.fetchImpl,
+    fetchImpl,
   });
-  if (r.errorKind === 'blocked') return failedReport(base(url, r.finalUrl, opts), 'blocked', r.status);
-  if (r.errorKind === 'network' || !r.ok) return failedReport(base(url, r.finalUrl, opts), 'unreachable', r.status || undefined);
-  if (!isHtml(r.headers.get('content-type') || '', r.body)) return failedReport(base(url, r.finalUrl, opts), 'not-html', r.status);
+  if (r.errorKind === 'blocked') return failedReport(base(url, r.finalUrl, opts, mode), 'blocked', r.status);
+  if (r.errorKind === 'network' || !r.ok) return failedReport(base(url, r.finalUrl, opts, mode), 'unreachable', r.status || undefined);
+  if (!isHtml(r.headers.get('content-type') || '', r.body)) return failedReport(base(url, r.finalUrl, opts, mode), 'not-html', r.status);
   const page: PageInput = {
-    finalUrl: r.finalUrl,
+    // With a site URL, the page is judged as published: canonical, sitemap and
+    // llms.txt links on the real domain then match it.
+    finalUrl: local && opts.siteUrl ? publishedUrl(r.finalUrl, opts.siteUrl) : r.finalUrl,
     html: r.body,
     headers: headersToRecord(r.headers),
     gate: { via: 'honest', honestStatus: r.status },
   };
-  return checkFromPage(page, { ...opts, userAgent }, url);
+  return checkFromPage(page, { ...opts, userAgent, fetchImpl }, url, mode);
 }
 
 /** Score a page already fetched. The parity tests call this with the fixtures' pages. */
-export async function checkFromPage(page: PageInput, opts: CheckOptions = {}, submittedUrl = page.finalUrl): Promise<Report> {
+export async function checkFromPage(page: PageInput, opts: CheckOptions = {}, submittedUrl = page.finalUrl, mode: Mode = 'url'): Promise<Report> {
   const userAgent = opts.userAgent ?? defaultUserAgent();
   // In parallel, as on the website (check-ai-readiness.ts).
   const [signals, afdocs] = await Promise.all([
     collectSignalsV2(page, { fetchImpl: opts.fetchImpl, timeoutMs: opts.timeoutMs, userAgent, browserFallback: false, now: opts.now }),
     opts.afdocs === false ? undefined : runAfdocsOnPage(page.finalUrl, { load: opts.loadAfdocs ?? loadAfdocs, userAgent, fetchImpl: opts.fetchImpl, log: SILENT }),
   ]);
-  return okReport(base(submittedUrl, page.finalUrl, opts), buildScoringV2(signals, afdocs), signals);
+  const v2 = buildScoringV2(signals, afdocs);
+  const report = okReport(base(submittedUrl, page.finalUrl, opts, mode), v2, signals);
+  if (mode !== 'local') return report;
+  const coding = v2.scores.codingAgents as { cap?: { cap: number } };
+  // Requests to other hosts were refused on purpose, not lost: say so instead of "re-scan".
+  const refused = [...new Set(report.netErrors.map(u => {
+    try {
+      const o = new URL(u).origin;
+      // AFDocs asks for "<origin>.md" for a home page: that is the site itself, not another host.
+      return o.endsWith('.md') && report.netErrors.some(v => { try { return new URL(v).origin === o.slice(0, -3); } catch { return false; } }) ? o.slice(0, -3) : o;
+    } catch { return u; }
+  }))];
+  const tips = report.tips.map(t => t.id !== 'network' ? t : {
+    id: 'local-refused',
+    text: `A local check reaches only this machine, so ${report.netErrors.length} request(s) to ${refused.join(', ')} weren't sent and the checks that need them aren't counted.${opts.siteUrl ? '' : ' If that is your published docs address, add --site-url so they go to the local build.'}`,
+  });
+  return {
+    ...report,
+    tips,
+    scores: {
+      codingAgents: localScore(report.scores.codingAgents, coding.cap?.cap),
+      aiSearch: localScore(report.scores.aiSearch),
+    },
+  };
 }

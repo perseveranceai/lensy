@@ -10,6 +10,9 @@ import {
 import type { ProjectConfig, SaveDecision, UserConfig } from '../src/settings';
 import { listFiles, useTempDirs } from './helpers';
 
+// Windows has no Unix file modes and needs admin rights for symlinks: tests of those run on macOS and Linux.
+const ON_WINDOWS = process.platform === 'win32';
+
 const tmp = useTempDirs();
 const write = (file: string, text: string) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); return file; };
 const modeOf = (p: string) => fs.statSync(p).mode & 0o777;
@@ -179,7 +182,7 @@ describe('writeSaveKey: Req 6.5, only the save key changes', () => {
 });
 
 describe('user settings: ~/.lensy/config.json (Req 2.4, 2.5)', () => {
-  test('remembering a no creates the folder with mode 0700 and the file with mode 0600', () => {
+  test.skipIf(ON_WINDOWS)('remembering a no creates the folder with mode 0700 and the file with mode 0600', () => {
     const home = tmp();
     rememberNoSave(home, '/work/a');
     const file = userConfigFile(home);
@@ -208,7 +211,7 @@ describe('user settings: ~/.lensy/config.json (Req 2.4, 2.5)', () => {
     expect(JSON.parse(fs.readFileSync(userConfigFile(home), 'utf8')).projects['/work/a']).toEqual({ note: 'kept', save: false });
   });
 
-  test('an existing file keeps its mode (the atomic write replaces it with a 0600 file)', () => {
+  test.skipIf(ON_WINDOWS)('an existing file keeps its mode (the atomic write replaces it with a 0600 file)', () => {
     if (process.platform === 'win32') return;
     const home = tmp();
     write(userConfigFile(home), '{}');

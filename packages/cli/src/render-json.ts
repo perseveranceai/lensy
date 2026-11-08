@@ -32,15 +32,20 @@ export function pointsLostOf(r: Report): Record<string, number> {
 export function jsonPage(p: PageResult, change: Change | null): JsonPage {
   if (p.internalError) return { url: p.url, status: 'internal-error', error: p.internalError, change };
   const r = p.report as Report;
+  // A local build's score is points earned out of the points it could check: say out of what.
+  const outOf = r.mode === 'local' ? { scoresOutOf: { codingAgents: r.scores.codingAgents.coveredMax, aiSearch: r.scores.aiSearch.coveredMax } } : {};
   const base = { url: p.url, status: r.status, scores: { codingAgents: r.scores.codingAgents.score, aiSearch: r.scores.aiSearch.score } };
-  if (r.status !== 'ok') return { ...base, change, report: r };
+  // Added fields go last (reportVersion 1 is additive): the mode, and for a local build what each score is out of.
+  const added = { mode: r.mode, ...outOf };
+  if (r.status !== 'ok') return { ...base, change, report: r, ...added };
   const s = summarize(r);
   return {
     ...base,
-    fixes: s.fixes.map(f => ({ check: f.label, audience: f.audience, pointsLost: f.lost, fix: f.action, finding: f.finding })),
+    fixes: s.fixes.map(f => ({ id: f.id, check: f.label, audience: f.audience, pointsLost: f.lost, fix: f.action, finding: f.finding })),
     pointsLost: pointsLostOf(r),
     change,
     report: r,
+    ...added,
   };
 }
 

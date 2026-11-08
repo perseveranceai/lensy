@@ -16,5 +16,6 @@ describe('pages', () => {
     expect(estimateMinutes(2000, 2)).toEqual([84, 250]);
     expect(largeRunNotice(2000, 2)).toBe('Checking 2000 pages, 2 at a time. This takes about 84 to 250 minutes. A higher --concurrency (up to 5) is faster.');
     expect(largeRunNotice(40, 5)).toBe('Checking 40 pages, 5 at a time. This takes about 1 to 2 minutes.');
+    expect(largeRunNotice(17, 5)).toBe('Checking 17 pages, 5 at a time. This takes about 1 minute.');
   });
 });

@@ -22,5 +22,6 @@ export function largeRunNotice(pages: number, concurrency: number): string | nul
   if (pages <= LARGE_RUN) return null;
   const [lo, hi] = estimateMinutes(pages, concurrency);
   const faster = concurrency < 5 ? ' A higher --concurrency (up to 5) is faster.' : '';
-  return `Checking ${pages} pages, ${concurrency} at a time. This takes about ${lo} to ${hi} minutes.${faster}`;
+  const time = lo === hi ? `about ${lo} minute${lo === 1 ? '' : 's'}` : `about ${lo} to ${hi} minutes`;
+  return `Checking ${pages} pages, ${concurrency} at a time. This takes ${time}.${faster}`;
 }

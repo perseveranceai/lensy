@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- **Check a local build:**
+  - `lensy check --dir <build folder>` serves the folder on 127.0.0.1 for the run; `--site-url <published address>` matches the build's sitemap, llms.txt and canonical links to it; `--all` checks every page.
+  - A localhost URL (your tool's preview server) is checked too, with `--all` reading its sitemap.
+  - Checks that your web server or CDN decides are left out and named, and scores read "58 of 70 points checked".
+  - Requests to any other host are refused, so a local check sends nothing off the machine.
+- **Works the same on every tool tested:** `--dir --all` uses the build's own sitemap (including Astro's `sitemap-index.xml`), so pages keep the addresses the docs tool publishes, and falls back to the page files. A trailing-slash path also finds `<path>.html`. `--json` pages say their `mode`, and for local builds `scoresOutOf`; the Markdown front matter has `codingAgentsOutOf` and `aiSearchOutOf`.
+- **Requirements, tested environments and how to report a problem** are in the README and on /cli; GitHub has a CLI issue form.
+- **Clearer output:**
+  - A folder given as a URL now suggests `--dir`.
+  - "about 1 minute" instead of "about 1 to 1 minutes"; `--help` shows each default once.
+  - `--json` fixes carry the check `id`.
+  - The Markdown and HTML reports leave 0-point items out of the fix list, use one-page wording, and never mention other tools' options.
+  - `lensy explain` marks C1-C6 as the fallback for when AFDocs can't run, says how local builds treat host-dependent checks, and no longer mentions checking source files.
+  - When `.lensy/` exists but a run doesn't save, Lensy says so.
+
 ## 0.1.0 (2026-11-08)
 
 First early-access release, published under the npm `next` tag.
