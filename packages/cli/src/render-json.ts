@@ -37,7 +37,7 @@ export function jsonPage(p: PageResult, change: Change | null): JsonPage {
   const s = summarize(r);
   return {
     ...base,
-    fixes: s.fixes.map(f => ({ check: f.label, audience: f.audience, pointsLost: f.lost, fix: f.action, finding: f.finding })),
+    fixes: s.fixes.map(f => ({ id: f.id, check: f.label, audience: f.audience, pointsLost: f.lost, fix: f.action, finding: f.finding })),
     pointsLost: pointsLostOf(r),
     change,
     report: r,

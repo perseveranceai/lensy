@@ -5,6 +5,7 @@ All notable changes to the Lensy Documentation Auditor project will be documente
 ## [Unreleased]
 
 ### Added
+- **CLI guide (`/cli`)**: new "Check a local build" section with real output from a VitePress build (`--dir`, `--site-url`, `--all`, points checked, the comparison after a fix); the "local addresses are refused" limit is gone; fixed details the end-to-end test found (the `next` tag, the Markdown report order, `.lensy` outside git, `page.json`, check ids, exit 2) (CLI-06).
 - **CLI guide (`/cli`)**: new "Save and compare runs" section (the first-run question, a comparison, the `.lensy` folder and `config.json` with `pages`), updated exit codes, and a note that saved results stay on the user's disk (CLI-05).
 - **CLI guide (`/cli`)**: describes the CLI's new short default view, `--verbose` and `--json`.
 - **Prod scan IP kept permanently (REG-29)**: the prod Elastic IP is retained if the stack is deleted or the resource replaced, so allow rules site owners write against the IP on /bot keep working. Gamma still cleans up.

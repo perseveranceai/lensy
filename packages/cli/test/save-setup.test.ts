@@ -303,7 +303,7 @@ describe('pages in .lensy/config.json (Req 6.2-6.4)', () => {
     for (const config of [null, { keep: 3 }, { pages: [] }]) {
       const x = config ? withConfig(config) : setup();
       expect(await run(['check'], x.t.io)).toBe(EXIT.usage);
-      expect(x.t.err()).toBe('Give at least one URL, for example: lensy check https://docs.example.com/guide\nOr list pages in .lensy/config.json under "pages".\n');
+      expect(x.t.err()).toBe('Give at least one URL, for example: lensy check https://docs.example.com/guide\nOr check a build folder: lensy check --dir docs/.vitepress/dist\nOr list pages in .lensy/config.json under "pages".\n');
       expect(x.s.calls).toEqual([]);
     }
   });
@@ -334,10 +334,10 @@ describe('pages in .lensy/config.json (Req 6.2-6.4)', () => {
     expect(x.s.calls).toEqual([]);
   });
 
-  test('a local address in pages is refused like one on the command line', async () => {
+  test('a local address in pages is checked in local mode, with the preview note', async () => {
     const x = withConfig({ pages: ['http://localhost:3000/'] });
-    expect(await run(['check'], x.t.io)).toBe(EXIT.usage);
-    expect(x.t.err()).toContain('is a local address');
+    await run(['check', '--no-save'], x.t.io);
+    expect(x.t.out()).toContain('Checking a server on your machine');
   });
 
   test('unknown keys: one warning on stderr, then the run goes on', async () => {

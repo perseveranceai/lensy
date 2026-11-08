@@ -8,7 +8,7 @@ import type { Check, Report, Score } from '@perseverance-ai/lensy-core';
 import { SOURCE_LABELS, v2Recommendations, v2SignalGroups } from '../../../frontend/src/report/report-view';
 import { sinceLines } from './compare';
 import type { Change } from './compare';
-import { scaledLosses } from './summary';
+import { cleanFix, scaledLosses, tidy } from './summary';
 import { bannerLine, previewLine, toView } from './view';
 import { statusMessage, scoreText } from './render-text';
 
@@ -73,7 +73,7 @@ function page(input: DocInput): DocPage {
         status: STATUS[sig.status],
         points: checks.map(c => (c.points === null ? '-' : String(c.points))).join(' / '),
         max: checks.map(c => String(c.max)).join(' / '),
-        finding: sig.detail,
+        finding: tidy(sig.detail),
         source: (sig.source && SOURCE_LABELS[sig.source]) || '',
       };
     }),
@@ -87,8 +87,11 @@ function page(input: DocInput): DocPage {
     .map(x => {
       const ids = allChecks(r).filter(c => c.fix === x.fix && c.points !== null).map(c => c.id);
       const gain = losses.reduce((n, s) => n + s.checks.filter(c => c.fix === x.fix && c.points !== null).reduce((m, c) => m + (s.lost.get(c.id) ?? 0), 0), 0);
-      return { id: ids.join(', '), issue: x.issue || '', fix: x.fix || '', gain };
+      // One page, in plain words: "The page", and never another tool's options.
+      return { id: ids.join(', '), issue: tidy(x.issue || ''), fix: cleanFix(x.fix || ''), gain };
     })
+    // A fix worth no points isn't a to-do: those findings stay in the tables above.
+    .filter(x => x.gain > 0 && x.fix)
     // The website orders by raw points; the files show scaled points, so order by those (a stable sort keeps the website's order for ties).
     .sort((a, b) => b.gain - a.gain);
 

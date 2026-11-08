@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // The `lensy` command. run() takes its inputs (arguments, streams, fetch,
 // environment) as parameters so tests drive it in process with saved fixtures.
-import { check, defaultUserAgent, ENGINE_COMMIT, isLocalUrl } from '@perseverance-ai/lensy-core';
+import { check, defaultUserAgent, ENGINE_COMMIT, isLocalUrl, makeLocalFetch, parseSiteUrl, publishedUrl } from '@perseverance-ai/lensy-core';
 import type { CheckOptions } from '@perseverance-ai/lensy-core';
 import { Command, CommanderError, InvalidArgumentError, Option } from 'commander';
 import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -9,7 +9,10 @@ import { homedir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { createColors } from 'picocolors';
 import { ALL_CHECKS, explainCheck } from './explain';
-import { largeRunNotice, uniquePages } from './pages';
+import { largeRunNotice } from './pages';
+import { hasHtml, listPages, startServer } from './serve';
+import type { Served } from './serve';
+import { sitemapPages } from './sitemap-pages';
 import { askYesNo } from './prompt';
 import { changeCell, compare, labelsOf } from './compare';
 import type { Change } from './compare';
@@ -51,6 +54,13 @@ export interface Io {
 }
 
 class UsageError extends Error {}
+
+const BUILD_HINTS = [
+  '  VitePress:   npx vitepress build docs        → docs/.vitepress/dist',
+  '  Docusaurus:  npm run build                   → build',
+  '  MkDocs:      mkdocs build                    → site',
+  '  Astro (Starlight): npm run build             → dist',
+].join('\n');
 
 const int = (name: string, min: number, max: number) => (v: string) => {
   const n = Number(v);
@@ -159,16 +169,19 @@ export async function run(argv: string[], io: Io): Promise<number> {
     .option('--urls-file <path>', 'read page URLs from a file, one per line')
     .option('--user-agent <string>', 'send this user agent instead of lensy-cli/<version>')
     .option('--timeout <ms>', 'timeout per request in milliseconds', int('--timeout', 1000, 120000))
-    .option('--concurrency <n>', 'pages checked at once (default 2)', int('--concurrency', 1, 5), 2)
+    .option('--concurrency <n>', 'pages checked at once, 1 to 5', int('--concurrency', 1, 5), 2)
     .option('--html <file>', 'write the full report as one offline HTML file')
     .option('--md <file>', 'write the full report as Markdown, for coding agents')
     .option('--json <file>', 'write the results as JSON for scripts and CI; - prints only the JSON')
     .option('--verbose', 'show every check with its points instead of what to fix first')
+    .option('--dir <folder>', 'check a docs build folder (for example docs/.vitepress/dist)')
+    .option('--site-url <url>', 'your published docs address, to check a local build as published')
+    .option('--all', 'check every page of a local build (from its files or sitemap)')
     .option('--save', 'save results in .lensy/, compare with last run')
     .option('--save-dir <dir>', 'save results in <dir> instead of .lensy/')
     .addOption(noSave)
     .option('--no-color', 'plain text output')
-    .action(async (urls: string[], o: { urlsFile?: string; userAgent?: string; timeout?: number; concurrency: number; html?: string; md?: string; json?: string; verbose?: boolean; save?: boolean; saveDir?: string; noSave?: boolean; color: boolean }) => {
+    .action(async (urls: string[], o: { urlsFile?: string; userAgent?: string; timeout?: number; concurrency: number; html?: string; md?: string; json?: string; verbose?: boolean; dir?: string; siteUrl?: string; all?: boolean; save?: boolean; saveDir?: string; noSave?: boolean; color: boolean }) => {
       // Flag conflicts come first: nothing is read, asked or fetched before them.
       if (o.save && o.noSave) throw new UsageError("--save and --no-save can't be used together.");
       if (o.saveDir !== undefined && o.noSave) throw new UsageError("--save-dir and --no-save can't be used together.");
@@ -193,20 +206,62 @@ export async function run(argv: string[], io: Io): Promise<number> {
         throw e;
       }
 
+      // Local builds: --dir serves a build folder; a localhost URL checks a preview already running.
+      let siteUrl: URL | undefined;
+      if (o.siteUrl !== undefined) {
+        try { siteUrl = parseSiteUrl(o.siteUrl); } catch (e) { throw new UsageError((e as Error).message); }
+      }
+      const basePath = siteUrl?.pathname ?? '/';
+      const dir = o.dir !== undefined ? resolve(cwd, o.dir) : undefined;
+      if (dir !== undefined) {
+        let isDir = false;
+        try { isDir = statSync(dir).isDirectory(); } catch { /* reported below */ }
+        if (!isDir) throw new UsageError(`--dir ${o.dir}: there's no folder there.`);
+        if (!hasHtml(dir)) throw new UsageError(`--dir ${o.dir} has no .html pages. Point it at your build output, after building:\n${BUILD_HINTS}`);
+      }
+
       // The pages: arguments and --urls-file, else "pages" from the project config (Req 6.2-6.3).
       const raw = [...urls, ...(o.urlsFile ? readUrlsFile(o.urlsFile) : [])];
-      let list: string[];
-      if (raw.length) {
-        list = raw.map(normalizeUrl);
+      // A folder given as a URL: say how to check it instead of fetching "https://docs/...".
+      if (dir === undefined) {
+        for (const r of raw) {
+          if (/^[a-z][a-z0-9+.-]*:\/\//i.test(r)) continue;
+          let onDisk = false;
+          try { onDisk = statSync(resolve(cwd, r)).isDirectory(); } catch { /* not a folder */ }
+          if (onDisk) throw new UsageError(`"${r}" is a folder on your disk. To check a build folder, run: lensy check --dir ${r}`);
+        }
+      }
+      let targets: { url: string; path?: string }[];
+      if (dir !== undefined) {
+        // With --dir, pages are paths in the build ("/guide/start"), or URLs on --site-url.
+        const paths = raw.length ? raw.map(r => {
+          if (/^https?:\/\//i.test(r)) {
+            const u = new URL(r);
+            if (siteUrl && u.origin === siteUrl.origin) return u.pathname + u.search;
+            throw new UsageError(`With --dir, give pages as paths in the build, such as /guide/start${siteUrl ? `, or URLs on ${siteUrl.origin}` : ''}. "${r}" isn't one.`);
+          }
+          const rel = r.replace(/^\/+/, '');
+          return rel.startsWith(basePath.slice(1)) && basePath !== '/' ? '/' + rel : basePath + rel;
+        }) : o.all ? listPages(dir, basePath) : [basePath];
+        targets = paths.map(path => ({ url: siteUrl ? `${siteUrl.origin}${path}` : `http://localhost${path}`, path }));
+      } else if (raw.length) {
+        targets = raw.map(normalizeUrl).map(url => ({ url }));
       } else if (project?.pages?.length) {
-        list = project.pages.map(entry => {
-          try { return normalizeUrl(entry); } catch (e) { throw new UsageError(`${configShown}: in "pages", ${(e as Error).message}`); }
+        targets = project.pages.map(entry => {
+          try { return { url: normalizeUrl(entry) }; } catch (e) { throw new UsageError(`${configShown}: in "pages", ${(e as Error).message}`); }
         });
       } else {
-        throw new UsageError(`Give at least one URL, for example: lensy check https://docs.example.com/guide\nOr list pages in .lensy/config.json under "pages".`);
+        throw new UsageError(`Give at least one URL, for example: lensy check https://docs.example.com/guide\nOr check a build folder: lensy check --dir docs/.vitepress/dist\nOr list pages in .lensy/config.json under "pages".`);
       }
-      const local = list.find(isLocalUrl);
-      if (local) throw new UsageError(`${local} is a local address. Checking a local build comes in a later version.`);
+      const localPreviews = dir === undefined ? targets.filter(t => isLocalUrl(t.url)) : [];
+      if (siteUrl && dir === undefined && !localPreviews.length) throw new UsageError('--site-url is for checking a local build: use it with --dir or a localhost URL.');
+      if (o.all && dir === undefined && !localPreviews.length) throw new UsageError('--all is for a local build: use it with --dir, or with the address of your local preview, for example lensy check http://localhost:4173 --all.');
+      if (o.all && dir === undefined) {
+        const origin = new URL(localPreviews[0].url).origin;
+        const found = await sitemapPages(origin, basePath, makeLocalFetch(origin, siteUrl, io.fetchImpl ?? fetch));
+        if (!found.pages.length) throw new UsageError(`--all: ${origin}${basePath}sitemap.xml has no pages, or there isn't one. List pages instead, or use --dir with your build folder.`);
+        targets = [...targets.filter(t => !isLocalUrl(t.url)), ...found.pages.map(url => ({ url }))];
+      }
       const htmlPath = reportPath('--html', o.html);
       const mdPath = reportPath('--md', o.md);
       const jsonPath = jsonOnly ? undefined : reportPath('--json', o.json);
@@ -228,6 +283,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
         }
       }
       const saving = decision === 'save';
+      // .lensy/ exists but this run doesn't save (CI, a script, or no answer yet): say so, so history isn't skipped silently.
+      const notSavedHint = !saving && !o.noSave && existsSync(resultsDir)
+        ? `Not saved: ${resultsShown} exists, but this run doesn't save there. Pass --save, or set "save": true in ${configShown}.`
+        : null;
       if (saving) {
         try {
           ensureWritable(resultsDir);
@@ -238,22 +297,44 @@ export async function run(argv: string[], io: Io): Promise<number> {
       }
 
       const c = createColors(o.color && !!io.stdout.isTTY && !io.env.NO_COLOR);
-      const { pages: toCheck } = uniquePages(list);
+      // Each page once, by the address it's shown and saved under.
+      const seen = new Set<string>();
+      const toCheck = targets.filter(t => (seen.has(t.url) ? false : (seen.add(t.url), true)));
+      const out = jsonOnly ? io.stderr : io.stdout;
       const notice = largeRunNotice(toCheck.length, o.concurrency);
-      if (notice) (jsonOnly ? io.stderr : io.stdout).write((jsonOnly ? notice : c.yellow(notice)) + '\n\n');
+      if (notice) out.write((jsonOnly ? notice : c.yellow(notice)) + '\n\n');
+      if (dir !== undefined || localPreviews.length) {
+        const lines = [dir !== undefined
+          ? `Checking the build in ${shown(cwd, dir)}${siteUrl ? ` as ${siteUrl.origin}${basePath === '/' ? '' : basePath}` : ''}. Checks that depend on your hosting are left out.`
+          : 'Checking a server on your machine. Use your docs tool\'s preview of the production build (vitepress preview, docusaurus serve), not its dev server. Checks that depend on your hosting are left out.'];
+        if (!siteUrl) lines.push('Add --site-url with your published docs address so the sitemap, canonical and llms.txt links are matched to these pages.');
+        out.write(lines.map(l => (jsonOnly ? l : c.dim(l))).join('\n') + '\n\n');
+      }
       const userAgent = o.userAgent ?? defaultUserAgent(io.version);
       // One start time for the whole run: it names the run files and is "checked at" in every output.
       const startedAt = (io.now ?? Date.now)();
       const tool = { version: io.version, engineCommit: ENGINE_COMMIT, checkedAt: new Date(startedAt).toISOString() };
-      const pages = await pool(toCheck, o.concurrency, async (url): Promise<PageResult> => {
-        try {
-          return { url, report: await check(url, { userAgent, timeoutMs: o.timeout, fetchImpl: io.fetchImpl, loadAfdocs: io.loadAfdocs }) };
-        } catch (e) {
-          if (io.env.LENSY_DEBUG === '1') io.stderr.write(`${(e as Error).stack}\n`);
-          // Saved files never hold a path of this machine (Req 4.10), and an engine error can name one.
-          return { url, internalError: scrubPaths((e as Error).message, [cwd, root, home]) };
-        }
-      });
+      let served: Served | undefined;
+      let pages: PageResult[];
+      try {
+        if (dir !== undefined) served = await startServer(dir, basePath);
+        pages = await pool(toCheck, o.concurrency, async (t): Promise<PageResult> => {
+          // --dir pages are fetched from the local server; they're shown and saved by their published address.
+          const checkUrl = served && t.path !== undefined ? `${served.origin}${t.path}` : t.url;
+          try {
+            const report = await check(checkUrl, { userAgent, timeoutMs: o.timeout, fetchImpl: io.fetchImpl, loadAfdocs: io.loadAfdocs, siteUrl });
+            const url = served ? t.url : siteUrl && isLocalUrl(t.url) ? publishedUrl(t.url, siteUrl) : t.url;
+            // A --dir page is shown by its address, never the server's random port.
+            return { url, report: { ...report, url, ...(served ? { finalUrl: url } : {}) } };
+          } catch (e) {
+            if (io.env.LENSY_DEBUG === '1') io.stderr.write(`${(e as Error).stack}\n`);
+            // Saved files never hold a path of this machine (Req 4.10), and an engine error can name one.
+            return { url: t.url, internalError: scrubPaths((e as Error).message, [cwd, root, home]) };
+          }
+        });
+      } finally {
+        await served?.close();
+      }
 
       // Saving (Req 3-5, 8): compare each page with its last run, then write, holding the lock.
       const state: { changes?: (Change | null)[]; savedIn?: string; saveFailed?: boolean } = {};
@@ -287,6 +368,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
       if (jsonOnly) {
         io.stdout.write(json);
         if (state.savedIn) io.stderr.write(`Results saved in ${state.savedIn}\n`);
+        if (notSavedHint) io.stderr.write(`${notSavedHint}\n`);
         return;
       }
 
@@ -301,6 +383,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
         ? [renderPage(c, pages[0], { verbose: o.verbose, width, change: view(0) }), ...(written.length ? [pointer] : [])]
         : [renderSummary(c, pages, changes), ...pages.map((p, i) => (o.verbose ? renderPage(c, p, { verbose: true, width, change: view(i) }) : renderBrief(c, p, 3, width, view(i)))), pointer];
       if (state.savedIn) parts.push(c.dim(`Results saved in ${state.savedIn}`));
+      if (notSavedHint) parts.push(c.dim(notSavedHint));
       io.stdout.write(parts.join('\n\n') + '\n');
     });
 

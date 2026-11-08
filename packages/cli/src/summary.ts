@@ -23,6 +23,7 @@ export function tidy(text: string): string {
     .replace(/^1 pages (\w+)/g, (_, v) => `The page ${verb(v)}`)
     .replace(/\b1\/1 pages (\w+)/g, (_, v) => `The page ${verb(v)}`)
     .replace(/ of any of 1 pages/g, ' of the page')
+    .replace(/ of 1 of 1 pages/g, ' of the page')
     .replace(/ (?:on|across) (?:all )?1 pages/g, ' on the page')
     .replace(/ \(0\/1 pages return markdown\)/g, '')
     .replace(/ \(100%\)$/, '')
@@ -43,6 +44,8 @@ export function actionLine(fix: string): string | null {
 }
 
 export interface FixItem {
+  /** the check id, for `lensy explain` and scripts */
+  id: string;
   label: string;
   audience: 'Coding agents' | 'AI search' | 'Both audiences';
   /** points lost on the 0-100 scale; they add up to 100 minus the score */
@@ -63,7 +66,10 @@ export const SHARED_JS = new Set(['C1', 'rendering-strategy', 'S2']);
  */
 export function scaledLosses(s: Score): Map<string, number> {
   const ran = s.checks.filter(c => c.points !== null && c.max > 0);
-  const possible = ran.reduce((n, c) => n + c.max, 0);
+  // Local mode scores on the scale of every check, skipped ones included, so the
+  // losses add up to the points checked minus the score ("71 of 84").
+  const scale = s.label === 'local' ? s.checks.filter(c => c.max > 0) : ran;
+  const possible = scale.reduce((n, c) => n + c.max, 0);
   const out = new Map<string, number>();
   if (!possible) return out;
   const raw = ran.map(c => ({ id: c.id, v: ((c.max - (c.points as number)) * 100) / possible }));
@@ -81,6 +87,7 @@ export function scaledLosses(s: Score): Map<string, number> {
 
 /** The uncapped score the checks add up to, when the reported score is lower (an AFDocs cap). */
 export function capFrom(s: Score): number | null {
+  if (s.label === 'local') return null; // local scores are shown as points checked, not against 100
   const ran = s.checks.filter(c => c.points !== null && c.max > 0);
   const possible = ran.reduce((n, c) => n + c.max, 0);
   if (!possible || s.score === null) return null;
@@ -108,7 +115,7 @@ export function summarize(r: Report): Summary {
     }
     const finding = tidy(c.detail);
     if (lost <= 0) { byKey.set(key, null); notes.push({ label: c.label, finding }); return; }
-    const item: FixItem = { label: c.label, audience, lost, action: c.fix ? actionLine(c.fix) : null, finding };
+    const item: FixItem = { id: c.id, label: c.label, audience, lost, action: c.fix ? actionLine(c.fix) : null, finding };
     byKey.set(key, item);
     fixes.push(item);
   };

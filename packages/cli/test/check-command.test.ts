@@ -217,7 +217,9 @@ describe('--json', () => {
 describe('invalid usage exits 2 before any request', () => {
   test.each([
     [[], 'Give at least one URL'],
-    [['http://localhost:3000'], 'Checking a local build comes in a later version.'],
+    [['--site-url', 'https://docs.example.com', 'https://docs.example.com/guide'], '--site-url is for checking a local build'],
+    [['--all', 'https://docs.example.com/guide'], '--all is for a local build'],
+    [['--dir', 'no-such-folder'], "there's no folder there"],
     [['ftp://example.com'], "isn't an http or https URL"],
     [['--concurrency', '9', 'example.com'], 'from 1 to 5'],
     [['--urls-file', 'no-such-file.txt'], "Can't read --urls-file"],
@@ -244,7 +246,7 @@ describe('built binary', () => {
     expect(v.status).toBe(0);
     expect(v.stdout.trim()).toMatch(/^\d+\.\d+\.\d+/);
     expect(exec('check').status).toBe(2);
-    expect(exec('check', 'http://localhost:3000').status).toBe(2);
+    expect(exec('check', '--dir', 'no-such-folder').status).toBe(2);
     expect(exec('nope').status).toBe(2);
   });
 });

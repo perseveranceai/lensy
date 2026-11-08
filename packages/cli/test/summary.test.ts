@@ -16,6 +16,7 @@ describe('tidy: one page, not a site sample', () => {
     ['Server ignores Accept: text/markdown header (0/1 pages return markdown)', 'Server ignores Accept: text/markdown header'],
     ['1/1 pages support .md URLs (100%)', 'The page supports .md URLs'],
     ['All 20 code fences properly closed across 2 pages', 'All 20 code fences properly closed across 2 pages'],
+    ['llms.txt directive found in HTML of 1 of 1 pages, but buried', 'llms.txt directive found in HTML of the page, but buried'],
     ['All 1 pages under 50K chars (median 6K, max 6K)', 'The page is under 50K chars (median 6K, max 6K)'],
     ['1 pages have minor content differences between their markdown and HTML versions.', 'The page has minor content differences between its Markdown and HTML versions.'],
   ])('%s', (input, out) => expect(tidy(input)).toBe(out));

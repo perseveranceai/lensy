@@ -22,8 +22,8 @@ fileMatchPattern: "packages/**"
   - It never retries with a browser user agent. A page refused with 403 or 429 gets a message pointing to perseveranceai.com, and never advice to weaken bot protection.
   - It never sends other crawlers' names (GPTBot, ClaudeBot).
 - **Nothing is sent to Perseverance AI.** Results are saved only on the user's disk. There's no account and no telemetry. Opt-in usage records are a later, separate spec.
+- **Local builds:** `--dir <build folder>` (served on 127.0.0.1 by `packages/cli/src/serve.ts`) or a localhost preview URL, with `--site-url` mapping the published address to the local server (`packages/core/src/local.ts`). Host-dependent checks (registry `hostDependent: 'full'`) are skipped; scores read "X of Y points checked". Local mode never sends a request off the machine.
 - **Not built yet:**
-  - checking local builds (`localhost`; spec `cli-serve`);
   - source mode;
   - CI thresholds and a GitHub Action;
   - posting results to Slack or email;
@@ -63,9 +63,9 @@ fileMatchPattern: "packages/**"
 packages/
 ├─ package.json  tsconfig.base.json  LICENSE (MIT)  SECURITY.md  CONTRIBUTING.md  CHANGELOG.md
 ├─ core/   @perseverance-ai/lensy-core: check(), checkFromPage(), the Report shape
-│  └─ src/ (index.ts, check.ts, report.ts, engine.ts: the only file that imports engine code)
+│  └─ src/ (index.ts, check.ts, local.ts, report.ts, engine.ts: the only file that imports engine code)
 ├─ cli/    @perseverance-ai/lensy: the `lensy` command
-│  └─ src/ (cli.ts, main.ts, pages.ts, summary.ts, render-text.ts, render-json.ts,
+│  └─ src/ (cli.ts, main.ts, pages.ts, serve.ts, sitemap-pages.ts, summary.ts, render-text.ts, render-json.ts,
 │           report-doc.ts, render-md.ts, render-html.ts, view.ts, explain.ts)
 └─ docs/   checks.md (generated from the registry: npm run docs:checks)
 ```

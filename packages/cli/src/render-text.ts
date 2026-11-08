@@ -20,8 +20,10 @@ export interface PageResult {
 
 const pad = (s: string, n: number) => (s.length >= n ? s : s + ' '.repeat(n - s.length));
 
-export function scoreText(s: Score): string {
+export function scoreText(s: Score, short = false): string {
   if (s.score === null) return '-';
+  // A local build: points earned out of the points a local preview can test, never stretched to 100.
+  if (s.label === 'local') return short ? `${s.score} of ${s.coveredMax}` : `${s.score} of ${s.coveredMax} points checked`;
   const label = s.label ? ` (${s.label}${s.coveredMax < 100 ? `, covers ${s.coveredMax} of 100 points` : ''})` : '';
   return `${s.score}/100${label}`;
 }
@@ -153,6 +155,11 @@ function renderShort(c: Colors, p: PageResult, opts: PageOptions): string {
   const [cp, ct] = sum.passed.coding;
   const [sp, st] = sum.passed.search;
   lines.push('', `  Passed: ${cp} of ${ct} Coding agents checks, ${sp} of ${st} AI search checks.`);
+  // Local builds: name what wasn't checked, so "71 of 84 points checked" is never read as the whole picture.
+  const skipped = [...r.scores.codingAgents.checks, ...r.scores.aiSearch.checks].filter(x => x.status === 'skipped');
+  if (skipped.length) {
+    lines.push(...wrap(`Not checked here (your web server or CDN decides these, so check the live site for them): ${[...new Set(skipped.map(x => x.label))].join(', ')}.`, '  ', width).map(l => c.dim(l)));
+  }
   if (sum.notes.length) {
     lines.push(c.dim('  Not scored:'));
     for (const nt of sum.notes) lines.push(...wrap(`${nt.label}: ${nt.finding}`, '      ', width).map((l, i) => c.dim(i ? l : `    - ${l.trimStart()}`)));
@@ -185,8 +192,8 @@ export function renderSummary(c: Colors, pages: PageResult[], changes?: (Change 
     const ok = r?.status === 'ok' && !p.internalError;
     return [
       p.url,
-      ok ? scoreText(r!.scores.codingAgents) : '-',
-      ok ? scoreText(r!.scores.aiSearch) : '-',
+      ok ? scoreText(r!.scores.codingAgents, true) : '-',
+      ok ? scoreText(r!.scores.aiSearch, true) : '-',
       ...(changes ? [changeCell(changes[i] ?? null, ok)] : []),
       p.internalError ? 'internal error' : r!.status,
     ];
@@ -213,6 +220,10 @@ export function renderBrief(c: Colors, p: PageResult, fixes = 3, width = 100, vi
     lines.push(...wrap(f.action ?? f.finding, '      ', width));
   }
   const more = all.length - top.length;
-  if (more > 0) lines.push(c.dim(`  ${more} more fix${more === 1 ? '' : 'es'}: lensy check ${p.url}`));
+  if (more > 0) {
+    // A local build isn't at its URL yet, so point to the full report instead of a live check.
+    const where = r.mode === 'local' ? 'see them with --verbose or --md report.md' : `lensy check ${p.url}`;
+    lines.push(c.dim(`  ${more} more fix${more === 1 ? '' : 'es'}: ${where}`));
+  }
   return lines.join('\n');
 }

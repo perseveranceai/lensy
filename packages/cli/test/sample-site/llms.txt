@@ -1,0 +1,7 @@
+# Acme Docs
+
+> Docs for the fictional Acme SDK.
+
+## Guide
+
+- [Getting started](https://docs.example.test/guide/start.md): install the SDK and send your first event

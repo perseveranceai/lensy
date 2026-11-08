@@ -29,7 +29,7 @@ test('CLI-02: /cli has the guide sections in order, the install command and the 
   await expect(page).toHaveTitle('Command-line guide - Lensy');
   const guide = page.getByTestId('cli-guide');
   await expect(guide.locator('h2')).toHaveText([
-    'What it is', 'Install', 'Check a page', 'Check several pages', 'Save a report',
+    'What it is', 'Install', 'Check a page', 'Check several pages', 'Check a local build', 'Save a report',
     'Save and compare runs', 'Explain a check', 'Exit codes', 'What it sends', "What it can't do yet",
   ]);
   await expect(guide.getByLabel('Install command')).toContainText('npm install -g @perseverance-ai/lensy@next');
@@ -38,8 +38,8 @@ test('CLI-02: /cli has the guide sections in order, the install command and the 
   await expect(guide.getByText(/The points add up to each score/)).toBeVisible();
   await expect(guide.locator('code', { hasText: '--verbose' }).first()).toBeVisible();
   await expect(guide.getByLabel('Save reports')).toContainText('--json report.json');
-  // What it can't do yet: no local builds, said plainly.
-  await expect(guide.getByText(/local addresses are refused with exit code 2/)).toBeVisible();
+  // Local builds are supported now: the old "refused" line is gone.
+  await expect(guide.getByText(/local addresses are refused/)).toHaveCount(0);
   // The user agent matches the one /bot describes, and the link goes there.
   await expect(guide.getByText('lensy-cli/<version> (+https://perseveranceai.com/bot)')).toBeVisible();
   await guide.getByRole('link', { name: 'bot page' }).click();
@@ -61,6 +61,19 @@ test('CLI-05: "Save and compare runs" shows the question, a comparison, the fold
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.getByRole('navigation', { name: 'On this page' }).getByRole('link', { name: 'Save and compare runs' }).click();
   await expect(page).toHaveURL(/#save-and-compare$/);
+});
+
+test('CLI-06: "Check a local build" shows --dir, --site-url, a points-checked result and the comparison', async ({ page }) => {
+  await page.goto('/cli');
+  const guide = page.getByTestId('cli-guide');
+  await expect(guide.getByLabel('Check a VitePress build')).toContainText('lensy check --dir docs/.vitepress/dist --site-url https://docs.example.com --all');
+  await expect(guide.getByLabel('Example local check')).toContainText('58 of 70 points checked');
+  await expect(guide.getByLabel('Example local check')).toContainText('Not checked here');
+  await expect(guide.getByLabel('Example local comparison')).toContainText('AI search 77 → 89 (+12)');
+  await expect(guide.getByText(/not the dev server/)).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.getByRole('navigation', { name: 'On this page' }).getByRole('link', { name: 'Check a local build' }).click();
+  await expect(page).toHaveURL(/#local-build$/);
 });
 
 test('CLI-02: the side links jump to a section', async ({ page }) => {

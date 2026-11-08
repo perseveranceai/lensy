@@ -133,10 +133,11 @@ The `/cli` page and the "Command line" section on the home page. Spec: `.context
 | ID | Steps | Expected |
 |---|---|---|
 | CLI-01 [auto] | Open `/`, find the Command line section, click **Read the CLI guide** | The section sits before "A few good questions"; the link opens `/cli` |
-| CLI-02 [auto] | Open `/cli`; click a side link | The ten sections are in order; the install command and `lensy-cli/<version>` user agent are shown; the example output shows "Fix these first", and `--verbose` and `--json` are described; local addresses are said to be refused; the side link scrolls the section below the header; the bot page link opens `/bot` |
+| CLI-02 [auto] | Open `/cli`; click a side link | The eleven sections are in order; the install command and `lensy-cli/<version>` user agent are shown; the example output shows "Fix these first", and `--verbose` and `--json` are described; the old "local addresses are refused" line is gone; the side link scrolls the section below the header; the bot page link opens `/bot` |
 | CLI-03 [auto] | At 375px, light and dark: `/` and `/cli` | No horizontal scroll; the longest command scrolls inside its box and can be focused |
 | CLI-04 [manual] | Before approving prod: `npm view @perseverance-ai/lensy dist-tags`, then run the Install commands from the page on a clean machine | The `next` tag exists and every command on the page works as written |
 | CLI-05 [auto] | Open `/cli`, find **Save and compare runs**; click its side link | The first-run question, a real comparison (`Since …`, `Fixed:`), the `.lensy` folder layout and `config.json` with `pages` are shown; `--save`, `--no-save` and `--save-dir` are described; saved results are said to stay on the machine; the side link scrolls to the section |
+| CLI-06 [auto] | Open `/cli`, find **Check a local build**; click its side link | The `--dir … --site-url … --all` command, a real local result ("58 of 70 points checked", "Not checked here"), the comparison after a fix (`77 → 89 (+12)`) and the preview-not-dev-server note are shown; the side link scrolls to the section |
 
 ## Regression cases (from real incidents)
 

@@ -116,7 +116,7 @@ Each check earns a share of its weight (critical 10, high 7, medium 4, low 2; a 
 
 **Why it matters:** Agents guess <page>.md; a Markdown copy is much smaller than the HTML.
 
-**Depends on your hosting:** A rewrite from <page> to <page>.md can be set by your host rather than your build.
+**Depends on your hosting:** A rewrite from <page> to <page>.md can be set by your host rather than your build. A local build (`--dir` or a localhost URL) counts this check, but your host can change the result.
 
 **Evidence:**
 
@@ -128,7 +128,7 @@ Each check earns a share of its weight (critical 10, high 7, medium 4, low 2; a 
 
 **Why it matters:** Claude Code, Cursor and OpenCode ask for Markdown first.
 
-**Depends on your hosting:** Your web server or CDN decides what to return for Accept: text/markdown.
+**Depends on your hosting:** Your web server or CDN decides what to return for Accept: text/markdown. A local build (`--dir` or a localhost URL) doesn't count this check.
 
 **Evidence:**
 
@@ -250,7 +250,7 @@ Each check earns a share of its weight (critical 10, high 7, medium 4, low 2; a 
 
 **Why it matters:** A "not found" page served with 200 looks like real content to an agent.
 
-**Depends on your hosting:** Status codes for missing pages are set by your web server or host.
+**Depends on your hosting:** Status codes for missing pages are set by your web server or host. A local build (`--dir` or a localhost URL) doesn't count this check.
 
 **Evidence:**
 
@@ -262,7 +262,7 @@ Each check earns a share of its weight (critical 10, high 7, medium 4, low 2; a 
 
 **Why it matters:** Cross-host or JavaScript redirects lose agents that follow links.
 
-**Depends on your hosting:** Redirects are configured on your host or CDN.
+**Depends on your hosting:** Redirects are configured on your host or CDN. A local build (`--dir` or a localhost URL) doesn't count this check.
 
 **Evidence:**
 
@@ -294,7 +294,7 @@ Each check earns a share of its weight (critical 10, high 7, medium 4, low 2; a 
 
 **Why it matters:** Long caching keeps agents reading old versions after you fix a page.
 
-**Depends on your hosting:** Cache headers are set by your web server or CDN.
+**Depends on your hosting:** Cache headers are set by your web server or CDN. A local build (`--dir` or a localhost URL) doesn't count this check.
 
 **Evidence:**
 
@@ -306,7 +306,7 @@ Each check earns a share of its weight (critical 10, high 7, medium 4, low 2; a 
 
 **Why it matters:** Agents can't log in, so gated docs are invisible to them.
 
-**Depends on your hosting:** Login walls are enforced by your host.
+**Depends on your hosting:** Login walls are enforced by your host. A local build (`--dir` or a localhost URL) doesn't count this check.
 
 **Evidence:**
 
@@ -318,7 +318,7 @@ Each check earns a share of its weight (critical 10, high 7, medium 4, low 2; a 
 
 **Why it matters:** When docs need a login, an alternative path lets agents read them anyway.
 
-**Depends on your hosting:** Access rules are enforced by your host.
+**Depends on your hosting:** Access rules are enforced by your host. A local build (`--dir` or a localhost URL) doesn't count this check.
 
 **Evidence:**
 
@@ -330,7 +330,7 @@ Each check earns a share of its weight (critical 10, high 7, medium 4, low 2; a 
 
 **Why it matters:** Bot protection that refuses honest agents keeps the docs out of their answers.
 
-**Depends on your hosting:** Bot protection runs on your host or CDN, not in your build.
+**Depends on your hosting:** Bot protection runs on your host or CDN, not in your build. A local build (`--dir` or a localhost URL) doesn't count this check.
 
 **Evidence:**
 
@@ -363,8 +363,6 @@ Each check earns a share of its weight (critical 10, high 7, medium 4, low 2; a 
 
 **Why it matters:** AI crawlers and most coding agents fetch the HTML and do not run JavaScript, so content rendered in the browser is invisible to them.
 
-**Checking source files:** Needs the built site: the rendered HTML, the files your build generates and the headers your host sends.
-
 **Evidence:**
 
 - [Do AI crawlers render JavaScript (Vercel and MERJ data, via SearchOptimo)](https://searchoptimo.com/blog/do-ai-crawlers-render-javascript)
@@ -375,9 +373,7 @@ Each check earns a share of its weight (critical 10, high 7, medium 4, low 2; a 
 
 **Why it matters:** Claude Code, Cursor and OpenCode ask for Markdown first. Markdown is far smaller than the HTML of the same page, so more of it fits in what the agent reads.
 
-**Depends on your hosting:** Your web server or CDN decides what to return for Accept: text/markdown.
-
-**Checking source files:** Needs the built site: the rendered HTML, the files your build generates and the headers your host sends.
+**Depends on your hosting:** Your web server or CDN decides what to return for Accept: text/markdown. A local build (`--dir` or a localhost URL) doesn't count this check.
 
 **Evidence:**
 
@@ -391,9 +387,7 @@ Each check earns a share of its weight (critical 10, high 7, medium 4, low 2; a 
 
 **Why it matters:** Agents guess .md URLs and follow llms.txt. A copy nothing points to is found less often.
 
-**Depends on your hosting:** A Link header advertising the Markdown copy, or a rewrite to <page>.md, is set by your host.
-
-**Checking source files:** Needs the built site: the rendered HTML, the files your build generates and the headers your host sends.
+**Depends on your hosting:** A Link header advertising the Markdown copy, or a rewrite to <page>.md, is set by your host. A local build (`--dir` or a localhost URL) counts this check, but your host can change the result.
 
 **Evidence:**
 
@@ -406,8 +400,6 @@ Each check earns a share of its weight (critical 10, high 7, medium 4, low 2; a 
 
 **Why it matters:** Coding agents use llms.txt to find the right page. AI crawlers do not request it, so it counts for coding agents only.
 
-**Checking source files:** Scored only when a static llms.txt is in the folder (for example public/ or static/); links are checked against files in the folder.
-
 **Evidence:**
 
 - [Inside Mintlify's agent stack](https://theairuntime.com/p/inside-mintlifys-agent-stack)
@@ -419,8 +411,6 @@ Each check earns a share of its weight (critical 10, high 7, medium 4, low 2; a 
 
 **Why it matters:** Agents read a limited window per fetch, about 100,000 characters, and have to page or give up beyond it.
 
-**Checking source files:** Estimated from the Markdown length.
-
 **Evidence:**
 
 - [How Claude Code eats the web](https://giuseppegurgone.com/claude-webfetch)
@@ -430,8 +420,6 @@ Each check earns a share of its weight (critical 10, high 7, medium 4, low 2; a 
 **What it measures:** On what the agent receives: exactly one H1 5 (more than one 2). No heading-level skips 6 (one skip 3), counted only with at least 2 headings. Share of H2/H3 with id attributes times 4.
 
 **Why it matters:** A URL #fragment never reaches the server, so agents fetch the whole page and find sections by heading text.
-
-**Checking source files:** Partly measured: one H1 and heading levels (11 of 15 points). Heading ids are added by your build.
 
 **Evidence:**
 
@@ -454,8 +442,6 @@ Each check earns a share of its weight (critical 10, high 7, medium 4, low 2; a 
 
 **Why it matters:** These bots fetch pages for ChatGPT search, Perplexity and Claude answers. A page they may not fetch cannot be cited.
 
-**Checking source files:** Scored only when a static robots.txt is in the folder.
-
 **Evidence:**
 
 - [48 days of AI bot logs (Wislr)](https://www.wislr.com/articles/ai-bot-behavior-log-analysis/)
@@ -465,8 +451,6 @@ Each check earns a share of its weight (critical 10, high 7, medium 4, low 2; a 
 **What it measures:** Words in the raw HTML after removing scripts, styles, navigation, asides and site-chrome headers. 150 or more words with no empty app root: full points. 40 to 149 words: half. Fewer: none.
 
 **Why it matters:** AI crawlers and most coding agents fetch the HTML and do not run JavaScript, so content rendered in the browser is invisible to them.
-
-**Checking source files:** Needs the built site: the rendered HTML, the files your build generates and the headers your host sends.
 
 **Evidence:**
 
@@ -478,9 +462,7 @@ Each check earns a share of its weight (critical 10, high 7, medium 4, low 2; a 
 
 **Why it matters:** A page that asks not to be indexed, or that search engines cannot find in the sitemap, is less likely to be retrieved for an answer.
 
-**Depends on your hosting:** An X-Robots-Tag noindex header is set by your host.
-
-**Checking source files:** Needs the built site: the rendered HTML, the files your build generates and the headers your host sends.
+**Depends on your hosting:** An X-Robots-Tag noindex header is set by your host. A local build (`--dir` or a localhost URL) counts this check, but your host can change the result.
 
 **Evidence:**
 
@@ -491,8 +473,6 @@ Each check earns a share of its weight (critical 10, high 7, medium 4, low 2; a 
 **What it measures:** A date in the raw HTML (dateModified, article:modified_time, <time datetime> or visible "Last updated" text): 6. This URL's sitemap entry has lastmod: 4. Sitemap lastmod values are not all identical: 3. Page date and lastmod agree within 7 days: 2. Age is shown, not scored.
 
 **Why it matters:** Recency is a consistent secondary signal for AI citations, and search engines use sitemap lastmod only when it is believable.
-
-**Checking source files:** Partly measured: a page date from front matter (6 of 15 points). Sitemap dates are added by your build.
 
 **Evidence:**
 
@@ -505,8 +485,6 @@ Each check earns a share of its weight (critical 10, high 7, medium 4, low 2; a 
 
 **Why it matters:** AI search retrieves passages of about a heading plus its paragraphs, so each section should answer one question on its own.
 
-**Checking source files:** Measured from the Markdown. Your build may add an H1 from the front-matter title.
-
 **Evidence:**
 
 - [Passage-level retrieval (Paz.ai)](https://www.paz.ai/glossary/passage-level-retrieval)
@@ -516,8 +494,6 @@ Each check earns a share of its weight (critical 10, high 7, medium 4, low 2; a 
 **What it measures:** Parseable JSON-LD with an @type: 3. Has dateModified: 2.
 
 **Why it matters:** Controlled studies found structured data barely moves AI citations, so it carries few points. dateModified also declares freshness.
-
-**Checking source files:** Needs the built site: the rendered HTML, the files your build generates and the headers your host sends.
 
 **Evidence:**
 
