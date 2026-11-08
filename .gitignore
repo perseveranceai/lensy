@@ -109,6 +109,8 @@ temp/
 
 # Debug and analysis files
 *.html
+# The CLI's local-build tests need a small HTML build folder.
+!packages/cli/test/sample-site/**/*.html
 !frontend/public/
 !frontend/public/*.html
 !frontend/public/*.png
