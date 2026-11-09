@@ -104,7 +104,7 @@ export const CHECKS: CheckMeta[] = [
     {
         id: 'S3', source: 'lensy', score: 'aiSearch', label: 'Indexable', max: 25,
         hostDependent: 'partial', hostNote: 'An X-Robots-Tag noindex header is set by your host.', sourceNote: NEEDS_BUILD,
-        measures: 'Not noindex (meta robots or X-Robots-Tag): 10, and noindex makes the whole check 0. Canonical present: 7. Page listed in the sitemap: 8 (robots.txt Sitemap: lines and sitemap indexes are followed, at most 12 files).',
+        measures: 'Not noindex (meta robots or X-Robots-Tag): 10, and noindex makes the whole check 0. Canonical present: 7. Page listed in the sitemap: 8. Sitemaps named in robots.txt are used; without one, Lensy tries <link rel="sitemap">, /sitemap.xml and /sitemap-index.xml, then the same under the page\'s first path segment (for example /docs/sitemap.xml). Sitemap indexes are followed, at most 12 files.',
         why: 'A page that asks not to be indexed, or that search engines cannot find in the sitemap, is less likely to be retrieved for an answer.',
         evidence: [EV.citations],
     },

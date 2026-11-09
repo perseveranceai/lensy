@@ -458,7 +458,7 @@ Each check earns a share of its weight (critical 10, high 7, medium 4, low 2; a 
 
 ### S3 Indexable (25 points)
 
-**What it measures:** Not noindex (meta robots or X-Robots-Tag): 10, and noindex makes the whole check 0. Canonical present: 7. Page listed in the sitemap: 8 (robots.txt Sitemap: lines and sitemap indexes are followed, at most 12 files).
+**What it measures:** Not noindex (meta robots or X-Robots-Tag): 10, and noindex makes the whole check 0. Canonical present: 7. Page listed in the sitemap: 8. Sitemaps named in robots.txt are used; without one, Lensy tries <link rel="sitemap">, /sitemap.xml and /sitemap-index.xml, then the same under the page's first path segment (for example /docs/sitemap.xml). Sitemap indexes are followed, at most 12 files.
 
 **Why it matters:** A page that asks not to be indexed, or that search engines cannot find in the sitemap, is less likely to be retrieved for an answer.
 

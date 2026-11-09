@@ -63,6 +63,10 @@ export function contentWithoutJsShare(s: SignalsV2): number {
 }
 const jsDetail = (s: SignalsV2) => `${s.rawContent.words} words in raw HTML${s.rawContent.spaShell ? ', empty SPA root' : ''}`;
 const JS_FIX = 'Serve the page content in the HTML (server-side rendering or static generation). AI crawlers and coding agents do not run JavaScript.';
+// A page that is already static HTML but short needs more content, not a new renderer.
+const jsFix = (s: SignalsV2) => s.rawContent.spaShell
+    ? JS_FIX
+    : `The HTML has ${s.rawContent.words} words, so there is little for an AI search engine or agent to use. If the page is short on purpose, add what a reader needs: steps, examples, and what each option does. If the rest appears only after JavaScript runs, serve it in the HTML.`;
 
 // ── Platform-specific fix copy (§8.2) ──
 const FIX: Record<string, Partial<Record<NonNullable<Platform> | 'default', string>>> = {
@@ -135,13 +139,28 @@ export function scoreCodingAgents(s: SignalsV2): ScoreResult {
     const mdVia = md.advertisedBy === 'rel-alternate' ? 'rel=alternate' : md.advertisedBy === 'link-header' ? 'Link header' : md.advertisedBy === 'llms-txt' ? 'listed in llms.txt' : 'not advertised';
 
     return total([
-        check('C1', 'Content without JavaScript', 20 * share, 20, jsDetail(s), JS_FIX),
+        check('C1', 'Content without JavaScript', 20 * share, 20, jsDetail(s), jsFix(s)),
         check('C2', 'Markdown on request', cn.ok ? 15 : 0, 15, cn.ok ? `served ${cn.contentType}` : `got ${cn.contentType || cn.status}`, fixFor('C2', s.platform)),
         check('C3', '.md version discoverable', md.ok && md.advertisedBy ? 15 : md.ok ? 8 : 0, 15, md.ok ? `${md.url} (${mdVia})` : 'no .md version', mdFix),
         check('C4', 'llms.txt usable', llmsRaw, 20, llmsDetail, llmsFix),
         check('C5', 'Page fits one fetch', fitsRaw, 15, fitsDetail, fixFor('C5', s.platform)),
         check('C6', 'Sections findable', secRaw, 15, `${h.h1Count} H1, ${h.skips} level skip(s), ${Math.round(idShare * 100)}% of H2/H3 have ids, ${h.generic} generic heading(s)`, fixFor('C6', s.platform)),
     ]);
+}
+
+function freshFix(s: SignalsV2): string {
+    const f = s.freshness;
+    const sm = s.sitemap;
+    const platform = s.platform ? FIX.S4[s.platform] : undefined;
+    if (platform && (!f.pageDate || !f.entryLastmod)) return platform;
+    const parts = [
+        !f.pageDate && 'Show when the page changed: a visible "Last updated" date, or dateModified in JSON-LD.',
+        !sm.found && 'Publish a sitemap with a <lastmod> for each page.',
+        sm.found && sm.inSitemap && !f.entryLastmod && 'Give this page a <lastmod> in the sitemap.',
+        f.lastmodCount > 0 && !f.believable && 'Every <lastmod> in the sitemap has the same date, so search engines ignore them. Write each page\'s real change date, for example from git.',
+        f.pageDate && f.entryLastmod && !f.agree && 'The page date and the sitemap <lastmod> are more than 7 days apart. Take both from the same source.',
+    ].filter(Boolean);
+    return parts.length ? parts.join(' ') : FIX.S4.default!;
 }
 
 export function scoreAiSearch(s: SignalsV2): ScoreResult {
@@ -155,7 +174,11 @@ export function scoreAiSearch(s: SignalsV2): ScoreResult {
     const ixDetail = `${ix.noindex ? `NOINDEX (${ix.noindexSource === 'header' ? 'X-Robots-Tag' : 'meta robots'})` : 'indexable'}, canonical ${ix.canonical ? 'yes' : 'no'}, ${sm.found ? `in sitemap: ${sm.inSitemap ? 'yes' : 'no'} (${sm.urlsRead} URLs read)` : 'no sitemap found'}`;
     const ixFix = ix.noindex
         ? 'Remove noindex (meta robots or the X-Robots-Tag header) if this page should appear in AI search.'
-        : 'Add <link rel="canonical"> to the page head and list the page in your sitemap (referenced from robots.txt).';
+        : [
+            !ix.canonical && 'Add <link rel="canonical" href="..."> with this page\'s own URL to the page head.',
+            !sm.found && 'Publish a sitemap that lists this page, and name it in robots.txt with a Sitemap: line.',
+            sm.found && !sm.inSitemap && `Your sitemap (${sm.urlsRead} URLs read${sm.filesRead >= 12 ? ', from the first 12 sitemap files' : ''}) doesn't list this page. Add it.`,
+        ].filter(Boolean).join(' ');
 
     const f = s.freshness;
     const freshRaw = (f.pageDate ? 6 : 0) + (f.entryLastmod ? 4 : 0) + (f.believable ? 3 : 0) + (f.agree ? 2 : 0);
@@ -173,9 +196,9 @@ export function scoreAiSearch(s: SignalsV2): ScoreResult {
         check('S1', 'AI search bots allowed', 20 * allowed / AI_SEARCH_BOTS.length, 20,
             blocked.length ? `blocked: ${blocked.join(', ')}` : `all ${AI_SEARCH_BOTS.length} allowed${s.robots.found ? '' : ' (no robots.txt)'}`,
             `Allow ${blocked.join(', ') || 'the AI search bots'} in robots.txt for this path. These fetch pages for ChatGPT search, Perplexity and Claude answers; blocking them keeps the page out of AI answers.`),
-        check('S2', 'Content without JavaScript', 20 * share, 20, jsDetail(s), JS_FIX),
+        check('S2', 'Content without JavaScript', 20 * share, 20, jsDetail(s), jsFix(s)),
         check('S3', 'Indexable', ixRaw, 25, ixDetail, ixFix),
-        check('S4', 'Freshness declared', freshRaw, 15, freshDetail, fixFor('S4', s.platform)),
+        check('S4', 'Freshness declared', freshRaw, 15, freshDetail, freshFix(s)),
         check('S5', 'Answer-ready sections', ansRaw, 15, `${hh.h1Count} H1, ${hh.skips} skip(s), median section ${med ?? 'n/a'} words (HTML)`,
             'Use one H1 and split the page into H2/H3 sections of about 40 to 500 words, so each section can stand alone as an answer.'),
         check('S6', 'JSON-LD', ldRaw, 5, j.types.length ? `${j.types.join(', ')}${j.hasDateModified ? ', dateModified' : ''}` : 'none',

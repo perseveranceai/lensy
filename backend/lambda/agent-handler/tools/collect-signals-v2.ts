@@ -21,8 +21,34 @@ const MAX_LLMS_LINK_SAMPLE = 8;
 
 export type Platform = 'vitepress' | 'docusaurus' | 'mintlify' | null;
 
+// Attributes of every <tag> in the HTML. Values may use double quotes, single
+// quotes or none, and come in any order: minifiers (Docusaurus, for one) drop
+// the quotes, so <link rel=canonical href=https://...> is common.
+function tags(html: string, name: 'link' | 'meta'): Record<string, string>[] {
+    const out: Record<string, string>[] = [];
+    for (const t of html.matchAll(new RegExp(`<${name}\\b([^>]*)>`, 'gi'))) {
+        const attrs: Record<string, string> = {};
+        for (const a of t[1].matchAll(/([^\s"'=<>/]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g)) {
+            attrs[a[1].toLowerCase()] = a[2] ?? a[3] ?? a[4] ?? '';
+        }
+        out.push(attrs);
+    }
+    return out;
+}
+/** href of the first <link> whose rel has this token, and whose other attributes match. */
+function linkHref(html: string, rel: string, match: Record<string, string> = {}): string | null {
+    const l = tags(html, 'link').find(a => (a.rel || '').toLowerCase().split(/\s+/).includes(rel)
+        && Object.entries(match).every(([k, v]) => (a[k] || '').toLowerCase() === v) && a.href);
+    return l ? l.href : null;
+}
+/** content of the first <meta name=...>. */
+function metaContent(html: string, name: string): string | null {
+    const m = tags(html, 'meta').find(a => (a.name || '').toLowerCase() === name && 'content' in a);
+    return m ? m.content : null;
+}
+
 export function detectPlatform(html: string): Platform {
-    const generator = (html.match(/<meta[^>]*name=["']generator["'][^>]*content=["']([^"']+)/i) || [])[1] || '';
+    const generator = metaContent(html, 'generator') || '';
     if (/vitepress/i.test(generator)) return 'vitepress';
     if (/docusaurus/i.test(generator)) return 'docusaurus';
     if (/mintlify/i.test(generator) || /mintlify-assets|mintcdn\.com/i.test(html)) return 'mintlify';
@@ -179,8 +205,9 @@ export async function collectSignalsV2(page: PageInput, opts: CollectOptions = {
     const spaShell = /<div\s+id=["'](root|app|__next|__nuxt)["']\s*>\s*<\/div>/i.test(html);
 
     // ── Markdown routes: content negotiation and the .md version ──
-    const alt = html.match(/<link[^>]*rel=["']alternate["'][^>]*type=["']text\/markdown["'][^>]*href=["']([^"']+)["']/i)
-        || html.match(/<link[^>]*type=["']text\/markdown["'][^>]*href=["']([^"']+)["']/i);
+    const altHref = linkHref(html, 'alternate', { type: 'text/markdown' })
+        || (tags(html, 'link').find(a => (a.type || '').toLowerCase() === 'text/markdown' && a.href)?.href ?? null);
+    const alt = altHref ? [altHref, altHref] : null;
     const linkHdr = (pageHeaders.get('link') || '').match(/<([^>]+)>[^,]*type="?text\/markdown/i);
     const mdCandidate = alt ? new URL(alt[1], finalUrl).href
         : linkHdr ? new URL(linkHdr[1], finalUrl).href
@@ -241,31 +268,43 @@ export async function collectSignalsV2(page: PageInput, opts: CollectOptions = {
     const sub = hHtml.filter(h => h.level === 2 || h.level === 3);
 
     // ── Indexable ──
-    const metaRobots = (html.match(/<meta[^>]*name=["']robots["'][^>]*content=["']([^"']+)/i) || [])[1] || '';
+    const metaRobots = metaContent(html, 'robots') || '';
     const metaNoindex = /noindex/i.test(metaRobots);
     const headerNoindex = /noindex/i.test(pageHeaders.get('x-robots-tag') || '');
-    const canonical = (html.match(/<link[^>]*rel=["']canonical["'][^>]*href=["']([^"']+)/i)
-        || html.match(/<link[^>]*href=["']([^"']+)["'][^>]*rel=["']canonical["']/i) || [])[1] || null;
+    const canonical = linkHref(html, 'canonical');
 
-    // ── Sitemap walk (robots.txt Sitemap: lines, sitemap indexes, at most 12 files) ──
-    const roots = [...robots.matchAll(/^sitemap:\s*(\S+)/gim)].map(m => m[1]);
-    if (!roots.length) roots.push(origin + '/sitemap.xml');
+    // ── Sitemap walk (sitemap indexes followed, at most 12 files) ──
+    // robots.txt Sitemap: lines are used as given. Without them, try in order:
+    // <link rel="sitemap">, /sitemap.xml, /sitemap-index.xml (Astro), then both
+    // under the page's first path segment (a site under /docs/), and stop at the
+    // first that lists URLs.
+    const fromRobots = [...robots.matchAll(/^sitemap:\s*(\S+)/gim)].map(m => m[1]);
+    const relSitemap = linkHref(html, 'sitemap');
+    const base = segs.length > 1 ? `${origin}/${segs[0]}` : null;
+    const candidates = fromRobots.length ? [fromRobots] : [...new Set([
+        ...(relSitemap ? [new URL(relSitemap, finalUrl).href] : []),
+        origin + '/sitemap.xml', origin + '/sitemap-index.xml',
+        ...(base ? [base + '/sitemap.xml', base + '/sitemap-index.xml'] : []),
+    ])].map(u => [u]);
     const entries: { loc: string; lastmod: string | null }[] = [];
-    const queue = [...roots];
     let filesRead = 0;
-    while (queue.length && filesRead < MAX_SITEMAP_FILES) {
-        const r = await get(queue.shift()!, 'application/xml,text/xml,*/*', 'GET', ['S3', 'S4']);
-        filesRead++;
-        if (!r.ok) continue;
-        if (/<sitemapindex/i.test(r.body)) {
-            for (const m of r.body.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)) queue.push(m[1]);
-            continue;
+    for (const roots of candidates) {
+        const queue = [...roots];
+        while (queue.length && filesRead < MAX_SITEMAP_FILES) {
+            const r = await get(queue.shift()!, 'application/xml,text/xml,*/*', 'GET', ['S3', 'S4']);
+            filesRead++;
+            if (!r.ok) continue;
+            if (/<sitemapindex/i.test(r.body)) {
+                for (const m of r.body.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)) queue.push(m[1]);
+                continue;
+            }
+            for (const u of r.body.matchAll(/<url>([\s\S]*?)<\/url>/gi)) {
+                const loc = (u[1].match(/<loc>\s*([^<\s]+)/i) || [])[1];
+                const lm = (u[1].match(/<lastmod>\s*([^<\s]+)/i) || [])[1];
+                if (loc) entries.push({ loc, lastmod: lm || null });
+            }
         }
-        for (const u of r.body.matchAll(/<url>([\s\S]*?)<\/url>/gi)) {
-            const loc = (u[1].match(/<loc>\s*([^<\s]+)/i) || [])[1];
-            const lm = (u[1].match(/<lastmod>\s*([^<\s]+)/i) || [])[1];
-            if (loc) entries.push({ loc, lastmod: lm || null });
-        }
+        if (entries.length || filesRead >= MAX_SITEMAP_FILES) break;
     }
     const sitemapFound = filesRead > 0 && entries.length > 0;
     const smEntry = entries.find(e => normUrl(e.loc) === normUrl(finalUrl)) || entries.find(e => normUrl(e.loc) === normUrl(canonical || ''));
