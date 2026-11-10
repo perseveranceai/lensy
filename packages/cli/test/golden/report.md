@@ -81,7 +81,7 @@ pages:
 ### Fixes
 
 - [ ] **S4** (+15 points) Freshness declared: page date: none; sitemap lastmod: 0/4968 URLs, 0 distinct dates; this URL no lastmod
-  Fix: Declare when the page changed: a visible "Last updated" date or dateModified in JSON-LD, plus accurate \<lastmod\> values in the sitemap.
+  Fix: Show when the page changed: a visible "Last updated" date, or dateModified in JSON-LD. Give this page a \<lastmod\> in the sitemap.
 - [ ] **S6** (+5 points) JSON-LD: none
   Fix: Add a JSON-LD block (for example TechArticle) with dateModified. It carries little weight for AI citations, so do this last.
 - [ ] **llms-txt-directive-md** (+3 points) Page points agents to llms.txt (Markdown): No llms.txt directive found in markdown of the page
@@ -154,7 +154,7 @@ pages:
 ### Fixes
 
 - [ ] **S3** (+15 points) Indexable: indexable, canonical no, no sitemap found
-  Fix: Add \<link rel="canonical"\> to the page head and list the page in your sitemap (referenced from robots.txt).
+  Fix: Add \<link rel="canonical" href="..."\> with this page's own URL to the page head. Publish a sitemap that lists this page, and name it in robots.txt with a Sitemap: line.
 - [ ] **S4** (+9 points) Freshness declared: page date: \<time\>; sitemap lastmod: 0/0 URLs, 0 distinct dates; this URL no lastmod
   Fix: Set lastUpdated: true in the VitePress config. It shows a visible date and gives the sitemap git-based \<lastmod\> values.
 - [ ] **llms-txt-directive-html** (+6 points) Page points agents to llms.txt (HTML): No llms.txt directive found in HTML of the page

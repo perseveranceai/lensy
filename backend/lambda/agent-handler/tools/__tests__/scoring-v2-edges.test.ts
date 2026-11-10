@@ -1,6 +1,6 @@
 // Edge fixtures from spec docs/two-score-readiness §9.1, hand-written. Each one
 // is a small site served by replayFetch, scored end to end (collector + scorer).
-import { collectSignalsV2, robotsAllows } from '../collect-signals-v2';
+import { collectSignalsV2, robotsAllows, detectPlatform } from '../collect-signals-v2';
 import { scoreCodingAgents, scoreAiSearch, gateState, CheckId } from '../scoring-v2';
 import { FixtureEntry, loadFixture, pageInputFromFixture, replayFetch } from './replay';
 
@@ -37,9 +37,13 @@ const article = (inner: string, head = '') => `<!doctype html><html><head>${head
 
 async function score(html: string, pages: Site = {}, headers: Record<string, string> = {}) {
     const entries = site({ [PAGE]: { body: html, headers }, ...pages });
-    const s = await collectSignalsV2({ finalUrl: PAGE, html, headers: { 'content-type': 'text/html', ...headers }, gate: { via: 'honest', honestStatus: 200 } }, { fetchImpl: fetch404(entries), now: 0 });
+    const inner = fetch404(entries);
+    const requested: string[] = [];
+    const fetchImpl = (async (input: any, init?: RequestInit) => { requested.push(String(input)); return inner(input, init); }) as typeof fetch;
+    const s = await collectSignalsV2({ finalUrl: PAGE, html, headers: { 'content-type': 'text/html', ...headers }, gate: { via: 'honest', honestStatus: 200 } }, { fetchImpl, now: 0 });
     const all = [...scoreCodingAgents(s).checks, ...scoreAiSearch(s).checks];
-    return { s, pts: (id: CheckId) => all.find(c => c.id === id)!.points };
+    const get = (id: CheckId) => all.find(c => c.id === id)!;
+    return { s, requested, pts: (id: CheckId) => get(id).points, fix: (id: CheckId) => get(id).fix };
 }
 
 const body = `<h2 id="a">Install</h2><p>${words(120)}</p><h2 id="b">Use</h2><p>${words(120)}</p>`;
@@ -215,4 +219,144 @@ test('REG-05: no robots.txt is reported as not found, with all 6 bots allowed by
     const s1 = scoreAiSearch(signals).checks.find(c => c.id === 'S1')!;
     expect(s1.detail).toBe('all 6 allowed (no robots.txt)');
     expect(s1.points).toBe(s1.max);
+});
+
+// ── Engine fixes from the CLI testing (.context/specs/scoring-engine-findings.md) ──
+
+const urlset = (...locs: string[]) => `<urlset>${locs.map(l => `<url><loc>${l}</loc></url>`).join('')}</urlset>`;
+const xml = (body: string) => ({ type: 'application/xml', body });
+const canonicalHead = `<link rel="canonical" href="${PAGE}">`;
+
+describe('REG-31: attributes without quotes are read (minified HTML, for example Docusaurus)', () => {
+    test.each([
+        [`<link rel=canonical href=${PAGE}>`],
+        [`<link href=${PAGE} rel=canonical>`],
+        [`<link data-rh=true rel=canonical href=${PAGE} />`],
+        [`<link rel='canonical' href='${PAGE}'>`],
+    ])('canonical: %s', async (head) => {
+        const { s } = await score(article(`<h1>T</h1>${body}`, head));
+        expect(s.indexable.canonical).toBe(PAGE);
+    });
+
+    test('a rel that only starts with "canonical" is not a canonical link', async () => {
+        const { s } = await score(article(`<h1>T</h1>${body}`, '<link rel="canonical-x" href="https://other.example.com/">'));
+        expect(s.indexable.canonical).toBeNull();
+    });
+
+    test('meta robots noindex without quotes makes S3 0', async () => {
+        const { s, pts } = await score(article(`<h1>T</h1>${body}`, `<meta name=robots content=noindex>${canonicalHead}`));
+        expect(s.indexable.noindex).toBe(true);
+        expect(pts('S3')).toBe(0);
+    });
+
+    test('meta generator without quotes still names the platform', () => {
+        expect(detectPlatform('<meta name=generator content="Docusaurus v3.5.2">')).toBe('docusaurus');
+        expect(detectPlatform('<meta content=VitePress name=generator>')).toBe('vitepress');
+    });
+
+    test('a Markdown rel=alternate link without quotes counts as advertised', async () => {
+        const { s, pts } = await score(article(`<h1>T</h1>${body}`, '<link rel=alternate type=text/markdown href=/guide/start.md>'), {
+            [`${PAGE}.md`]: { type: 'text/markdown', body: `# Start\n\n${'word '.repeat(80)}` },
+        });
+        expect(s.markdownUrl.advertisedBy).toBe('rel-alternate');
+        expect(pts('C3')).toBe(15);
+    });
+});
+
+describe('sitemaps that robots.txt does not name', () => {
+    test('REG-32: Astro\'s /sitemap-index.xml is found and walked', async () => {
+        const { s, pts } = await score(article(`<h1>T</h1>${body}`, canonicalHead), {
+            [`${ORIGIN}/sitemap-index.xml`]: xml(`<sitemapindex><sitemap><loc>${ORIGIN}/sitemap-0.xml</loc></sitemap></sitemapindex>`),
+            [`${ORIGIN}/sitemap-0.xml`]: xml(urlset(PAGE, `${ORIGIN}/other`)),
+        });
+        expect(s.sitemap.inSitemap).toBe(true);
+        expect(pts('S3')).toBe(25);
+    });
+
+    test('REG-32: a <link rel="sitemap"> in the page is used', async () => {
+        const { s } = await score(article(`<h1>T</h1>${body}`, '<link rel="sitemap" href="/maps/docs.xml">'), {
+            [`${ORIGIN}/maps/docs.xml`]: xml(urlset(PAGE)),
+        });
+        expect(s.sitemap.inSitemap).toBe(true);
+    });
+
+    test('REG-33: a sitemap under the base path (/guide/sitemap.xml) is tried', async () => {
+        const { s } = await score(article(`<h1>T</h1>${body}`), {
+            [`${ORIGIN}/guide/sitemap.xml`]: xml(urlset(PAGE)),
+        });
+        expect(s.sitemap.inSitemap).toBe(true);
+    });
+
+    test('the search stops at the first sitemap that lists URLs', async () => {
+        const { requested } = await score(article(`<h1>T</h1>${body}`), { [`${ORIGIN}/sitemap.xml`]: xml(urlset(PAGE)) });
+        expect(requested).toContain(`${ORIGIN}/sitemap.xml`);
+        expect(requested).not.toContain(`${ORIGIN}/sitemap-index.xml`);
+        expect(requested).not.toContain(`${ORIGIN}/guide/sitemap.xml`);
+    });
+
+    test('a robots.txt Sitemap: line means no other sitemap URL is tried', async () => {
+        const { s, requested } = await score(article(`<h1>T</h1>${body}`, '<link rel="sitemap" href="/maps/docs.xml">'), {
+            [`${ORIGIN}/robots.txt`]: { type: 'text/plain', body: `User-agent: *\nAllow: /\nSitemap: ${ORIGIN}/from-robots.xml` },
+            [`${ORIGIN}/from-robots.xml`]: xml(urlset(PAGE)),
+        });
+        expect(s.sitemap.inSitemap).toBe(true);
+        expect(requested.filter(u => /sitemap|maps\//.test(u))).toEqual([]);
+    });
+});
+
+describe('REG-34: content without JavaScript gives advice that fits the page', () => {
+    test('an empty JavaScript shell is told to render on the server', async () => {
+        const { fix } = await score('<!doctype html><html><body><div id="root"></div><script src="/app.js"></script></body></html>');
+        expect(fix('S2')).toMatch(/server-side rendering or static generation/);
+        expect(fix('C1')).toBe(fix('S2'));
+    });
+
+    test('a short static page is told it is short, with its word count, not to change how it renders', async () => {
+        const { s, fix } = await score(article(`<h1>Release notes</h1><p>${words(60)}</p>`));
+        expect(s.rawContent.spaShell).toBe(false);
+        expect(fix('S2')).toContain(`${s.rawContent.words} words`);
+        expect(fix('S2')).not.toMatch(/^Serve the page content/);
+        expect(fix('C1')).toBe(fix('S2'));
+    });
+});
+
+describe('S3 and S4 fixes name only what is missing', () => {
+    const page = article(`<h1>T</h1>${body}`);
+    test('S3: canonical present, no sitemap: only the sitemap', async () => {
+        const { fix } = await score(article(`<h1>T</h1>${body}`, canonicalHead));
+        expect(fix('S3')).toMatch(/sitemap/i);
+        expect(fix('S3')).not.toMatch(/canonical/i);
+    });
+    test('S3: in the sitemap, no canonical: only the canonical', async () => {
+        const { fix } = await score(page, { [`${ORIGIN}/sitemap.xml`]: xml(urlset(PAGE)) });
+        expect(fix('S3')).toMatch(/canonical/i);
+        expect(fix('S3')).not.toMatch(/sitemap/i);
+    });
+    test('S3: a sitemap that does not list the page says so', async () => {
+        const { fix } = await score(article(`<h1>T</h1>${body}`, canonicalHead), { [`${ORIGIN}/sitemap.xml`]: xml(urlset(`${ORIGIN}/other`)) });
+        expect(fix('S3')).toMatch(/doesn't list this page/);
+    });
+    test('S3: nothing missing, no fix', async () => {
+        const { pts, fix } = await score(article(`<h1>T</h1>${body}`, canonicalHead), { [`${ORIGIN}/sitemap.xml`]: xml(urlset(PAGE)) });
+        expect(pts('S3')).toBe(25);
+        expect(fix('S3')).toBeUndefined();
+    });
+
+    const dated = (lastmods: string[]) => xml(`<urlset>${[PAGE, `${ORIGIN}/a`, `${ORIGIN}/b`].map((u, i) => `<url><loc>${u}</loc><lastmod>${lastmods[i]}</lastmod></url>`).join('')}</urlset>`);
+    test('S4: a page date and identical lastmod values: only the identical dates', async () => {
+        const { fix } = await score(article(`<h1>T</h1>${body}`, '<meta property="article:modified_time" content="2026-10-01">'), {
+            [`${ORIGIN}/sitemap.xml`]: dated(['2026-10-01', '2026-10-01', '2026-10-01']),
+        });
+        expect(fix('S4')).toMatch(/same date/);
+        expect(fix('S4')).not.toMatch(/Last updated/);
+    });
+    test('S4: believable lastmod but no page date: only the page date', async () => {
+        const { fix } = await score(page, { [`${ORIGIN}/sitemap.xml`]: dated(['2026-10-01', '2026-09-01', '2026-08-01']) });
+        expect(fix('S4')).toMatch(/Last updated/);
+        expect(fix('S4')).not.toMatch(/lastmod/);
+    });
+    test('S4: Docusaurus with no page date keeps the Docusaurus advice', async () => {
+        const { fix } = await score(article(`<h1>T</h1>${body}`, '<meta name=generator content="Docusaurus v3">'));
+        expect(fix('S4')).toMatch(/showLastUpdateTime/);
+    });
 });
