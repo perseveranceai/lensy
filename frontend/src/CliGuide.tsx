@@ -47,7 +47,7 @@ export function CliGuide() {
 
   return (
     <Page
-      title={<>Lensy<br /><span className="text-[var(--accent)]">command line.</span></>}
+      title={<>Lensy{" "}<br /><span className="text-[var(--accent)]">command line.</span></>}
       intro="Check a docs page from your terminal or your CI. You get the same two scores as perseveranceai.com, and the same fixes."
     >
       <div className="grid gap-10 py-12 sm:py-16 lg:grid-cols-12 lg:gap-16">

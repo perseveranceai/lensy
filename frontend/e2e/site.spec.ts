@@ -134,3 +134,49 @@ test('SITE-08: one name for the scan action and the free allowance; no retired s
   const main = (await page.locator('main').innerText()) + (await page.content());
   expect(main).not.toMatch(/content structure, structured data|bot access, content structure|audits left|Run a free check/);
 });
+
+test('SITE-10: content pages carry the new sections, dates and allowance messages', async ({ page }) => {
+  await blockAnalytics(page);
+
+  await page.goto('/how-it-works');
+  await expect(page.getByRole('heading', { level: 2, name: 'The two scores.' })).toBeVisible();
+  await expect(page.locator('main')).toContainText('AI search bots allowed in robots.txt (20 points)');
+  await expect(page.getByRole('link', { name: 'Start a free scan' })).toBeVisible();
+
+  await page.goto('/contact');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Join the waitlist.');
+  await expect(page.getByRole('heading', { level: 2, name: 'Talk to us' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: 'Join the waitlist' })).toBeVisible();
+
+  await page.goto('/education');
+  await expect(page.locator('main time').first()).toHaveAttribute('datetime', /^\d{4}-\d{2}-\d{2}$/);
+  await page.goto('/education/research-behind-ai-ready-docs');
+  await expect(page.locator('main')).toContainText('By Perseverance AI');
+  await expect(page.locator('main')).toContainText('Published Mar 22, 2026');
+  await expect(page.getByRole('heading', { level: 2, name: 'TL;DR' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: 'References' })).toBeVisible();
+
+  // Out of free scans: the form still works and explains what to do next.
+  await page.route(/\/usage$/, (route) => route.fulfill({ json: { used: 100, limit: 100, remaining: 0, waitlisted: false } }));
+  await page.goto('/');
+  await expect(page.getByText('Free scans refresh tomorrow').first()).toBeVisible();
+  await page.getByPlaceholder('docs.yourcompany.com').fill('https://docs.example.com');
+  await page.getByRole('button', { name: /start scan/i }).click();
+  await expect(page.getByText('You’ve used today’s free scans.')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Join the waitlist' })).toBeVisible();
+});
+
+// REG-38: page titles split with <br /> read as one glued word to anything that
+// reads text instead of pixels ("Your docsbelong in theanswer.", "Join thewaitlist.").
+test('REG-38: H1 titles keep the space where they break across lines', async ({ request }) => {
+  const h1Text = async (p: string) => {
+    const html = await (await request.get(p)).text();
+    const inner = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/)?.[1] ?? '';
+    return inner.replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+  };
+  expect(await h1Text('/')).toBe('Your docs belong in the answer.');
+  expect(await h1Text('/contact')).toBe('Join the waitlist.');
+  expect(await h1Text('/cli')).toBe('Lensy command line.');
+  expect(await h1Text('/bot')).toBe('Lensy checker.');
+  expect(await h1Text('/education')).toBe('Education on AI-ready docs.');
+});

@@ -123,9 +123,9 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
         <div className="lg:col-span-8">
           <h1 className={`max-w-[760px] text-[clamp(3.25rem,7.8vw,7.45rem)] font-medium leading-[.88] tracking-[-.075em] ${playHeroIntro ? "hero-intro" : ""}`}>
             Your docs
-            <br />
+            {" "}<br />
             <span className="text-[var(--accent)]">belong</span> in the
-            <br />
+            {" "}<br />
             answer.
           </h1>
         </div>

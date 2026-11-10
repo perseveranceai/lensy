@@ -180,6 +180,7 @@ The `/cli` page and the "Command line" section on the home page. Spec: `.context
 | REG-34 [auto] | S2 (and C1) told a short static page to switch to server-side rendering | Jest: an empty JavaScript shell and a short static page | The shell gets the rendering advice; the static page gets advice to add content, with its word count. S3 and S4 fixes name only what is missing |
 | REG-35 [auto] | Every unknown URL on perseveranceai.com returned 200 with the home page shell (soft 404), costing our own Coding agents score 7 points (found 2026-11-10) | Playwright (`site.spec.ts`, SITE-06) | `/this-page-does-not-exist` and `/education/no-such-article` return 404 with the Not found page; `/scan`, `/results` and `/about` still return 200 |
 | REG-36 [auto] | `generate-markdown.js` wrote `public/education/*.md` and never deleted old ones, so 5 removed articles stayed live as Markdown (found 2026-11-10) | Playwright (`site.spec.ts`) | `/education/blocking-ai-crawlers.md`, `why-ai-readiness-matters.md` and `text-to-html-ratio.md` return 404 |
+| REG-38 [auto] | Page titles split with `<br />` read as one glued word to crawlers and screen readers: "Your docsbelong in theanswer.", "Join thewaitlist." (found by SITE-10, 2026-11-10) | Playwright (`site.spec.ts`): H1 text from the saved HTML, no JavaScript | `/` reads "Your docs belong in the answer."; `/contact`, `/cli`, `/bot`, `/education` keep the space at the line break |
 | REG-37 [auto] | Every page reached crawlers as an empty `<div id="root">` with the home page's title and canonical; Lensy scored its own pages 39 Coding agents and 55 AI search (found 2026-11-10) | Playwright (`site.spec.ts`, SITE-03) with a GPTBot user agent and no JavaScript | Each page in sitemap.xml has its own canonical, one H1, H2 sections, `dateModified` in JSON-LD and no "enable JavaScript" text |
 
 ---
@@ -199,6 +200,7 @@ Spec: `.context/specs/site-architecture.md`. `src/site-pages.json` is the page l
 | SITE-07 [auto] | Open each content page in a browser | No hydration warning (`[Hydrate]` or React errors 418/423/425) |
 | SITE-08 [auto] | Open `/` | "Start a free scan" link, "Start scan" button, "N free scans left"; none of the retired four-part model copy |
 | SITE-09 [manual] | After deploy: `lensy check` on every gamma page, then prod | Both scores at least 95 on every page; results pasted in the spec |
+| SITE-10 [auto] | Open `/how-it-works`, `/contact`, `/education`, an article; then `/` with no free scans left and start a scan | "The two scores." section with the AI search points; Contact has "Talk to us" and "Join the waitlist"; dates in `<time>`, "By Perseverance AI", TL;DR and References headings; "Free scans refresh tomorrow" and the used-up notice with a waitlist link |
 
 ## Functional checks by area
 

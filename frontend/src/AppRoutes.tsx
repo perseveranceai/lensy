@@ -1365,7 +1365,7 @@ function ArticleDates({ article }: { article: ArticleData }) {
 export function Education() {
   return <Page
     titleStyle={{ fontSize: "clamp(2rem, 4vw, 3.5rem)" }}
-    title={<>Education<br />on <span className="text-[var(--accent)]">AI-ready</span> docs.</>}
+    title={<>Education{" "}<br />on <span className="text-[var(--accent)]">AI-ready</span> docs.</>}
     intro="What we are learning about making docs readable for AI search and coding agents."
   >
     <section className="mt-16 pb-20 sm:mt-20 sm:pb-28">
@@ -1569,7 +1569,7 @@ export function Contact() {
 
   return <Page
     titleStyle={{ fontSize: "clamp(2rem, 4vw, 3.5rem)" }}
-    title={<>{refCopy.titleLead}<br /><span className="text-[var(--accent)]">{refCopy.titleAccent}</span></>}
+    title={<>{refCopy.titleLead}{" "}<br /><span className="text-[var(--accent)]">{refCopy.titleAccent}</span></>}
     intro={refCopy.intro}
   >
     <div className="grid gap-12 py-20 lg:grid-cols-12 lg:gap-16">
@@ -1800,7 +1800,7 @@ export function BotInfo() {
   }, []);
   const ipList = egressIps && egressIps.length > 0 ? egressIps : null;
   const ipForRule = ipList ? ipList.join(" ") : "<Lensy IP>";
-  return <Page title={<>Lensy<br /><span className="text-[var(--accent)]">checker.</span></>} intro="What the Lensy checker is, when it visits your site, and how to let it through your bot protection safely.">
+  return <Page title={<>Lensy{" "}<br /><span className="text-[var(--accent)]">checker.</span></>} intro="What the Lensy checker is, when it visits your site, and how to let it through your bot protection safely.">
     <article className="legal-prose prose-lensy max-w-[760px] py-12 sm:py-16">
       <h2>What it is</h2>
       <p>Lensy checks whether a documentation page is ready for AI search engines and coding agents. When someone enters a URL on perseveranceai.com, Lensy fetches that page and a few public files on the same site, such as <code className={code}>robots.txt</code>, <code className={code}>llms.txt</code>, the sitemap and the page&apos;s Markdown version. That&apos;s usually 10 to 25 requests per scan. It does not crawl your site on its own; each visit starts from a person&apos;s scan.</p>
@@ -1858,7 +1858,7 @@ export function Page({ title, intro, children, titleSize = "", titleStyle = { fo
 export function NotFound() {
   const { pathname } = useLocation();
   usePageMeta({ path: pathname, title: "Page not found", noindex: true });
-  return <Page title={<>Nothing<br /><span className="text-[var(--accent)]">here.</span></>} intro="This page does not exist.">
+  return <Page title={<>Nothing{" "}<br /><span className="text-[var(--accent)]">here.</span></>} intro="This page does not exist.">
     <Link className="btn-ink my-16 inline-block bg-[var(--panel-bg)] px-4 py-3 text-[12px] font-medium tracking-[-.025em] text-[var(--panel-fg)]" to="/">Back to Lensy</Link>
   </Page>;
 }
