@@ -116,7 +116,6 @@ temp/
 !frontend/public/*.png
 !frontend/public/*.ico
 !frontend/public/*.json
-!frontend/public/robots.txt
 updated-policy.json
 *-IMPLEMENTATION.md
 *_ANALYSIS.md

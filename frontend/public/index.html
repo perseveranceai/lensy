@@ -25,10 +25,10 @@
     </script>
 
     <!-- Primary Meta Tags -->
-    <title>Lensy — Can AI Find Your Developer Docs?</title>
-    <meta name="title" content="Lensy — Can AI Find Your Developer Docs?">
+    <title>Lensy: can AI search and coding agents use your docs?</title>
+    <meta name="title" content="Lensy: can AI search and coding agents use your docs?">
     <meta name="description"
-        content="Developers search through ChatGPT, Perplexity, and Claude now. Lensy checks if your documentation is ready to be found, read, and cited by AI — and shows you what to fix.">
+        content="Paste a documentation URL and get two scores out of 100: how well coding agents can read the page, and how well AI search can find and cite it. Each score comes with the fixes worth the most points.">
     <meta name="keywords"
         content="AI readiness, AI discoverability, AI citations, ChatGPT, Perplexity, Claude, developer documentation, technical docs, AI search, documentation optimization">
     <meta name="author" content="Perseverance AI">
@@ -41,9 +41,9 @@
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website">
     <meta property="og:url" content="%REACT_APP_BASE_URL%/">
-    <meta property="og:title" content="Lensy — Can AI Find Your Developer Docs?">
+    <meta property="og:title" content="Lensy: can AI search and coding agents use your docs?">
     <meta property="og:description"
-        content="Developers search through ChatGPT, Perplexity, and Claude now. Lensy checks if your documentation is ready to be found, read, and cited by AI.">
+        content="Two scores out of 100 for any docs page: how well coding agents can read it, and how well AI search can find and cite it.">
     <meta property="og:image" content="%REACT_APP_BASE_URL%/og-image-v2.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
@@ -54,9 +54,9 @@
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:url" content="%REACT_APP_BASE_URL%/">
-    <meta name="twitter:title" content="Lensy — Can AI Find Your Developer Docs?">
+    <meta name="twitter:title" content="Lensy: can AI search and coding agents use your docs?">
     <meta name="twitter:description"
-        content="Developers search through ChatGPT, Perplexity, and Claude now. Lensy checks if your docs are ready to be found and cited by AI.">
+        content="Two scores out of 100 for any docs page: how well coding agents can read it, and how well AI search can find and cite it.">
     <meta name="twitter:image" content="%REACT_APP_BASE_URL%/og-image-v2.png">
     <meta name="twitter:site" content="@getperseverance">
     <meta name="twitter:creator" content="@getperseverance">
@@ -76,9 +76,9 @@
       "@type": "Organization",
       "name": "Perseverance AI",
       "legalName": "Perseverance AI LLC",
-      "url": "https://www.perseveranceai.com",
-      "logo": "https://www.perseveranceai.com/logo.png",
-      "description": "Perseverance AI builds Lensy — helps developer teams understand if AI tools like ChatGPT, Perplexity, and Claude can find and cite their documentation.",
+      "url": "https://perseveranceai.com",
+      "logo": "https://perseveranceai.com/logo.png",
+      "description": "Perseverance AI builds Lensy, which checks whether AI search engines and coding agents can find, read and cite a team's documentation.",
       "foundingDate": "2025",
       "founder": {
         "@type": "Person",
@@ -103,8 +103,9 @@
       "applicationCategory": "DeveloperApplication",
       "operatingSystem": "Web",
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-      "description": "Find out if AI tools can discover and cite your developer documentation. Lensy checks your docs across bot access, content structure, and discoverability — and shows you what to fix.",
-      "provider": { "@type": "Organization", "name": "Perseverance AI", "url": "https://www.perseveranceai.com" }
+      "url": "https://perseveranceai.com/",
+      "description": "Lensy gives a documentation page two scores out of 100, one for coding agents and one for AI search, and lists the fixes worth the most points.",
+      "provider": { "@type": "Organization", "name": "Perseverance AI", "url": "https://perseveranceai.com" }
     }
     </script>
 
@@ -176,7 +177,9 @@
 </head>
 
 <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <!-- For agents that read raw HTML: where the site index and Markdown copies are. Hidden from people. -->
+    <p aria-hidden="true" style="position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0">For AI agents: the index of this site is at <a href="/llms.txt" tabindex="-1">/llms.txt</a>, with a Markdown copy of every page.</p>
+    <noscript><style>[data-reveal]{opacity:1!important;transform:none!important}</style></noscript>
     <div id="root"></div>
 </body>
 

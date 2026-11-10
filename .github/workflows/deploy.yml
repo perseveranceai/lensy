@@ -264,16 +264,38 @@ jobs:
           name: frontend-prod-${{ github.sha }}
           path: frontend/build-prod/
 
+      - name: Check prod CloudFront can take the site routing
+        # Read-only. Fails before anything is uploaded if this role can't read
+        # the distribution, or if another viewer-request function is already on it.
+        run: bash scripts/cloudfront-site-router.sh check E274OKID4GUQ1J lensy-site-router-prod
+
       - name: Publish frontend
         working-directory: frontend
         # NOTE: prod frontend is NOT the stack's ConsoleBucketName output
         # (lensy-console-951411676525-us-east-1 redirects). The live site is
         # served from www.perseveranceai.com behind E274OKID4GUQ1J. Wiring this
         # to stack outputs would "succeed" and change nothing visible.
+        run: aws s3 sync build-prod/ s3://www.perseveranceai.com --delete
+
+      - name: Site routing on prod CloudFront
+        id: router
+        # The prerendered build needs /cli -> /cli/index.html, Markdown on
+        # Accept: text/markdown and /404.html with a real 404. E274OKID4GUQ1J
+        # isn't in CDK, so this sets it, after the files it points to are uploaded.
+        # Gamma gets the same routing from CDK (backend/lib/lensy-stack.ts).
+        run: bash scripts/cloudfront-site-router.sh apply E274OKID4GUQ1J lensy-site-router-prod
+
+      - name: Clear the prod cache
+        run: aws cloudfront create-invalidation --distribution-id E274OKID4GUQ1J --paths "/*"
+
+      - name: Verify prod routing
+        run: bash scripts/cloudfront-site-router.sh verify https://perseveranceai.com
+
+      - name: Undo the routing change if it didn't verify
+        if: failure() && steps.router.outcome == 'success'
         run: |
-          aws s3 sync build-prod/ s3://www.perseveranceai.com --delete
-          aws cloudfront create-invalidation \
-            --distribution-id E274OKID4GUQ1J --paths "/*"
+          bash scripts/cloudfront-site-router.sh rollback E274OKID4GUQ1J cloudfront-before.json
+          aws cloudfront create-invalidation --distribution-id E274OKID4GUQ1J --paths "/*"
 
       - name: Smoke test prod
         run: |

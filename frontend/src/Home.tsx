@@ -9,7 +9,7 @@ import {
   ChevronDown,
   ChevronRight
 } from "lucide-react"
-import { useAuditAllowance } from "./AppRoutes"
+import { allowanceText, useAuditAllowance } from "./AppRoutes"
 import { trackEvent } from "./analytics"
 import { BOT_BLOCKED_TITLE, botBlockedDescription } from "./botBlockedCopy"
 
@@ -63,7 +63,7 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
       navigate('/results');
     } else if (analysisState?.status === 'error' || analysisState?.status === 'rate-limited') {
       setLoading(false);
-      setScanError(analysisState.error || (analysisState.status === 'rate-limited' ? "You’ve used today’s free audits. Please try again tomorrow." : "Scan failed."));
+      setScanError(analysisState.error || (analysisState.status === 'rate-limited' ? "You’ve used today’s free scans. Please try again tomorrow." : "Scan failed."));
       setShowAllowanceNotice(analysisState.status === 'rate-limited');
     }
     // NOTE: `url` is intentionally NOT a dependency. It's not read here, and
@@ -131,13 +131,13 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
         </div>
         <div className="mt-10 flex flex-col justify-end lg:col-span-4 lg:mt-0">
           <p className="max-w-sm text-[15px] leading-[1.55] tracking-[-.02em] text-[var(--ink-soft)]">
-            Lensy evaluates whether the documentation you already publish can be surfaced, understood, and cited by AI search.
+            Lensy checks whether the documentation you already publish can be found, read and cited by AI search engines and coding agents.
           </p>
           <a
             href="#scan"
             className="btn-ink group mt-7 flex w-fit items-center gap-3 bg-[var(--panel-bg)] px-4 py-3 text-[12px] font-medium tracking-[-.025em] text-[var(--panel-fg)]"
           >
-            Run a free check{" "}
+            Start a free scan{" "}
             <Icon name="arrow" className="arrow-nudge size-3" />
           </a>
         </div>
@@ -162,13 +162,7 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
           <div className="p-6 sm:p-8">
             <div className="flex items-center justify-between text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">
               <span>Paste a documentation URL</span>
-              <span>
-                {remaining === null
-                  ? "Checking audit allowance…"
-                  : remaining === 0
-                    ? "Free audits refresh tomorrow"
-                    : `${remaining} free audits left`}
-              </span>
+              <span>{allowanceText(remaining)}</span>
             </div>
             <form noValidate onSubmit={submit} className="mt-10">
               <label className="field-shell flex items-center gap-3 border-b border-[var(--ink)] px-3 pb-3 pt-2">
@@ -262,7 +256,7 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
               )}
               <div className="mt-5 flex items-center justify-between gap-4">
                 <p className="text-[11px] font-medium tracking-[-.025em] leading-relaxed text-[var(--muted)]">
-                  We check bot access, content structure, structured data, and discoverability.
+                  You get a Coding agents score and an AI search score, each out of 100, with the fixes worth the most points.
                 </p>
                 <button
                   type="submit"
@@ -290,7 +284,7 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
                 className="audit-notice mt-5 rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--tint)] px-4 py-3"
               >
                 <p className="text-[12px] leading-relaxed text-[var(--ink-soft)]">
-                  You’ve used today’s free audits.{" "}
+                  You’ve used today’s free scans.{" "}
                   <Link
                     to="/contact"
                     className="font-medium text-[var(--ink)] underline underline-offset-2"
@@ -426,7 +420,7 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
           </p>
           <p className="max-w-lg text-[14px] leading-relaxed text-[var(--ink-soft)]">
             Lensy is not about shortcuts or prompt tricks. It shows where the
-            knowledge in your docs is hard to reach—and what makes it clearer
+            knowledge in your docs is hard to reach, and what makes it clearer
             for a system trying to give someone a trustworthy answer.
           </p>
           {/* D-05: ink, not the muted --accent grey, so an active link actually reads as active. */}
@@ -455,7 +449,8 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
           <p className="text-[21px] leading-[1.28] tracking-[-.04em]">
             Lensy also runs as a command, with the same two scores as this page.
             Check one docs page or a list of them, and save the result as an
-            HTML or Markdown report.
+            HTML or Markdown report. It runs on your own machine or CI runner,
+            so nothing about your pages is sent to us.
           </p>
           <Link
             to="/cli"
@@ -479,15 +474,15 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
           {[
             [
               "What does Lensy check?",
-              "Lensy assesses the bot access, content structure, and discoverability signals that help AI answer engines find, read, and cite technical documentation.",
+              "Lensy reads one documentation page the way AI tools do and gives it two scores out of 100. Coding agents covers what tools like Claude Code and Cursor need, such as llms.txt, Markdown versions and content that loads without JavaScript. AI search covers what ChatGPT search, Perplexity and Claude need to find the page and cite it.",
             ],
             [
-              "Is the initial check free?",
-              "Yes. Enter a documentation URL for the initial view, then decide whether a deeper ongoing assessment is useful.",
+              "Is Lensy free?",
+              "Yes. Every visitor gets a number of free scans each day, and the command line tool is free and open source. Join the waitlist if you need a higher daily limit.",
             ],
             [
               "Do we need a new documentation platform?",
-              "No. Lensy is designed to work with the documentation you already publish and point toward the changes that matter most.",
+              "No. Lensy checks the docs you already publish, on any platform. Each fix says what to change, such as a robots.txt rule, a sitemap entry or an llms.txt file.",
             ],
           ].map(([q, a], i) => (
             <div key={q} className="border-t border-[var(--line)]">

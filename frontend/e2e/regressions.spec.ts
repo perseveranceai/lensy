@@ -50,12 +50,12 @@ test('REG-08: generated llms.txt, sitemap and article markdown are complete', as
   const llms = await (await request.get('/llms.txt')).text();
   expect(llms).toContain('/how-it-works');
   expect(llms).toContain('/cli');
-  // Article links in llms.txt are absolute for the build's environment; test
-  // the same paths on whichever host we're running against.
-  const articlePaths = [...llms.matchAll(/\]\((https?:\/\/[^)]+\/education\/[^)]+)\)/g)].map((m) => new URL(m[1]).pathname);
+  // Article links in llms.txt are absolute for the build's environment and point
+  // at the Markdown copies; test the same paths on whichever host we're running against.
+  const articlePaths = [...llms.matchAll(/\]\((https?:\/\/[^)]+\/education\/[^)]+\.md)\)/g)].map((m) => new URL(m[1]).pathname);
   expect(articlePaths.length).toBeGreaterThan(0);
   for (const path of articlePaths) {
-    const md = await (await request.get(`${path}.md`)).text();
+    const md = await (await request.get(path)).text();
     expect(md, path).toContain('## TL;DR');
     expect(md, path).toContain('## References');
   }

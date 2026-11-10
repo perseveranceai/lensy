@@ -526,9 +526,15 @@ export class LensyStack extends cdk.Stack {
         });
         consoleBucket.grantRead(consoleOAI);
 
-        // 7e. CloudFront Function — SPA routing (public access, rate limiting at API layer)
+        // 7e. CloudFront Function: request routing (public access, rate limiting at API layer).
+        // Non-prod stacks use backend/cloudfront/site-router.js: prerendered pages
+        // (/cli -> /cli/index.html), Markdown on Accept: text/markdown, and real
+        // 404s. The prod stack's console distribution is not the live site
+        // (perseveranceai.com is E274OKID4GUQ1J, outside CDK), so it keeps the old
+        // SPA rewrite until that change is made on purpose.
         const passwordAuthFunction = new cloudfront.Function(this, 'ConsolePasswordAuthFunction', {
-            code: cloudfront.FunctionCode.fromInline(`
+            runtime: isProd ? undefined : cloudfront.FunctionRuntime.JS_2_0,
+            code: isProd ? cloudfront.FunctionCode.fromInline(`
 function handler(event) {
     var request = event.request;
     var uri = request.uri;
@@ -539,7 +545,7 @@ function handler(event) {
     }
     return request;
 }
-            `),
+            `) : cloudfront.FunctionCode.fromFile({ filePath: path.join(__dirname, '..', 'cloudfront', 'site-router.js') }),
             functionName: `perseverance-console-auth${envSuffix}`,
         });
 
@@ -568,20 +574,11 @@ function handler(event) {
             domainNames: [consoleDomainName],
             certificate: consoleCertificate,
             defaultRootObject: 'index.html',
-            errorResponses: [
-                {
-                    httpStatus: 403,
-                    responseHttpStatus: 200,
-                    responsePagePath: '/index.html',
-                    ttl: cdk.Duration.seconds(0),
-                },
-                {
-                    httpStatus: 404,
-                    responseHttpStatus: 200,
-                    responsePagePath: '/index.html',
-                    ttl: cdk.Duration.seconds(0),
-                },
-            ],
+            // S3 answers 403 for a key that doesn't exist. Non-prod serves the
+            // prerendered 404 page with a real 404 status; prod keeps the SPA fallback.
+            errorResponses: [403, 404].map((httpStatus) => isProd
+                ? { httpStatus, responseHttpStatus: 200, responsePagePath: '/index.html', ttl: cdk.Duration.seconds(0) }
+                : { httpStatus, responseHttpStatus: 404, responsePagePath: '/404.html', ttl: cdk.Duration.seconds(0) }),
             enableLogging: false,
             httpVersion: cloudfront.HttpVersion.HTTP2,
             priceClass: cloudfront.PriceClass.PRICE_CLASS_100,

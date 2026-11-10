@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Page } from "./AppRoutes";
@@ -43,12 +42,8 @@ const H2 = ({ id, children }: { id: string; children: ReactNode }) => (
   <h2 id={id} className="scroll-mt-28">{children}</h2>
 );
 
+// Title, description and canonical come from site-pages.json (usePageMeta in ShellContent).
 export function CliGuide() {
-  useEffect(() => {
-    const previous = document.title;
-    document.title = "Command-line guide - Lensy";
-    return () => { document.title = previous; };
-  }, []);
 
   return (
     <Page

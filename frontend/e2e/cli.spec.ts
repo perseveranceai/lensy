@@ -26,7 +26,7 @@ test('CLI-01: the home page points to the CLI guide, above the questions', async
 
 test('CLI-02: /cli has the guide sections in order, the install command and the limits', async ({ page }) => {
   await page.goto('/cli');
-  await expect(page).toHaveTitle('Command-line guide - Lensy');
+  await expect(page).toHaveTitle('Lensy command line guide');
   const guide = page.getByTestId('cli-guide');
   await expect(guide.locator('h2')).toHaveText([
     'What it is', 'Install', 'Check a page', 'Check several pages', 'Check a local build', 'Save a report',
