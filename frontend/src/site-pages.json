@@ -44,6 +44,28 @@
     "updated": "2026-11-10"
   },
   {
+    "path": "/changelog",
+    "label": "Changelog",
+    "title": "Lensy changelog",
+    "description": "Changes to the Lensy scanner, its checks and the command line tool that you would notice, newest first.",
+    "group": "learn",
+    "header": false,
+    "kind": "page",
+    "schema": "WebPage",
+    "updated": "2026-11-11"
+  },
+  {
+    "path": "/about",
+    "label": "About",
+    "title": "About Lensy and Perseverance AI",
+    "description": "Who builds Lensy, what it checks, where it runs, and how we hold our own site to the same checks.",
+    "group": "company",
+    "header": false,
+    "kind": "page",
+    "schema": "AboutPage",
+    "updated": "2026-11-11"
+  },
+  {
     "path": "/contact",
     "label": "Contact",
     "title": "Contact Perseverance AI and join the Lensy waitlist",
@@ -89,7 +111,6 @@
   },
   { "path": "/scan", "label": "Scan in progress", "title": "Scanning - Lensy", "kind": "app" },
   { "path": "/results", "label": "Scan report", "title": "Scan report - Lensy", "kind": "app" },
-  { "path": "/about", "label": "About", "title": "Lensy", "kind": "redirect" },
   { "path": "/console", "label": "Console", "title": "Lensy", "kind": "redirect" },
   { "path": "/console/lensy", "label": "Console", "title": "Lensy", "kind": "redirect" }
 ]

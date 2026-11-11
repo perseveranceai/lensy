@@ -405,6 +405,53 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
       </section>
 
       <section
+        id="what-you-get"
+        data-reveal
+        className="mx-auto grid max-w-[1240px] gap-10 px-5 py-20 sm:px-8 lg:grid-cols-12 lg:py-28"
+      >
+        <div className="lg:col-span-4">
+          <p className="text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">What you get</p>
+          <h2 className="mt-5 text-[clamp(2.4rem,4.5vw,4.6rem)] font-medium leading-[.9] tracking-[-.065em]">
+            Two scores, and what to fix first.
+          </h2>
+          <p className="mt-6 max-w-sm text-[14px] leading-relaxed text-[var(--ink-soft)]">
+            Coding agents is how well tools like Claude Code and Cursor can
+            read the page. AI search is how well ChatGPT search, Perplexity
+            and Claude can find it and cite it. Each fix says what to change
+            and how many points it is worth. This is a real result: our own
+            home page before we rebuilt it.
+          </p>
+        </div>
+        <div className="min-w-0 lg:col-span-7 lg:col-start-6">
+          <div className="rounded-[var(--radius-lg)] border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7" aria-label="Example result">
+            <p className="text-[12px] text-[var(--muted)]">perseveranceai.com, Nov 10, 2026</p>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              {[["Coding agents", 39], ["AI search", 55]].map(([label, score]) => (
+                <div key={label} className="rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--bg)] px-4 py-3">
+                  <p className="text-[12px] text-[var(--muted)]">{label}</p>
+                  <p className="mt-1 text-[36px] font-medium leading-none tracking-[-.05em] tabular-nums">{score}<span className="ml-1 text-[12px] font-normal tracking-normal text-[var(--muted)]">/100</span></p>
+                </div>
+              ))}
+            </div>
+            <p className="mt-6 text-[13px] font-medium text-[var(--ink)]">Fix these first</p>
+            <ul className="mt-2 divide-y divide-[var(--line)] border-y border-[var(--line)]">
+              {[
+                ["Content without JavaScript", 29, "The page is a JavaScript shell, so agents and crawlers get no text. Render the content into the HTML."],
+                ["Answer-ready sections", 15, "Use one H1 and H2 sections of 40 to 500 words, so each one can stand alone as an answer."],
+                ["Freshness declared", 8, "Show when the page changed, or add dateModified in JSON-LD."],
+              ].map(([check, points, fix]) => (
+                <li key={check as string} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 py-3">
+                  <span className="text-[13px] text-[var(--ink)]">{check}</span>
+                  <span className="text-[12px] tabular-nums text-[var(--ink-soft)]">+{points} points</span>
+                  <span className="col-span-2 mt-1 text-[12px] leading-relaxed text-[var(--ink-soft)]">{fix}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section
         data-reveal
         className="mx-auto grid max-w-[1240px] gap-10 px-5 py-20 sm:px-8 lg:grid-cols-12 lg:py-28"
       >
@@ -434,6 +481,34 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
             <Icon name="arrow" className="arrow-nudge size-3" />
           </Link>
         </div>
+      </section>
+
+      <section
+        id="who-its-for"
+        data-reveal
+        className="mx-auto grid max-w-[1240px] gap-10 px-5 py-20 sm:px-8 lg:grid-cols-12 lg:py-28"
+      >
+        <div className="lg:col-span-4">
+          <p className="text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">Who it&apos;s for</p>
+          <h2 className="mt-5 text-[clamp(2.4rem,4.5vw,4.6rem)] font-medium leading-[.9] tracking-[-.065em]">
+            Teams that publish docs.
+          </h2>
+        </div>
+        <ul className="grid content-end gap-0 border-t border-[var(--line)] lg:col-span-6 lg:col-start-7">
+          {[
+            ["Docs and DevRel teams", "Scan a page, share the report with whoever owns the site, and fix the items worth the most points first.", "/#scan", "Start a free scan"],
+            ["Developers", "Run the same checks from a terminal or in CI, on a live site or a local build, before a release.", "/cli", "Read the CLI guide"],
+            ["Site owners who saw Lensy in their logs", "See what the checker fetches, how to recognise it, and how to allow or block it.", "/bot", "About the Lensy checker"],
+          ].map(([who, what, to, cta]) => (
+            <li key={who} className="border-b border-[var(--line)] py-5">
+              <p className="text-[16px] tracking-[-.025em] text-[var(--ink)]">{who}</p>
+              <p className="mt-1.5 max-w-lg text-[13px] leading-relaxed text-[var(--ink-soft)]">{what}</p>
+              <Link to={to} className="group mt-3 inline-flex w-fit items-center gap-2 text-[12px] font-medium tracking-[-.025em] text-[var(--ink)]">
+                {cta} <Icon name="arrow" className="arrow-nudge size-3" />
+              </Link>
+            </li>
+          ))}
+        </ul>
       </section>
 
       <section

@@ -205,6 +205,11 @@ Spec: `.context/specs/site-architecture.md`. `src/site-pages.json` is the page l
 | READY-03 [auto] | Open `/` at 375px with 200 test runs | The chart shows all 200; no horizontal scroll |
 | READY-04 [auto] | Fetch `/` without JavaScript, then open it | Saved HTML has `readiness-data` and the "Same checks, on our own site." section; no hydration warning |
 | READY-05 [manual] | After the weekly job runs: open `/` on gamma | The new week is in the chart; `/readiness/history.json` is still there after the next deploy |
+| CONTENT-01 [auto] | Open `/`, scroll to "What you get" and "Who it's for" | A real result (perseveranceai.com, Nov 10, 2026, Content without JavaScript +29 points); links to the scan, `/cli` and `/bot` (`content.spec.ts`) |
+| CONTENT-02 [auto] | Open `/how-it-works`, "Every check" | One row per check in `src/checks.json`, which `scripts/site-content.test.mjs` keeps equal to `packages/docs/checks.md` |
+| CONTENT-03 [auto] | Fetch and open `/about` | 200 with its own canonical, no redirect; five H2 sections; links to the changelog |
+| CONTENT-04 [auto] | Open `/changelog`; open `/cli`, click Changelog in the footer | Months newest first, dates in `<time>`, in descending order; footer link works |
+| CONTENT-05 [auto] | Open an article | Breadcrumb Home / Education / title; title and H2s in sentence case |
 | SITE-10 [auto] | Open `/how-it-works`, `/contact`, `/education`, an article; then `/` with no free scans left and start a scan | "The two scores." section with the AI search points; Contact has "Talk to us" and "Join the waitlist"; dates in `<time>`, "By Perseverance AI", TL;DR and References headings; "Free scans refresh tomorrow" and the used-up notice with a waitlist link |
 
 ## Functional checks by area

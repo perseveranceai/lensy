@@ -19,6 +19,7 @@ import { HEADER_PAGES, pageFor, pagesInGroup } from "./site";
 import type { SitePage } from "./site";
 import { usePageMeta } from "./usePageMeta";
 import type { PageMeta } from "./usePageMeta";
+import CHECKS from "./checks.json";
 const logo = `${process.env.PUBLIC_URL}/logo.png`;
 
 // N-08: keep transient / non-canonical pages (404, empty results) out of search
@@ -1146,11 +1147,52 @@ export function HowItWorks() {
       <h2 className="text-[clamp(2rem,3.6vw,3.2rem)] font-medium leading-[.95] tracking-[-.06em] lg:col-span-4">The two scores.</h2>
       <div className="prose-lensy max-w-[680px] lg:col-span-7 lg:col-start-6">
         <p><strong>Coding agents</strong> measures how well a tool such as Claude Code, Cursor or Copilot can find and read the page. It&apos;s built on AFDocs, the open Agent-Friendly Documentation checks: an llms.txt index, Markdown versions of pages, real 404s for missing pages and content that loads without JavaScript. Lensy adds one check of its own, for headings an agent can navigate.</p>
-        <p><strong>AI search</strong> measures how well engines such as ChatGPT search, Perplexity and Claude can retrieve the page and cite it. It has six checks: AI search bots allowed in robots.txt (20 points), content without JavaScript (20), indexable (25), freshness declared (15), answer-ready sections (15) and JSON-LD (5).</p>
+        <p><strong>AI search</strong> measures how well engines such as ChatGPT search, Perplexity and Claude can retrieve the page and cite it. It has {CHECKS.aiSearch.length} checks worth 100 points between them, listed below.</p>
         <p>Above both scores, a reachability line says whether an honest AI agent could load the page at all. The same checks run in the <Link to="/cli">Lensy command line tool</Link>, and the <Link to="/education/research-behind-ai-ready-docs">research behind them</Link> is in Education.</p>
       </div>
     </section>
+    <section data-reveal id="every-check" className="mx-auto grid max-w-[1240px] scroll-mt-28 gap-8 border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24 lg:grid-cols-12 lg:gap-16">
+      <div className="lg:col-span-4">
+        <h2 className="text-[clamp(2rem,3.6vw,3.2rem)] font-medium leading-[.95] tracking-[-.06em]">Every check.</h2>
+        <p className="mt-5 max-w-sm text-[14px] leading-relaxed text-[var(--ink-soft)]">This list comes from the same check registry the scanner and the command line tool use, so it changes when they do. <code className="rounded-[var(--radius-xs)] bg-[var(--surface-2)] px-1 py-0.5 text-[12px]">lensy explain &lt;id&gt;</code> prints what each one measures and the evidence behind it.</p>
+      </div>
+      <div className="grid min-w-0 gap-10 lg:col-span-7 lg:col-start-6">
+        <CheckTable
+          title="AI search"
+          intro="Points out of 100. Each check gives full, partial or no points."
+          unit="Points"
+          rows={CHECKS.aiSearch.map((c) => ({ id: c.id, label: c.label, value: c.points }))}
+        />
+        <CheckTable
+          title="Coding agents"
+          intro="AFDocs checks plus one Lensy check, each weighted by how much it matters to an agent (critical 10, high 7, medium 4, low 2). The score is the weight earned over the weight of the checks that ran, out of 100. With no llms.txt the score is at most 59."
+          unit="Weight"
+          rows={CHECKS.codingAgents.map((c) => ({ id: c.id, label: c.label, value: c.weight }))}
+        />
+      </div>
+    </section>
   </>;
+}
+
+function CheckTable({ title, intro, unit, rows }: { title: string; intro: string; unit: string; rows: { id: string; label: string; value: number }[] }) {
+  return <div>
+    <h3 className="text-[19px] font-medium tracking-[-.035em]">{title}</h3>
+    <p className="mt-2 max-w-xl text-[13px] leading-relaxed text-[var(--ink-soft)]">{intro}</p>
+    <div className="mt-4 overflow-x-auto rounded-[var(--radius-md)] border border-[var(--line)]">
+      <table className="w-full border-collapse text-left text-[13px]">
+        <thead className="bg-[var(--surface)] text-[12px] text-[var(--muted)]">
+          <tr><th scope="col" className="px-3 py-2.5 font-medium sm:px-4">Check</th><th scope="col" className="hidden px-3 py-2.5 font-medium sm:table-cell sm:px-4">ID</th><th scope="col" className="px-3 py-2.5 text-right font-medium sm:px-4">{unit}</th></tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => <tr key={r.id} className="border-t border-[var(--line)]">
+            <td className="px-3 py-2 text-[var(--ink)] sm:px-4">{r.label}</td>
+            <td className="hidden px-3 py-2 font-[family-name:var(--font-mono)] text-[11px] text-[var(--muted)] sm:table-cell sm:px-4">{r.id}</td>
+            <td className="px-3 py-2 text-right tabular-nums text-[var(--ink)] sm:px-4">{r.value}</td>
+          </tr>)}
+        </tbody>
+      </table>
+    </div>
+  </div>;
 }
 
 export function FlowConnector() {
@@ -1180,7 +1222,7 @@ type ArticleData = {
 const ARTICLES: ArticleData[] = [
   {
     slug: "what-changed-in-lensy-after-rechecking-ai-ready-docs-signals",
-    title: "What Changed in Lensy After Re-checking AI-Ready Docs Signals",
+    title: "What changed in Lensy after re-checking AI-ready docs signals",
     publishedDate: "2026-09-16",
     updatedDate: "2026-11-10",
     tag: "AI Readiness",
@@ -1194,26 +1236,26 @@ const ARTICLES: ArticleData[] = [
           "WebSRC showed that machine understanding of web pages depends on structure, not just text, which is why AI-readiness detection has to account for how documentation is actually exposed to machines [4].",
         ]} />
 
-        <h2>Why We Revisited This</h2>
+        <h2>Why we revisited this</h2>
         <p>Lensy's detection model was re-checked after new feedback exposed an important pattern: some documentation sites already expose machine-readable content in ways a simpler audit can miss.</p>
         <p>That matters because an AI-readiness audit is not just asking whether a page exists. It is asking whether AI systems can find it, fetch it in a machine-friendly format, and map it back to the broader docs structure.</p>
         <p>The original llms.txt proposal focused on a plain Markdown index and linked Markdown pages [3]. Since then, the implementation surface has expanded. Docs platforms now expose full-site context files, same-URL Markdown negotiation, and per-page headers that point agents to the right index or representation [1, 2].</p>
 
-        <h2>Markdown Is Broader Than .md</h2>
+        <h2>Markdown is broader than .md</h2>
         <p>The original proposal recommends serving Markdown pages with <code>.md</code> appended to the original URL [3]. That remains a useful convention. But it is no longer the only one that matters.</p>
         <p>Cloudflare's Markdown for Agents serves Markdown from the same URL when a client sends an Accept request for Markdown [2]. That can materially change how much useful context an agent can consume: Cloudflare shows one page dropping from 16,180 tokens in HTML to 3,150 tokens in Markdown, roughly an 80% reduction [2].</p>
         <p>That means a docs audit cannot stop at probing <code>page.md</code>. It also needs to test whether the page itself returns Markdown through content negotiation.</p>
 
-        <h2>llms.txt Discovery Is Broader Than One Path</h2>
+        <h2>llms.txt discovery is broader than one path</h2>
         <p>The proposal explicitly allows llms.txt in the root or in a subpath [3]. That matters because many docs live under <code>/docs/</code>, <code>/developer/</code>, or another scoped path.</p>
         <p>Current implementations also go beyond llms.txt alone. Mintlify documents llms-full.txt, Link and X-Llms-Txt headers, and .md page links inside llms.txt itself [1]. Those change what a high-quality docs audit should verify.</p>
         <p>In practice, that means checking more than whether <code>/llms.txt</code> exists. It also means checking whether the site exposes llms-full.txt [1], the page advertises docs indexes through headers [1], the page returns Markdown directly through an Accept request [1, 2], and the exact page is mapped inside llms.txt as a Markdown URL [1].</p>
 
-        <h2>What Changed in Lensy</h2>
+        <h2>What changed in Lensy</h2>
         <p>Lensy's current audit model now reflects that broader pattern. The AI Readiness view reports discrete signals rather than collapsing everything into a single grade, and it separates site-level and page-level checks such as llms.txt, llms-full.txt, page Markdown, content negotiation, and page-level mapping in llms.txt.</p>
         <p>It also treats some signals more carefully than before. A Link header is treated as a hint that still needs validation, not proof. A best-practice signal like <code>rel="alternate"</code> for a Markdown version is still worth surfacing, but it is no longer treated as the strongest evidence of machine-readable support when llms.txt, direct Markdown URLs, or content negotiation already exist [1, 2, 3].</p>
 
-        <h2>What This Means</h2>
+        <h2>What this means</h2>
         <p>The broader lesson is simple. AI-ready documentation is no longer just about whether a page is crawlable or well written. It is also about whether the site exposes machine-readable paths in the ways modern agents actually use them.</p>
         <p>Research still supports the underlying principle. WebSRC found that answering questions about web pages requires understanding page structure, not just the text on the page [4]. The more documentation platforms expose agent-friendly structure directly, the more accurate an AI-readiness audit also has to become.</p>
 
@@ -1228,7 +1270,7 @@ const ARTICLES: ArticleData[] = [
   },
   {
     slug: "research-behind-ai-ready-docs",
-    title: "The Research Behind AI-Ready Documentation",
+    title: "The research behind AI-ready documentation",
     publishedDate: "2026-03-22",
     updatedDate: "2026-11-10",
     tag: "AI Readiness",
@@ -1242,20 +1284,20 @@ const ARTICLES: ArticleData[] = [
           "Structured data helps search engines understand a page, but controlled studies find JSON-LD barely changes AI citations. Heading hierarchies and canonical URLs matter more.",
         ]} />
 
-        <h2>Why Document Structure Matters</h2>
+        <h2>Why document structure matters</h2>
         <p>Most AI search engines use Retrieval-Augmented Generation (RAG). They break documents into chunks, embed them in vector space, retrieve relevant chunks for a query, and feed those chunks to a language model. The quality of that chunking, and the structural signals available to guide it, directly affects answer quality.</p>
         <p>DeepRead [1] found that preserving heading hierarchy during HTML-to-Markdown conversion enables a "locate-then-read" paradigm, improving retrieval by 10.3% over baseline agentic search. RAPTOR [2] showed 20% improvement on multi-step reasoning by building recursive tree structures from document hierarchies. The DUE benchmark [3] further established that document understanding requires explicit layout awareness across tasks spanning VQA, key information extraction, and machine reading comprehension.</p>
         <p>Snowflake's engineering team [4] confirmed that Markdown-aware chunking provides 5–10% accuracy improvement in RAG quality for complex documents, and that retrieval strategy matters even with long-context LLMs.</p>
 
-        <h2>Bot Access: The Crawler Gate</h2>
+        <h2>Bot access: the crawler gate</h2>
         <p>Major AI companies operate multiple crawlers with distinct purposes. Anthropic runs ClaudeBot (training), Claude-User (real-time fetches), and Claude-SearchBot (indexing). OpenAI separates GPTBot (training) from OAI-SearchBot (search results). Google separates Googlebot (search ranking) from Google-Extended (Gemini training) [7].</p>
         <p>Industry analysis shows ClaudeBot is blocked by approximately 69% of websites and GPTBot by 62% [5]. More critically, 71% of sites that block training bots also inadvertently block search and retrieval bots [6], effectively removing themselves from AI-powered search results. OpenAI has stated that sites blocking OAI-SearchBot will not appear in ChatGPT search answers.</p>
 
-        <h2>Structured Data</h2>
+        <h2>Structured data</h2>
         <p>JSON-LD uses the Schema.org vocabulary to declare page types (<code>TechArticle</code>, <code>APIReference</code>), authors, publication dates, and topic relationships. Controlled data does not show it raising AI citations: Ahrefs [8] tracked 1,885 pages that added schema against 4,000 controls (May 2026), and their AI citations barely moved. That is why Lensy gives JSON-LD only 5 of the 100 AI search points. Google's Search Central documentation [9] confirms that structured data directly affects how content appears in search results and AI overviews.</p>
         <p>OpenGraph meta tags influence how AI-powered preview systems and content aggregation tools summarise your content. Canonical URLs consolidate link equity and prevent AI engines from indexing duplicate versions [10], which is especially important for documentation sites serving versioned or localised content.</p>
 
-        <h2>What This Means</h2>
+        <h2>What this means</h2>
         <p>84% of developers now use or plan to use AI tools [11]. Documentation that meets structural, access, and metadata standards gets cited. Documentation that does not is invisible to this growing majority.</p>
 
         <References items={[
@@ -1276,7 +1318,7 @@ const ARTICLES: ArticleData[] = [
   },
   {
     slug: "how-ai-search-finds-and-cites-docs",
-    title: "How AI Search Finds, Processes, and Cites Your Docs",
+    title: "How AI search finds, processes, and cites your docs",
     publishedDate: "2026-03-22",
     tag: "AI Discoverability",
     readTime: "3 min read",
@@ -1289,11 +1331,11 @@ const ARTICLES: ArticleData[] = [
           "Perplexity cites sources on nearly every response. Brands mentioned positively across 4+ platforms are 2.8× more likely to appear in ChatGPT responses.",
         ]} />
 
-        <h2>How Chunking Works</h2>
+        <h2>How chunking works</h2>
         <p>AI search engines crawl your page, convert HTML to text or Markdown, split it into chunks, embed those chunks in vector space, and retrieve relevant pieces to generate an answer. Each stage is sensitive to document quality.</p>
         <p>Jimeno-Yepes et al. [1] demonstrated that element-based chunking that respects document structure — headings, paragraphs, code blocks — rather than splitting at arbitrary character boundaries achieved 84.4% accuracy at page level and improved ROUGE and BLEU scores over naive splitting. Stäbler and Turnbull [2] benchmarked 90 chunker-model configurations across 7 domains and found sentence-based splitting with 512-token windows and 200-token overlap achieved the highest retrieval accuracy. Vectara's study [3] tested 25 chunking configurations across 48 embedding models and confirmed that fixed-size chunking at 256–512 tokens consistently outperformed more computationally expensive semantic chunking.</p>
 
-        <h2>llms.txt and Markdown Alternate Links</h2>
+        <h2>llms.txt and Markdown alternate links</h2>
         <p>Proposed by Jeremy Howard of Answer.AI in September 2024, <code>llms.txt</code> [4] is a Markdown file that helps LLMs navigate websites by providing structured links to content instead of requiring models to parse HTML boilerplate. Adoption has been rapid:</p>
         <ul>
           <li><strong>Twilio</strong> [5] exposes Markdown versions of all docs (append <code>.md</code> to any URL) plus a curated <code>llms.txt</code> sitemap.</li>
@@ -1303,7 +1345,7 @@ const ARTICLES: ArticleData[] = [
         </ul>
         <p>Beyond <code>llms.txt</code>, individual pages can signal Markdown availability using <code>{"<link rel=\"alternate\" type=\"text/markdown\" href=\"/path/to/page.md\">"}</code> in the HTML head. This per-page approach complements <code>llms.txt</code> by letting AI agents discover the Markdown version of any specific page they land on, without needing to consult a central index first.</p>
 
-        <h2>How Platforms Decide What to Cite</h2>
+        <h2>How platforms decide what to cite</h2>
         <p>Citation behaviour varies significantly across platforms. Perplexity is retrieval-first and cites sources on nearly every response, with Reddit as its most-cited source at 6.6% of all citations [7]. ChatGPT cites when browsing is enabled, with Wikipedia leading at 7.8% [7]. Google AI Overviews distributes citations more evenly across sources.</p>
         <p>Several patterns emerge. Pages with clear headings, code examples, and step-by-step instructions get cited more than dense prose. Technical reference queries trigger citations more reliably than generic how-tos. Brands mentioned positively across 4+ non-affiliated platforms are 2.8× more likely to appear in ChatGPT responses [8].</p>
 
@@ -1436,9 +1478,15 @@ export function ArticlePage() {
   return <>
     <header className="border-b border-[var(--line)] px-5 pb-12 pt-14 sm:px-8 sm:pb-16 sm:pt-20">
       <div className="mx-auto max-w-[760px]">
-        <Link to="/education" className="inline-flex items-center gap-2 text-[12px] font-medium tracking-[-.025em] text-[var(--muted)] transition-colors hover:text-[var(--accent)]">
-          <ArrowLeft className="size-3" strokeWidth={1.8} aria-hidden="true" /> Education
-        </Link>
+        <nav aria-label="Breadcrumb">
+          <ol className="flex flex-wrap items-center gap-2 text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">
+            <li><Link to="/" className="transition-colors hover:text-[var(--accent)]">Home</Link></li>
+            <li aria-hidden="true" className="text-[var(--line-strong)]">/</li>
+            <li><Link to="/education" className="transition-colors hover:text-[var(--accent)]">Education</Link></li>
+            <li aria-hidden="true" className="text-[var(--line-strong)]">/</li>
+            <li aria-current="page" className="max-w-[28ch] truncate text-[var(--ink-soft)]">{article.title}</li>
+          </ol>
+        </nav>
         <div className="mt-10 flex flex-wrap items-center gap-3 text-[12px] font-medium tracking-[-.025em] text-[var(--accent)]">
           <span>{article.tag}</span>
           <span className="text-[var(--line-strong)]">/</span>

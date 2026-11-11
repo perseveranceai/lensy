@@ -19,7 +19,7 @@ test('SITE-01: one page list feeds the sitemap, llms.txt and the header', async 
   const paths = await sitemapPaths(request);
   for (const p of indexable) expect(paths, `sitemap.xml is missing ${p}`).toContain(p);
   expect(paths.filter((p) => /^\/education\/[a-z0-9-]+$/.test(p)).length).toBeGreaterThan(0);
-  for (const hidden of ['/scan', '/results', '/about', '/console']) expect(paths).not.toContain(hidden);
+  for (const hidden of ['/scan', '/results', '/console']) expect(paths).not.toContain(hidden);
 
   const llms = await (await request.get('/llms.txt')).text();
   const llmsPaths = [...llms.matchAll(/\]\((https?:\/\/[^)]+)\)/g)].map((m) => new URL(m[1]).pathname);
@@ -101,7 +101,7 @@ test('SITE-06 (REG-35): missing pages return a real 404; app routes still load',
     expect(res.status(), p).toBe(404);
     expect(await res.text(), p).toContain('This page does not exist');
   }
-  for (const p of ['/scan', '/results', '/about']) expect((await request.get(p)).status(), p).toBe(200);
+  for (const p of ['/scan', '/results', '/console']) expect((await request.get(p)).status(), p).toBe(200);
 });
 
 // REG-36: the generator wrote public/education/*.md but never deleted them, so
@@ -128,7 +128,7 @@ test('SITE-08: one name for the scan action and the free allowance; no retired s
   await blockAnalytics(page);
   await page.route(/\/usage$/, (route) => route.fulfill({ json: { used: 0, limit: 100, remaining: 7, waitlisted: false } }));
   await page.goto('/');
-  await expect(page.getByRole('link', { name: 'Start a free scan' })).toBeVisible();
+  await expect(page.locator('#top').getByRole('link', { name: 'Start a free scan' })).toBeVisible();
   await expect(page.getByRole('button', { name: /start scan/i })).toBeVisible();
   await expect(page.getByText('7 free scans left').first()).toBeVisible();
   const main = (await page.locator('main').innerText()) + (await page.content());
@@ -140,7 +140,7 @@ test('SITE-10: content pages carry the new sections, dates and allowance message
 
   await page.goto('/how-it-works');
   await expect(page.getByRole('heading', { level: 2, name: 'The two scores.' })).toBeVisible();
-  await expect(page.locator('main')).toContainText('AI search bots allowed in robots.txt (20 points)');
+  await expect(page.locator('#every-check').getByRole('row', { name: /AI search bots allowed .*20/ })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Start a free scan' })).toBeVisible();
 
   await page.goto('/contact');
