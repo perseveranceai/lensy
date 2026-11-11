@@ -1,7 +1,7 @@
 name: Site readiness
 
 # Every Monday: score each page of perseveranceai.com with the Lensy CLI and add
-# the result to readiness/history.json, which /ai-readiness and the footer read.
+# the result to readiness/history.json, which the home page chart reads.
 # Spec: .context/specs/site-architecture.md (phase 2).
 #
 # Off until the repo variable SITE_READINESS_ENABLED is 'true'. Turn it on after

@@ -278,8 +278,8 @@ async function render(context, origin, route, { content }) {
   await page.waitForSelector('main h1', { timeout: 30_000 });
   if (content) await page.waitForSelector('script#page-jsonld', { state: 'attached', timeout: 30_000 });
   else await page.waitForFunction(() => document.querySelector('meta[name="robots"]')?.getAttribute('content') === 'noindex');
-  // The footer's readiness line is on every page; wait until its history has loaded.
-  await page.waitForFunction(() => document.documentElement.dataset.readiness === 'ready', null, { timeout: 15_000 });
+  // Pages with the score chart wait until its history has loaded.
+  await page.waitForFunction(() => !document.querySelector('[data-testid="score-chart"]') || document.documentElement.dataset.readiness === 'ready', null, { timeout: 15_000 });
   // Let effects settle (route fade, scroll reveal, head updates).
   await page.waitForTimeout(400);
   const result = await page.evaluate(snapshot, { baseUrl: BASE_URL });

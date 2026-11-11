@@ -200,11 +200,11 @@ Spec: `.context/specs/site-architecture.md`. `src/site-pages.json` is the page l
 | SITE-07 [auto] | Open each content page in a browser | No hydration warning (`[Hydrate]` or React errors 418/423/425) |
 | SITE-08 [auto] | Open `/` | "Start a free scan" link, "Start scan" button, "N free scans left"; none of the retired four-part model copy |
 | SITE-09 [manual] | After deploy: `lensy check` on every gamma page, then prod | Both scores at least 95 on every page; results pasted in the spec |
-| READY-01 [auto] | Open `/ai-readiness` with no history file | The Nov 10 baseline: 39 and 55, a chart with 1 run, 4 table rows; footer line reads "This site scores 39 for coding agents and 55 for AI search" (`readiness.spec.ts`) |
+| READY-01 [auto] | Open `/` with no history file, scroll to "Our own score" | The chart shows one run, the real Nov 10 baseline ("1 run since Nov 10, 2026") (`readiness.spec.ts`) |
 | READY-02 [auto] | Load 12 weekly runs; switch 30D, 7D, All; hover; arrow keys; Escape | 5, 1, 12 runs shown; tooltip with date and both scores; one check-change mark and its note; Escape closes the tooltip |
-| READY-03 [auto] | At 375px, click the footer line on `/cli` | Goes to `/ai-readiness`; no horizontal scroll |
-| READY-04 [auto] | Fetch `/ai-readiness` without JavaScript, then open it | Saved HTML has `readiness-data`, the Every page section and the footer scores; no hydration warning |
-| READY-05 [manual] | After the weekly job runs: open `/ai-readiness` on gamma | The new week is in the chart and table; `/readiness/history.json` is still there after the next deploy |
+| READY-03 [auto] | Open `/` at 375px with 12 test runs | The chart shows all 12; no horizontal scroll |
+| READY-04 [auto] | Fetch `/` without JavaScript, then open it | Saved HTML has `readiness-data` and the "We check this site every week." section; no hydration warning |
+| READY-05 [manual] | After the weekly job runs: open `/` on gamma | The new week is in the chart; `/readiness/history.json` is still there after the next deploy |
 | SITE-10 [auto] | Open `/how-it-works`, `/contact`, `/education`, an article; then `/` with no free scans left and start a scan | "The two scores." section with the AI search points; Contact has "Talk to us" and "Join the waitlist"; dates in `<time>`, "By Perseverance AI", TL;DR and References headings; "Free scans refresh tomorrow" and the used-up notice with a waitlist link |
 
 ## Functional checks by area

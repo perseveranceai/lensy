@@ -4,7 +4,6 @@ import { trackPageView } from './analytics';
 import { ShellContent, AuditAllowanceProvider } from './AppRoutes';
 import { HowItWorks, Education, ArticlePage, Contact, Terms, Privacy, BotInfo, NotFound } from './AppRoutes';
 import { CliGuide } from './CliGuide';
-import { AiReadiness } from './AiReadiness';
 /* ── Code-split heavy routes ── */
 const LensyApp = lazy(() => import('./LensyApp'));
 
@@ -85,7 +84,6 @@ function App() {
                             {/* What the Lensy checker is (its user agent links here) */}
                             <Route path="/bot" element={<BotInfo />} />
                             <Route path="/cli" element={<CliGuide />} />
-                            <Route path="/ai-readiness" element={<AiReadiness />} />
 
                             {/* N-08: this used to sit outside ShellContent, so the 404 page
                                 rendered with no header/footer, unlike every other route. */}

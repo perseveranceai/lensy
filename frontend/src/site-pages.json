@@ -55,17 +55,6 @@
     "updated": "2026-11-10"
   },
   {
-    "path": "/ai-readiness",
-    "label": "Our AI readiness",
-    "title": "How AI ready is perseveranceai.com",
-    "description": "This site's own Coding agents and AI search scores, checked every Monday with the Lensy command line tool, with the history of every run and the score of each page.",
-    "group": "company",
-    "header": false,
-    "kind": "page",
-    "schema": "WebPage",
-    "updated": "2026-11-11"
-  },
-  {
     "path": "/bot",
     "label": "Lensy bot",
     "title": "Lensy checker: user agent, IP address and how to allow or block it",

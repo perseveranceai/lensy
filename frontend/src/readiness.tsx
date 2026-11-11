@@ -204,7 +204,7 @@ export function ScoreChart({ runs }: { runs: ReadinessRun[] }) {
   return <div className="readiness-chart rounded-[var(--radius-lg)] border border-[var(--line)] bg-[var(--surface)] p-4 sm:p-6">
     <div className="flex flex-wrap items-start justify-between gap-4">
       <div>
-        <p className="text-[14px] font-medium tracking-[-.02em] text-[var(--ink)]">Site average</p>
+        <p className="text-[14px] font-medium tracking-[-.02em] text-[var(--ink)]">perseveranceai.com</p>
         <p className="mt-1 text-[12px] text-[var(--muted)]">{runs.length} run{runs.length === 1 ? "" : "s"} since {since}</p>
       </div>
       <div role="group" aria-label="Time range" className="flex gap-1">
@@ -262,23 +262,4 @@ export function ScoreChart({ runs }: { runs: ReadinessRun[] }) {
       </div>}
     </div>
   </div>;
-}
-
-/** A small two-line trend of the last 12 runs, for the footer. */
-export function Sparkline({ runs }: { runs: ReadinessRun[] }) {
-  const last = runs.slice(-12);
-  const w = 72;
-  const h = 20;
-  const x = (i: number) => (last.length > 1 ? 2 + (i / (last.length - 1)) * (w - 4) : w / 2);
-  const y = (v: number) => 2 + (1 - v / 100) * (h - 4);
-  const line = (k: "codingAgents" | "aiSearch") => smoothPath(last.map((r, i) => ({ x: x(i), y: y(r[k]) })));
-  return <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true" className="shrink-0">
-    {last.length > 1 ? <>
-      <path d={line("aiSearch")} fill="none" style={{ stroke: "var(--accent)" }} strokeWidth="1.5" strokeDasharray="3 2" />
-      <path d={line("codingAgents")} fill="none" style={{ stroke: "var(--ink)" }} strokeWidth="1.5" />
-    </> : last.length === 1 ? <>
-      <circle cx={x(0)} cy={y(last[0].codingAgents)} r="2" style={{ fill: "var(--ink)" }} />
-      <circle cx={x(0)} cy={y(last[0].aiSearch)} r="2" style={{ fill: "var(--accent)" }} />
-    </> : null}
-  </svg>;
 }
