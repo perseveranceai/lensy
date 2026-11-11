@@ -1,0 +1,98 @@
+name: Site readiness
+
+# Every day: score each page of perseveranceai.com with the Lensy CLI and add
+# the result to readiness/history.json, which the home page chart reads.
+# Spec: .context/specs/site-architecture.md (phase 2).
+#
+# Off until the repo variable SITE_READINESS_ENABLED is 'true'. Turn it on after
+# the lensy-gha-readiness role exists. That role may only:
+#   s3:GetObject, s3:PutObject on readiness/* in www.perseveranceai.com and
+#   lensy-console-951411676525-us-east-1-gamma, and
+#   cloudfront:CreateInvalidation on E274OKID4GUQ1J and E1J3M0RUB5VA7F.
+# Its trust policy admits only this repository's main branch.
+#
+# What it changes: the one file readiness/history.json in each site bucket.
+# The deploy's `s3 sync --delete` skips readiness/*, so deploys never remove it.
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: site-readiness
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  SITE: https://perseveranceai.com
+  PROD_BUCKET: www.perseveranceai.com
+  GAMMA_BUCKET: lensy-console-951411676525-us-east-1-gamma
+
+jobs:
+  score:
+    name: Score perseveranceai.com
+    if: ${{ vars.SITE_READINESS_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '23.11.0'
+          cache: npm
+          cache-dependency-path: packages/package-lock.json
+
+      - name: Script tests
+        run: node --test scripts/site-readiness.test.mjs
+
+      - name: Build the Lensy CLI from this commit
+        working-directory: packages
+        run: npm ci && npm run build
+
+      - name: Score every page in the live sitemap
+        # Exit 3 means some pages couldn't be checked; that day isn't recorded.
+        run: |
+          curl -sf "$SITE/sitemap.xml" | grep -o '<loc>[^<]*' | sed 's/<loc>//' > urls.txt
+          echo "$(wc -l < urls.txt) pages"
+          [ -s urls.txt ] || { echo "::error::no URLs in $SITE/sitemap.xml"; exit 1; }
+          set +e
+          node packages/cli/dist/cli.js check --urls-file urls.txt --no-save --no-color --json report.json
+          code=$?
+          set -e
+          [ "$code" = 0 ] || [ "$code" = 3 ] || exit "$code"
+
+      - name: Add this run to the history
+        # A missing file (404) starts from the seed with the 2026-11-10 baseline.
+        # Any other error stops here, so a bad read never overwrites the history.
+        run: |
+          status=$(curl -s -o history.json -w '%{http_code}' -H 'Cache-Control: no-cache' "$SITE/readiness/history.json")
+          if [ "$status" = 404 ]; then cp frontend/src/readiness-seed.json history.json
+          elif [ "$status" != 200 ]; then echo "::error::reading the history returned HTTP $status"; exit 1; fi
+          node scripts/site-readiness.mjs --report report.json --history history.json --out history-new.json
+
+      - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: arn:aws:iam::951411676525:role/lensy-gha-readiness
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Publish the history
+        # A day with an unchecked page writes no history-new.json; nothing to publish.
+        if: hashFiles('history-new.json') != ''
+        run: |
+          for bucket in "$PROD_BUCKET" "$GAMMA_BUCKET"; do
+            aws s3 cp history-new.json "s3://$bucket/readiness/history.json" \
+              --content-type application/json --cache-control 'max-age=300'
+          done
+          aws cloudfront create-invalidation --distribution-id E274OKID4GUQ1J --paths '/readiness/*'
+          aws cloudfront create-invalidation --distribution-id E1J3M0RUB5VA7F --paths '/readiness/*'
+
+      - name: Summary
+        if: hashFiles('history-new.json') != ''
+        run: |
+          node -e "const h=require('./history-new.json');const r=h.runs.at(-1);console.log('### '+r.date+': Coding agents '+r.codingAgents+', AI search '+r.aiSearch+' on '+r.pages.length+' pages')" >> "$GITHUB_STEP_SUMMARY"

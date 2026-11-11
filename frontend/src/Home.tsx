@@ -12,6 +12,7 @@ import {
 import { allowanceText, useAuditAllowance } from "./AppRoutes"
 import { trackEvent } from "./analytics"
 import { BOT_BLOCKED_TITLE, botBlockedDescription } from "./botBlockedCopy"
+import { ScoreChart, useReadinessHistory } from "./readiness"
 
 type IconName = "arrow" | "plus" | "link" | "eye" | "chevronDown" | "chevronRight"
 function Icon({ name, className = "" }: { name: IconName; className?: string }) {
@@ -47,6 +48,7 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
   const [progressOpen, setProgressOpen] = useState(true)
   const navigate = useNavigate()
   const { remaining } = useAuditAllowance()
+  const readiness = useReadinessHistory()
   const scanSteps = [
     ["Loading the page", "Checking if the URL works."],
     ["Checking bot access", "Reading your robots.txt file."],
@@ -459,6 +461,33 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
             Read the CLI guide{" "}
             <Icon name="arrow" className="arrow-nudge size-3" />
           </Link>
+        </div>
+      </section>
+
+      <section
+        id="our-score"
+        data-reveal
+        className="mx-auto grid max-w-[1240px] gap-10 px-5 py-20 sm:px-8 lg:grid-cols-12 lg:py-28"
+      >
+        <div className="lg:col-span-4">
+          <p className="text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">Our own score</p>
+          <h2 className="mt-5 text-[clamp(2.4rem,4.5vw,4.6rem)] font-medium leading-[.9] tracking-[-.065em]">
+            Same checks, on our own site.
+          </h2>
+          <p className="mt-6 max-w-sm text-[14px] leading-relaxed text-[var(--ink-soft)]">
+            This is perseveranceai.com scored by Lensy, with the same checks
+            your docs get.
+          </p>
+          <Link
+            to="/cli"
+            className="group mt-6 inline-flex w-fit items-center gap-2 border-b border-[var(--ink)] pb-1 text-[12px] font-medium tracking-[-.025em] text-[var(--ink)]"
+          >
+            Run the same check{" "}
+            <Icon name="arrow" className="arrow-nudge size-3" />
+          </Link>
+        </div>
+        <div className="min-w-0 lg:col-span-7 lg:col-start-6">
+          <ScoreChart runs={readiness.runs} />
         </div>
       </section>
 

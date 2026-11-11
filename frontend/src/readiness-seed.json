@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "site": "https://perseveranceai.com",
+  "runs": [
+    {
+      "date": "2026-11-10",
+      "checkedAt": "2026-11-10T10:23:10Z",
+      "cli": "0.2.0",
+      "engine": "8219dd4",
+      "codingAgents": 39,
+      "aiSearch": 55,
+      "pages": [
+        { "path": "/", "codingAgents": 39, "aiSearch": 55 },
+        { "path": "/cli", "codingAgents": 39, "aiSearch": 55 },
+        { "path": "/how-it-works", "codingAgents": 39, "aiSearch": 55 },
+        { "path": "/education/research-behind-ai-ready-docs", "codingAgents": 39, "aiSearch": 55 }
+      ]
+    }
+  ]
+}
