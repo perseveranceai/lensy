@@ -45,7 +45,9 @@ test('REG-08: generated llms.txt, sitemap and article markdown are complete', as
   const sitemap = await (await request.get('/sitemap.xml')).text();
   expect(sitemap).toContain('/how-it-works');
   expect(sitemap).toContain('/cli');
-  expect(sitemap).not.toMatch(/\/about</);
+  // /about was a redirect home when REG-08 was found; it's a real page now (phase 3).
+  expect(sitemap).toContain('/about<');
+  expect(sitemap).not.toMatch(/\/console</);
 
   const llms = await (await request.get('/llms.txt')).text();
   expect(llms).toContain('/how-it-works');

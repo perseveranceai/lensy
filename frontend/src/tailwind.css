@@ -261,6 +261,9 @@
   .z-50 {
     z-index: 50;
   }
+  .col-span-2 {
+    grid-column: span 2 / span 2;
+  }
   .container {
     width: 100%;
     @media (width >= 40rem) {
@@ -473,6 +476,9 @@
   .max-w-\[15rem\] {
     max-width: 15rem;
   }
+  .max-w-\[28ch\] {
+    max-width: 28ch;
+  }
   .max-w-\[220px\] {
     max-width: 220px;
   }
@@ -584,6 +590,9 @@
   }
   .grid-cols-\[32px_minmax\(0\,1fr\)\] {
     grid-template-columns: 32px minmax(0,1fr);
+  }
+  .grid-cols-\[minmax\(0\,1fr\)_auto\] {
+    grid-template-columns: minmax(0,1fr) auto;
   }
   .flex-col {
     flex-direction: column;
@@ -852,6 +861,9 @@
   .p-8 {
     padding: calc(var(--spacing) * 8);
   }
+  .px-1 {
+    padding-inline: var(--spacing);
+  }
   .px-1\.5 {
     padding-inline: calc(var(--spacing) * 1.5);
   }
@@ -923,6 +935,9 @@
   }
   .py-\[3px\] {
     padding-block: 3px;
+  }
+  .pt-0\.5 {
+    padding-top: calc(var(--spacing) * 0.5);
   }
   .pt-1 {
     padding-top: var(--spacing);
@@ -1071,6 +1086,9 @@
   }
   .text-\[28px\] {
     font-size: 28px;
+  }
+  .text-\[36px\] {
+    font-size: 36px;
   }
   .text-\[clamp\(1\.25rem\,3vw\,2rem\)\] {
     font-size: clamp(1.25rem, 3vw, 2rem);
@@ -1391,6 +1409,18 @@
       color: var(--ink);
     }
   }
+  .marker\:text-\[var\(--line-strong\)\] ::marker {
+    color: var(--line-strong);
+  }
+  .marker\:text-\[var\(--line-strong\)\]::marker {
+    color: var(--line-strong);
+  }
+  .marker\:text-\[var\(--line-strong\)\] ::-webkit-details-marker {
+    color: var(--line-strong);
+  }
+  .marker\:text-\[var\(--line-strong\)\]::-webkit-details-marker {
+    color: var(--line-strong);
+  }
   .placeholder\:text-\[var\(--placeholder\)\]::placeholder {
     color: var(--placeholder);
   }
@@ -1502,6 +1532,9 @@
     .sm\:grid {
       display: grid;
     }
+    .sm\:table-cell {
+      display: table-cell;
+    }
     .sm\:w-\[360px\] {
       width: 360px;
     }
@@ -1513,6 +1546,9 @@
     }
     .sm\:grid-cols-\[42px_minmax\(0\,1fr\)_auto\] {
       grid-template-columns: 42px minmax(0,1fr) auto;
+    }
+    .sm\:grid-cols-\[72px_minmax\(0\,1fr\)\] {
+      grid-template-columns: 72px minmax(0,1fr);
     }
     .sm\:flex-row {
       flex-direction: row;
@@ -1554,6 +1590,9 @@
     }
     .sm\:p-10 {
       padding: calc(var(--spacing) * 10);
+    }
+    .sm\:px-4 {
+      padding-inline: calc(var(--spacing) * 4);
     }
     .sm\:px-5 {
       padding-inline: calc(var(--spacing) * 5);

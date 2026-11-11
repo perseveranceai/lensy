@@ -1,0 +1,211 @@
+{
+  "source": "packages/docs/checks.md",
+  "codingAgents": [
+    {
+      "id": "llms-txt-exists",
+      "label": "llms.txt exists",
+      "source": "AFDocs",
+      "weight": 10
+    },
+    {
+      "id": "llms-txt-valid",
+      "label": "llms.txt format",
+      "source": "AFDocs",
+      "weight": 4
+    },
+    {
+      "id": "llms-txt-size",
+      "label": "llms.txt size",
+      "source": "AFDocs",
+      "weight": 7
+    },
+    {
+      "id": "llms-txt-links-resolve",
+      "label": "llms.txt links resolve",
+      "source": "AFDocs",
+      "weight": 7
+    },
+    {
+      "id": "llms-txt-links-markdown",
+      "label": "llms.txt links point to Markdown",
+      "source": "AFDocs",
+      "weight": 7
+    },
+    {
+      "id": "llms-txt-directive-html",
+      "label": "Page points agents to llms.txt (HTML)",
+      "source": "AFDocs",
+      "weight": 7
+    },
+    {
+      "id": "llms-txt-directive-md",
+      "label": "Page points agents to llms.txt (Markdown)",
+      "source": "AFDocs",
+      "weight": 4
+    },
+    {
+      "id": "markdown-url-support",
+      "label": ".md version of the page",
+      "source": "AFDocs",
+      "weight": 7
+    },
+    {
+      "id": "content-negotiation",
+      "label": "Markdown on request",
+      "source": "AFDocs",
+      "weight": 4
+    },
+    {
+      "id": "rendering-strategy",
+      "label": "Content without JavaScript",
+      "source": "AFDocs",
+      "weight": 10
+    },
+    {
+      "id": "page-size-markdown",
+      "label": "Markdown size",
+      "source": "AFDocs",
+      "weight": 7
+    },
+    {
+      "id": "page-size-html",
+      "label": "HTML size",
+      "source": "AFDocs",
+      "weight": 7
+    },
+    {
+      "id": "page-size-transfer",
+      "label": "Download size",
+      "source": "AFDocs",
+      "weight": 4
+    },
+    {
+      "id": "content-start-position",
+      "label": "Content starts near the top",
+      "source": "AFDocs",
+      "weight": 4
+    },
+    {
+      "id": "single-fetch-completeness",
+      "label": "Complete in one fetch",
+      "source": "AFDocs",
+      "weight": 4
+    },
+    {
+      "id": "tabbed-content-serialization",
+      "label": "Tabbed content readable",
+      "source": "AFDocs",
+      "weight": 4
+    },
+    {
+      "id": "section-header-quality",
+      "label": "Headers inside tabs",
+      "source": "AFDocs",
+      "weight": 2
+    },
+    {
+      "id": "markdown-code-fence-validity",
+      "label": "Code fences closed",
+      "source": "AFDocs",
+      "weight": 4
+    },
+    {
+      "id": "markdown-link-portability",
+      "label": "Links work outside the site",
+      "source": "AFDocs",
+      "weight": 4
+    },
+    {
+      "id": "embedded-data-serialization",
+      "label": "Embedded data size",
+      "source": "AFDocs",
+      "weight": 4
+    },
+    {
+      "id": "http-status-codes",
+      "label": "Real 404s for missing pages",
+      "source": "AFDocs",
+      "weight": 7
+    },
+    {
+      "id": "redirect-behavior",
+      "label": "Redirects",
+      "source": "AFDocs",
+      "weight": 4
+    },
+    {
+      "id": "llms-txt-coverage",
+      "label": "llms.txt covers the sitemap",
+      "source": "AFDocs",
+      "weight": 4
+    },
+    {
+      "id": "markdown-content-parity",
+      "label": "Markdown matches HTML",
+      "source": "AFDocs",
+      "weight": 4
+    },
+    {
+      "id": "cache-header-hygiene",
+      "label": "Cache headers",
+      "source": "AFDocs",
+      "weight": 2
+    },
+    {
+      "id": "auth-gate-detection",
+      "label": "Public without login",
+      "source": "AFDocs",
+      "weight": 10
+    },
+    {
+      "id": "auth-alternative-access",
+      "label": "Alternative access to gated docs",
+      "source": "AFDocs",
+      "weight": 4
+    },
+    {
+      "id": "bot-protection-interference",
+      "label": "Bot protection lets agents in",
+      "source": "AFDocs",
+      "weight": 7
+    },
+    {
+      "id": "lensy-headings",
+      "label": "Headings an agent can navigate",
+      "source": "Lensy",
+      "weight": 4
+    }
+  ],
+  "aiSearch": [
+    {
+      "id": "S1",
+      "label": "AI search bots allowed",
+      "points": 20
+    },
+    {
+      "id": "S2",
+      "label": "Content without JavaScript",
+      "points": 20
+    },
+    {
+      "id": "S3",
+      "label": "Indexable",
+      "points": 25
+    },
+    {
+      "id": "S4",
+      "label": "Freshness declared",
+      "points": 15
+    },
+    {
+      "id": "S5",
+      "label": "Answer-ready sections",
+      "points": 15
+    },
+    {
+      "id": "S6",
+      "label": "JSON-LD",
+      "points": 5
+    }
+  ]
+}

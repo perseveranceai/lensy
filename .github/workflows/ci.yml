@@ -38,7 +38,7 @@ jobs:
         run: npx tsc --noEmit -p tsconfig.json
 
       - name: Site readiness script tests
-        run: node --test scripts/site-readiness.test.mjs
+        run: node --test scripts/site-readiness.test.mjs scripts/site-content.test.mjs
 
       - name: Test
         working-directory: backend
