@@ -56,12 +56,36 @@ function write(rel, content) {
   fs.writeFileSync(file, content, 'utf-8');
 }
 
+// This site's readiness history (written weekly by .github/workflows/site-readiness.yml,
+// kept out of the build). Pages are rendered with the live copy so their saved HTML
+// shows this week's scores. If it can't be read, pages use src/readiness-seed.json.
+async function liveHistory() {
+  const url = process.env.READINESS_HISTORY_URL || `${BASE_URL}/readiness/history.json`;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(10_000), headers: { 'User-Agent': 'lensy-prerender' } });
+    const type = res.headers.get('content-type') || '';
+    if (!res.ok || !/json/.test(type)) { log(`no readiness history at ${url} (HTTP ${res.status}); using the seed`); return null; }
+    const text = await res.text();
+    JSON.parse(text);
+    log(`readiness history from ${url}`);
+    return text;
+  } catch (e) {
+    log(`readiness history not read from ${url} (${e.message}); using the seed`);
+    return null;
+  }
+}
+
 // Serves the build as a plain SPA: real files when they exist, the original
 // shell for every route. Only used while rendering.
-function startServer(shell) {
+function startServer(shell, history) {
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
       const pathname = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+      if (pathname === '/readiness/history.json' && history) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(history);
+        return;
+      }
       const file = path.join(BUILD_DIR, pathname);
       if (file.startsWith(BUILD_DIR) && pathname !== '/' && fs.existsSync(file) && fs.statSync(file).isFile()) {
         res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream' });
@@ -232,6 +256,16 @@ function snapshot({ baseUrl }) {
   }
   root.insertBefore(document.createComment('$'), root.firstChild);
   root.appendChild(document.createComment('/$'));
+  // Save the readiness history this page was drawn with, so the browser's first
+  // render draws the same (src/readiness.tsx reads this tag).
+  delete document.documentElement.dataset.readiness;
+  if (window.__lensyReadiness) {
+    const tag = document.createElement('script');
+    tag.id = 'readiness-data';
+    tag.type = 'application/json';
+    tag.textContent = JSON.stringify(window.__lensyReadiness).replace(/</g, '\\u003c');
+    document.head.appendChild(tag);
+  }
 
   return { html: '<!DOCTYPE html>' + document.documentElement.outerHTML, markdown, facts };
 }
@@ -244,6 +278,8 @@ async function render(context, origin, route, { content }) {
   await page.waitForSelector('main h1', { timeout: 30_000 });
   if (content) await page.waitForSelector('script#page-jsonld', { state: 'attached', timeout: 30_000 });
   else await page.waitForFunction(() => document.querySelector('meta[name="robots"]')?.getAttribute('content') === 'noindex');
+  // The footer's readiness line is on every page; wait until its history has loaded.
+  await page.waitForFunction(() => document.documentElement.dataset.readiness === 'ready', null, { timeout: 15_000 });
   // Let effects settle (route fade, scroll reveal, head updates).
   await page.waitForTimeout(400);
   const result = await page.evaluate(snapshot, { baseUrl: BASE_URL });
@@ -307,7 +343,12 @@ async function main() {
   if (!shell.includes('<div id="root"></div>')) fail('build/index.html is already prerendered; rebuild first');
   log(`rendering ${BUILD_DIR} for ${BASE_URL}`);
 
-  const server = await startServer(shell);
+  // build/readiness/history.json: the history pages are drawn with (live copy, or
+  // the seed). Deploys sync with --exclude 'readiness/*', so it never replaces the
+  // live file; deploy.yml uploads it only when a bucket has none yet.
+  const history = await liveHistory();
+  write('readiness/history.json', history || fs.readFileSync(path.join(__dirname, '..', 'src', 'readiness-seed.json'), 'utf-8'));
+  const server = await startServer(shell, history);
   const origin = `http://127.0.0.1:${server.address().port}`;
   const browser = await chromium.launch({ channel: 'chrome' }).catch(() => chromium.launch());
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });

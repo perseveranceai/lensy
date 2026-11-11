@@ -187,6 +187,9 @@
   }
 }
 @layer utilities {
+  .pointer-events-none {
+    pointer-events: none;
+  }
   .collapse {
     visibility: collapse;
   }
@@ -446,6 +449,9 @@
   .w-52 {
     width: calc(var(--spacing) * 52);
   }
+  .w-\[176px\] {
+    width: 176px;
+  }
   .w-\[240px\] {
     width: 240px;
   }
@@ -488,11 +494,17 @@
   .max-w-\[760px\] {
     max-width: 760px;
   }
+  .max-w-\[860px\] {
+    max-width: 860px;
+  }
   .max-w-\[1240px\] {
     max-width: 1240px;
   }
   .max-w-\[calc\(100vw-2\.5rem\)\] {
     max-width: calc(100vw - 2.5rem);
+  }
+  .max-w-full {
+    max-width: 100%;
   }
   .max-w-lg {
     max-width: var(--container-lg);
@@ -918,6 +930,9 @@
   .pt-1 {
     padding-top: var(--spacing);
   }
+  .pt-1\.5 {
+    padding-top: calc(var(--spacing) * 1.5);
+  }
   .pt-2 {
     padding-top: calc(var(--spacing) * 2);
   }
@@ -1005,6 +1020,9 @@
   .align-top {
     vertical-align: top;
   }
+  .font-\[family-name\:var\(--font-mono\)\] {
+    font-family: var(--font-mono);
+  }
   .font-sans {
     font-family: var(--font-sans);
   }
@@ -1056,6 +1074,9 @@
   }
   .text-\[28px\] {
     font-size: 28px;
+  }
+  .text-\[44px\] {
+    font-size: 44px;
   }
   .text-\[clamp\(1\.25rem\,3vw\,2rem\)\] {
     font-size: clamp(1.25rem, 3vw, 2rem);
@@ -1433,6 +1454,13 @@
   .focus-visible\:text-\[var\(--ink\)\]:focus-visible {
     color: var(--ink);
   }
+  .focus-visible\:ring-2:focus-visible {
+    --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color, currentcolor);
+    box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
+  }
+  .focus-visible\:ring-\[var\(--accent\)\]:focus-visible {
+    --tw-ring-color: var(--accent);
+  }
   .focus-visible\:outline-2:focus-visible {
     outline-style: var(--tw-outline-style);
     outline-width: 2px;
@@ -1521,6 +1549,9 @@
       border-left-style: var(--tw-border-style);
       border-left-width: 1px;
     }
+    .sm\:p-6 {
+      padding: calc(var(--spacing) * 6);
+    }
     .sm\:p-7 {
       padding: calc(var(--spacing) * 7);
     }
@@ -1529,6 +1560,9 @@
     }
     .sm\:p-10 {
       padding: calc(var(--spacing) * 10);
+    }
+    .sm\:px-4 {
+      padding-inline: calc(var(--spacing) * 4);
     }
     .sm\:px-5 {
       padding-inline: calc(var(--spacing) * 5);
@@ -1906,6 +1940,17 @@ a {
 }
 :root {
   --ease: cubic-bezier(.22, 1, .36, 1);
+}
+.chart-fade {
+  animation: chart-in .35s var(--ease);
+}
+@keyframes chart-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 [data-reveal] {
   opacity: 0;

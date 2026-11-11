@@ -18,6 +18,7 @@ import { BOT_BLOCKED_TITLE, botBlockedDescription } from "./botBlockedCopy";
 import { HEADER_PAGES, pageFor, pagesInGroup } from "./site";
 import type { SitePage } from "./site";
 import { usePageMeta } from "./usePageMeta";
+import { latestRun, Sparkline, useReadinessHistory } from "./readiness";
 import type { PageMeta } from "./usePageMeta";
 const logo = `${process.env.PUBLIC_URL}/logo.png`;
 
@@ -476,6 +477,16 @@ const FOOTER_GROUPS: [string, "product" | "learn" | "company" | "legal"][] = [
 
 const footerLink = "link-sweep text-[var(--ink-soft)] hover:text-[var(--ink)]";
 
+/** One quiet line in the footer: this site's latest scores and a trend, linking to /ai-readiness. */
+function ReadinessLine() {
+  const history = useReadinessHistory();
+  const latest = latestRun(history);
+  return <Link to="/ai-readiness" data-testid="readiness-line" className="group inline-flex items-center gap-3 text-[12px] text-[var(--muted)] transition-colors hover:text-[var(--ink)]">
+    <Sparkline runs={history.runs} />
+    <span>This site scores <span className="text-[var(--ink-soft)] tabular-nums">{latest.codingAgents}</span> for coding agents and <span className="text-[var(--ink-soft)] tabular-nums">{latest.aiSearch}</span> for AI search. Checked weekly.</span>
+  </Link>;
+}
+
 function SiteFooter() {
   const newest = [...ARTICLES].sort((a, b) => b.publishedDate.localeCompare(a.publishedDate)).slice(0, 3);
   return <footer className="border-t border-[var(--line)] px-5 pb-8 pt-12 sm:px-8 sm:pt-16">
@@ -500,6 +511,7 @@ function SiteFooter() {
     </div>
     <div className="mx-auto mt-12 flex max-w-[1240px] flex-col gap-3 border-t border-[var(--line)] pt-6 text-[12px] text-[var(--muted)] sm:flex-row sm:items-center sm:justify-between">
       <span>© {new Date().getFullYear()} Perseverance AI. All rights reserved.</span>
+      <ReadinessLine />
       <div className="flex gap-5 text-[13px]">
         <a href="https://www.linkedin.com/company/getperseverance/" target="_blank" rel="noopener noreferrer" className={footerLink}>LinkedIn</a>
         <a href="https://x.com/getperseverance" target="_blank" rel="noopener noreferrer" className={footerLink}>X</a>

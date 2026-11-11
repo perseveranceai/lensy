@@ -37,6 +37,9 @@ jobs:
         working-directory: backend
         run: npx tsc --noEmit -p tsconfig.json
 
+      - name: Site readiness script tests
+        run: node --test scripts/site-readiness.test.mjs
+
       - name: Test
         working-directory: backend
         # Jest unit tests in **/__tests__/** (fetch helper, scoring). Also run

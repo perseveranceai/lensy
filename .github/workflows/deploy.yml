@@ -118,7 +118,9 @@ jobs:
       - name: Publish gamma frontend
         working-directory: frontend
         run: |
-          aws s3 sync build/ s3://lensy-console-951411676525-us-east-1-gamma --delete
+          # readiness/* is written weekly by site-readiness.yml, not the build.
+          aws s3 sync build/ s3://lensy-console-951411676525-us-east-1-gamma --delete --exclude 'readiness/*'
+          bash ../scripts/readiness-first-copy.sh lensy-console-951411676525-us-east-1-gamma build
           aws cloudfront create-invalidation \
             --distribution-id E1J3M0RUB5VA7F --paths "/*"
 
@@ -275,7 +277,10 @@ jobs:
         # (lensy-console-951411676525-us-east-1 redirects). The live site is
         # served from www.perseveranceai.com behind E274OKID4GUQ1J. Wiring this
         # to stack outputs would "succeed" and change nothing visible.
-        run: aws s3 sync build-prod/ s3://www.perseveranceai.com --delete
+        # readiness/* is written weekly by site-readiness.yml, not the build.
+        run: |
+          aws s3 sync build-prod/ s3://www.perseveranceai.com --delete --exclude 'readiness/*'
+          bash ../scripts/readiness-first-copy.sh www.perseveranceai.com build-prod
 
       - name: Site routing on prod CloudFront
         id: router

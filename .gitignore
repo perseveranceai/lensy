@@ -183,3 +183,5 @@ GA_implementation_plan.md
 workflow-definition.json
 workflow-definition-minified.json
 local_wf.json
+# Saved CloudFront configs from scripts/cloudfront-site-router.sh
+cloudfront-*.json
