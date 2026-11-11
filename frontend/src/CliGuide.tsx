@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Page } from "./AppRoutes";
@@ -43,16 +42,12 @@ const H2 = ({ id, children }: { id: string; children: ReactNode }) => (
   <h2 id={id} className="scroll-mt-28">{children}</h2>
 );
 
+// Title, description and canonical come from site-pages.json (usePageMeta in ShellContent).
 export function CliGuide() {
-  useEffect(() => {
-    const previous = document.title;
-    document.title = "Command-line guide - Lensy";
-    return () => { document.title = previous; };
-  }, []);
 
   return (
     <Page
-      title={<>Lensy<br /><span className="text-[var(--accent)]">command line.</span></>}
+      title={<>Lensy{" "}<br /><span className="text-[var(--accent)]">command line.</span></>}
       intro="Check a docs page from your terminal or your CI. You get the same two scores as perseveranceai.com, and the same fixes."
     >
       <div className="grid gap-10 py-12 sm:py-16 lg:grid-cols-12 lg:gap-16">

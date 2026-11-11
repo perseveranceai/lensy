@@ -190,22 +190,17 @@ Fix the code or the test, commit, and push again."
 say "building for production and running the e2e suite (a few minutes; real scans on the gamma API)…"
 [ -d frontend/node_modules ] || (cd frontend && npm ci) || fail "npm ci failed in frontend/"
 
-restore_generated() {
-  # The build regenerates these from source; put the committed copies back so
-  # the build doesn't leave the working tree dirty.
-  git checkout -- frontend/public/sitemap.xml frontend/public/llms.txt frontend/public/robots.txt frontend/public/education 2>/dev/null || true
-}
+# llms.txt, sitemap.xml, robots.txt and the Markdown copies are written into
+# build/ by scripts/prerender.js, so the build leaves the working tree clean.
 
 ( cd frontend && E2E_SKIP_CITATIONS=1 npm run --silent test:e2e:local )
 status=$?
 
 if ! git diff --quiet -- frontend/src/tailwind.css; then
-  restore_generated
   fail "frontend/src/tailwind.css is out of date with frontend/src/index.css.
 The build just regenerated it — commit the regenerated file and push again.
 (Never hand-edit tailwind.css; see AGENTS.md.)"
 fi
-restore_generated
 
 [ $status -ne 0 ] && fail "the e2e suite failed (details above; report: frontend/playwright-report).
 Fix the code or the test, commit, and push again."

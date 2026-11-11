@@ -109,11 +109,8 @@ const theme = createTheme({
     },
 });
 
-const root = ReactDOM.createRoot(
-    document.getElementById('root') as HTMLElement
-);
-
-root.render(
+const container = document.getElementById('root') as HTMLElement;
+const app = (
     <React.StrictMode>
         <ThemeProvider theme={theme}>
             <CssBaseline />
@@ -121,3 +118,14 @@ root.render(
         </ThemeProvider>
     </React.StrictMode>
 );
+
+// Pages built by scripts/prerender.js arrive with their HTML already in #root.
+// Hydrating keeps that HTML on screen instead of replacing it, so there is no
+// flash while the scripts load. A plain build (npm start) has an empty #root.
+if (container.firstElementChild) {
+    ReactDOM.hydrateRoot(container, app, {
+        onRecoverableError: (error) => console.warn('[Hydrate] Rendered on the client instead:', error),
+    });
+} else {
+    ReactDOM.createRoot(container).render(app);
+}

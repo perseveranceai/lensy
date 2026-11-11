@@ -6,7 +6,10 @@ import { Link } from "react-router-dom";
 import { ConsentChoice, getConsent, onOpenCookieSettings, setConsent } from "./consent";
 
 export function CookieBanner() {
-  const [open, setOpen] = useState(() => getConsent() === null);
+  // Decided after mount: the prerendered HTML is built with no banner, and the
+  // first render has to match it for React to hydrate the page.
+  const [open, setOpen] = useState(false);
+  useEffect(() => { setOpen(getConsent() === null); }, []);
 
   useEffect(() => onOpenCookieSettings(() => setOpen(true)), []);
 

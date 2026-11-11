@@ -45,7 +45,9 @@ export default defineConfig({
   },
   webServer: useLocalBuild
     ? {
-        command: 'npx serve -s build -l 3000',
+        // Same routing as gamma and prod (backend/cloudfront/site-router.js):
+        // prerendered pages, Markdown on request and real 404s.
+        command: 'node scripts/serve-build.js build 3000',
         url: 'http://localhost:3000',
         reuseExistingServer: true,
         timeout: 30_000,

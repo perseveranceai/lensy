@@ -1,0 +1,95 @@
+[
+  {
+    "path": "/",
+    "label": "Scan",
+    "title": "Lensy: can AI search and coding agents use your docs?",
+    "description": "Paste a documentation URL and get two scores out of 100: how well coding agents can read the page, and how well AI search can find and cite it. Each score comes with the fixes worth the most points.",
+    "group": "product",
+    "header": true,
+    "kind": "page",
+    "schema": "SoftwareApplication",
+    "updated": "2026-11-10"
+  },
+  {
+    "path": "/cli",
+    "label": "CLI",
+    "title": "Lensy command line guide",
+    "description": "Check a docs page from your terminal or your CI with the lensy command. You get the same two scores and the same fixes as perseveranceai.com.",
+    "group": "product",
+    "header": true,
+    "kind": "page",
+    "schema": "SoftwareApplication",
+    "updated": "2026-11-08"
+  },
+  {
+    "path": "/how-it-works",
+    "label": "How it works",
+    "title": "How Lensy checks a docs page",
+    "description": "What Lensy fetches from a documentation page, how it turns that into a Coding agents score and an AI search score, and what the report tells you to fix.",
+    "group": "product",
+    "header": true,
+    "kind": "page",
+    "schema": "WebPage",
+    "updated": "2026-11-10"
+  },
+  {
+    "path": "/education",
+    "label": "Education",
+    "title": "Education on AI-ready docs",
+    "description": "Articles on how AI search engines and coding agents find, read and cite documentation, and the research behind the checks Lensy runs.",
+    "group": "learn",
+    "header": true,
+    "kind": "page",
+    "schema": "CollectionPage",
+    "updated": "2026-11-10"
+  },
+  {
+    "path": "/contact",
+    "label": "Contact",
+    "title": "Contact Perseverance AI and join the Lensy waitlist",
+    "description": "Book a call or email the team behind Lensy, or join the waitlist for a higher daily scan limit and early access to new features.",
+    "group": "company",
+    "header": true,
+    "kind": "page",
+    "schema": "ContactPage",
+    "updated": "2026-11-10"
+  },
+  {
+    "path": "/bot",
+    "label": "Lensy bot",
+    "title": "Lensy checker: user agent, IP address and how to allow or block it",
+    "description": "What the Lensy checker fetches when someone scans a page on your site, how to recognise its requests, and how to allow or block it.",
+    "group": "company",
+    "header": false,
+    "kind": "page",
+    "schema": "WebPage",
+    "updated": "2026-11-05"
+  },
+  {
+    "path": "/terms",
+    "label": "Terms of Use",
+    "title": "Terms of Use",
+    "description": "The terms for using Lensy and other Perseverance AI services.",
+    "group": "legal",
+    "header": false,
+    "kind": "page",
+    "schema": "WebPage",
+    "updated": "2026-02-10"
+  },
+  {
+    "path": "/privacy",
+    "label": "Privacy Policy",
+    "title": "Privacy Policy",
+    "description": "What Lensy collects when you use perseveranceai.com, which services receive it, and how long it is kept.",
+    "group": "legal",
+    "header": false,
+    "kind": "page",
+    "schema": "WebPage",
+    "updated": "2026-10-22"
+  },
+  { "path": "/scan", "label": "Scan in progress", "title": "Scanning - Lensy", "kind": "app" },
+  { "path": "/results", "label": "Scan report", "title": "Scan report - Lensy", "kind": "app" },
+  { "path": "/about", "label": "About", "title": "Lensy", "kind": "redirect" },
+  { "path": "/console", "label": "Console", "title": "Lensy", "kind": "redirect" },
+  { "path": "/console/lensy", "label": "Console", "title": "Lensy", "kind": "redirect" }
+]

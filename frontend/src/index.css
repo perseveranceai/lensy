@@ -636,6 +636,30 @@ textarea:focus-visible {
   line-height: 1.15;
 }
 
+/* TL;DR and References are real H2s, so agents and the Markdown copy see them
+   as sections, but they keep the small label look. */
+.prose-lensy h2.tldr-heading,
+.prose-lensy h2.refs-heading,
+h2.tldr-heading,
+h2.refs-heading {
+  margin: 0 0 .75rem;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: -.025em;
+}
+
+.prose-lensy h2.tldr-heading,
+h2.tldr-heading {
+  color: var(--accent);
+}
+
+.prose-lensy h2.refs-heading,
+h2.refs-heading {
+  margin-bottom: 1rem;
+  color: var(--muted);
+}
+
 .prose-lensy p {
   max-width: 65ch;
 }

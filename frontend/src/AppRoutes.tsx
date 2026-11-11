@@ -15,6 +15,10 @@ import { CITATIONS_ENABLED } from "./report/flags";
 import { CookieBanner } from "./CookieBanner";
 import { openCookieSettings } from "./consent";
 import { BOT_BLOCKED_TITLE, botBlockedDescription } from "./botBlockedCopy";
+import { HEADER_PAGES, pageFor, pagesInGroup } from "./site";
+import type { SitePage } from "./site";
+import { usePageMeta } from "./usePageMeta";
+import type { PageMeta } from "./usePageMeta";
 const logo = `${process.env.PUBLIC_URL}/logo.png`;
 
 // N-08: keep transient / non-canonical pages (404, empty results) out of search
@@ -278,7 +282,11 @@ export function ThemeToggle() {
     light: ["Light", "Always use light"],
     dark: ["Dark", "Always use dark"],
   };
-  const ActiveThemeIcon = themeIcon[theme];
+  // The prerendered HTML shows the System icon. Show the saved choice only after
+  // mount, so the first render matches that HTML and React can hydrate it.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const ActiveThemeIcon = themeIcon[mounted ? theme : "system"];
   return <div ref={pickerRef} className="relative">
     <button type="button" aria-label="Change color theme" aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen((current) => !current)} className={`theme-trigger flex size-8 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-soft)] transition-colors hover:border-[var(--accent)] hover:text-[var(--ink)] ${open ? "is-open" : ""}`}>
       <ActiveThemeIcon className="size-3.5" strokeWidth={1.65} aria-hidden="true" />
@@ -334,14 +342,18 @@ export function NavRail() {
   }, [pathname]);
   return <div ref={railRef} className="nav-rail relative flex min-w-max items-center gap-0.5 rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] p-1">
     <span aria-hidden="true" className={`nav-indicator ${indicator.ready ? "is-ready" : ""}`} style={{ width: indicator.width, transform: `translateX(${indicator.left}px)` }} />
-    <NavLink to="/" label="Lensy" badge="Beta" />
-    <NavLink to="/how-it-works" label="How it works" />
-    <NavLink to="/education" label="Education" />
-    <NavLink to="/contact" label="Contact" onNavigate={() => trackEvent("contact_link_clicked", { source: "header" })} />
+    {HEADER_PAGES.map((p) => <NavLink key={p.path} to={p.path} label={p.label} badge={p.path === "/" ? "Beta" : undefined} onNavigate={p.path === "/contact" ? () => trackEvent("contact_link_clicked", { source: "header" }) : undefined} />)}
   </div>;
 }
 
-export function MobileNav({ remaining }: { remaining: number }) {
+/** One wording for the free allowance, used in the header, the mobile menu and the scan form. */
+export function allowanceText(remaining: number | null) {
+  if (remaining === null) return "Checking free scans…";
+  if (remaining === 0) return "Free scans refresh tomorrow";
+  return `${remaining} free scan${remaining === 1 ? "" : "s"} left`;
+}
+
+export function MobileNav({ remaining }: { remaining: number | null }) {
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -354,14 +366,9 @@ export function MobileNav({ remaining }: { remaining: number }) {
   }, []);
   // T-11: the desktop NavRail shows a "Beta" badge on Lensy; the mobile menu
   // never carried one at all, so mobile users saw no beta indicator.
-  const links: [string, string, string?][] = [
-    ["/", "Lensy", "Beta"],
-    ["/how-it-works", "How it works"],
-    ["/education", "Education"],
-    ["/contact", "Contact"],
-  ];
+  const links: [string, string, string?][] = HEADER_PAGES.map((p) => [p.path, p.label, p.path === "/" ? "Beta" : undefined]);
 
-  return <div className="relative md:hidden">
+  return <div className="relative lg:hidden">
     <button type="button" aria-label={open ? "Close navigation" : "Open navigation"} aria-expanded={open} aria-controls="mobile-navigation" onClick={() => setOpen((current) => !current)} className="theme-trigger grid size-8 place-items-center rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--ink)]">
       {open ? <X className="size-3.5" strokeWidth={1.75} aria-hidden="true" /> : <Menu className="size-3.5" strokeWidth={1.75} aria-hidden="true" />}
     </button>
@@ -372,7 +379,7 @@ export function MobileNav({ remaining }: { remaining: number }) {
           return <Link key={to} to={to} onClick={to === "/contact" ? () => trackEvent("contact_link_clicked", { source: "mobile-nav" }) : undefined} className={`flex items-center justify-between rounded-[var(--radius-xs)] px-3 py-2.5 text-[13px] font-medium tracking-[-.025em] transition-colors ${active ? "bg-[var(--ink)] text-[var(--bg)]" : "text-[var(--ink-soft)] hover:bg-[var(--surface)] hover:text-[var(--ink)]"}`} aria-current={active ? "page" : undefined}><span className="inline-flex items-center gap-1.5">{label}{badge && <span className={`inline-flex items-center rounded-full px-1.5 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[.09em] ${active ? "bg-[color-mix(in_srgb,var(--bg)_15%,transparent)] text-[var(--bg)]" : "bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-[var(--accent)]"}`}>{badge}</span>}</span>{active && <Check className="size-3.5" strokeWidth={1.8} aria-hidden="true" />}</Link>;
         })}
       </div>
-      <p className="mt-1.5 border-t border-[var(--line)] px-3 py-2.5 text-[11px] font-medium tracking-[-.02em] text-[var(--muted)]">Free tier — {remaining} audits left</p>
+      <p className="mt-1.5 border-t border-[var(--line)] px-3 py-2.5 text-[11px] font-medium tracking-[-.02em] text-[var(--muted)]">{allowanceText(remaining)}</p>
     </div>}
   </div>;
 }
@@ -426,15 +433,80 @@ export function FeedbackWidget() {
     }
   };
   useEffect(() => () => { if (closeTimer.current) window.clearTimeout(closeTimer.current); }, []);
-  // Below 640px the left-hand button sat on the score cards' text ("3 checks to
-  // improve"), so phones get a small icon in the right corner instead (REG-26).
-  return <div data-testid="feedback-widget" className="fixed bottom-4 right-4 z-40 flex max-w-[calc(100vw-2rem)] flex-col items-end sm:bottom-5 sm:left-5 sm:right-auto sm:max-w-[calc(100vw-2.5rem)] sm:items-start">
-    {open && <div id="feedback-panel" className={`feedback-panel popup-shadow mb-2.5 w-[304px] max-w-full overflow-hidden rounded-[var(--radius-md)] border border-[var(--line-strong)] bg-[var(--bg)] ${closing ? "is-closing" : ""}`}>
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  // The button lives in the header. As a floating corner button it sat on page
+  // text at every width (REG-26), so it now opens a panel under the header instead.
+  const launcher = <button type="button" onClick={() => { if (open) { close(); } else { trackEvent("feedback_widget_opened", { pageUrl: window.location.href }); setOpen(true); } }} aria-expanded={open} aria-controls="feedback-panel" aria-label="Feedback" className="feedback-launch theme-trigger inline-flex h-8 min-w-8 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--surface)] px-2 text-[12px] font-medium tracking-[-.025em] text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--ink)]"><MessageSquare className="size-3.5" strokeWidth={1.75} aria-hidden="true" /><span className="hidden lg:inline">Feedback</span></button>;
+  return <div data-testid="feedback-widget" className="relative">
+    {launcher}
+    {open && <div id="feedback-panel" className={`feedback-panel popup-shadow absolute right-0 top-[calc(100%+10px)] z-30 w-[304px] max-w-[calc(100vw-2.5rem)] overflow-hidden rounded-[var(--radius-md)] border border-[var(--line-strong)] bg-[var(--bg)] ${closing ? "is-closing" : ""}`}>
       <div className="flex items-center justify-between border-b border-[var(--line)] px-3.5 py-2.5"><p className="text-[13px] font-medium tracking-[-.025em]">Share feedback</p><button type="button" onClick={close} aria-label="Close feedback" className="grid size-6 place-items-center rounded-[var(--radius-xs)] text-[var(--muted)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"><X className="size-3" strokeWidth={1.8} aria-hidden="true" /></button></div>
       {sent ? <div role="status" aria-live="polite" className="feedback-success flex items-center gap-3 px-4 py-5"><span className="grid size-7 place-items-center rounded-full bg-[var(--tint)] text-[var(--accent)]"><Check className="size-3.5" strokeWidth={1.9} aria-hidden="true" /></span><p className="text-[13px] font-medium tracking-[-.02em]">Feedback sent.</p></div> : <form onSubmit={submit} className="p-4"><label className="sr-only" htmlFor="feedback-message">Feedback</label><textarea id="feedback-message" value={message} onChange={(event) => setMessage(event.target.value)} placeholder="What would make Lensy more useful?" className="feedback-field min-h-28 w-full resize-y rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--surface)] px-3 py-2.5 text-[13px] leading-relaxed text-[var(--ink)] outline-none placeholder:text-[var(--placeholder)] focus:border-[var(--accent)]" /><label className="sr-only" htmlFor="feedback-email">Email address</label><input id="feedback-email" value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="Email (optional, for follow-up)" className="feedback-field mt-3 w-full rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--surface)] px-3 py-2.5 text-[13px] text-[var(--ink)] outline-none placeholder:text-[var(--placeholder)] focus:border-[var(--accent)]" /><button type="submit" disabled={!message.trim() || sending} className="feedback-submit btn-ink mt-3 flex w-full items-center justify-center gap-2 bg-[var(--panel-bg)] px-4 py-2.5 text-[13px] font-medium tracking-[-.02em] text-[var(--panel-fg)] disabled:cursor-not-allowed disabled:opacity-40">{sending ? "Sending…" : <>Send feedback <Send className="size-3" strokeWidth={1.8} aria-hidden="true" /></>}</button>{sendError && <p role="alert" className="mt-3 text-[12px] text-[var(--ink-soft)]">{sendError}</p>}</form>}
     </div>}
-    <button type="button" onClick={() => { if (open) { close(); } else { trackEvent("feedback_widget_opened", { pageUrl: window.location.href }); setOpen(true); } }} aria-expanded={open} aria-controls="feedback-panel" aria-label="Feedback" className="feedback-launch inline-flex size-10 items-center justify-center rounded-full border border-[var(--line-strong)] bg-[var(--bg)] text-[13px] font-medium tracking-[-.02em] text-[var(--ink)] sm:size-auto sm:rounded-[var(--radius-sm)] sm:px-3 sm:py-2"><MessageSquare className="size-4 sm:hidden" strokeWidth={1.8} aria-hidden="true" /><span className="hidden sm:inline">Feedback</span></button>
   </div>;
+}
+
+/** Head tags for a page in site-pages.json. */
+function metaForPage(page: SitePage): PageMeta {
+  const isContent = page.kind === "page";
+  return {
+    path: page.path,
+    title: page.title,
+    description: page.description,
+    noindex: !isContent,
+    schema: page.schema,
+    updated: page.updated,
+    markdown: isContent,
+    breadcrumb: page.path === "/" ? [{ name: "Home", path: "/" }] : [{ name: "Home", path: "/" }, { name: page.label, path: page.path }],
+  };
+}
+
+const FOOTER_GROUPS: [string, "product" | "learn" | "company" | "legal"][] = [
+  ["Product", "product"],
+  ["Learn", "learn"],
+  ["Company", "company"],
+  ["Legal", "legal"],
+];
+
+const footerLink = "link-sweep text-[var(--ink-soft)] hover:text-[var(--ink)]";
+
+function SiteFooter() {
+  const newest = [...ARTICLES].sort((a, b) => b.publishedDate.localeCompare(a.publishedDate)).slice(0, 3);
+  return <footer className="border-t border-[var(--line)] px-5 pb-8 pt-12 sm:px-8 sm:pt-16">
+    <div className="mx-auto grid max-w-[1240px] gap-10 lg:grid-cols-12 lg:gap-8">
+      <div className="lg:col-span-4">
+        <Link to="/" aria-label="Perseverance AI home" className="inline-flex items-center gap-2 text-[15px] font-medium tracking-[-.04em] opacity-90 transition-opacity hover:opacity-100">
+          <img src={logo} alt="" width={40} height={40} className="logo-mark size-10 object-contain" />Perseverance AI
+        </Link>
+        <p className="mt-4 max-w-xs text-[13px] leading-relaxed text-[var(--ink-soft)]">Lensy checks whether AI search engines and coding agents can find, read and cite your documentation.</p>
+      </div>
+      <nav aria-label="Footer" className="grid grid-cols-2 gap-x-6 gap-y-10 lg:col-span-8 lg:grid-cols-4">
+        {FOOTER_GROUPS.map(([title, group]) => <div key={group}>
+          <h2 className="text-[12px] font-medium tracking-[-.02em] text-[var(--muted)]">{title}</h2>
+          <ul className="mt-4 flex flex-col gap-2.5 text-[13px] leading-snug">
+            {pagesInGroup(group).map((p) => <li key={p.path}><Link to={p.path} className={footerLink}>{p.label}</Link></li>)}
+            {group === "learn" && newest.map((a) => <li key={a.slug}><Link to={`/education/${a.slug}`} className={footerLink}>{a.title}</Link></li>)}
+            {group === "company" && <li><a href="https://calendly.com/getperseverance" target="_blank" rel="noopener noreferrer" className={footerLink}>Book a call</a></li>}
+            {group === "legal" && <li><button type="button" onClick={openCookieSettings} className={footerLink}>Cookie settings</button></li>}
+          </ul>
+        </div>)}
+      </nav>
+    </div>
+    <div className="mx-auto mt-12 flex max-w-[1240px] flex-col gap-3 border-t border-[var(--line)] pt-6 text-[12px] text-[var(--muted)] sm:flex-row sm:items-center sm:justify-between">
+      <span>© {new Date().getFullYear()} Perseverance AI. All rights reserved.</span>
+      <div className="flex gap-5 text-[13px]">
+        <a href="https://www.linkedin.com/company/getperseverance/" target="_blank" rel="noopener noreferrer" className={footerLink}>LinkedIn</a>
+        <a href="https://x.com/getperseverance" target="_blank" rel="noopener noreferrer" className={footerLink}>X</a>
+      </div>
+    </div>
+    <p className="mx-auto mt-4 max-w-[1240px] text-[11px] leading-relaxed text-[var(--muted)]">Lensy is in beta. Results are generated automatically and can be wrong, so treat them as guidance rather than a definitive audit.</p>
+  </footer>;
 }
 
 export function ShellContent() {
@@ -442,6 +514,9 @@ export function ShellContent() {
   const { pathname } = useLocation();
   const { remaining } = useAuditAllowance();
   const [scrolled, setScrolled] = useState(false);
+  const page = pageFor(pathname);
+  // Articles and the 404 page set their own head; every other route comes from site-pages.json.
+  usePageMeta(page ? metaForPage(page) : null);
   useEffect(() => {
     const update = () => setScrolled(window.scrollY > 12);
     update();
@@ -450,38 +525,17 @@ export function ShellContent() {
   }, []);
   return <div className="flex min-h-full flex-col bg-[var(--bg)] text-[var(--ink)]">
     <header className={`shell-header sticky top-0 z-20 border-b border-[var(--line-soft)] ${scrolled ? "is-scrolled" : ""}`}>
-      <nav className="relative mx-auto flex max-w-[1240px] items-center px-5 py-2.5 sm:px-8">
+      <nav aria-label="Main" className="relative mx-auto flex max-w-[1240px] items-center px-5 py-2.5 sm:px-8">
         <Link to="/" className="flex items-center gap-2 text-[15px] font-medium tracking-[-.04em]"><img src={logo} alt="Perseverance AI" style={{ width: "clamp(42px, 4.2vw, 55px)", height: "clamp(42px, 4.2vw, 55px)" }} className="logo-mark object-contain transition-transform duration-300 hover:scale-110" />Perseverance AI</Link>
-        <div className="absolute left-1/2 hidden -translate-x-1/2 text-[12px] font-medium tracking-[-.025em] md:flex">
+        <div className="absolute left-1/2 hidden -translate-x-1/2 text-[12px] font-medium tracking-[-.025em] lg:flex">
           <NavRail />
         </div>
-        <div className="ml-auto flex items-center gap-2"><ThemeToggle /><MobileNav remaining={remaining ?? 0} /><span className="hidden rounded-[var(--radius-sm)] border border-[var(--line)] px-2.5 py-1 text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)] md:inline-flex">Free tier — {remaining === null ? "checking…" : `${remaining} audits left`}</span></div>
+        <div className="ml-auto flex items-center gap-2"><FeedbackWidget /><ThemeToggle /><MobileNav remaining={remaining} /><span className="hidden rounded-[var(--radius-sm)] border border-[var(--line)] px-2.5 py-1 text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)] xl:inline-flex">{allowanceText(remaining)}</span></div>
       </nav>
     </header>
     <main className="flex-1"><div key={pathname} className="route-enter"><Outlet /></div></main>
-    <FeedbackWidget />
     <CookieBanner />
-    <footer className="border-t border-[var(--line)] px-5 py-6 sm:px-8">
-      <div className="mx-auto flex max-w-[1400px] flex-col items-center gap-4 text-center">
-        <Link to="/" aria-label="Perseverance AI home" className="inline-flex w-full justify-center opacity-80 transition-opacity hover:opacity-100">
-          <img src={logo} alt="Perseverance AI" className="logo-mark size-[60px] translate-x-1 object-contain" />
-        </Link>
-        {/* D-05/D-06: active links read as ink (high-contrast), not the muted --accent
-            grey, and hover deepens rather than dims. */}
-        <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-[13px] font-medium text-[var(--ink-soft)]">
-          <a href="https://www.linkedin.com/company/getperseverance/" target="_blank" rel="noopener noreferrer" className="link-sweep hover:text-[var(--ink)]">LinkedIn</a>
-          <a href="https://x.com/getperseverance" target="_blank" rel="noopener noreferrer" className="link-sweep hover:text-[var(--ink)]">X</a>
-          <a href="https://calendly.com/getperseverance" target="_blank" rel="noopener noreferrer" className="link-sweep hover:text-[var(--ink)]">Schedule a conversation</a>
-        </div>
-        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[12px] text-[var(--muted)]">
-          <span>© {new Date().getFullYear()} Perseverance AI. All rights reserved.</span>
-          {/* One link for both legal pages: /terms has a side nav to the Privacy Policy. */}
-          <Link to="/terms" className="link-sweep text-[var(--ink-soft)] hover:text-[var(--ink)]">Terms and Policy</Link>
-          <button type="button" onClick={openCookieSettings} className="link-sweep text-[var(--ink-soft)] hover:text-[var(--ink)]">Cookie settings</button>
-        </div>
-        <p className="max-w-[640px] text-[11px] leading-relaxed text-[var(--muted)]">Lensy is in beta. Results are generated automatically and may not always be accurate — treat them as guidance, not a definitive audit.</p>
-      </div>
-    </footer>
+    <SiteFooter />
   </div>;
 }
 
@@ -1039,27 +1093,31 @@ export function ScanReport({
 
 export function HowItWorks() {
   const steps = [
-    ["Paste a URL", "Enter any docs page. API references, guides, or tutorials."],
-    ["Lensy scans the page", "We check what AI search and coding agents can reach and read: bot access, Markdown, llms.txt, headings and freshness, in real time."],
-    ["Get your scores", "See two scores out of 100, one for AI search and one for coding agents, with exact steps to fix any issues."],
-    ...(CITATIONS_ENABLED ? [["Check citations", "Find out if AI search engines like Perplexity actually cite your page right now."]] : []),
+    ["Paste a URL", "Enter one docs page: an API reference, a guide or a tutorial. Lensy checks that page, not your whole site."],
+    ["Lensy reads the page", "It fetches the page as an honest bot, under its own name, along with the files bots read on your site: robots.txt, the sitemap, llms.txt and the page's Markdown version."],
+    ["You get two scores", "One score for coding agents and one for AI search, each out of 100, with the fixes that would add the most points first."],
+    ...(CITATIONS_ENABLED ? [["Check citations", "Find out if AI search engines like Perplexity cite your page right now."]] : []),
   ];
   const flow = [
-    ["01", "Paste Documentation URL", "docs.example.com/api"],
-    ["02", "Content Validation", "Is this technical documentation?"],
-    ...(CITATIONS_ENABLED ? [["04", "AI Citation Check", "Perplexity AI Search"], ["05", "Scores + Recommendations", ""]] : [["04", "Scores + Recommendations", ""]]),
+    ["01", "Paste a documentation URL", "docs.example.com/api"],
+    ["02", "Content check", "Is this technical documentation?"],
+    ...(CITATIONS_ENABLED ? [["04", "AI citation check", "Perplexity AI search"], ["05", "Scores and fixes", ""]] : [["04", "Scores and fixes", ""]]),
   ];
 
   return <>
     <header className="mx-auto grid max-w-[1240px] gap-8 border-b border-[var(--line)] px-5 pb-14 pt-16 sm:px-8 sm:pb-20 sm:pt-24 lg:grid-cols-12">
       <h1 style={{ fontSize: "clamp(2rem, 4vw, 3.5rem)" }} className="hero-intro max-w-3xl font-medium leading-[.88] tracking-[-.075em] lg:col-span-8">See exactly how bots <span className="text-[var(--accent)]">read your docs.</span></h1>
-      <p className="self-end text-[15px] leading-relaxed text-[var(--ink-soft)] lg:col-span-4">{CITATIONS_ENABLED ? "Give Lensy a URL, and it shows you exactly how AI search engines read and cite your page." : "Give Lensy a URL, and it shows you exactly how AI search engines and coding agents read your page."}</p>
+      <p className="self-end text-[15px] leading-relaxed text-[var(--ink-soft)] lg:col-span-4">{CITATIONS_ENABLED ? "Give Lensy a URL, and it shows you how AI search engines and coding agents read your page, and whether AI search cites it." : "Give Lensy a URL, and it shows you how AI search engines and coding agents read your page, and what to fix first."}</p>
     </header>
     <section data-reveal className="mx-auto grid max-w-[1240px] gap-12 px-5 py-16 sm:px-8 sm:py-24 lg:grid-cols-12 lg:gap-16">
-      <div className="lg:col-span-5"><p className="text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">The process</p><ol className="mt-7 border-t border-[var(--line)]">{steps.map(([title, description], index) => <li key={title} className="grid grid-cols-[32px_minmax(0,1fr)] gap-4 border-b border-[var(--line)] py-6"><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--accent)]">0{index + 1}</span><div><h2 className="text-[19px] font-light tracking-[-.04em]">{title}</h2><p className="mt-2 max-w-md text-[13px] leading-relaxed text-[var(--ink-soft)]">{description}</p></div></li>)}</ol><Link to="/#scan" className="btn-ink group mt-8 inline-flex items-center gap-2 bg-[var(--panel-bg)] px-4 py-3 text-[12px] font-medium tracking-[-.025em] text-[var(--panel-fg)]">Run a free scan <ArrowRight className="arrow-nudge size-3" strokeWidth={1.8} aria-hidden="true" /></Link></div>
+      <div className="lg:col-span-5">
+        <h2 className="text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">The process</h2>
+        <ol className="mt-7 border-t border-[var(--line)]">{steps.map(([title, description], index) => <li key={title} className="grid grid-cols-[32px_minmax(0,1fr)] gap-4 border-b border-[var(--line)] py-6"><span aria-hidden="true" className="text-[11px] font-medium tracking-[-.025em] text-[var(--accent)]">0{index + 1}</span><div><p className="text-[19px] font-light tracking-[-.04em] text-[var(--ink)]">{title}</p><p className="mt-2 max-w-md text-[13px] leading-relaxed text-[var(--ink-soft)]">{description}</p></div></li>)}</ol>
+        <Link to="/#scan" className="btn-ink group mt-8 inline-flex items-center gap-2 bg-[var(--panel-bg)] px-4 py-3 text-[12px] font-medium tracking-[-.025em] text-[var(--panel-fg)]">Start a free scan <ArrowRight className="arrow-nudge size-3" strokeWidth={1.8} aria-hidden="true" /></Link>
+      </div>
       <div className="lg:col-span-6 lg:col-start-7">
         <div className="flex items-baseline justify-between border-b border-[var(--line)] pb-4">
-          <p className="text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">From page to report</p>
+          <h2 className="text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">From page to report</h2>
           <p className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">{flow.length + 1} stages</p>
         </div>
         <div className="mt-7 rounded-[var(--radius-lg)] border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-8">
@@ -1069,11 +1127,11 @@ export function HowItWorks() {
               <FlowConnector />
             </div>)}
             <div className="rounded-[var(--radius-md)] border border-[var(--ink)] bg-[var(--bg)] p-5">
-              <div className="flex items-start justify-between gap-6"><div><p className="text-[11px] font-medium tracking-[-.025em] text-[var(--accent)]">03</p><h2 className="mt-3 text-[19px] font-light tracking-[-.045em]">AI Readiness Analysis</h2></div><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">parallel analysis</span></div>
+              <div className="flex items-start justify-between gap-6"><div><p className="text-[11px] font-medium tracking-[-.025em] text-[var(--accent)]">03</p><p className="mt-3 text-[19px] font-light tracking-[-.045em] text-[var(--ink)]">AI readiness analysis</p></div><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">run in parallel</span></div>
               <div className="mt-5 grid grid-cols-3 border-y border-[var(--line)]">
                 {["AI search", "Coding agents", "Reachability"].map((signal, index) => <div key={signal} className={`py-3 text-center text-[10px] font-medium leading-snug tracking-[-.02em] text-[var(--ink-soft)] ${index ? "border-l border-[var(--line)]" : ""}`}>{signal}</div>)}
               </div>
-              <p className="mt-4 text-center text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">+ checks both audiences need, such as content without JavaScript</p>
+              <p className="mt-4 text-center text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">plus checks both audiences need, such as content that loads without JavaScript</p>
             </div>
             <FlowConnector />
             {flow.slice(2).map(([number, title, detail], index) => <div key={title}>
@@ -1084,6 +1142,14 @@ export function HowItWorks() {
         </div>
       </div>
     </section>
+    <section data-reveal className="mx-auto grid max-w-[1240px] gap-8 border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24 lg:grid-cols-12 lg:gap-16">
+      <h2 className="text-[clamp(2rem,3.6vw,3.2rem)] font-medium leading-[.95] tracking-[-.06em] lg:col-span-4">The two scores.</h2>
+      <div className="prose-lensy max-w-[680px] lg:col-span-7 lg:col-start-6">
+        <p><strong>Coding agents</strong> measures how well a tool such as Claude Code, Cursor or Copilot can find and read the page. It&apos;s built on AFDocs, the open Agent-Friendly Documentation checks: an llms.txt index, Markdown versions of pages, real 404s for missing pages and content that loads without JavaScript. Lensy adds one check of its own, for headings an agent can navigate.</p>
+        <p><strong>AI search</strong> measures how well engines such as ChatGPT search, Perplexity and Claude can retrieve the page and cite it. It has six checks: AI search bots allowed in robots.txt (20 points), content without JavaScript (20), indexable (25), freshness declared (15), answer-ready sections (15) and JSON-LD (5).</p>
+        <p>Above both scores, a reachability line says whether an honest AI agent could load the page at all. The same checks run in the <Link to="/cli">Lensy command line tool</Link>, and the <Link to="/education/research-behind-ai-ready-docs">research behind them</Link> is in Education.</p>
+      </div>
+    </section>
   </>;
 }
 
@@ -1092,7 +1158,7 @@ export function FlowConnector() {
 }
 
 export function FlowNode({ number, title, detail, final = false }: { number: string; title: string; detail: string; final?: boolean }) {
-  return <div className={`rounded-[var(--radius-md)] border px-5 py-4 ${final ? "border-[var(--ink)] bg-[var(--panel-bg)] text-[var(--panel-fg)]" : "border-[var(--line)] bg-[var(--bg)]"}`}><div className="flex items-start gap-4"><span className={`mt-0.5 text-[11px] font-medium tracking-[-.025em] ${final ? "opacity-60" : "text-[var(--accent)]"}`}>{number}</span><div><h2 className="text-[16px] font-light tracking-[-.04em]">{title}</h2>{detail && <p className="mt-1 text-[12px] leading-relaxed opacity-70">{detail}</p>}</div></div></div>;
+  return <div className={`rounded-[var(--radius-md)] border px-5 py-4 ${final ? "border-[var(--ink)] bg-[var(--panel-bg)] text-[var(--panel-fg)]" : "border-[var(--line)] bg-[var(--bg)]"}`}><div className="flex items-start gap-4"><span className={`mt-0.5 text-[11px] font-medium tracking-[-.025em] ${final ? "opacity-60" : "text-[var(--accent)]"}`}>{number}</span><div><p className="text-[16px] font-light tracking-[-.04em]">{title}</p>{detail && <p className="mt-1 text-[12px] leading-relaxed opacity-70">{detail}</p>}</div></div></div>;
 }
 
 // ---- Education ----
@@ -1106,6 +1172,8 @@ type ArticleData = {
   // N-11: the real date each article was first published, so the generated
   // .md/sitemap.xml lastmod stops being stamped to today's build date.
   publishedDate: string;
+  /** Date the article's content last changed, when it differs from publishedDate. */
+  updatedDate?: string;
   body: React.ReactNode;
 };
 
@@ -1114,9 +1182,10 @@ const ARTICLES: ArticleData[] = [
     slug: "what-changed-in-lensy-after-rechecking-ai-ready-docs-signals",
     title: "What Changed in Lensy After Re-checking AI-Ready Docs Signals",
     publishedDate: "2026-09-16",
+    updatedDate: "2026-11-10",
     tag: "AI Readiness",
     readTime: "4 min read",
-    description: "Some documentation sites already expose machine-readable content in ways a simpler audit can miss. Why we re-checked Lensy's detection model — and what changed.",
+    description: "Some documentation sites already expose machine-readable content in ways a simpler audit can miss. Why we re-checked Lensy's detection model, and what changed.",
     body: <>
       <Prose>
         <TlDr items={[
@@ -1161,9 +1230,10 @@ const ARTICLES: ArticleData[] = [
     slug: "research-behind-ai-ready-docs",
     title: "The Research Behind AI-Ready Documentation",
     publishedDate: "2026-03-22",
+    updatedDate: "2026-11-10",
     tag: "AI Readiness",
     readTime: "3 min read",
-    description: "The research behind the four things Lensy measures: bot access, content structure, structured data, and discoverability.",
+    description: "The research behind what Lensy checks: how document structure affects AI retrieval, which AI crawlers sites block, and how little JSON-LD changes AI citations.",
     body: <>
       <Prose>
         <TlDr items={[
@@ -1254,19 +1324,19 @@ const ARTICLES: ArticleData[] = [
 
 export function TlDr({ items }: { items: string[] }) {
   return <div className="not-prose mb-10 border-l-2 border-[var(--accent)] bg-[var(--surface)] px-5 py-5">
-    <p className="text-[11px] font-medium tracking-[-.025em] text-[var(--accent)] mb-3">TL;DR</p>
+    <h2 className="tldr-heading">TL;DR</h2>
     <ul className="flex flex-col gap-2">
-      {items.map((item, i) => <li key={i} className="flex gap-3 text-[13px] leading-relaxed text-[var(--ink-soft)]"><span className="mt-0.5 shrink-0 text-[11px] font-medium tracking-[-.025em] text-[var(--accent)]">·</span>{item}</li>)}
+      {items.map((item, i) => <li key={i} className="flex gap-3 text-[13px] leading-relaxed text-[var(--ink-soft)]"><span className="mt-[.6em] size-1 shrink-0 rounded-full bg-[var(--accent)]" aria-hidden="true" />{item}</li>)}
     </ul>
   </div>;
 }
 
 export function References({ items }: { items: { n: number; text: string; href: string }[] }) {
   return <div className="not-prose mt-12 border-t border-[var(--line)] pt-8">
-    <p className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)] mb-4">References</p>
+    <h2 className="refs-heading">References</h2>
     <ol className="flex flex-col gap-2">
       {items.map(({ n, text, href }) => <li key={n} className="flex gap-3 text-[12px] leading-relaxed text-[var(--ink-soft)]">
-        <span className="shrink-0 text-[11px] font-medium tracking-[-.025em] text-[var(--accent)]">[{n}]</span>
+        <span className="shrink-0 text-[11px] font-medium tracking-[-.025em] text-[var(--accent)]">[{n}]</span>{" "}
         <a href={href} target="_blank" rel="noopener noreferrer" className="hover:text-[var(--accent)] underline underline-offset-2 decoration-[var(--line-strong)]">{text}</a>
       </li>)}
     </ol>
@@ -1277,11 +1347,26 @@ export function Prose({ children }: { children: React.ReactNode }) {
   return <div className="prose-lensy">{children}</div>;
 }
 
+/** "Mar 22, 2026". Fixed locale and time zone, so the prerendered HTML matches what the browser renders. */
+function formatDate(iso: string) {
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+function ArticleDates({ article }: { article: ArticleData }) {
+  return <>
+    <span>Published <time dateTime={article.publishedDate}>{formatDate(article.publishedDate)}</time></span>
+    {article.updatedDate && article.updatedDate !== article.publishedDate && <>
+      <span className="text-[var(--line-strong)]" aria-hidden="true">/</span>
+      <span>Updated <time dateTime={article.updatedDate}>{formatDate(article.updatedDate)}</time></span>
+    </>}
+  </>;
+}
+
 export function Education() {
   return <Page
     titleStyle={{ fontSize: "clamp(2rem, 4vw, 3.5rem)" }}
-    title={<>Education<br />on <span className="text-[var(--accent)]">AI-ready</span> docs.</>}
-    intro="What we are learning about making docs readable for AI search."
+    title={<>Education{" "}<br />on <span className="text-[var(--accent)]">AI-ready</span> docs.</>}
+    intro="What we are learning about making docs readable for AI search and coding agents."
   >
     <section className="mt-16 pb-20 sm:mt-20 sm:pb-28">
       <div className="flex items-end justify-between border-b border-[var(--line)] pb-4 text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">
@@ -1294,7 +1379,7 @@ export function Education() {
             <Link to={`/education/${article.slug}`} className="soft-card grid gap-4 py-8 transition-colors hover:bg-[var(--surface-2)] rounded-[var(--radius-md)] sm:grid-cols-[42px_minmax(0,1fr)_auto] sm:gap-6 sm:-mx-5 sm:px-5">
               <p className="text-[11px] font-medium tracking-[-.025em] text-[var(--accent)]">0{i + 1}</p>
               <div>
-                <p className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">{article.tag} <span className="mx-1.5 text-[var(--line-strong)]">/</span> {article.readTime}</p>
+                <p className="flex flex-wrap items-center gap-x-1.5 text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">{article.tag} <span className="mx-1.5 text-[var(--line-strong)]">/</span> {article.readTime} <span className="mx-1.5 text-[var(--line-strong)]">/</span> <ArticleDates article={article} /></p>
                 <h2 className="mt-4 max-w-2xl text-[clamp(1.35rem,2.2vw,1.8rem)] leading-[1.08] tracking-[-.05em] transition-colors group-hover:text-[var(--accent)]">{article.title}</h2>
                 <p className="mt-3 max-w-2xl text-[13px] leading-relaxed text-[var(--ink-soft)]">{article.description}</p>
               </div>
@@ -1312,9 +1397,7 @@ export function ArticlePage() {
   const article = ARTICLES.find((a) => a.slug === slug);
 
   // Fire the GA4 `article_read_complete` event once the reader scrolls the CTA
-  // into view. Ported from the pre-redesign frontend/src/pages/ArticlePage.tsx;
-  // the redesign rewrite of this component had dropped the observer, the CTA,
-  // and the analytics import, so the event never fired (PR 22 review).
+  // into view.
   const ctaRef = useRef<HTMLDivElement>(null);
   const trackedRef = useRef(false);
   useEffect(() => {
@@ -1331,56 +1414,18 @@ export function ArticlePage() {
     return () => observer.disconnect();
   }, [slug]);
 
-  // N-01: per-article SEO. The redesign left every article with a generic title,
-  // description, and a canonical pointing at the homepage, and dropped the
-  // markdown-alternate link. Set them per article here and restore them on
-  // unmount so they don't leak onto other routes. The .md path mirrors what
-  // scripts/generate-markdown.js writes: /education/{slug}.md.
-  useEffect(() => {
-    if (!article) return;
-    const origin = window.location.origin;
-    const canonicalUrl = `${origin}/education/${article.slug}`;
-    const mdUrl = `${origin}/education/${article.slug}.md`;
-    const prevTitle = document.title;
-    document.title = `${article.title} — Lensy`;
-
-    // Helper to upsert a <meta>/<link> and remember whether we created it.
-    const upsert = (selector: string, create: () => HTMLElement, apply: (el: HTMLElement) => void) => {
-      let el = document.head.querySelector<HTMLElement>(selector);
-      const created = !el;
-      if (!el) { el = create(); document.head.appendChild(el); }
-      const prev = el.getAttribute(el instanceof HTMLLinkElement ? "href" : "content");
-      apply(el);
-      return { el, created, prev };
-    };
-
-    const desc = upsert(
-      'meta[name="description"]',
-      () => { const m = document.createElement("meta"); m.setAttribute("name", "description"); return m; },
-      (el) => el.setAttribute("content", article.description),
-    );
-    const canonical = upsert(
-      'link[rel="canonical"]',
-      () => { const l = document.createElement("link"); l.setAttribute("rel", "canonical"); return l; },
-      (el) => el.setAttribute("href", canonicalUrl),
-    );
-    // The markdown-alternate link is article-specific, so always create a fresh
-    // one tagged for cleanup rather than mutating a shared tag.
-    const mdLink = document.createElement("link");
-    mdLink.setAttribute("rel", "alternate");
-    mdLink.setAttribute("type", "text/markdown");
-    mdLink.setAttribute("href", mdUrl);
-    mdLink.setAttribute("data-article-md", "true");
-    document.head.appendChild(mdLink);
-
-    return () => {
-      document.title = prevTitle;
-      // Restore or remove the meta/link tags we touched.
-      if (desc.created) desc.el.remove(); else if (desc.prev !== null) desc.el.setAttribute("content", desc.prev);
-      if (canonical.created) canonical.el.remove(); else if (canonical.prev !== null) canonical.el.setAttribute("href", canonical.prev);
-      mdLink.remove();
-    };
-  }, [article]);
+  // N-01: each article has its own title, description, canonical, Markdown copy
+  // and TechArticle JSON-LD (scripts/prerender.js writes /education/{slug}.md).
+  usePageMeta(article ? {
+    path: `/education/${article.slug}`,
+    title: article.title,
+    description: article.description,
+    schema: "TechArticle",
+    published: article.publishedDate,
+    updated: article.updatedDate || article.publishedDate,
+    markdown: true,
+    breadcrumb: [{ name: "Home", path: "/" }, { name: "Education", path: "/education" }, { name: article.title, path: `/education/${article.slug}` }],
+  } : null);
 
   if (!article) return <NotFound />;
 
@@ -1394,13 +1439,14 @@ export function ArticlePage() {
         <Link to="/education" className="inline-flex items-center gap-2 text-[12px] font-medium tracking-[-.025em] text-[var(--muted)] transition-colors hover:text-[var(--accent)]">
           <ArrowLeft className="size-3" strokeWidth={1.8} aria-hidden="true" /> Education
         </Link>
-        <div className="mt-10 flex items-center gap-3 text-[12px] font-medium tracking-[-.025em] text-[var(--accent)]">
+        <div className="mt-10 flex flex-wrap items-center gap-3 text-[12px] font-medium tracking-[-.025em] text-[var(--accent)]">
           <span>{article.tag}</span>
           <span className="text-[var(--line-strong)]">/</span>
           <span>{article.readTime}</span>
         </div>
         <h1 className="mt-5 text-[clamp(2.35rem,5vw,4.6rem)] font-medium leading-[.95] tracking-[-.065em]">{article.title}</h1>
         <p className="mt-7 max-w-[650px] text-[16px] leading-relaxed text-[var(--ink-soft)]">{article.description}</p>
+        <p className="mt-6 flex flex-wrap items-center gap-2 text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">By Perseverance AI <span className="text-[var(--line-strong)]" aria-hidden="true">/</span> <ArticleDates article={article} /></p>
       </div>
     </header>
 
@@ -1409,16 +1455,16 @@ export function ArticlePage() {
         {article.body}
       </div>
 
-      {/* CTA — also the scroll target that fires `article_read_complete`. */}
+      {/* CTA, also the scroll target that fires `article_read_complete`. */}
       <div ref={ctaRef} data-reveal className="rounded-[var(--radius-lg)] border border-[var(--line)] bg-[var(--surface)] px-6 py-10 text-center sm:px-10 sm:py-12">
-        <p className="mx-auto max-w-[440px] text-[clamp(1.35rem,2.6vw,1.9rem)] font-medium leading-tight tracking-[-.04em]">Check your documentation's AI readiness.</p>
-        <Link to="/" className="btn-ink mt-7 inline-flex items-center gap-2 bg-[var(--panel-bg)] px-5 py-3 text-[13px] font-medium tracking-[-.02em] text-[var(--panel-fg)]">
-          Try Lensy Free <ArrowRight className="arrow-nudge size-4" strokeWidth={1.8} aria-hidden="true" />
+        <p className="mx-auto max-w-[440px] text-[clamp(1.35rem,2.6vw,1.9rem)] font-medium leading-tight tracking-[-.04em]">Check your documentation&apos;s AI readiness.</p>
+        <Link to="/#scan" className="btn-ink mt-7 inline-flex items-center gap-2 bg-[var(--panel-bg)] px-5 py-3 text-[13px] font-medium tracking-[-.02em] text-[var(--panel-fg)]">
+          Start a free scan <ArrowRight className="arrow-nudge size-4" strokeWidth={1.8} aria-hidden="true" />
         </Link>
       </div>
 
       {(prev || next) && (
-        <nav data-reveal className="grid gap-px border-t border-[var(--line)] py-10 sm:grid-cols-2">
+        <nav aria-label="More articles" data-reveal className="grid gap-px border-t border-[var(--line)] py-10 sm:grid-cols-2">
           {prev ? (
             <Link to={`/education/${prev.slug}`} className="group flex flex-col gap-2 py-6 pr-8 transition-colors hover:text-[var(--accent)]">
               <span className="flex items-center gap-1.5 text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]"><ArrowLeft className="size-3" strokeWidth={1.8} aria-hidden="true" />Previous</span>
@@ -1473,13 +1519,15 @@ export function Contact() {
       successBody: "We read every submission and it directly shapes what we build.",
     },
     default: {
-      titleLead: "Join the", titleAccent: "Waitlist.",
-      intro: "Join the waitlist to get higher limits and get access to upcoming products.",
+      titleLead: "Join the", titleAccent: "waitlist.",
+      intro: "Get a higher daily scan limit and early access to new Lensy features, or talk to the team that builds Lensy.",
       button: "Join waitlist", successTitle: "You're on the list.",
       successBody: "We'll be in touch with early access details at the address you shared.",
     },
   };
   const refCopy = REF_COPY[ref] || REF_COPY.default;
+  const FORM_TITLES: Record<string, string> = { llmstxt: "Request an llms.txt", markdown: "Request Markdown versions", feedback: "Send feedback", default: "Join the waitlist" };
+  const formTitle = FORM_TITLES[ref] || FORM_TITLES.default;
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
   const [website, setWebsite] = useState("");
@@ -1521,22 +1569,26 @@ export function Contact() {
 
   return <Page
     titleStyle={{ fontSize: "clamp(2rem, 4vw, 3.5rem)" }}
-    title={<>{refCopy.titleLead}<br /><span className="text-[var(--accent)]">{refCopy.titleAccent}</span></>}
+    title={<>{refCopy.titleLead}{" "}<br /><span className="text-[var(--accent)]">{refCopy.titleAccent}</span></>}
     intro={refCopy.intro}
   >
     <div className="grid gap-12 py-20 lg:grid-cols-12 lg:gap-16">
-      <aside data-reveal className="flex flex-col gap-10 lg:col-span-4">
+      <section data-reveal className="flex flex-col gap-10 lg:col-span-4">
         <div>
-          <p className="text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">Or schedule a demo</p>
+          <h2 className="text-[22px] font-medium leading-tight tracking-[-.045em]">Talk to us</h2>
+          <p className="mt-3 max-w-sm text-[14px] leading-relaxed text-[var(--ink-soft)]">Pick a time for a call about your documentation, your Lensy results or working together. You&apos;ll talk to the people who build Lensy.</p>
+        </div>
+        <div>
+          <p className="text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">Book a call</p>
           <a href="https://calendly.com/getperseverance" target="_blank" rel="noopener noreferrer" className="link-sweep mt-3 inline-flex items-center gap-2 text-[19px] tracking-[-.03em] text-[var(--accent)] hover:text-[var(--accent-hover)] transition-colors">
             Pick a time <ArrowRight className="arrow-nudge size-4" strokeWidth={1.8} aria-hidden="true" />
           </a>
         </div>
         <div>
-          <p className="text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">Prefer email?</p>
+          <p className="text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">Prefer email? Write to us at</p>
           <a href="mailto:hello@perseveranceai.com" className="link-sweep mt-3 inline-block text-[17px] tracking-[-.03em] text-[var(--accent)]">hello@perseveranceai.com</a>
         </div>
-      </aside>
+      </section>
 
       <div data-reveal style={{ "--reveal-delay": "120ms" } as React.CSSProperties} className="lg:col-span-7 lg:col-start-6">
         {sent ? (
@@ -1547,8 +1599,10 @@ export function Contact() {
             <button onClick={() => setSent(false)} className="mt-8 inline-flex items-center gap-2 border-b border-[var(--ink)] pb-1 text-[12px] font-medium tracking-[-.025em] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]">Submit another</button>
           </div>
         ) : (
-          <form noValidate onSubmit={submit}>
-            <div>
+          <form noValidate onSubmit={submit} aria-labelledby="contact-form-title">
+            <h2 id="contact-form-title" className="px-3 text-[22px] font-medium leading-tight tracking-[-.045em]">{formTitle}</h2>
+            {ref === "default" && <p className="mt-3 max-w-lg px-3 text-[14px] leading-relaxed text-[var(--ink-soft)]">The free tier gives you a number of scans each day. Join the waitlist and we&apos;ll raise your limit and email you when new Lensy features open. We use your details only to contact you about Lensy.</p>}
+            <div className="mt-4">
               {networkError && <p className="audit-notice mb-4 rounded-[var(--radius-xs)] bg-[var(--tint)] px-3 py-2.5 text-[12px] font-medium text-[var(--ink)]">{networkError}</p>}
               {!isFeedback && <Field label="Developer Portal or Website URL" error={websiteError}><input value={website} onChange={(event) => { setWebsite(event.target.value); setFormError(""); }} aria-invalid={Boolean(websiteError)} className={inputCls} placeholder="docs.yourcompany.com" /></Field>}
               <div className="sm:grid sm:grid-cols-2 sm:gap-x-8">
@@ -1746,7 +1800,7 @@ export function BotInfo() {
   }, []);
   const ipList = egressIps && egressIps.length > 0 ? egressIps : null;
   const ipForRule = ipList ? ipList.join(" ") : "<Lensy IP>";
-  return <Page title={<>Lensy<br /><span className="text-[var(--accent)]">checker.</span></>} intro="What the Lensy checker is, when it visits your site, and how to let it through your bot protection safely.">
+  return <Page title={<>Lensy{" "}<br /><span className="text-[var(--accent)]">checker.</span></>} intro="What the Lensy checker is, when it visits your site, and how to let it through your bot protection safely.">
     <article className="legal-prose prose-lensy max-w-[760px] py-12 sm:py-16">
       <h2>What it is</h2>
       <p>Lensy checks whether a documentation page is ready for AI search engines and coding agents. When someone enters a URL on perseveranceai.com, Lensy fetches that page and a few public files on the same site, such as <code className={code}>robots.txt</code>, <code className={code}>llms.txt</code>, the sitemap and the page&apos;s Markdown version. That&apos;s usually 10 to 25 requests per scan. It does not crawl your site on its own; each visit starts from a person&apos;s scan.</p>
@@ -1802,8 +1856,9 @@ export function Page({ title, intro, children, titleSize = "", titleStyle = { fo
 }
 
 export function NotFound() {
-  useNoindex();
-  return <Page title={<>Nothing<br /><span className="text-[var(--accent)]">here.</span></>} intro="This page does not exist.">
+  const { pathname } = useLocation();
+  usePageMeta({ path: pathname, title: "Page not found", noindex: true });
+  return <Page title={<>Nothing{" "}<br /><span className="text-[var(--accent)]">here.</span></>} intro="This page does not exist.">
     <Link className="btn-ink my-16 inline-block bg-[var(--panel-bg)] px-4 py-3 text-[12px] font-medium tracking-[-.025em] text-[var(--panel-fg)]" to="/">Back to Lensy</Link>
   </Page>;
 }
