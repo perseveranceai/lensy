@@ -1,6 +1,6 @@
 name: Site readiness
 
-# Every Monday: score each page of perseveranceai.com with the Lensy CLI and add
+# Every day: score each page of perseveranceai.com with the Lensy CLI and add
 # the result to readiness/history.json, which the home page chart reads.
 # Spec: .context/specs/site-architecture.md (phase 2).
 #
@@ -16,7 +16,7 @@ name: Site readiness
 
 on:
   schedule:
-    - cron: '0 6 * * 1'
+    - cron: '0 6 * * *'
   workflow_dispatch:
 
 permissions:
@@ -56,8 +56,7 @@ jobs:
         run: npm ci && npm run build
 
       - name: Score every page in the live sitemap
-        # Exit 3 means some pages couldn't be checked; the others are still
-        # recorded and the run lists the ones that failed.
+        # Exit 3 means some pages couldn't be checked; that day isn't recorded.
         run: |
           curl -sf "$SITE/sitemap.xml" | grep -o '<loc>[^<]*' | sed 's/<loc>//' > urls.txt
           echo "$(wc -l < urls.txt) pages"
@@ -83,6 +82,8 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Publish the history
+        # A day with an unchecked page writes no history-new.json; nothing to publish.
+        if: hashFiles('history-new.json') != ''
         run: |
           for bucket in "$PROD_BUCKET" "$GAMMA_BUCKET"; do
             aws s3 cp history-new.json "s3://$bucket/readiness/history.json" \
@@ -92,5 +93,6 @@ jobs:
           aws cloudfront create-invalidation --distribution-id E1J3M0RUB5VA7F --paths '/readiness/*'
 
       - name: Summary
+        if: hashFiles('history-new.json') != ''
         run: |
           node -e "const h=require('./history-new.json');const r=h.runs.at(-1);console.log('### '+r.date+': Coding agents '+r.codingAgents+', AI search '+r.aiSearch+' on '+r.pages.length+' pages')" >> "$GITHUB_STEP_SUMMARY"

@@ -5,13 +5,14 @@ import { blockAnalytics } from './helpers';
 // The weekly history is served from /readiness/history.json. Tests supply their
 // own test history; the real site only ever shows real runs.
 
-// Test history: 30 weekly runs, 2026-04-20 to 2026-11-09. Lensy's checks change on 2026-06-08.
+// Test history: 200 daily runs, 2026-04-24 to 2026-11-09. Lensy's checks change on 2026-05-01.
+// As in the real file, only the newest run keeps its pages.
 function testHistory() {
-  const runs = Array.from({ length: 30 }, (_, i) => {
-    const date = new Date(Date.UTC(2026, 3, 20 + i * 7)).toISOString().slice(0, 10);
-    const ca = Math.min(100, 40 + i * 3);
-    const ai = Math.min(100, 55 + i * 2);
-    return { date, cli: '0.2.0', engine: i < 7 ? 'aaaaaaa' : 'bbbbbbb', codingAgents: ca, aiSearch: ai, pages: [{ path: '/', codingAgents: ca, aiSearch: ai }] };
+  const runs = Array.from({ length: 200 }, (_, i) => {
+    const date = new Date(Date.UTC(2026, 3, 24 + i)).toISOString().slice(0, 10);
+    const ca = Math.min(100, 40 + Math.floor(i / 3));
+    const ai = Math.min(100, 55 + Math.floor(i / 4));
+    return { date, cli: '0.2.0', engine: i < 7 ? 'aaaaaaa' : 'bbbbbbb', codingAgents: ca, aiSearch: ai, ...(i === 199 ? { pages: [{ path: '/', codingAgents: ca, aiSearch: ai }] } : {}) };
   });
   return { version: 1, site: 'https://perseveranceai.com', runs };
 }
@@ -36,7 +37,7 @@ test('READY-01: with no history file yet, the home chart shows only the real Nov
   const section = await chartSection(page);
   await expect(section.getByRole('heading', { level: 2 })).toHaveText('Same checks, on our own site.');
   await expect(section.getByTestId('score-chart')).toHaveAttribute('data-runs', '1');
-  await expect(section.getByText('1 run since Nov 10, 2026')).toBeVisible();
+  await expect(section.getByText('Last checked Nov 10, 2026')).toBeVisible();
   // One run: no time ranges to choose from.
   await expect(section.getByRole('group', { name: 'Time range' })).toHaveCount(0);
 });
@@ -46,30 +47,33 @@ test('READY-02: the chart switches range, shows a run on hover and on the arrow 
   await page.goto('/');
   const section = await chartSection(page);
   const chart = section.getByTestId('score-chart');
-  await expect(chart).toHaveAttribute('data-runs', '30');
-  await expect(section.getByText('30 runs since Apr 20, 2026')).toBeVisible();
+  await expect(chart).toHaveAttribute('data-runs', '200');
+  await expect(section.getByText('Last checked Nov 9, 2026')).toBeVisible();
   await expect(chart.getByTestId('engine-change')).toHaveCount(1);
 
-  // About 7 months of runs: 3M and 6M are offered, 1Y isn't (it would show everything).
+  // About 7 months of daily runs: 7D, 1M and 3M are offered, 1Y isn't (it would show everything).
   await expect(section.getByRole('button', { name: 'Last year' })).toHaveCount(0);
-  await section.getByRole('button', { name: 'Last 3 months' }).click();
-  await expect(section.getByRole('button', { name: 'Last 3 months' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(chart).toHaveAttribute('data-runs', '13');
-  await section.getByRole('button', { name: 'Last 6 months' }).click();
-  await expect(chart).toHaveAttribute('data-runs', '26');
-  await section.getByRole('button', { name: 'All runs' }).click();
+  await section.getByRole('button', { name: 'Last 7 days' }).click();
+  await expect(section.getByRole('button', { name: 'Last 7 days' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(chart).toHaveAttribute('data-runs', '7');
+  await section.getByRole('button', { name: 'Last month' }).click();
   await expect(chart).toHaveAttribute('data-runs', '30');
+  await section.getByRole('button', { name: 'Last 3 months' }).click();
+  await expect(chart).toHaveAttribute('data-runs', '91');
+  await section.getByRole('button', { name: 'All runs' }).click();
+  await expect(chart).toHaveAttribute('data-runs', '200');
 
   await chart.scrollIntoViewIfNeeded();
   const box = (await chart.locator('svg').boundingBox())!;
-  await page.mouse.move(box.x + box.width - 20, box.y + box.height / 2);
+  // The last point sits at the chart's right padding (16px); daily points are a few pixels apart.
+  await page.mouse.move(box.x + box.width - 17, box.y + box.height / 2);
   await expect(page.getByTestId('chart-tooltip')).toContainText('Nov 9, 2026');
   await expect(page.getByTestId('chart-tooltip')).toContainText('Coding agents');
 
   await page.mouse.move(0, 0);
   await chart.focus();
   await page.keyboard.press('ArrowRight');
-  await expect(page.getByTestId('chart-tooltip')).toContainText('Apr 20, 2026');
+  await expect(page.getByTestId('chart-tooltip')).toContainText('Apr 24, 2026');
   for (let i = 0; i < 7; i++) await page.keyboard.press('ArrowRight');
   await expect(page.getByTestId('chart-tooltip')).toContainText("Lensy's checks changed this week");
   await page.keyboard.press('Escape');
@@ -81,7 +85,7 @@ test('READY-03: the chart fits a phone', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 800 });
   await page.goto('/');
   const section = await chartSection(page);
-  await expect(section.getByTestId('score-chart')).toHaveAttribute('data-runs', '30');
+  await expect(section.getByTestId('score-chart')).toHaveAttribute('data-runs', '200');
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 });

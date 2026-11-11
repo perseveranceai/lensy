@@ -1,4 +1,4 @@
-// This site's own AI readiness over time: the weekly history written by
+// This site's own AI readiness over time: the daily history written by
 // .github/workflows/site-readiness.yml, a score chart and a footer sparkline.
 // Charts are plain SVG drawn with the site's color tokens; no chart library.
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -13,8 +13,8 @@ export interface ReadinessRun {
   engine?: string;
   codingAgents: number;
   aiSearch: number;
-  pages: ReadinessPage[];
-  notChecked?: string[];
+  /** Kept for the newest run only. */
+  pages?: ReadinessPage[];
 }
 export interface ReadinessHistory { version: number; site: string; runs: ReadinessRun[] }
 
@@ -25,8 +25,8 @@ export function parseHistory(data: unknown): ReadinessHistory | null {
   const d = data as Partial<ReadinessHistory> | null;
   if (!d || !Array.isArray(d.runs)) return null;
   const runs = d.runs.filter((r): r is ReadinessRun =>
-    !!r && /^\d{4}-\d{2}-\d{2}$/.test(r.date) && isScore(r.codingAgents) && isScore(r.aiSearch) && Array.isArray(r.pages))
-    .map((r) => ({ ...r, pages: r.pages.filter((p) => p && typeof p.path === "string" && isScore(p.codingAgents) && isScore(p.aiSearch)) }))
+    !!r && /^\d{4}-\d{2}-\d{2}$/.test(r.date) && isScore(r.codingAgents) && isScore(r.aiSearch))
+    .map((r) => ({ ...r, pages: Array.isArray(r.pages) ? r.pages.filter((p) => p && typeof p.path === "string" && isScore(p.codingAgents) && isScore(p.aiSearch)) : undefined }))
     .sort((a, b) => a.date.localeCompare(b.date));
   if (!runs.length) return null;
   return { version: 1, site: typeof d.site === "string" ? d.site : "https://perseveranceai.com", runs };
@@ -121,10 +121,11 @@ export function smoothPath(pts: Pt[]): string {
   return d;
 }
 
-// Runs are weekly, so ranges start at three months.
+// One run a day.
 const RANGES: { id: string; label: string; aria: string; days: number | null }[] = [
+  { id: "7d", label: "7D", aria: "Last 7 days", days: 7 },
+  { id: "1m", label: "1M", aria: "Last month", days: 30 },
   { id: "3m", label: "3M", aria: "Last 3 months", days: 91 },
-  { id: "6m", label: "6M", aria: "Last 6 months", days: 182 },
   { id: "1y", label: "1Y", aria: "Last year", days: 365 },
   { id: "all", label: "All", aria: "All runs", days: null },
 ];
@@ -151,7 +152,7 @@ export function ScoreChart({ runs }: { runs: ReadinessRun[] }) {
   }, []);
 
   // Offer only the ranges that would hide some runs; until the history is longer
-  // than three months there is nothing to choose, so no buttons show.
+  // than a week there is nothing to choose, so no buttons show.
   const ranges = useMemo(() => {
     if (runs.length < 2) return [];
     const spanAll = dayOf(runs[runs.length - 1].date) - dayOf(runs[0].date);
@@ -209,13 +210,13 @@ export function ScoreChart({ runs }: { runs: ReadinessRun[] }) {
 
   const run = active !== null ? shown[active] : null;
   const tipLeft = active !== null ? Math.min(Math.max(coding[active].x, 90), width - 90) : 0;
-  const since = runs.length ? formatRunDate(runs[0].date) : "";
+  const lastChecked = runs.length ? formatRunDate(runs[runs.length - 1].date) : "";
 
   return <div className="readiness-chart rounded-[var(--radius-lg)] border border-[var(--line)] bg-[var(--surface)] p-4 sm:p-6">
     <div className="flex flex-wrap items-start justify-between gap-4">
       <div>
         <p className="text-[14px] font-medium tracking-[-.02em] text-[var(--ink)]">perseveranceai.com</p>
-        <p className="mt-1 text-[12px] text-[var(--muted)]">{runs.length} run{runs.length === 1 ? "" : "s"} since {since}</p>
+        <p className="mt-1 text-[12px] text-[var(--muted)]">Last checked {lastChecked}</p>
       </div>
       {ranges.length > 0 && <div role="group" aria-label="Time range" className="flex gap-1">
         {ranges.map((r) => <button key={r.id} type="button" aria-pressed={range === r.id} aria-label={r.aria} onClick={() => setRange(r.id)}

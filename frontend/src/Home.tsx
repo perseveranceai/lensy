@@ -12,7 +12,7 @@ import {
 import { allowanceText, useAuditAllowance } from "./AppRoutes"
 import { trackEvent } from "./analytics"
 import { BOT_BLOCKED_TITLE, botBlockedDescription } from "./botBlockedCopy"
-import { BASELINE, formatRunDate, ScoreChart, useReadinessHistory } from "./readiness"
+import { ScoreChart, useReadinessHistory } from "./readiness"
 
 type IconName = "arrow" | "plus" | "link" | "eye" | "chevronDown" | "chevronRight"
 function Icon({ name, className = "" }: { name: IconName; className?: string }) {
@@ -476,8 +476,7 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
           </h2>
           <p className="mt-6 max-w-sm text-[14px] leading-relaxed text-[var(--ink-soft)]">
             This is perseveranceai.com scored by Lensy, with the same checks
-            your docs get. The first point, {formatRunDate(BASELINE.date)}, is
-            from before we rebuilt the site so AI tools could read it.
+            your docs get.
           </p>
           <Link
             to="/cli"

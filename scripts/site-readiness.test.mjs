@@ -13,13 +13,11 @@ test('a run averages the checked pages and keeps each page', () => {
   assert.equal(run.aiSearch, 100);
   assert.deepEqual(run.pages.map((p) => p.path), ['/', '/cli']);
   assert.equal(run.engine, 'abc1234');
-  assert.equal(run.notChecked, undefined);
 });
 
-test('pages that could not be checked are listed, not averaged', () => {
+test('a day where any page could not be checked is skipped, with the pages named', () => {
   const run = runFromReport(report([page('https://perseveranceai.com/', 80, 60), page('https://perseveranceai.com/bot', 0, 0, 'unreachable')]));
-  assert.equal(run.codingAgents, 80);
-  assert.deepEqual(run.notChecked, ['/bot']);
+  assert.deepEqual(run, { skipped: ['/bot'] });
 });
 
 test('a run with no checked page is refused', () => {
@@ -31,4 +29,12 @@ test('a second run on the same date replaces the first; runs stay in date order'
   const first = addRun(seed, { date: '2026-11-16', codingAgents: 90, aiSearch: 90, pages: [] });
   const again = addRun(first, { date: '2026-11-16', codingAgents: 100, aiSearch: 100, pages: [] });
   assert.deepEqual(again.runs.map((r) => [r.date, r.codingAgents]), [['2026-11-10', 39], ['2026-11-16', 100]]);
+});
+
+test('only the newest run keeps per-page scores, so the file stays small', () => {
+  const pages = [{ path: '/', codingAgents: 90, aiSearch: 90 }];
+  let h = { version: 1, site: 'x', runs: [] };
+  for (let d = 1; d <= 3; d++) h = addRun(h, { date: `2026-11-0${d}`, checkedAt: 'x', codingAgents: 90, aiSearch: 90, pages });
+  assert.deepEqual(h.runs.map((r) => 'pages' in r), [false, false, true]);
+  assert.equal('checkedAt' in h.runs[0], false);
 });

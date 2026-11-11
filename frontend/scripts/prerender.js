@@ -56,7 +56,7 @@ function write(rel, content) {
   fs.writeFileSync(file, content, 'utf-8');
 }
 
-// This site's readiness history (written weekly by .github/workflows/site-readiness.yml,
+// This site's readiness history (written daily by .github/workflows/site-readiness.yml,
 // kept out of the build). Pages are rendered with the live copy so their saved HTML
 // shows this week's scores. If it can't be read, pages use src/readiness-seed.json.
 async function liveHistory() {
