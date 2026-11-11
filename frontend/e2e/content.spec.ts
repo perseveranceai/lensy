@@ -6,17 +6,15 @@ import checks from '../src/checks.json';
 
 test.beforeEach(async ({ page }) => { await blockAnalytics(page); });
 
-test('CONTENT-01: the home page shows a real result and who Lensy is for', async ({ page }) => {
+test('CONTENT-01: the home page shows a real result, with the score each fix adds to', async ({ page }) => {
   await page.goto('/');
   const result = page.locator('#what-you-get');
   await result.scrollIntoViewIfNeeded();
   await expect(result.getByRole('heading', { level: 2 })).toHaveText('Two scores, and what to fix first.');
   await expect(result).toContainText('perseveranceai.com, Nov 10, 2026');
   await expect(result).toContainText('Content without JavaScript');
-  await expect(result).toContainText('+29 points');
-  const who = page.locator('#who-its-for');
-  await expect(who.getByRole('link', { name: 'Read the CLI guide' })).toHaveAttribute('href', '/cli');
-  await expect(who.getByRole('link', { name: 'About the Lensy checker' })).toHaveAttribute('href', '/bot');
+  await expect(result).toContainText('+29 Coding agents');
+  await expect(result).toContainText('+15 AI search');
 });
 
 test('CONTENT-02: How it works lists every check from the registry, with its points', async ({ page }) => {

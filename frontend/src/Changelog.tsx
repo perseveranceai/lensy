@@ -15,9 +15,8 @@ const MONTHS: { month: string; entries: Entry[] }[] = [
     month: "November 2026",
     entries: [
       { date: "2026-11-11", items: [
-        "Every page of this site now reaches AI tools as real HTML, with a Markdown copy, an llms.txt index built from the page list, and real 404s for missing pages.",
-        <>The home page shows this site&apos;s own Lensy score over time, checked daily.</>,
-        <>New: this changelog, an <Link to="/about" className={link}>About</Link> page, and the full list of checks on <Link to="/how-it-works" className={link}>How it works</Link>.</>,
+        <>The full list of checks, with the points for each, is on <Link to="/how-it-works" className={link}>How it works</Link>.</>,
+        "The home page shows a real example result, and this site's own Lensy score over time.",
       ] },
       { date: "2026-11-10", items: [
         "Canonical links and meta robots tags written without quotes, as minified HTML does, are now detected.",
