@@ -1,25 +1,17 @@
-import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Home } from './Home';
 import { ScanReport } from './AppRoutes';
 import { trackEvent } from './analytics';
 import {
-    Paper,
-    TextField,
-    Button,
     Typography,
     Box,
-    Alert,
-    CircularProgress,
     Card,
     CardContent,
-    Grid,
     Chip,
     Collapse,
     IconButton,
-    Checkbox,
     Divider,
-    Tooltip
 } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
@@ -31,15 +23,7 @@ import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import CheckIcon from '@mui/icons-material/Check';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { Fix } from './components/FixReviewPanel';
-
-// react-markdown + react-syntax-highlighter are heavy; lazy-load them so they
-// stay out of the initial bundle and only download when a report is rendered.
-const MarkdownRenderer = lazy(() => import('./components/MarkdownRenderer'));
 
 // jsPDF + fonts loaded dynamically on PDF export to reduce initial bundle
 const logoImg = `${process.env.PUBLIC_URL}/logo.png`;

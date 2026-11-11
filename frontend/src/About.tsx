@@ -1,8 +1,7 @@
 import { Link } from "react-router-dom";
 import { Page } from "./AppRoutes";
 
-// /about. Every fact here is also in public/index.html (Organization JSON-LD) or
-// elsewhere on the site. Change both together.
+// /about. No personal names on this page.
 
 const link = "text-[var(--ink)] underline underline-offset-2 hover:text-[var(--accent)]";
 
@@ -23,7 +22,7 @@ export function About() {
       <p>The <Link to="/education/research-behind-ai-ready-docs" className={link}>research article</Link> explains why the checks matter, and <code>lensy explain &lt;id&gt;</code> lists the sources behind each one. We run Lensy on this site too and show the result on the home page, including the low first score from before we rebuilt the site so AI tools could read it. Changes to the checks are listed in the <Link to="/changelog" className={link}>changelog</Link>.</p>
 
       <h2>Who builds it</h2>
-      <p>Perseverance AI LLC was founded in 2025 by <a href="https://www.rakeshpasupuleti.com" target="_blank" rel="noopener noreferrer" className={link}>Rakesh Pasupuleti</a>. Lensy is in beta, and what people tell us decides what we build next, so the Feedback button at the top of every page goes straight to the team.</p>
+      <p>Lensy is built by Perseverance AI, founded in 2025. Lensy is in beta, and what people tell us decides what we build next, so the Feedback button at the top of every page goes straight to the team.</p>
 
       <h2>Contact</h2>
       <p>Email <a href="mailto:hello@perseveranceai.com" className={link}>hello@perseveranceai.com</a>, <a href="https://calendly.com/getperseverance" target="_blank" rel="noopener noreferrer" className={link}>book a call</a>, or find us on <a href="https://www.linkedin.com/company/getperseverance/" target="_blank" rel="noopener noreferrer" className={link}>LinkedIn</a> and <a href="https://x.com/getperseverance" target="_blank" rel="noopener noreferrer" className={link}>X</a>. For higher scan limits, <Link to="/contact" className={link}>join the waitlist</Link>.</p>

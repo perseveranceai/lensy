@@ -13,8 +13,6 @@
     --container-xl: 36rem;
     --container-2xl: 42rem;
     --container-3xl: 48rem;
-    --text-xs: 0.75rem;
-    --text-sm: 0.875rem;
     --text-xl: 1.25rem;
     --text-xl--line-height: calc(1.75 / 1.25);
     --font-weight-light: 300;
@@ -260,9 +258,6 @@
   }
   .z-50 {
     z-index: 50;
-  }
-  .col-span-2 {
-    grid-column: span 2 / span 2;
   }
   .container {
     width: 100%;
@@ -590,9 +585,6 @@
   }
   .grid-cols-\[32px_minmax\(0\,1fr\)\] {
     grid-template-columns: 32px minmax(0,1fr);
-  }
-  .grid-cols-\[minmax\(0\,1fr\)_auto\] {
-    grid-template-columns: minmax(0,1fr) auto;
   }
   .flex-col {
     flex-direction: column;
@@ -1293,9 +1285,6 @@
   }
   .text-\[var\(--placeholder\)\] {
     color: var(--placeholder);
-  }
-  .capitalize {
-    text-transform: capitalize;
   }
   .uppercase {
     text-transform: uppercase;
