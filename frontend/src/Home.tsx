@@ -163,7 +163,7 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
           </div>
           <div className="p-6 sm:p-8">
             <div className="flex items-center justify-between text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">
-              <span>Paste a documentation URL</span>
+              <span>Paste a documentation URL</span>{" "}
               <span>{allowanceText(remaining)}</span>
             </div>
             <form noValidate onSubmit={submit} className="mt-10">
@@ -440,10 +440,9 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
                 ["Answer-ready sections", 15, "AI search", "Use one H1 and H2 sections of 40 to 500 words, so each one can stand alone as an answer."],
                 ["Freshness declared", 8, "AI search", "Show when the page changed, or add dateModified in JSON-LD."],
               ].map(([check, points, score, fix]) => (
-                <li key={check as string} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 py-3">
-                  <span className="text-[13px] text-[var(--ink)]">{check}</span>
-                  <span className="text-[12px] tabular-nums text-[var(--ink-soft)]">+{points} {score}</span>
-                  <span className="col-span-2 mt-1 text-[12px] leading-relaxed text-[var(--ink-soft)]">{fix}</span>
+                <li key={check as string} className="py-3">
+                  <p className="flex justify-between gap-4"><span className="text-[13px] text-[var(--ink)]">{check}</span>{" "}<span className="text-[12px] tabular-nums text-[var(--ink-soft)]">+{points} {score}</span></p>
+                  <p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-soft)]">{fix}</p>
                 </li>
               ))}
             </ul>
