@@ -20,6 +20,10 @@ import { Construct } from 'constructs';
 import * as path from 'path';
 import * as fs from 'fs';
 
+// ACM certificate (us-east-1) for gamma.perseveranceai.com and
+// gamma.console.perseveranceai.com, the one the gamma distribution uses.
+const GAMMA_SITE_CERTIFICATE_ARN = 'arn:aws:acm:us-east-1:951411676525:certificate/69262706-3b4c-4223-a967-feb90260632c';
+
 // ── Load .env file so API keys aren't lost on deploy ────────────────────
 // Reads backend/.env and merges into process.env (won't overwrite existing vars)
 const envPath = path.join(__dirname, '../.env');
@@ -571,8 +575,15 @@ function handler(event) {
                     cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
                 },
             },
-            domainNames: [consoleDomainName],
-            certificate: consoleCertificate,
+            // Gamma serves two names on one certificate that covers both. It was
+            // attached outside CDK in March 2026; the CDK certificate above
+            // (console name only) then went unused, expired in September 2026
+            // and can't renew. Matching the live distribution here keeps a CDK
+            // update from sending the expired one (CloudFront rejects it).
+            domainNames: lensyEnv === 'gamma' ? [consoleDomainName, 'gamma.perseveranceai.com'] : [consoleDomainName],
+            certificate: lensyEnv === 'gamma'
+                ? acm.Certificate.fromCertificateArn(this, 'GammaSiteCertificate', GAMMA_SITE_CERTIFICATE_ARN)
+                : consoleCertificate,
             defaultRootObject: 'index.html',
             // S3 answers 403 for a key that doesn't exist. Non-prod serves the
             // prerendered 404 page with a real 404 status; prod keeps the SPA fallback.
