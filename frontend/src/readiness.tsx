@@ -121,10 +121,11 @@ export function smoothPath(pts: Pt[]): string {
   return d;
 }
 
+// Runs are weekly, so ranges start at three months.
 const RANGES: { id: string; label: string; aria: string; days: number | null }[] = [
-  { id: "7d", label: "7D", aria: "Last 7 days", days: 7 },
-  { id: "30d", label: "30D", aria: "Last 30 days", days: 30 },
-  { id: "90d", label: "90D", aria: "Last 90 days", days: 90 },
+  { id: "3m", label: "3M", aria: "Last 3 months", days: 91 },
+  { id: "6m", label: "6M", aria: "Last 6 months", days: 182 },
+  { id: "1y", label: "1Y", aria: "Last year", days: 365 },
   { id: "all", label: "All", aria: "All runs", days: null },
 ];
 
@@ -148,6 +149,15 @@ export function ScoreChart({ runs }: { runs: ReadinessRun[] }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // Offer only the ranges that would hide some runs; until the history is longer
+  // than three months there is nothing to choose, so no buttons show.
+  const ranges = useMemo(() => {
+    if (runs.length < 2) return [];
+    const spanAll = dayOf(runs[runs.length - 1].date) - dayOf(runs[0].date);
+    const cut = RANGES.filter((r) => r.days !== null && r.days <= spanAll);
+    return cut.length ? [...cut, RANGES[RANGES.length - 1]] : [];
+  }, [runs]);
 
   const shown = useMemo(() => {
     const days = RANGES.find((r) => r.id === range)?.days;
@@ -207,11 +217,11 @@ export function ScoreChart({ runs }: { runs: ReadinessRun[] }) {
         <p className="text-[14px] font-medium tracking-[-.02em] text-[var(--ink)]">perseveranceai.com</p>
         <p className="mt-1 text-[12px] text-[var(--muted)]">{runs.length} run{runs.length === 1 ? "" : "s"} since {since}</p>
       </div>
-      <div role="group" aria-label="Time range" className="flex gap-1">
-        {RANGES.map((r) => <button key={r.id} type="button" aria-pressed={range === r.id} aria-label={r.aria} onClick={() => setRange(r.id)}
+      {ranges.length > 0 && <div role="group" aria-label="Time range" className="flex gap-1">
+        {ranges.map((r) => <button key={r.id} type="button" aria-pressed={range === r.id} aria-label={r.aria} onClick={() => setRange(r.id)}
           style={{ fontFamily: "var(--font-mono)", fontSize: 11, lineHeight: 1.6 }}
           className={`rounded-full px-3 py-1 transition-colors ${range === r.id ? "bg-[var(--ink)] text-[var(--bg)]" : "text-[var(--ink-soft)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"}`}>{r.label}</button>)}
-      </div>
+      </div>}
     </div>
     <p className="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-[12px] text-[var(--ink-soft)]">
       <span className="inline-flex items-center gap-2"><svg width="18" height="6" aria-hidden="true"><line x1="0" y1="3" x2="18" y2="3" style={{ stroke: "var(--ink)" }} strokeWidth="2" /></svg>Coding agents: solid line</span>{" "}

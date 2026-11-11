@@ -472,14 +472,12 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
         <div className="lg:col-span-4">
           <p className="text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">Our own score</p>
           <h2 className="mt-5 text-[clamp(2.4rem,4.5vw,4.6rem)] font-medium leading-[.9] tracking-[-.065em]">
-            We check this site every week.
+            Same checks, on our own site.
           </h2>
           <p className="mt-6 max-w-sm text-[14px] leading-relaxed text-[var(--ink-soft)]">
-            Each Monday the Lensy command line tool checks every page of
-            perseveranceai.com. The chart shows the whole site&apos;s Coding
-            agents and AI search scores over time. The first point,
-            {" "}{formatRunDate(BASELINE.date)}, is from before we rebuilt the
-            site so crawlers could read it.
+            This is perseveranceai.com scored by Lensy, with the same checks
+            your docs get. The first point, {formatRunDate(BASELINE.date)}, is
+            from before we rebuilt the site so AI tools could read it.
           </p>
           <Link
             to="/cli"
