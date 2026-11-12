@@ -9,14 +9,20 @@
  *   <path>/index.html   each page's own HTML, head included (index.html for /)
  *   <path>.md           a Markdown copy of each content page (index.md for /)
  *   404.html            the Not found page, served with status 404
- *   llms.txt, sitemap.xml, robots.txt
+ *   llms.txt            every page, in sections (Product, Docs, Checks, Learn, Company)
+ *   docs/llms.txt       the docs alone (the llms.txt proposal allows one per folder)
+ *   llms-full.txt       the Markdown of every docs page in one file, for agents that want one fetch
+ *   sitemap.xml, robots.txt
  *
  * Routes come from src/site-pages.json. Articles are found from the links on
- * /education, so a new article needs no change here. The saved HTML is
+ * /learn and check pages from the links on /docs/checks, so a new article or
+ * check needs no change here. Elements marked data-md-skip="true" (widget
+ * labels, diagrams) are left out of the Markdown copies. The saved HTML is
  * hydrated by src/index.tsx, so the page doesn't re-render when scripts load.
  *
  * Request routing on gamma and prod (backend/cloudfront/site-router.js) maps
- * /cli to /cli/index.html, and scripts/serve-build.js does the same locally.
+ * /docs/cli to /docs/cli/index.html and answers moved pages with a 301, and
+ * scripts/serve-build.js does the same locally.
  *
  * The build fails if a content page has no single H1, a wrong canonical, or a
  * link in llms.txt that has no file behind it.
@@ -123,7 +129,7 @@ function snapshot({ baseUrl }) {
   const SKIP = new Set(['SCRIPT', 'STYLE', 'SVG', 'svg', 'INPUT', 'TEXTAREA', 'SELECT', 'LABEL', 'NOSCRIPT', 'TEMPLATE', 'NAV', 'ASIDE']);
   const BLOCK = new Set(['P', 'DIV', 'SECTION', 'ARTICLE', 'HEADER', 'FOOTER', 'MAIN', 'NAV', 'ASIDE', 'UL', 'OL', 'LI', 'PRE',
     'BLOCKQUOTE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'TABLE', 'FORM', 'FIGURE', 'DL', 'DT', 'DD', 'HR', 'DETAILS', 'SUMMARY']);
-  const hidden = (el) => el.getAttribute('aria-hidden') === 'true' || el.hidden;
+  const hidden = (el) => el.getAttribute('aria-hidden') === 'true' || el.hidden || el.getAttribute('data-md-skip') === 'true';
   const isBlock = (el) => BLOCK.has(el.tagName) || (el.tagName === 'A' && Array.from(el.children).some((c) => BLOCK.has(c.tagName)));
 
   function inline(node) {
@@ -296,20 +302,63 @@ function checkContent(route, facts) {
   if (!facts.dateModified) fail(`${route} has no dateModified in its JSON-LD`);
 }
 
+// llms.txt sections, by folder.
+const SECTIONS = ['Product', 'Docs', 'Checks', 'Learn', 'Company', 'Optional'];
+function sectionOf(p) {
+  if (p === '/') return 'Product';
+  if (p.startsWith('/docs/checks/')) return 'Checks';
+  if (p === '/docs' || p.startsWith('/docs/')) return 'Docs';
+  if (p === '/learn' || p.startsWith('/learn/') || p === '/changelog') return 'Learn';
+  if (p.startsWith('/legal/')) return 'Optional';
+  return 'Company';
+}
+
+const llmsLine = (e) => `- [${e.title}](${BASE_URL}${mdPath(e.path)}): ${e.description}`;
+
 function llmsTxt(entries) {
-  const section = (title, list) => list.length ? [`## ${title}`, '', ...list.map((e) => `- [${e.title}](${BASE_URL}${mdPath(e.path)}): ${e.description}`), ''] : [];
-  const by = (group) => entries.filter((e) => e.group === group);
+  const section = (title) => {
+    const list = entries.filter((e) => sectionOf(e.path) === title);
+    return list.length ? [`## ${title}`, '', ...list.map(llmsLine), ''] : [];
+  };
   return [
     '# Lensy by Perseverance AI',
     '',
     '> Lensy checks whether a documentation page is ready for AI search engines and coding agents. It gives the page two scores out of 100, Coding agents and AI search, and lists the fixes worth the most points. It runs on perseveranceai.com and as the open source `lensy` command line tool.',
     '',
-    `Every link below is the Markdown copy of a page. The HTML page is at the same address without \`.md\` (the home page is ${BASE_URL}/).`,
+    `Every link below is the Markdown copy of a page. The HTML page is at the same address without \`.md\` (the home page is ${BASE_URL}/). The docs alone are indexed at ${BASE_URL}/docs/llms.txt, and all of them are in one file at ${BASE_URL}/llms-full.txt.`,
     '',
-    ...section('Product', by('product')),
-    ...section('Learn', by('learn')),
-    ...section('Company', by('company')),
-    ...section('Optional', by('legal')),
+    ...SECTIONS.flatMap(section),
+  ].join('\n');
+}
+
+function docsLlmsTxt(entries) {
+  const list = (title) => entries.filter((e) => sectionOf(e.path) === title).map(llmsLine);
+  return [
+    '# Lensy docs',
+    '',
+    '> How to check a documentation page with Lensy, on perseveranceai.com or with the `lensy` command line tool, what the Coding agents and AI search scores mean, and every check behind them.',
+    '',
+    `Every link below is the Markdown copy of a page. The whole site is indexed at ${BASE_URL}/llms.txt.`,
+    '',
+    '## Docs',
+    '',
+    ...list('Docs'),
+    '',
+    '## Checks',
+    '',
+    ...list('Checks'),
+    '',
+  ].join('\n');
+}
+
+function llmsFullTxt(entries, markdownByPath) {
+  const docs = entries.filter((e) => ['Docs', 'Checks'].includes(sectionOf(e.path)));
+  return [
+    '# Lensy docs, in full',
+    '',
+    `> Every page of the Lensy docs in one file. Each page starts with its address. The index is at ${BASE_URL}/docs/llms.txt.`,
+    '',
+    ...docs.flatMap((e) => ['---', '', `Source: ${absolute(e.path)}`, '', markdownByPath.get(e.path).trim(), '']),
   ].join('\n');
 }
 
@@ -366,6 +415,7 @@ async function main() {
   try {
     const contentPages = SITE_PAGES.filter((p) => p.kind === 'page');
     const entries = [];
+    const markdownByPath = new Map();
 
     for (const p of contentPages) {
       const { html, markdown, facts } = await render(context, origin, p.path, { content: true });
@@ -373,14 +423,31 @@ async function main() {
       fs.mkdirSync(path.dirname(htmlFile(p.path)), { recursive: true });
       fs.writeFileSync(htmlFile(p.path), html, 'utf-8');
       write(mdPath(p.path), markdown);
+      markdownByPath.set(p.path, markdown);
       entries.push({ path: p.path, title: p.title, description: facts.description, group: p.group, updated: facts.dateModified, links: facts.links });
       log(`  ${p.path}`);
     }
 
-    // Articles: every /education/<slug> linked from the education page.
-    const education = entries.find((e) => e.path === '/education');
-    const slugs = [...new Set((education ? education.links : []).filter((l) => /^\/education\/[a-z0-9-]+$/.test(l)))];
-    if (!slugs.length) fail('found no articles linked from /education');
+    // Articles: every /learn/<slug> linked from /learn. Check pages: every
+    // /docs/checks/<slug> linked from /docs/checks.
+    const linkedFrom = (from, pattern) => {
+      const page = entries.find((e) => e.path === from);
+      return [...new Set((page ? page.links : []).filter((l) => pattern.test(l)))];
+    };
+    const slugs = linkedFrom('/learn', /^\/learn\/[a-z0-9-]+$/);
+    if (!slugs.length) fail('found no articles linked from /learn');
+    const checkRoutes = linkedFrom('/docs/checks', /^\/docs\/checks\/[a-z0-9-]+$/);
+    if (checkRoutes.length < 30) fail(`found ${checkRoutes.length} check pages linked from /docs/checks, expected every check`);
+    for (const route of checkRoutes) {
+      const { html, markdown, facts } = await render(context, origin, route, { content: true });
+      checkContent(route, facts);
+      fs.mkdirSync(path.dirname(htmlFile(route)), { recursive: true });
+      fs.writeFileSync(htmlFile(route), html, 'utf-8');
+      write(mdPath(route), markdown);
+      markdownByPath.set(route, markdown);
+      entries.push({ path: route, title: facts.title.replace(/ - Lensy$/, ''), description: facts.description, group: 'docs', updated: facts.dateModified });
+    }
+    log(`  ${checkRoutes.length} check pages under /docs/checks/`);
     for (const route of slugs) {
       const { html, markdown, facts } = await render(context, origin, route, { content: true });
       checkContent(route, facts);
@@ -402,13 +469,16 @@ async function main() {
     }
     log(`  shells for ${SITE_PAGES.filter((x) => x.kind !== 'page').map((x) => x.path).join(', ')}`);
 
+    // Same order everywhere: the page list's order, then checks and articles.
     const llms = llmsTxt(entries);
     write('llms.txt', llms);
+    write('docs/llms.txt', docsLlmsTxt(entries));
+    write('llms-full.txt', llmsFullTxt(entries, markdownByPath));
     write('sitemap.xml', sitemapXml(entries));
     write('robots.txt', robotsTxt());
 
-    // Every same-site link in llms.txt must have a file behind it.
-    for (const m of llms.matchAll(/\]\((https?:\/\/[^)]+)\)/g)) {
+    // Every same-site link in both llms.txt files must have a file behind it.
+    for (const m of (llms + docsLlmsTxt(entries)).matchAll(/\]\((https?:\/\/[^)]+)\)/g)) {
       const u = new URL(m[1]);
       if (`${u.protocol}//${u.host}` !== BASE_URL) continue;
       if (u.pathname === '/') continue;

@@ -15,3 +15,15 @@ test('AI search points add up to 100, and every Coding agents check has a weight
   assert.ok(c.codingAgents.length > 10);
   for (const x of c.codingAgents) assert.ok(x.weight > 0, x.id);
 });
+
+test('every check has a page: a unique lowercase slug, what it measures, why, and evidence', () => {
+  const c = checksFromDocs(fs.readFileSync(new URL('../packages/docs/checks.md', import.meta.url), 'utf8'));
+  const all = [...c.codingAgents, ...c.fallback, ...c.aiSearch];
+  assert.equal(new Set(all.map((x) => x.slug)).size, all.length);
+  for (const x of all) {
+    assert.match(x.slug, /^[a-z0-9-]+$/, x.id);
+    assert.ok(x.measures && x.why, x.id);
+    assert.ok(x.evidence.length > 0, `${x.id} has no evidence`);
+  }
+  assert.equal(c.fallback.reduce((s, x) => s + x.points, 0), 100);
+});

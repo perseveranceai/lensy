@@ -62,6 +62,14 @@ light-theme bug hid (REG-01).
   (CK-01 to CK-05). Page views come only from `trackPageView` in `App.tsx`.
   Tests also block Google Analytics requests and start with analytics
   declined; never let automated runs send real events.
+- **Site addresses:** pages live in folders: `/docs` (scores, a page per
+  check under `/docs/checks/`, the command line guide, the Lensy checker),
+  `/learn` (articles), `/legal`. `src/site-pages.json` is the page list. When a
+  page moves, add its old address to `MOVED` in
+  `backend/cloudfront/site-router.js` (a 301 at the edge) and never remove an
+  entry: `/bot` is in the user agent of every Lensy request and `/cli` in
+  published CLI READMEs (REG-39). Don't change the user agent strings either;
+  site owners' allow rules match them.
 - **Privacy page:** `Privacy()` in `src/AppRoutes.tsx` states what Lensy
   collects, which services receive it (AWS and Bedrock, Jina, Perplexity,
   Google) and how long it is kept (scan files expire after 30 days via the

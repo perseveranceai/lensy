@@ -25,7 +25,7 @@ test('CLI-01: the home page points to the CLI guide, above the questions', async
 });
 
 test('CLI-02: /cli has the guide sections in order, the install command and the limits', async ({ page }) => {
-  await page.goto('/cli');
+  await page.goto('/docs/cli');
   await expect(page).toHaveTitle('Lensy command line guide');
   const guide = page.getByTestId('cli-guide');
   await expect(guide.locator('h2')).toHaveText([
@@ -42,12 +42,12 @@ test('CLI-02: /cli has the guide sections in order, the install command and the 
   await expect(guide.getByText(/local addresses are refused/)).toHaveCount(0);
   // The user agent matches the one /bot describes, and the link goes there.
   await expect(guide.getByText('lensy-cli/<version> (+https://perseveranceai.com/bot)')).toBeVisible();
-  await guide.getByRole('link', { name: 'bot page' }).click();
-  await expect(page).toHaveURL(/\/bot$/);
+  await guide.getByRole('link', { name: 'Lensy checker page' }).click();
+  await expect(page).toHaveURL(/\/docs\/bot$/);
 });
 
 test('CLI-05: "Save and compare runs" shows the question, a comparison, the folder and the settings', async ({ page }) => {
-  await page.goto('/cli');
+  await page.goto('/docs/cli');
   const guide = page.getByTestId('cli-guide');
   await expect(guide.getByLabel('The first-run question')).toContainText('Save Lensy results for this project in .lensy?');
   await expect(guide.getByLabel('Example comparison')).toContainText('Since Nov 2 (6 days ago): Coding agents 80 → 87 (+7)');
@@ -64,7 +64,7 @@ test('CLI-05: "Save and compare runs" shows the question, a comparison, the fold
 });
 
 test('CLI-06: "Check a local build" shows --dir, --site-url, a points-checked result and the comparison', async ({ page }) => {
-  await page.goto('/cli');
+  await page.goto('/docs/cli');
   const guide = page.getByTestId('cli-guide');
   await expect(guide.getByLabel('Check a VitePress build')).toContainText('lensy check --dir docs/.vitepress/dist --site-url https://docs.example.com --all');
   await expect(guide.getByLabel('Example local check')).toContainText('58 of 70 points checked');
@@ -77,7 +77,7 @@ test('CLI-06: "Check a local build" shows --dir, --site-url, a points-checked re
 });
 
 test('CLI-07: "Requirements and help" says what is needed, where it was tested and how to report a problem', async ({ page }) => {
-  await page.goto('/cli');
+  await page.goto('/docs/cli');
   const guide = page.getByTestId('cli-guide');
   await expect(guide.getByText(/Node 22 or newer and npm/)).toBeVisible();
   await expect(guide.getByText(/Linux, macOS and Windows with Node 22 and 24/)).toBeVisible();
@@ -88,7 +88,7 @@ test('CLI-07: "Requirements and help" says what is needed, where it was tested a
 
 test('CLI-02: the side links jump to a section', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto('/cli');
+  await page.goto('/docs/cli');
   await page.getByRole('navigation', { name: 'On this page' }).getByRole('link', { name: 'Exit codes' }).click();
   await expect(page).toHaveURL(/#exit-codes$/);
   // The site scrolls smoothly, so wait until the section has stopped moving, then
@@ -102,7 +102,7 @@ test('CLI-03: at 375px the home section and the guide fit in both themes, and lo
   await page.setViewportSize({ width: 375, height: 812 });
   for (const theme of ['light', 'dark'] as const) {
     await setTheme(page, theme);
-    for (const path of ['/', '/cli']) {
+    for (const path of ['/', '/docs/cli']) {
       await page.goto(path);
       if (path === '/') await expect(page.locator('#command-line')).toBeVisible();
       else await expect(page.getByTestId('cli-guide')).toBeVisible();

@@ -420,14 +420,8 @@
   .h-3 {
     height: calc(var(--spacing) * 3);
   }
-  .h-4 {
-    height: calc(var(--spacing) * 4);
-  }
   .h-8 {
     height: calc(var(--spacing) * 8);
-  }
-  .h-9 {
-    height: calc(var(--spacing) * 9);
   }
   .h-full {
     height: 100%;
@@ -480,11 +474,11 @@
   .max-w-\[230px\] {
     max-width: 230px;
   }
-  .max-w-\[420px\] {
-    max-width: 420px;
-  }
   .max-w-\[440px\] {
     max-width: 440px;
+  }
+  .max-w-\[640px\] {
+    max-width: 640px;
   }
   .max-w-\[650px\] {
     max-width: 650px;
@@ -568,14 +562,14 @@
   .list-outside {
     list-style-position: outside;
   }
+  .list-decimal {
+    list-style-type: decimal;
+  }
   .list-disc {
     list-style-type: disc;
   }
   .grid-cols-2 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .grid-cols-3 {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .grid-cols-\[1\.5fr_\.65fr\] {
     grid-template-columns: 1.5fr .65fr;
@@ -655,6 +649,9 @@
   .gap-12 {
     gap: calc(var(--spacing) * 12);
   }
+  .gap-16 {
+    gap: calc(var(--spacing) * 16);
+  }
   .gap-px {
     gap: 1px;
   }
@@ -692,6 +689,9 @@
   }
   .gap-x-6 {
     column-gap: calc(var(--spacing) * 6);
+  }
+  .gap-x-8 {
+    column-gap: calc(var(--spacing) * 8);
   }
   .gap-y-1 {
     row-gap: var(--spacing);
@@ -901,6 +901,9 @@
   .py-3 {
     padding-block: calc(var(--spacing) * 3);
   }
+  .py-3\.5 {
+    padding-block: calc(var(--spacing) * 3.5);
+  }
   .py-4 {
     padding-block: calc(var(--spacing) * 4);
   }
@@ -948,6 +951,9 @@
   }
   .pt-8 {
     padding-top: calc(var(--spacing) * 8);
+  }
+  .pt-10 {
+    padding-top: calc(var(--spacing) * 10);
   }
   .pt-12 {
     padding-top: calc(var(--spacing) * 12);
@@ -1006,8 +1012,14 @@
   .pl-0 {
     padding-left: 0px;
   }
+  .pl-1 {
+    padding-left: var(--spacing);
+  }
   .pl-4 {
     padding-left: calc(var(--spacing) * 4);
+  }
+  .pl-5 {
+    padding-left: calc(var(--spacing) * 5);
   }
   .text-center {
     text-align: center;
@@ -1079,8 +1091,8 @@
   .text-\[28px\] {
     font-size: 28px;
   }
-  .text-\[36px\] {
-    font-size: 36px;
+  .text-\[clamp\(1\.6rem\,2\.6vw\,2\.2rem\)\] {
+    font-size: clamp(1.6rem, 2.6vw, 2.2rem);
   }
   .text-\[clamp\(1\.25rem\,3vw\,2rem\)\] {
     font-size: clamp(1.25rem, 3vw, 2rem);
@@ -1296,6 +1308,9 @@
     --tw-numeric-spacing: tabular-nums;
     font-variant-numeric: var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,);
   }
+  .line-through {
+    text-decoration-line: line-through;
+  }
   .underline {
     text-decoration-line: underline;
   }
@@ -1307,6 +1322,9 @@
   }
   .decoration-dotted {
     text-decoration-style: dotted;
+  }
+  .decoration-1 {
+    text-decoration-thickness: 1px;
   }
   .underline-offset-2 {
     text-underline-offset: 2px;
@@ -1397,6 +1415,46 @@
     .group-hover\:text-\[var\(--ink\)\]:is(:where(.group):hover *) {
       color: var(--ink);
     }
+  }
+  .marker\:text-\[12px\] ::marker {
+    font-size: 12px;
+  }
+  .marker\:text-\[12px\]::marker {
+    font-size: 12px;
+  }
+  .marker\:text-\[12px\] ::-webkit-details-marker {
+    font-size: 12px;
+  }
+  .marker\:text-\[12px\]::-webkit-details-marker {
+    font-size: 12px;
+  }
+  .marker\:font-medium ::marker {
+    --tw-font-weight: var(--font-weight-medium);
+    font-weight: var(--font-weight-medium);
+  }
+  .marker\:font-medium::marker {
+    --tw-font-weight: var(--font-weight-medium);
+    font-weight: var(--font-weight-medium);
+  }
+  .marker\:font-medium ::-webkit-details-marker {
+    --tw-font-weight: var(--font-weight-medium);
+    font-weight: var(--font-weight-medium);
+  }
+  .marker\:font-medium::-webkit-details-marker {
+    --tw-font-weight: var(--font-weight-medium);
+    font-weight: var(--font-weight-medium);
+  }
+  .marker\:text-\[var\(--accent\)\] ::marker {
+    color: var(--accent);
+  }
+  .marker\:text-\[var\(--accent\)\]::marker {
+    color: var(--accent);
+  }
+  .marker\:text-\[var\(--accent\)\] ::-webkit-details-marker {
+    color: var(--accent);
+  }
+  .marker\:text-\[var\(--accent\)\]::-webkit-details-marker {
+    color: var(--accent);
   }
   .marker\:text-\[var\(--line-strong\)\] ::marker {
     color: var(--line-strong);
@@ -1554,6 +1612,12 @@
     .sm\:gap-6 {
       gap: calc(var(--spacing) * 6);
     }
+    .sm\:gap-20 {
+      gap: calc(var(--spacing) * 20);
+    }
+    .sm\:gap-x-2 {
+      column-gap: calc(var(--spacing) * 2);
+    }
     .sm\:gap-x-8 {
       column-gap: calc(var(--spacing) * 8);
     }
@@ -1601,6 +1665,9 @@
     .sm\:py-24 {
       padding-block: calc(var(--spacing) * 24);
     }
+    .sm\:pt-12 {
+      padding-top: calc(var(--spacing) * 12);
+    }
     .sm\:pt-16 {
       padding-top: calc(var(--spacing) * 16);
     }
@@ -1624,6 +1691,17 @@
     }
     .sm\:pl-8 {
       padding-left: calc(var(--spacing) * 8);
+    }
+    .sm\:text-\[20px\] {
+      font-size: 20px;
+    }
+    .sm\:text-\[36px\] {
+      font-size: 36px;
+    }
+  }
+  @media (width >= 48rem) {
+    .md\:grid-cols-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
   @media (width >= 64rem) {

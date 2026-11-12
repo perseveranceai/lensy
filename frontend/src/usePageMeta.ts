@@ -62,9 +62,9 @@ function jsonLd(meta: PageMeta, url: string) {
   if (meta.schema === "SoftwareApplication") {
     page.about = {
       "@type": "SoftwareApplication",
-      name: meta.path === "/cli" ? "Lensy command line tool" : "Lensy",
+      name: meta.path === "/docs/cli" ? "Lensy command line tool" : "Lensy",
       applicationCategory: "DeveloperApplication",
-      operatingSystem: meta.path === "/cli" ? "Linux, macOS, Windows (Node 22 or newer)" : "Web",
+      operatingSystem: meta.path === "/docs/cli" ? "Linux, macOS, Windows (Node 22 or newer)" : "Web",
       offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
       provider: ORG,
     };
@@ -87,6 +87,8 @@ export function usePageMeta(meta: PageMeta | null) {
     const url = absolute(meta.path);
     const fullTitle = /\bLensy\b/.test(meta.title) ? meta.title : `${meta.title} - Lensy`;
     document.title = fullTitle;
+    // index.html ships the home page's title here; every page sets its own.
+    setMeta("name", "title", fullTitle);
     setMeta("name", "description", meta.description);
     setMeta("name", "robots", meta.noindex ? "noindex" : "index, follow");
     setMeta("property", "og:title", fullTitle);

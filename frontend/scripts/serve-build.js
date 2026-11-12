@@ -33,8 +33,21 @@ function send(res, status, file) {
 
 http.createServer((req, res) => {
   let pathname;
-  try { pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname); } catch { pathname = '/'; }
-  const request = handler({ request: { uri: pathname, headers: { accept: { value: req.headers.accept || '' } } } });
+  let search;
+  try {
+    const u = new URL(req.url, 'http://localhost');
+    pathname = decodeURIComponent(u.pathname);
+    search = u.searchParams;
+  } catch { pathname = '/'; search = new URLSearchParams(); }
+  // The query string in CloudFront's shape, so redirects keep it the same way.
+  const querystring = {};
+  for (const [key, value] of search) querystring[key] = { value };
+  const request = handler({ request: { uri: pathname, querystring, headers: { accept: { value: req.headers.accept || '' } } } });
+  // A redirect (moved page, trailing slash) is answered by the function itself.
+  if (request.statusCode) {
+    res.writeHead(request.statusCode, { Location: request.headers.location.value, 'Cache-Control': 'no-cache' });
+    return res.end();
+  }
   const file = path.join(dir, request.uri);
   if (file.startsWith(dir) && fs.existsSync(file) && fs.statSync(file).isFile()) return send(res, 200, file);
   const notFound = path.join(dir, '404.html');

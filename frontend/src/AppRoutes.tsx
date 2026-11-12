@@ -1,8 +1,7 @@
-import { createBrowserRouter, Link, Outlet, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Home } from "./Home";
+import { Link, Outlet, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import { ArrowDown, ArrowLeft, ArrowRight, Check, Menu, Send, Monitor, Moon, Sun, X, CheckCircle2, AlertTriangle, Info, XCircle, MinusCircle, MessageSquare } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Menu, Send, Monitor, Moon, Sun, X, CheckCircle2, AlertTriangle, Info, XCircle, MinusCircle, MessageSquare } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Tooltip from "@mui/material/Tooltip";
 import { trackEvent } from "./analytics";
@@ -15,7 +14,8 @@ import { CITATIONS_ENABLED } from "./report/flags";
 import { CookieBanner } from "./CookieBanner";
 import { openCookieSettings } from "./consent";
 import { BOT_BLOCKED_TITLE, botBlockedDescription } from "./botBlockedCopy";
-import { HEADER_PAGES, pageFor, pagesInGroup } from "./site";
+import { HEADER_PAGES, breadcrumbFor, pageFor, pagesInGroup } from "./site";
+import { DocsNav } from "./Docs";
 import type { SitePage } from "./site";
 import { usePageMeta } from "./usePageMeta";
 import type { PageMeta } from "./usePageMeta";
@@ -464,13 +464,13 @@ function metaForPage(page: SitePage): PageMeta {
     schema: page.schema,
     updated: page.updated,
     markdown: isContent,
-    breadcrumb: page.path === "/" ? [{ name: "Home", path: "/" }] : [{ name: "Home", path: "/" }, { name: page.label, path: page.path }],
+    breadcrumb: breadcrumbFor(page.path, page.label),
   };
 }
 
-const FOOTER_GROUPS: [string, "product" | "learn" | "company" | "legal"][] = [
+const FOOTER_GROUPS: [string, "product" | "docs" | "company" | "legal"][] = [
   ["Product", "product"],
-  ["Learn", "learn"],
+  ["Docs", "docs"],
   ["Company", "company"],
   ["Legal", "legal"],
 ];
@@ -478,7 +478,6 @@ const FOOTER_GROUPS: [string, "product" | "learn" | "company" | "legal"][] = [
 const footerLink = "link-sweep text-[var(--ink-soft)] hover:text-[var(--ink)]";
 
 function SiteFooter() {
-  const newest = [...ARTICLES].sort((a, b) => b.publishedDate.localeCompare(a.publishedDate)).slice(0, 3);
   return <footer className="border-t border-[var(--line)] px-5 pb-8 pt-12 sm:px-8 sm:pt-16">
     <div className="mx-auto grid max-w-[1240px] gap-10 lg:grid-cols-12 lg:gap-8">
       <div className="lg:col-span-4">
@@ -492,7 +491,6 @@ function SiteFooter() {
           <h2 className="text-[12px] font-medium tracking-[-.02em] text-[var(--muted)]">{title}</h2>
           <ul className="mt-4 flex flex-col gap-2.5 text-[13px] leading-snug">
             {pagesInGroup(group).map((p) => <li key={p.path}><Link to={p.path} className={footerLink}>{p.label}</Link></li>)}
-            {group === "learn" && newest.map((a) => <li key={a.slug}><Link to={`/education/${a.slug}`} className={footerLink}>{a.title}</Link></li>)}
             {group === "company" && <li><a href="https://calendly.com/getperseverance" target="_blank" rel="noopener noreferrer" className={footerLink}>Book a call</a></li>}
             {group === "legal" && <li><button type="button" onClick={openCookieSettings} className={footerLink}>Cookie settings</button></li>}
           </ul>
@@ -534,6 +532,7 @@ export function ShellContent() {
         <div className="ml-auto flex items-center gap-2"><FeedbackWidget /><ThemeToggle /><MobileNav remaining={remaining} /><span className="hidden rounded-[var(--radius-sm)] border border-[var(--line)] px-2.5 py-1 text-[11px] font-medium tracking-[-.025em] text-[var(--ink-soft)] xl:inline-flex">{allowanceText(remaining)}</span></div>
       </nav>
     </header>
+    {/^\/docs(\/|$)/.test(pathname) && <DocsNav />}
     <main className="flex-1"><div key={pathname} className="route-enter"><Outlet /></div></main>
     <CookieBanner />
     <SiteFooter />
@@ -1092,22 +1091,19 @@ export function ScanReport({
   </section>;
 }
 
-export function HowItWorks() {
+export function DocsScores() {
   const steps = [
     ["Paste a URL", "Enter one docs page: an API reference, a guide or a tutorial. Lensy checks that page, not your whole site."],
     ["Lensy reads the page", "It fetches the page as an honest bot, under its own name, along with the files bots read on your site: robots.txt, the sitemap, llms.txt and the page's Markdown version."],
     ["You get two scores", "One score for coding agents and one for AI search, each out of 100, with the fixes that would add the most points first."],
     ...(CITATIONS_ENABLED ? [["Check citations", "Find out if AI search engines like Perplexity cite your page right now."]] : []),
   ];
-  const flow = [
-    ["01", "Paste a documentation URL", "docs.example.com/api"],
-    ["02", "Content check", "Is this technical documentation?"],
-    ...(CITATIONS_ENABLED ? [["04", "AI citation check", "Perplexity AI search"], ["05", "Scores and fixes", ""]] : [["04", "Scores and fixes", ""]]),
-  ];
+
+  const code = "rounded-[var(--radius-xs)] bg-[var(--surface-2)] px-1 py-0.5 text-[12px]";
 
   return <>
     <header className="mx-auto grid max-w-[1240px] gap-8 border-b border-[var(--line)] px-5 pb-14 pt-16 sm:px-8 sm:pb-20 sm:pt-24 lg:grid-cols-12">
-      <h1 style={{ fontSize: "clamp(2rem, 4vw, 3.5rem)" }} className="hero-intro max-w-3xl font-medium leading-[.88] tracking-[-.075em] lg:col-span-8">See exactly how bots <span className="text-[var(--accent)]">read your docs.</span></h1>
+      <h1 style={{ fontSize: "clamp(2rem, 4vw, 3.5rem)" }} className="hero-intro max-w-3xl font-medium leading-[.88] tracking-[-.075em] lg:col-span-8">How Lensy <span className="text-[var(--accent)]">scores a page.</span></h1>
       <p className="self-end text-[15px] leading-relaxed text-[var(--ink-soft)] lg:col-span-4">{CITATIONS_ENABLED ? "Give Lensy a URL, and it shows you how AI search engines and coding agents read your page, and whether AI search cites it." : "Give Lensy a URL, and it shows you how AI search engines and coding agents read your page, and what to fix first."}</p>
     </header>
     <section data-reveal className="mx-auto grid max-w-[1240px] gap-12 px-5 py-16 sm:px-8 sm:py-24 lg:grid-cols-12 lg:gap-16">
@@ -1117,90 +1113,36 @@ export function HowItWorks() {
         <Link to="/#scan" className="btn-ink group mt-8 inline-flex items-center gap-2 bg-[var(--panel-bg)] px-4 py-3 text-[12px] font-medium tracking-[-.025em] text-[var(--panel-fg)]">Start a free scan <ArrowRight className="arrow-nudge size-3" strokeWidth={1.8} aria-hidden="true" /></Link>
       </div>
       <div className="lg:col-span-6 lg:col-start-7">
-        <div className="flex items-baseline justify-between border-b border-[var(--line)] pb-4">
-          <h2 className="text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">From page to report</h2>
-          <p className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">{flow.length + 1} stages</p>
-        </div>
-        <div className="mt-7 rounded-[var(--radius-lg)] border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-8">
-          <div className="mx-auto max-w-[420px]">
-            {flow.slice(0, 2).map(([number, title, detail]) => <div key={title}>
-              <FlowNode number={number} title={title} detail={detail} />
-              <FlowConnector />
-            </div>)}
-            <div className="rounded-[var(--radius-md)] border border-[var(--ink)] bg-[var(--bg)] p-5">
-              <div className="flex items-start justify-between gap-6"><div><p className="text-[11px] font-medium tracking-[-.025em] text-[var(--accent)]">03</p><p className="mt-3 text-[19px] font-light tracking-[-.045em] text-[var(--ink)]">AI readiness analysis</p></div><span className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">run in parallel</span></div>
-              <div className="mt-5 grid grid-cols-3 border-y border-[var(--line)]">
-                {["AI search", "Coding agents", "Reachability"].map((signal, index) => <div key={signal} className={`py-3 text-center text-[10px] font-medium leading-snug tracking-[-.02em] text-[var(--ink-soft)] ${index ? "border-l border-[var(--line)]" : ""}`}>{signal}</div>)}
-              </div>
-              <p className="mt-4 text-center text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">plus checks both audiences need, such as content that loads without JavaScript</p>
-            </div>
-            <FlowConnector />
-            {flow.slice(2).map(([number, title, detail], index) => <div key={title}>
-              <FlowNode number={number} title={title} detail={detail} final={index === flow.length - 3} />
-              {index < flow.length - 3 && <FlowConnector />}
-            </div>)}
-          </div>
-        </div>
+        <h2 className="text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">What Lensy fetches</h2>
+        <ul className="mt-7 border-t border-[var(--line)]">
+          {[
+            ["The page's HTML", "As an honest bot that names itself and doesn't run JavaScript, the way AI crawlers and most coding agents read it."],
+            ["The page as Markdown", "The same address asked for with Accept: text/markdown, and its .md address, which agents prefer to HTML."],
+            ["robots.txt", "To see which AI search and retrieval bots your rules allow on this page."],
+            ["Your sitemap", "To see whether the page is listed, so search engines can find it."],
+            ["llms.txt", "The index coding agents look for first, to see whether it exists, resolves and links to Markdown."],
+            ["A missing page", "An address that doesn't exist on your site, to see whether it returns a real 404 rather than a page that looks like content."],
+          ].map(([title, detail]) => <li key={title} className="border-b border-[var(--line)] py-5"><p className="text-[15px] font-medium tracking-[-.03em] text-[var(--ink)]">{title}</p><p className="mt-1.5 max-w-lg text-[13px] leading-relaxed text-[var(--ink-soft)]">{detail}</p></li>)}
+        </ul>
       </div>
     </section>
     <section data-reveal className="mx-auto grid max-w-[1240px] gap-8 border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24 lg:grid-cols-12 lg:gap-16">
       <h2 className="text-[clamp(2rem,3.6vw,3.2rem)] font-medium leading-[.95] tracking-[-.06em] lg:col-span-4">The two scores.</h2>
       <div className="prose-lensy max-w-[680px] lg:col-span-7 lg:col-start-6">
-        <p><strong>Coding agents</strong> measures how well a tool such as Claude Code, Cursor or Copilot can find and read the page. It&apos;s built on AFDocs, the open Agent-Friendly Documentation checks: an llms.txt index, Markdown versions of pages, real 404s for missing pages and content that loads without JavaScript. Lensy adds one check of its own, for headings an agent can navigate.</p>
-        <p><strong>AI search</strong> measures how well engines such as ChatGPT search, Perplexity and Claude can retrieve the page and cite it. It has {CHECKS.aiSearch.length} checks worth 100 points between them, listed below.</p>
-        <p>Above both scores, a reachability line says whether an honest AI agent could load the page at all. The same checks run in the <Link to="/cli">Lensy command line tool</Link>, and the <Link to="/education/research-behind-ai-ready-docs">research behind them</Link> is in Education.</p>
+        <p><strong>Coding agents</strong> measures how well a tool such as Claude Code, Cursor or Copilot can find and read the page. It&apos;s built on AFDocs, the open Agent-Friendly Documentation checks: an llms.txt index, Markdown versions of pages, real 404s for missing pages and content that loads without JavaScript. Lensy adds one check of its own, for headings an agent can navigate. Each check has a weight (critical 10, high 7, medium 4, low 2), and the score is the weight earned over the weight of the checks that ran. With no llms.txt the score is at most 59. If AFDocs can&apos;t run on a page, six Lensy checks (C1 to C6) give the score instead.</p>
+        <p><strong>AI search</strong> measures how well engines such as ChatGPT search, Perplexity and Claude can retrieve the page and cite it. It has {CHECKS.aiSearch.length} checks worth 100 points between them.</p>
+        <p>Content that loads without JavaScript counts in both scores, because both kinds of tool read the raw HTML.</p>
+        <p>Above both scores, a reachability line says whether an honest AI agent could load the page at all.</p>
+        <p><Link to="/docs/checks">Every check</Link> has its own page with its points, what it measures and the evidence behind it, and the <Link to="/learn/research-behind-ai-ready-docs">research behind the checks</Link> is in Learn.</p>
       </div>
     </section>
-    <section data-reveal id="every-check" className="mx-auto grid max-w-[1240px] scroll-mt-28 gap-8 border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24 lg:grid-cols-12 lg:gap-16">
-      <div className="lg:col-span-4">
-        <h2 className="text-[clamp(2rem,3.6vw,3.2rem)] font-medium leading-[.95] tracking-[-.06em]">Every check.</h2>
-        <p className="mt-5 max-w-sm text-[14px] leading-relaxed text-[var(--ink-soft)]">This list comes from the same check registry the scanner and the command line tool use, so it changes when they do. <code className="rounded-[var(--radius-xs)] bg-[var(--surface-2)] px-1 py-0.5 text-[12px]">lensy explain &lt;id&gt;</code> prints what each one measures and the evidence behind it.</p>
-      </div>
-      <div className="grid min-w-0 gap-10 lg:col-span-7 lg:col-start-6">
-        <CheckTable
-          title="AI search"
-          intro="Points out of 100. Each check gives full, partial or no points."
-          unit="Points"
-          rows={CHECKS.aiSearch.map((c) => ({ id: c.id, label: c.label, value: c.points }))}
-        />
-        <CheckTable
-          title="Coding agents"
-          intro="AFDocs checks plus one Lensy check, each weighted by how much it matters to an agent (critical 10, high 7, medium 4, low 2). The score is the weight earned over the weight of the checks that ran, out of 100. With no llms.txt the score is at most 59."
-          unit="Weight"
-          rows={CHECKS.codingAgents.map((c) => ({ id: c.id, label: c.label, value: c.weight }))}
-        />
+    <section data-reveal className="mx-auto grid max-w-[1240px] gap-8 border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24 lg:grid-cols-12 lg:gap-16">
+      <h2 className="text-[clamp(2rem,3.6vw,3.2rem)] font-medium leading-[.95] tracking-[-.06em] lg:col-span-4">A local build.</h2>
+      <div className="prose-lensy max-w-[680px] lg:col-span-7 lg:col-start-6">
+        <p>The <Link to="/docs/cli">command line tool</Link> can also check a docs build on your machine, before you publish it. Some checks depend on your web server or CDN rather than your pages, such as Markdown on request, real 404s, redirects and cache headers, so a local build can&apos;t test them. Lensy leaves those out and shows the score as the points it could check, for example <code className={code}>71 of 84 points checked</code>, never stretched to 100.</p>
       </div>
     </section>
   </>;
-}
-
-function CheckTable({ title, intro, unit, rows }: { title: string; intro: string; unit: string; rows: { id: string; label: string; value: number }[] }) {
-  return <div>
-    <h3 className="text-[19px] font-medium tracking-[-.035em]">{title}</h3>
-    <p className="mt-2 max-w-xl text-[13px] leading-relaxed text-[var(--ink-soft)]">{intro}</p>
-    <div className="mt-4 overflow-x-auto rounded-[var(--radius-md)] border border-[var(--line)]">
-      <table className="w-full border-collapse text-left text-[13px]">
-        <thead className="bg-[var(--surface)] text-[12px] text-[var(--muted)]">
-          <tr><th scope="col" className="px-3 py-2.5 font-medium sm:px-4">Check</th><th scope="col" className="hidden px-3 py-2.5 font-medium sm:table-cell sm:px-4">ID</th><th scope="col" className="px-3 py-2.5 text-right font-medium sm:px-4">{unit}</th></tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => <tr key={r.id} className="border-t border-[var(--line)]">
-            <td className="px-3 py-2 text-[var(--ink)] sm:px-4">{r.label}</td>
-            <td className="hidden px-3 py-2 font-[family-name:var(--font-mono)] text-[11px] text-[var(--muted)] sm:table-cell sm:px-4">{r.id}</td>
-            <td className="px-3 py-2 text-right tabular-nums text-[var(--ink)] sm:px-4">{r.value}</td>
-          </tr>)}
-        </tbody>
-      </table>
-    </div>
-  </div>;
-}
-
-export function FlowConnector() {
-  return <div className="flex h-9 flex-col items-center justify-center" aria-hidden="true"><span className="h-4 border-l border-[var(--line)]" /><ArrowDown className="size-3 text-[var(--accent)]" strokeWidth={1.8} /></div>;
-}
-
-export function FlowNode({ number, title, detail, final = false }: { number: string; title: string; detail: string; final?: boolean }) {
-  return <div className={`rounded-[var(--radius-md)] border px-5 py-4 ${final ? "border-[var(--ink)] bg-[var(--panel-bg)] text-[var(--panel-fg)]" : "border-[var(--line)] bg-[var(--bg)]"}`}><div className="flex items-start gap-4"><span className={`mt-0.5 text-[11px] font-medium tracking-[-.025em] ${final ? "opacity-60" : "text-[var(--accent)]"}`}>{number}</span><div><p className="text-[16px] font-light tracking-[-.04em]">{title}</p>{detail && <p className="mt-1 text-[12px] leading-relaxed opacity-70">{detail}</p>}</div></div></div>;
 }
 
 // ---- Education ----
@@ -1407,25 +1349,25 @@ function ArticleDates({ article }: { article: ArticleData }) {
 export function Education() {
   return <Page
     titleStyle={{ fontSize: "clamp(2rem, 4vw, 3.5rem)" }}
-    title={<>Education{" "}<br />on <span className="text-[var(--accent)]">AI-ready</span> docs.</>}
+    title={<>Learn about{" "}<br /><span className="text-[var(--accent)]">AI-ready</span> docs.</>}
     intro="What we are learning about making docs readable for AI search and coding agents."
   >
     <section className="mt-16 pb-20 sm:mt-20 sm:pb-28">
-      <div className="flex items-end justify-between border-b border-[var(--line)] pb-4 text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">
+      <div data-md-skip="true" className="flex items-end justify-between border-b border-[var(--line)] pb-4 text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">
         <span>Reading list</span>
         <span>{ARTICLES.length} articles</span>
       </div>
       <div>
         {ARTICLES.map((article, i) => (
           <article key={article.slug} data-reveal style={{ "--reveal-delay": `${i * 70}ms` } as React.CSSProperties} className="group border-b border-[var(--line)]">
-            <Link to={`/education/${article.slug}`} className="soft-card grid gap-4 py-8 transition-colors hover:bg-[var(--surface-2)] rounded-[var(--radius-md)] sm:grid-cols-[42px_minmax(0,1fr)_auto] sm:gap-6 sm:-mx-5 sm:px-5">
-              <p className="text-[11px] font-medium tracking-[-.025em] text-[var(--accent)]">0{i + 1}</p>
+            <Link to={`/learn/${article.slug}`} className="soft-card grid gap-4 py-8 transition-colors hover:bg-[var(--surface-2)] rounded-[var(--radius-md)] sm:grid-cols-[42px_minmax(0,1fr)_auto] sm:gap-6 sm:-mx-5 sm:px-5">
+              <p data-md-skip="true" className="text-[11px] font-medium tracking-[-.025em] text-[var(--accent)]">0{i + 1}</p>
               <div>
                 <p className="flex flex-wrap items-center gap-x-1.5 text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">{article.tag} <span className="mx-1.5 text-[var(--line-strong)]">/</span> {article.readTime} <span className="mx-1.5 text-[var(--line-strong)]">/</span> <ArticleDates article={article} /></p>
                 <h2 className="mt-4 max-w-2xl text-[clamp(1.35rem,2.2vw,1.8rem)] leading-[1.08] tracking-[-.05em] transition-colors group-hover:text-[var(--accent)]">{article.title}</h2>
                 <p className="mt-3 max-w-2xl text-[13px] leading-relaxed text-[var(--ink-soft)]">{article.description}</p>
               </div>
-              <span className="link-sweep flex w-fit items-center gap-1.5 text-[12px] font-medium tracking-[-.025em] text-[var(--accent)] sm:self-end sm:pb-1 group-hover:text-[var(--ink)]">Read <ArrowRight className="arrow-nudge size-3" strokeWidth={1.8} aria-hidden="true" /></span>
+              <span data-md-skip="true" className="link-sweep flex w-fit items-center gap-1.5 text-[12px] font-medium tracking-[-.025em] text-[var(--accent)] sm:self-end sm:pb-1 group-hover:text-[var(--ink)]">Read <ArrowRight className="arrow-nudge size-3" strokeWidth={1.8} aria-hidden="true" /></span>
             </Link>
           </article>
         ))}
@@ -1457,16 +1399,16 @@ export function ArticlePage() {
   }, [slug]);
 
   // N-01: each article has its own title, description, canonical, Markdown copy
-  // and TechArticle JSON-LD (scripts/prerender.js writes /education/{slug}.md).
+  // and TechArticle JSON-LD (scripts/prerender.js writes /learn/{slug}.md).
   usePageMeta(article ? {
-    path: `/education/${article.slug}`,
+    path: `/learn/${article.slug}`,
     title: article.title,
     description: article.description,
     schema: "TechArticle",
     published: article.publishedDate,
     updated: article.updatedDate || article.publishedDate,
     markdown: true,
-    breadcrumb: [{ name: "Home", path: "/" }, { name: "Education", path: "/education" }, { name: article.title, path: `/education/${article.slug}` }],
+    breadcrumb: breadcrumbFor(`/learn/${article.slug}`, article.title),
   } : null);
 
   if (!article) return <NotFound />;
@@ -1482,7 +1424,7 @@ export function ArticlePage() {
           <ol className="flex flex-wrap items-center gap-2 text-[12px] font-medium tracking-[-.025em] text-[var(--muted)]">
             <li><Link to="/" className="transition-colors hover:text-[var(--accent)]">Home</Link></li>
             <li aria-hidden="true" className="text-[var(--line-strong)]">/</li>
-            <li><Link to="/education" className="transition-colors hover:text-[var(--accent)]">Education</Link></li>
+            <li><Link to="/learn" className="transition-colors hover:text-[var(--accent)]">Learn</Link></li>
             <li aria-hidden="true" className="text-[var(--line-strong)]">/</li>
             <li aria-current="page" className="max-w-[28ch] truncate text-[var(--ink-soft)]">{article.title}</li>
           </ol>
@@ -1514,13 +1456,13 @@ export function ArticlePage() {
       {(prev || next) && (
         <nav aria-label="More articles" data-reveal className="grid gap-px border-t border-[var(--line)] py-10 sm:grid-cols-2">
           {prev ? (
-            <Link to={`/education/${prev.slug}`} className="group flex flex-col gap-2 py-6 pr-8 transition-colors hover:text-[var(--accent)]">
+            <Link to={`/learn/${prev.slug}`} className="group flex flex-col gap-2 py-6 pr-8 transition-colors hover:text-[var(--accent)]">
               <span className="flex items-center gap-1.5 text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]"><ArrowLeft className="size-3" strokeWidth={1.8} aria-hidden="true" />Previous</span>
               <span className="text-[16px] leading-snug tracking-[-.03em]">{prev.title}</span>
             </Link>
           ) : <div />}
           {next ? (
-            <Link to={`/education/${next.slug}`} className="group flex flex-col gap-2 border-t border-[var(--line)] py-6 pl-0 text-right transition-colors hover:text-[var(--accent)] sm:border-l sm:border-t-0 sm:pl-8">
+            <Link to={`/learn/${next.slug}`} className="group flex flex-col gap-2 border-t border-[var(--line)] py-6 pl-0 text-right transition-colors hover:text-[var(--accent)] sm:border-l sm:border-t-0 sm:pl-8">
               <span className="flex items-center justify-end gap-1.5 text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">Next<ArrowRight className="size-3" strokeWidth={1.8} aria-hidden="true" /></span>
               <span className="text-[16px] leading-snug tracking-[-.03em]">{next.title}</span>
             </Link>
@@ -1675,7 +1617,7 @@ export function Contact() {
 
 export function LegalPage({ title, updated, children }: { title: string; updated: string; children: React.ReactNode }) {
   const { pathname } = useLocation();
-  const isTerms = pathname === "/terms";
+  const isTerms = pathname === "/legal/terms";
   return <>
     <header className="mx-auto grid max-w-[1240px] gap-8 border-b border-[var(--line)] px-5 pb-14 pt-16 sm:px-8 sm:pb-20 sm:pt-24 lg:grid-cols-12">
       <div className="lg:col-span-3"><Link to="/" className="inline-flex items-center gap-2 text-[12px] font-medium tracking-[-.025em] text-[var(--muted)] transition-colors hover:text-[var(--accent)]"><ArrowLeft className="size-3" strokeWidth={1.8} aria-hidden="true" />Back to Lensy</Link><p className="mt-7 text-[12px] font-medium tracking-[-.025em] text-[var(--accent)]">Legal documents</p></div>
@@ -1686,8 +1628,8 @@ export function LegalPage({ title, updated, children }: { title: string; updated
       <aside className="lg:col-span-3 lg:sticky lg:top-28 lg:self-start">
         <p className="text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">In this section</p>
         <nav className="mt-4 flex border-y border-[var(--line)] py-1.5 lg:flex-col" aria-label="Legal documents">
-          <Link to="/terms" aria-current={isTerms ? "page" : undefined} className={`rounded-[var(--radius-xs)] px-3 py-2.5 text-[13px] transition-colors ${isTerms ? "bg-[var(--surface-2)] text-[var(--ink)]" : "text-[var(--ink-soft)] hover:bg-[var(--surface)] hover:text-[var(--ink)]"}`}>Terms of Use</Link>
-          <Link to="/privacy" aria-current={!isTerms ? "page" : undefined} className={`rounded-[var(--radius-xs)] px-3 py-2.5 text-[13px] transition-colors ${!isTerms ? "bg-[var(--surface-2)] text-[var(--ink)]" : "text-[var(--ink-soft)] hover:bg-[var(--surface)] hover:text-[var(--ink)]"}`}>Privacy Policy</Link>
+          <Link to="/legal/terms" aria-current={isTerms ? "page" : undefined} className={`rounded-[var(--radius-xs)] px-3 py-2.5 text-[13px] transition-colors ${isTerms ? "bg-[var(--surface-2)] text-[var(--ink)]" : "text-[var(--ink-soft)] hover:bg-[var(--surface)] hover:text-[var(--ink)]"}`}>Terms of Use</Link>
+          <Link to="/legal/privacy" aria-current={!isTerms ? "page" : undefined} className={`rounded-[var(--radius-xs)] px-3 py-2.5 text-[13px] transition-colors ${!isTerms ? "bg-[var(--surface-2)] text-[var(--ink)]" : "text-[var(--ink-soft)] hover:bg-[var(--surface)] hover:text-[var(--ink)]"}`}>Privacy Policy</Link>
         </nav>
         <p className="mt-7 max-w-[15rem] text-[12px] leading-relaxed text-[var(--muted)]">Questions about this document? <a href="mailto:hello@perseveranceai.com" className="text-[var(--ink-soft)] underline underline-offset-2 hover:text-[var(--accent)]">Get in touch</a>.</p>
       </aside>
@@ -1737,7 +1679,7 @@ export function Terms() {
     </ul>
 
     <h2>5. Data &amp; Privacy</h2>
-    <p>Our collection and use of information is described in our <Link to="/privacy" className="text-[var(--accent)] underline underline-offset-2">Privacy Policy</Link>. By using the Services, you consent to such collection and use.</p>
+    <p>Our collection and use of information is described in our <Link to="/legal/privacy" className="text-[var(--accent)] underline underline-offset-2">Privacy Policy</Link>. By using the Services, you consent to such collection and use.</p>
 
     <h2>6. Disclaimer of Warranties</h2>
     <p>We provide the Services "as is" and "as available" without any warranties, including implied warranties of merchantability, fitness for a particular purpose, and non-infringement. We do not guarantee that the Services will be uninterrupted, error-free, or secure.</p>
@@ -1910,20 +1852,3 @@ export function NotFound() {
     <Link className="btn-ink my-16 inline-block bg-[var(--panel-bg)] px-4 py-3 text-[12px] font-medium tracking-[-.025em] text-[var(--panel-fg)]" to="/">Back to Lensy</Link>
   </Page>;
 }
-
-export const router = createBrowserRouter([{
-  path: "/",
-  Component: Shell,
-  children: [
-    { index: true, Component: Home },
-    { path: "scan", Component: ScanReport },
-    { path: "how-it-works", Component: HowItWorks },
-    { path: "education", Component: Education },
-    { path: "education/:slug", Component: ArticlePage },
-    { path: "contact", Component: Contact },
-    { path: "terms", Component: Terms },
-    { path: "privacy", Component: Privacy },
-    { path: "bot", Component: BotInfo },
-    { path: "*", Component: NotFound },
-  ],
-}]);

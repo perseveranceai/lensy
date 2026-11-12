@@ -25,7 +25,7 @@ const SECTIONS: [string, string][] = [
 // A command or sample output. It scrolls sideways inside its own box, so a long
 // line never widens the page, and it takes keyboard focus so it can be scrolled
 // without a mouse.
-function Block({ label, children }: { label: string; children: string }) {
+export function Block({ label, children }: { label: string; children: string }) {
   return (
     <pre
       tabIndex={0}
@@ -217,7 +217,7 @@ lensy check --dir docs/.vitepress/dist --site-url https://docs.example.com --all
 
           <H2 id="what-it-sends">What it sends</H2>
           <p>
-            Every request carries <code>lensy-cli/&lt;version&gt; (+https://perseveranceai.com/bot)</code>. The <Link to="/bot">bot page</Link> explains what Lensy fetches and how a site owner can allow it.
+            Every request carries <code>lensy-cli/&lt;version&gt; (+https://perseveranceai.com/bot)</code>. The <Link to="/docs/bot">Lensy checker page</Link> explains what Lensy fetches and how a site owner can allow it.
           </p>
           <p>
             For each page the tool fetches the page itself, robots.txt, the sitemap, llms.txt, a sample of the pages llms.txt links to, the Markdown version of the page, and a few other URLs that the AFDocs checks need. That is usually 15 to 60 requests per page. They go from your machine to the sites you named, and nowhere else. Saved results are written only to your own disk.

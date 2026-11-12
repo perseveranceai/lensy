@@ -128,17 +128,17 @@ Google Analytics may only load on the live site after the visitor accepts in the
 
 ## Command-line guide
 
-The `/cli` page and the "Command line" section on the home page. Spec: `.context/specs/cli-docs-page.md`. `packages/cli/test/guide.test.ts` also fails when the page and `lensy --help` disagree about an option.
+The `/docs/cli` page (was `/cli`, which now redirects) and the "Command line" section on the home page. Spec: `.context/specs/cli-docs-page.md`. `packages/cli/test/guide.test.ts` also fails when the page and `lensy --help` disagree about an option.
 
 | ID | Steps | Expected |
 |---|---|---|
-| CLI-01 [auto] | Open `/`, find the Command line section, click **Read the CLI guide** | The section sits before "A few good questions"; the link opens `/cli` |
-| CLI-02 [auto] | Open `/cli`; click a side link | The twelve sections are in order; the install command and `lensy-cli/<version>` user agent are shown; the example output shows "Fix these first", and `--verbose` and `--json` are described; the old "local addresses are refused" line is gone; the side link scrolls the section below the header; the bot page link opens `/bot` |
-| CLI-03 [auto] | At 375px, light and dark: `/` and `/cli` | No horizontal scroll; the longest command scrolls inside its box and can be focused |
+| CLI-01 [auto] | Open `/`, find the Command line section, click **Read the CLI guide** | The section sits before "A few good questions"; the link opens `/docs/cli` |
+| CLI-02 [auto] | Open `/docs/cli`; click a side link | The twelve sections are in order; the install command and `lensy-cli/<version>` user agent are shown; the example output shows "Fix these first", and `--verbose` and `--json` are described; the old "local addresses are refused" line is gone; the side link scrolls the section below the header; the bot page link opens `/bot` |
+| CLI-03 [auto] | At 375px, light and dark: `/` and `/docs/cli` | No horizontal scroll; the longest command scrolls inside its box and can be focused |
 | CLI-04 [manual] | Before approving prod: `npm view @perseverance-ai/lensy dist-tags`, then run the Install commands from the page on a clean machine | The `next` tag exists and every command on the page works as written |
-| CLI-05 [auto] | Open `/cli`, find **Save and compare runs**; click its side link | The first-run question, a real comparison (`Since …`, `Fixed:`), the `.lensy` folder layout and `config.json` with `pages` are shown; `--save`, `--no-save` and `--save-dir` are described; saved results are said to stay on the machine; the side link scrolls to the section |
-| CLI-06 [auto] | Open `/cli`, find **Check a local build**; click its side link | The `--dir … --site-url … --all` command, a real local result ("58 of 70 points checked", "Not checked here"), the comparison after a fix (`77 → 89 (+12)`) and the preview-not-dev-server note are shown; the side link scrolls to the section |
-| CLI-07 [auto] | Open `/cli`, find **Requirements and help** | Node 22+ and npm are named; the tested OS and Node versions are listed; "Open an issue on GitHub" links to the CLI issue form; the email link is `mailto:hello@perseveranceai.com` |
+| CLI-05 [auto] | Open `/docs/cli`, find **Save and compare runs**; click its side link | The first-run question, a real comparison (`Since …`, `Fixed:`), the `.lensy` folder layout and `config.json` with `pages` are shown; `--save`, `--no-save` and `--save-dir` are described; saved results are said to stay on the machine; the side link scrolls to the section |
+| CLI-06 [auto] | Open `/docs/cli`, find **Check a local build**; click its side link | The `--dir … --site-url … --all` command, a real local result ("58 of 70 points checked", "Not checked here"), the comparison after a fix (`77 → 89 (+12)`) and the preview-not-dev-server note are shown; the side link scrolls to the section |
+| CLI-07 [auto] | Open `/docs/cli`, find **Requirements and help** | Node 22+ and npm are named; the tested OS and Node versions are listed; "Open an issue on GitHub" links to the CLI issue form; the email link is `mailto:hello@perseveranceai.com` |
 
 ## Regression cases (from real incidents)
 
@@ -182,35 +182,39 @@ The `/cli` page and the "Command line" section on the home page. Spec: `.context
 | REG-36 [auto] | `generate-markdown.js` wrote `public/education/*.md` and never deleted old ones, so 5 removed articles stayed live as Markdown (found 2026-11-10) | Playwright (`site.spec.ts`) | `/education/blocking-ai-crawlers.md`, `why-ai-readiness-matters.md` and `text-to-html-ratio.md` return 404 |
 | REG-38 [auto] | Page titles split with `<br />` read as one glued word to crawlers and screen readers: "Your docsbelong in theanswer.", "Join thewaitlist." (found by SITE-10, 2026-11-10) | Playwright (`site.spec.ts`): H1 text from the saved HTML, no JavaScript | `/` reads "Your docs belong in the answer."; `/contact`, `/cli`, `/bot`, `/education` keep the space at the line break |
 | REG-37 [auto] | Every page reached crawlers as an empty `<div id="root">` with the home page's title and canonical; Lensy scored its own pages 39 Coding agents and 55 AI search (found 2026-11-10) | Playwright (`site.spec.ts`, SITE-03) with a GPTBot user agent and no JavaScript | Each page in sitemap.xml has its own canonical, one H1, H2 sections, `dateModified` in JSON-LD and no "enable JavaScript" text |
+| REG-39 [auto] | The site moved to folders (/docs, /learn, /legal) on 2026-11-12. `/bot` is in the user agent of every Lensy request and `/cli` in published CLI READMEs, so old addresses must keep working; a page answering at two addresses (with and without a trailing slash) splits its signals | Playwright (`site.spec.ts`) through `backend/cloudfront/site-router.js` (`serve-build.js` runs the same file) | `/cli`, `/bot`, `/how-it-works`, `/education`, `/education/<slug>`, `/terms`, `/privacy`, `/console` and their `.md` copies answer 301 to the new address, keeping the query string; `/docs/cli/` answers 301 to `/docs/cli`; new pages answer 200 with no redirect |
 
 ---
 
 ## Site structure and AI readiness
 
-Spec: `.context/specs/site-architecture.md`. `src/site-pages.json` is the page list; `scripts/prerender.js` writes each page's HTML and Markdown, llms.txt, sitemap.xml and robots.txt after the build. Tests in `frontend/e2e/site.spec.ts`.
+Spec: `.context/specs/site-architecture.md`. `src/site-pages.json` is the page list; `scripts/prerender.js` writes each page's HTML and Markdown, llms.txt, `docs/llms.txt`, `llms-full.txt`, sitemap.xml and robots.txt after the build. The site is in folders: `/docs` (scores, every check with a page each, the command line guide, the Lensy checker), `/learn` (articles), `/legal`. Moved addresses answer 301 at the edge (`backend/cloudfront/site-router.js`, REG-39). Tests in `frontend/e2e/site.spec.ts`.
 
 | ID | Steps | Expected |
 |---|---|---|
-| SITE-01 [auto] | Read `/sitemap.xml` and `/llms.txt`; open `/` at 1280px and 375px | Every content page in `site-pages.json` and every article is in both, once; `/scan`, `/results`, `/about` aren't. Header and mobile menu show Scan, CLI, How it works, Education, Contact |
+| SITE-01 [auto] | Read `/sitemap.xml` and `/llms.txt`; open `/` at 1280px and 375px | Every content page in `site-pages.json` and every article is in both, once; `/scan`, `/results`, `/about` aren't. Every check has its own page in the sitemap. Header and mobile menu show Scan, Docs, Learn, Changelog |
 | SITE-02 [auto] | Follow only `<a href>` links from `/` in the saved HTML | Every sitemap page is reached within 2 clicks |
 | SITE-03 [auto] | Fetch every sitemap page with no JavaScript (REG-37) | Own canonical, one H1, H2 sections, `dateModified`, the `/llms.txt` pointer |
-| SITE-04 [auto] | Fetch `<path>.md` (`/index.md` for home) for every page; fetch `/cli` with `Accept: text/markdown` | 200, `text/markdown`, starts with the H1, points to llms.txt in its first lines |
-| SITE-05 [auto] | Read `/llms.txt` and `/robots.txt` | H1, summary blockquote, Product and Optional sections; every link is a `.md` that returns 200; robots.txt names the sitemap and blocks nothing |
-| SITE-06 [auto] | Fetch missing pages (REG-35) | 404 with the Not found page; app routes still 200 |
+| SITE-04 [auto] | Fetch `<path>.md` (`/index.md` for home) for every page; fetch `/docs/cli` with `Accept: text/markdown` | 200, `text/markdown`, starts with the H1, points to llms.txt in its first lines |
+| SITE-05 [auto] | Read `/llms.txt`, `/docs/llms.txt`, `/llms-full.txt` and `/robots.txt` | H1, summary blockquote, Product, Docs, Checks, Learn, Company and Optional sections; `/docs/llms.txt` lists only the docs and checks; `/llms-full.txt` returns 200; every link is a `.md` that returns 200; robots.txt names the sitemap and blocks nothing |
+| SITE-06 [auto] | Fetch missing pages (REG-35), including `/learn/<missing>`, `/docs/checks/<missing>` and `/docs/<missing>` | 404 with the Not found page; app routes still 200 |
 | SITE-07 [auto] | Open each content page in a browser | No hydration warning (`[Hydrate]` or React errors 418/423/425) |
 | SITE-08 [auto] | Open `/` | "Start a free scan" link, "Start scan" button, "N free scans left"; none of the retired four-part model copy |
 | SITE-09 [manual] | After deploy: `lensy check` on every gamma page, then prod | Both scores at least 95 on every page; results pasted in the spec |
+| DOCS-01 [auto] | Read the sitemap; open `/docs/checks`, click a check, use the docs navigation | Every check in `src/checks.json` has a page; its Markdown has "What it measures and why", "Evidence:" and "How it counts"; the page says "Depends on your hosting." when the check does; the docs navigation marks the current page and only shows under `/docs` |
+| DOCS-02 [auto] | Fetch `/index.md`, `/docs/scores.md`, `/learn.md` | No widget labels ("Checking free scans", chart legend, "Reading list", list numbers, "Read"); the home example reads "Before: 39 … after: 100" |
+| SEO-01 [auto] | For every sitemap page, read the saved head and the sitemap entry | `<title>`, `meta name="title"` and `og:title` are the same and unique across the site; `og:url` is the canonical; `og:description` is the description; the JSON-LD `dateModified` is the sitemap `<lastmod>` |
 | READY-01 [auto] | Open `/` with no history file, scroll to "Our own score" | The chart shows one run, the real Nov 10 baseline ("Last checked Nov 10, 2026"), and no range buttons (`readiness.spec.ts`) |
 | READY-02 [auto] | Load 200 daily runs (about 7 months); switch 7D, 1M, 3M, All; hover; arrow keys; Escape | 1Y isn't offered; 7, 30, 91, 200 runs shown; tooltip with date and both scores; one check-change mark and its note; Escape closes the tooltip |
 | READY-03 [auto] | Open `/` at 375px with 200 test runs | The chart shows all 200; no horizontal scroll |
 | READY-04 [auto] | Fetch `/` without JavaScript, then open it | Saved HTML has `readiness-data` and the "Same checks, on our own site." section; no hydration warning |
 | READY-05 [manual] | After the weekly job runs: open `/` on gamma | The new week is in the chart; `/readiness/history.json` is still there after the next deploy |
-| CONTENT-01 [auto] | Open `/`, scroll to "What you get" | A real result (perseveranceai.com, Nov 10, 2026), each fix with the score it adds to (+29 Coding agents, +15 AI search) (`content.spec.ts`) |
-| CONTENT-02 [auto] | Open `/how-it-works`, "Every check" | One row per check in `src/checks.json`, which `scripts/site-content.test.mjs` keeps equal to `packages/docs/checks.md` |
+| CONTENT-01 [auto] | Open `/`, scroll to "What you get" | A real result, before (Nov 10, 2026) and after (Nov 12, 2026), each fix with the score it adds to (+29 Coding agents, +15 AI search) (`content.spec.ts`) |
+| CONTENT-02 [auto] | Open `/docs/checks` | One row per check in `src/checks.json`, which `scripts/site-content.test.mjs` keeps equal to `packages/docs/checks.md` |
 | CONTENT-03 [auto] | Fetch and open `/about` | 200 with its own canonical, no redirect; five H2 sections; links to the changelog |
-| CONTENT-04 [auto] | Open `/changelog`; open `/cli`, click Changelog in the footer | Months newest first, dates in `<time>`, in descending order; footer link works |
-| CONTENT-05 [auto] | Open an article | Breadcrumb Home / Education / title; title and H2s in sentence case |
-| SITE-10 [auto] | Open `/how-it-works`, `/contact`, `/education`, an article; then `/` with no free scans left and start a scan | "The two scores." section with the AI search points; Contact has "Talk to us" and "Join the waitlist"; dates in `<time>`, "By Perseverance AI", TL;DR and References headings; "Free scans refresh tomorrow" and the used-up notice with a waitlist link |
+| CONTENT-04 [auto] | Open `/changelog`; open `/docs/cli`, click Changelog in the footer | Months newest first, dates in `<time>`, in descending order; footer link works |
+| CONTENT-05 [auto] | Open an article | Breadcrumb Home / Learn / title; title and H2s in sentence case |
+| SITE-10 [auto] | Open `/docs/scores`, `/docs/checks`, `/contact`, `/learn`, an article; then `/` with no free scans left and start a scan | "The two scores." and "A local build." sections; the AI search points in the check list; Contact has "Talk to us" and "Join the waitlist"; dates in `<time>`, "By Perseverance AI", TL;DR and References headings; "Free scans refresh tomorrow" and the used-up notice with a waitlist link |
 
 ## Functional checks by area
 

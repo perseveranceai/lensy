@@ -43,18 +43,18 @@ test('REG-05: a site with no robots.txt is not reported as "10/10 allowed"', asy
 
 test('REG-08: generated llms.txt, sitemap and article markdown are complete', async ({ request }) => {
   const sitemap = await (await request.get('/sitemap.xml')).text();
-  expect(sitemap).toContain('/how-it-works');
-  expect(sitemap).toContain('/cli');
+  expect(sitemap).toContain('/docs/scores');
+  expect(sitemap).toContain('/docs/cli');
   // /about was a redirect home when REG-08 was found; it's a real page now (phase 3).
   expect(sitemap).toContain('/about<');
   expect(sitemap).not.toMatch(/\/console</);
 
   const llms = await (await request.get('/llms.txt')).text();
-  expect(llms).toContain('/how-it-works');
-  expect(llms).toContain('/cli');
+  expect(llms).toContain('/docs/scores');
+  expect(llms).toContain('/docs/cli');
   // Article links in llms.txt are absolute for the build's environment and point
   // at the Markdown copies; test the same paths on whichever host we're running against.
-  const articlePaths = [...llms.matchAll(/\]\((https?:\/\/[^)]+\/education\/[^)]+\.md)\)/g)].map((m) => new URL(m[1]).pathname);
+  const articlePaths = [...llms.matchAll(/\]\((https?:\/\/[^)]+\/learn\/[^)]+\.md)\)/g)].map((m) => new URL(m[1]).pathname);
   expect(articlePaths.length).toBeGreaterThan(0);
   for (const path of articlePaths) {
     const md = await (await request.get(path)).text();
@@ -65,7 +65,7 @@ test('REG-08: generated llms.txt, sitemap and article markdown are complete', as
 
 test('REG-10: leaving a scan mid-way does not strand /results', async ({ page }) => {
   await startScan(page, URLS.stripeApi);
-  await page.getByRole('link', { name: 'Education' }).first().click();
+  await page.getByRole('link', { name: 'Learn', exact: true }).first().click();
   await page.goto('/results');
   await expect(page).toHaveURL(/\/$|\/\?/, { timeout: 15_000 });
   expect((await gaEvents(page)).filter((e) => e === 'generate_report_completed')).toHaveLength(0);
@@ -131,7 +131,7 @@ test('REG-18 / REG-28: /bot shows the user agent, the scan IP and a rule that ma
   await page.route(/\/bot-info$/, (route) => route.fulfill({
     json: { userAgent: 'Lensy/1.0 (+https://perseveranceai.com/bot)', egressIps: ['203.0.113.7'] },
   }));
-  await page.goto('/bot');
+  await page.goto('/docs/bot');
   await expect(page.getByRole('heading', { name: 'How to recognise it' })).toBeVisible();
   await expect(page.getByTestId('bot-user-agent')).toHaveText('Lensy/1.0 (+https://perseveranceai.com/bot)');
   await expect(page.getByTestId('bot-egress-ips')).toContainText('203.0.113.7');
@@ -154,7 +154,7 @@ test('REG-18 / REG-28: /bot shows the user agent, the scan IP and a rule that ma
 
 test('REG-28: /bot still explains the checker when the IP lookup fails', async ({ page }) => {
   await page.route(/\/bot-info$/, (route) => route.fulfill({ status: 500, json: { error: 'boom' } }));
-  await page.goto('/bot');
+  await page.goto('/docs/bot');
   await expect(page.getByTestId('bot-user-agent')).toBeVisible();
   await expect(page.getByTestId('bot-egress-ips')).toContainText("We couldn't load the address");
 });
@@ -166,7 +166,7 @@ test('REG-28: /bot fits a 375px screen in both themes', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   for (const theme of ['light', 'dark'] as const) {
     await setTheme(page, theme);
-    await page.goto('/bot');
+    await page.goto('/docs/bot');
     await expect(page.getByTestId('bot-allow-rule')).toBeVisible();
     const cli = page.getByTestId('bot-cli-user-agent');
     await cli.scrollIntoViewIfNeeded();

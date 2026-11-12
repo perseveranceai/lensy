@@ -7,7 +7,7 @@
 
 It runs on your machine. Nothing about your pages is sent to Perseverance AI.
 
-Full guide: https://perseveranceai.com/cli
+Full guide: https://perseveranceai.com/docs/cli
 
 ## Install
 
