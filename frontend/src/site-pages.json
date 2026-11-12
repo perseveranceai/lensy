@@ -3,7 +3,7 @@
     "path": "/",
     "label": "Scan",
     "title": "Lensy: can AI search and coding agents use your docs?",
-    "description": "Paste a documentation URL and get two scores out of 100: how well coding agents can read the page, and how well AI search can find and cite it. Each score comes with the fixes worth the most points.",
+    "description": "Paste a documentation URL and get two scores out of 100: how well coding agents can read the page and how well AI search can cite it, with the top fixes.",
     "group": "product",
     "header": true,
     "kind": "page",
@@ -76,7 +76,7 @@
   {
     "path": "/docs/bot",
     "label": "The Lensy checker",
-    "title": "The Lensy checker: user agent, IP address and how to allow or block it",
+    "title": "The Lensy checker: user agent, IP address, allow or block it",
     "description": "What the Lensy checker fetches when someone checks a page on your site, how to recognise its requests, and how to allow or block it.",
     "group": "docs",
     "kind": "page",
@@ -107,7 +107,7 @@
     "path": "/legal/terms",
     "label": "Terms of Use",
     "title": "Terms of Use",
-    "description": "The terms for using Lensy and other Perseverance AI services.",
+    "description": "The terms for using Lensy, the free scanner on perseveranceai.com, and other Perseverance AI services.",
     "group": "legal",
     "kind": "page",
     "schema": "WebPage",
@@ -123,6 +123,16 @@
     "schema": "WebPage",
     "updated": "2026-10-22"
   },
-  { "path": "/scan", "label": "Scan in progress", "title": "Scanning - Lensy", "kind": "app" },
-  { "path": "/results", "label": "Scan report", "title": "Scan report - Lensy", "kind": "app" }
+  {
+    "path": "/scan",
+    "label": "Scan in progress",
+    "title": "Scanning - Lensy",
+    "kind": "app"
+  },
+  {
+    "path": "/results",
+    "label": "Scan report",
+    "title": "Scan report - Lensy",
+    "kind": "app"
+  }
 ]

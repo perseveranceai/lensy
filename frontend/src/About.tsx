@@ -13,7 +13,7 @@ export function About() {
   >
     <article className="legal-prose prose-lensy max-w-[760px] py-12 sm:py-16">
       <h2>What Lensy does</h2>
-      <p>Paste one documentation page and Lensy reads it the way AI tools do: as an honest bot, without running JavaScript, along with the files those tools look for, such as robots.txt, the sitemap and llms.txt. It gives the page two scores out of 100, one for coding agents and one for AI search, and lists the fixes worth the most points first. <Link to="/docs/checks" className={link}>Every check</Link> in the docs has its points.</p>
+      <p>Paste one documentation page and Lensy reads it the way AI tools do: as an honest bot, without running JavaScript, along with the files those tools look for, such as robots.txt, the sitemap and llms.txt. It gives the page two scores out of 100, one for coding agents and one for AI search, and lists the fixes worth the most points first. The docs list <Link to="/docs/checks" className={link}>every check</Link> with its points.</p>
 
       <h2>Where it runs</h2>
       <p>The scanner on this site is free, with a daily limit. The same checks run in the open source <Link to="/docs/cli" className={link}>Lensy command line tool</Link>, on your own machine or in CI, against a live site or a local build. The command line tool sends nothing about your pages to us. Both fetch pages under their own name; the <Link to="/docs/bot" className={link}>Lensy checker page</Link> says what they fetch and how to allow or block them.</p>

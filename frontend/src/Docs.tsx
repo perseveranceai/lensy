@@ -5,7 +5,7 @@
 //
 // Check pages come from src/checks.json, which scripts/checks-from-docs.mjs
 // builds from packages/docs/checks.md, the same text `lensy explain <id>` prints.
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { ArrowRight, Check, Copy } from "lucide-react";
@@ -89,8 +89,16 @@ export function findCheck(slug: string): { check: CheckEntry; score: Score } | n
 export function DocsNav() {
   const { pathname } = useLocation();
   const items = [{ path: "/docs", label: "Overview" }, ...pagesInGroup("docs").map((p) => ({ path: p.path, label: p.label }))];
+  const listRef = useRef<HTMLUListElement>(null);
+  // On a phone the links scroll sideways: bring the current page into view, without moving the page itself.
+  useEffect(() => {
+    const list = listRef.current;
+    const active = list?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!list || !active) return;
+    list.scrollLeft = Math.max(0, active.offsetLeft - (list.clientWidth - active.offsetWidth) / 2);
+  }, [pathname]);
   return <nav aria-label="Docs" className="border-b border-[var(--line-soft)]">
-    <ul className="mx-auto flex max-w-[1240px] gap-1 overflow-x-auto px-5 py-2 text-[12px] font-medium tracking-[-.02em] sm:px-8">
+    <ul ref={listRef} className="relative mx-auto flex max-w-[1240px] gap-1 overflow-x-auto px-5 py-2 text-[12px] font-medium tracking-[-.02em] sm:px-8">
       {items.map((item) => {
         const active = item.path === "/docs" ? pathname === "/docs" : pathname === item.path || pathname.startsWith(item.path + "/");
         return <li key={item.path} className="shrink-0">
@@ -236,8 +244,8 @@ export function CheckPage() {
   const path = found ? `/docs/checks/${found.check.slug}` : "";
   usePageMeta(found ? {
     path,
-    title: `${found.check.label} (${found.check.id}): ${group!.title} check`,
-    description: `What the ${found.check.label} check measures, why it matters for ${found.score === "aiSearch" ? "AI search" : "coding agents"}, and the evidence behind it. Worth ${value(found.check)} ${group!.unit.toLowerCase()} in the ${group!.title} score.`,
+    title: `${found.check.label}: ${found.score === "fallback" ? "fallback" : group!.title} check`,
+    description: `What the ${found.check.label} check measures, why it matters, and the evidence behind it. Worth ${value(found.check)} ${group!.unit.toLowerCase()} in the ${group!.title} score.`,
     schema: "TechArticle",
     updated: "2026-11-12",
     markdown: true,
