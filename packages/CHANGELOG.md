@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1 (2026-11-12)
+
+Same scoring engine as perseveranceai.com again: the fixes the website got on 2026-11-12 (from PR #61).
+
+- **Canonical links and meta robots written without quotes** (`<link rel=canonical href=...>`, as minified HTML such as Docusaurus writes them) are found. Before, the canonical link was missed and AI search lost 7 points (S3).
+- **More sitemaps found:** when robots.txt names no sitemap, Lensy also tries the page's `<link rel="sitemap">`, `/sitemap-index.xml` (Astro) and sitemaps under the page's first folder, such as `/docs/sitemap.xml`. Before, pages on those sites read "not in sitemap" (-8 on S3).
+- **Fixes that fit the page:** S2 (and C1) no longer tell a short static page to switch to server-side rendering; it gets advice to add content, with its word count. S3 and S4 fixes name only what is missing.
+- The README links to the guide's new address, https://perseveranceai.com/docs/cli, and every check now has a page at https://perseveranceai.com/docs/checks.
+
 ## 0.2.0 (2026-11-08)
 
 Check a docs build before you publish it: `lensy check --dir <build folder> --site-url <your docs address> --all`.
