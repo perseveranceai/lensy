@@ -483,7 +483,7 @@ describe('history.md (Req 4.7)', () => {
     expect(all.length).toBe(HISTORY_MAX_ROWS);
     expect(all[0]).toContain(historyDate(T0 + 259 * DAY));
     expect(all[all.length - 1]).toContain(historyDate(T0 + 10 * DAY));
-  });
+  }, 30_000); // 260 saved runs on disk: about 6 s on GitHub's Windows runners, over the 5 s default
 
   test('a file whose header does not match is replaced, not repaired', () => {
     const results = path.join(tmp(), '.lensy');
