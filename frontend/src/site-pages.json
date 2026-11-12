@@ -8,51 +8,80 @@
     "header": true,
     "kind": "page",
     "schema": "SoftwareApplication",
-    "updated": "2026-11-10"
+    "updated": "2026-11-12"
   },
   {
-    "path": "/cli",
-    "label": "CLI",
-    "title": "Lensy command line guide",
-    "description": "Check a docs page from your terminal or your CI with the lensy command. You get the same two scores and the same fixes as perseveranceai.com.",
-    "group": "product",
-    "header": true,
-    "kind": "page",
-    "schema": "SoftwareApplication",
-    "updated": "2026-11-08"
-  },
-  {
-    "path": "/how-it-works",
-    "label": "How it works",
-    "title": "How Lensy checks a docs page",
-    "description": "What Lensy fetches from a documentation page, how it turns that into a Coding agents score and an AI search score, and what the report tells you to fix.",
+    "path": "/docs",
+    "label": "Docs",
+    "title": "Lensy docs",
+    "description": "How to check a documentation page with Lensy, on the website or with the command line tool, what the two scores mean and how to fix what they find.",
     "group": "product",
     "header": true,
     "kind": "page",
     "schema": "WebPage",
-    "updated": "2026-11-10"
+    "updated": "2026-11-12"
   },
   {
-    "path": "/education",
-    "label": "Education",
-    "title": "Education on AI-ready docs",
+    "path": "/learn",
+    "label": "Learn",
+    "title": "Learn about AI-ready docs",
     "description": "Articles on how AI search engines and coding agents find, read and cite documentation, and the research behind the checks Lensy runs.",
-    "group": "learn",
+    "group": "product",
     "header": true,
     "kind": "page",
     "schema": "CollectionPage",
-    "updated": "2026-11-10"
+    "updated": "2026-11-12"
   },
   {
     "path": "/changelog",
     "label": "Changelog",
     "title": "Lensy changelog",
     "description": "Changes to the Lensy scanner, its checks and the command line tool that you would notice, newest first.",
-    "group": "learn",
-    "header": false,
+    "group": "product",
+    "header": true,
     "kind": "page",
     "schema": "WebPage",
-    "updated": "2026-11-11"
+    "updated": "2026-11-12"
+  },
+  {
+    "path": "/docs/scores",
+    "label": "How Lensy scores a page",
+    "title": "How Lensy scores a docs page",
+    "description": "What Lensy fetches from a documentation page, how it turns that into a Coding agents score and an AI search score, and how a local build is scored.",
+    "group": "docs",
+    "kind": "page",
+    "schema": "TechArticle",
+    "updated": "2026-11-12"
+  },
+  {
+    "path": "/docs/checks",
+    "label": "Every check",
+    "title": "Every Lensy check",
+    "description": "Every check behind the Coding agents and AI search scores, with its ID and points, linked to what it measures, why it matters and the evidence behind it.",
+    "group": "docs",
+    "kind": "page",
+    "schema": "TechArticle",
+    "updated": "2026-11-12"
+  },
+  {
+    "path": "/docs/cli",
+    "label": "Command line tool",
+    "title": "Lensy command line guide",
+    "description": "Check a docs page from your terminal or your CI with the lensy command. You get the same two scores and the same fixes as perseveranceai.com.",
+    "group": "docs",
+    "kind": "page",
+    "schema": "SoftwareApplication",
+    "updated": "2026-11-12"
+  },
+  {
+    "path": "/docs/bot",
+    "label": "The Lensy checker",
+    "title": "The Lensy checker: user agent, IP address and how to allow or block it",
+    "description": "What the Lensy checker fetches when someone checks a page on your site, how to recognise its requests, and how to allow or block it.",
+    "group": "docs",
+    "kind": "page",
+    "schema": "TechArticle",
+    "updated": "2026-11-12"
   },
   {
     "path": "/about",
@@ -60,10 +89,9 @@
     "title": "About Lensy and Perseverance AI",
     "description": "Who builds Lensy, what it checks, where it runs, and how we hold our own site to the same checks.",
     "group": "company",
-    "header": false,
     "kind": "page",
     "schema": "AboutPage",
-    "updated": "2026-11-11"
+    "updated": "2026-11-12"
   },
   {
     "path": "/contact",
@@ -71,46 +99,30 @@
     "title": "Contact Perseverance AI and join the Lensy waitlist",
     "description": "Book a call or email the team behind Lensy, or join the waitlist for a higher daily scan limit and early access to new features.",
     "group": "company",
-    "header": true,
     "kind": "page",
     "schema": "ContactPage",
     "updated": "2026-11-10"
   },
   {
-    "path": "/bot",
-    "label": "Lensy bot",
-    "title": "Lensy checker: user agent, IP address and how to allow or block it",
-    "description": "What the Lensy checker fetches when someone scans a page on your site, how to recognise its requests, and how to allow or block it.",
-    "group": "company",
-    "header": false,
-    "kind": "page",
-    "schema": "WebPage",
-    "updated": "2026-11-05"
-  },
-  {
-    "path": "/terms",
+    "path": "/legal/terms",
     "label": "Terms of Use",
     "title": "Terms of Use",
     "description": "The terms for using Lensy and other Perseverance AI services.",
     "group": "legal",
-    "header": false,
     "kind": "page",
     "schema": "WebPage",
     "updated": "2026-02-10"
   },
   {
-    "path": "/privacy",
+    "path": "/legal/privacy",
     "label": "Privacy Policy",
     "title": "Privacy Policy",
     "description": "What Lensy collects when you use perseveranceai.com, which services receive it, and how long it is kept.",
     "group": "legal",
-    "header": false,
     "kind": "page",
     "schema": "WebPage",
     "updated": "2026-10-22"
   },
   { "path": "/scan", "label": "Scan in progress", "title": "Scanning - Lensy", "kind": "app" },
-  { "path": "/results", "label": "Scan report", "title": "Scan report - Lensy", "kind": "app" },
-  { "path": "/console", "label": "Console", "title": "Lensy", "kind": "redirect" },
-  { "path": "/console/lensy", "label": "Console", "title": "Lensy", "kind": "redirect" }
+  { "path": "/results", "label": "Scan report", "title": "Scan report - Lensy", "kind": "app" }
 ]

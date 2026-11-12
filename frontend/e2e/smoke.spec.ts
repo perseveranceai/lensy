@@ -135,7 +135,7 @@ test('S-07, REG-11: 404 page has the site shell and is noindex', async ({ page }
   await page.goto('/this-page-does-not-exist-e2e');
   await expect(page.getByText('This page does not exist')).toBeVisible();
   await expect(page.locator('footer')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'How it works' }).first()).toBeAttached();
+  await expect(page.getByRole('link', { name: 'Docs', exact: true }).first()).toBeAttached();
   const robots = await page.locator('meta[name="robots"]').evaluateAll((els) => els.map((e) => (e as HTMLMetaElement).content));
   expect(robots).toEqual(['noindex']);
 });

@@ -62,9 +62,9 @@ function jsonLd(meta: PageMeta, url: string) {
   if (meta.schema === "SoftwareApplication") {
     page.about = {
       "@type": "SoftwareApplication",
-      name: meta.path === "/cli" ? "Lensy command line tool" : "Lensy",
+      name: meta.path === "/docs/cli" ? "Lensy command line tool" : "Lensy",
       applicationCategory: "DeveloperApplication",
-      operatingSystem: meta.path === "/cli" ? "Linux, macOS, Windows (Node 22 or newer)" : "Web",
+      operatingSystem: meta.path === "/docs/cli" ? "Linux, macOS, Windows (Node 22 or newer)" : "Web",
       offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
       provider: ORG,
     };

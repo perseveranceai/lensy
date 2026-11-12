@@ -1,211 +1,656 @@
 {
   "source": "packages/docs/checks.md",
+  "intro": {
+    "codingAgents": "Each check earns a share of its weight (critical 10, high 7, medium 4, low 2; a warning earns part of it). The score is the weight earned over the weight of the checks that ran, out of 100. Some critical failures cap the score: with no llms.txt it is at most 59.",
+    "fallback": "",
+    "aiSearch": ""
+  },
   "codingAgents": [
     {
       "id": "llms-txt-exists",
+      "slug": "llms-txt-exists",
       "label": "llms.txt exists",
       "source": "AFDocs",
-      "weight": 10
+      "weight": 10,
+      "measures": "Whether llms.txt is discoverable at any of the candidate locations.",
+      "why": "Coding agents look for llms.txt to find the right page. Without it they guess URLs. AFDocs caps the score at 59 when it is missing.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: llms-txt-exists",
+          "url": "https://agentdocsspec.com/spec/web/content-discoverability/#llms-txt-exists"
+        }
+      ]
     },
     {
       "id": "llms-txt-valid",
+      "slug": "llms-txt-valid",
       "label": "llms.txt format",
       "source": "AFDocs",
-      "weight": 4
+      "weight": 4,
+      "measures": "Whether llms.txt follows the proposed structure from llmstxt.org.",
+      "why": "A predictable structure (an H1, then Markdown links) is what agents and tools parse.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: llms-txt-valid",
+          "url": "https://agentdocsspec.com/spec/web/content-discoverability/#llms-txt-valid"
+        }
+      ]
     },
     {
       "id": "llms-txt-size",
+      "slug": "llms-txt-size",
       "label": "llms.txt size",
       "source": "AFDocs",
-      "weight": 7
+      "weight": 7,
+      "measures": "Whether llms.txt fits within agent truncation limits.",
+      "why": "Agents read about 100,000 characters per fetch; a larger index is cut off.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: llms-txt-size",
+          "url": "https://agentdocsspec.com/spec/web/content-discoverability/#llms-txt-size"
+        }
+      ]
     },
     {
       "id": "llms-txt-links-resolve",
+      "slug": "llms-txt-links-resolve",
       "label": "llms.txt links resolve",
       "source": "AFDocs",
-      "weight": 7
+      "weight": 7,
+      "measures": "Whether the URLs listed in llms.txt actually resolve.",
+      "why": "A broken link in the index sends an agent to a dead end.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: llms-txt-links-resolve",
+          "url": "https://agentdocsspec.com/spec/web/content-discoverability/#llms-txt-links-resolve"
+        }
+      ]
     },
     {
       "id": "llms-txt-links-markdown",
+      "slug": "llms-txt-links-markdown",
       "label": "llms.txt links point to Markdown",
       "source": "AFDocs",
-      "weight": 7
+      "weight": 7,
+      "measures": "Whether the URLs in llms.txt point to markdown content.",
+      "why": "Markdown is far smaller than HTML, so more of the page fits in what the agent reads.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: llms-txt-links-markdown",
+          "url": "https://agentdocsspec.com/spec/web/content-discoverability/#llms-txt-links-markdown"
+        }
+      ]
     },
     {
       "id": "llms-txt-directive-html",
+      "slug": "llms-txt-directive-html",
       "label": "Page points agents to llms.txt (HTML)",
       "source": "AFDocs",
-      "weight": 7
+      "weight": 7,
+      "measures": "Whether HTML pages include a directive pointing to llms.txt.",
+      "why": "An agent that lands on one page learns where the index of the whole site is.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: llms-txt-directive-html",
+          "url": "https://agentdocsspec.com/spec/web/content-discoverability/#llms-txt-directive-html"
+        }
+      ]
     },
     {
       "id": "llms-txt-directive-md",
+      "slug": "llms-txt-directive-md",
       "label": "Page points agents to llms.txt (Markdown)",
       "source": "AFDocs",
-      "weight": 4
+      "weight": 4,
+      "measures": "Whether markdown pages include a directive pointing to llms.txt.",
+      "why": "Agents that read the Markdown copy see the pointer too.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: llms-txt-directive-md",
+          "url": "https://agentdocsspec.com/spec/web/content-discoverability/#llms-txt-directive-md"
+        }
+      ]
     },
     {
       "id": "markdown-url-support",
+      "slug": "markdown-url-support",
       "label": ".md version of the page",
       "source": "AFDocs",
-      "weight": 7
+      "weight": 7,
+      "measures": "Whether appending .md to page URLs returns valid markdown.",
+      "why": "Agents guess <page>.md; a Markdown copy is much smaller than the HTML.",
+      "host": "A rewrite from <page> to <page>.md can be set by your host rather than your build. A local build (`--dir` or a localhost URL) counts this check, but your host can change the result.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: markdown-url-support",
+          "url": "https://agentdocsspec.com/spec/web/markdown-availability/#markdown-url-support"
+        }
+      ]
     },
     {
       "id": "content-negotiation",
+      "slug": "content-negotiation",
       "label": "Markdown on request",
       "source": "AFDocs",
-      "weight": 4
+      "weight": 4,
+      "measures": "Whether the server responds to Accept: text/markdown.",
+      "why": "Claude Code, Cursor and OpenCode ask for Markdown first.",
+      "host": "Your web server or CDN decides what to return for Accept: text/markdown. A local build (`--dir` or a localhost URL) doesn't count this check.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: content-negotiation",
+          "url": "https://agentdocsspec.com/spec/web/markdown-availability/#content-negotiation"
+        }
+      ]
     },
     {
       "id": "rendering-strategy",
+      "slug": "rendering-strategy",
       "label": "Content without JavaScript",
       "source": "AFDocs",
-      "weight": 10
+      "weight": 10,
+      "measures": "Whether pages contain server-rendered content or are client-side rendered SPA shells.",
+      "why": "AI crawlers and most coding agents do not run JavaScript, so content rendered in the browser is invisible to them.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: rendering-strategy",
+          "url": "https://agentdocsspec.com/spec/web/page-size/#rendering-strategy"
+        }
+      ]
     },
     {
       "id": "page-size-markdown",
+      "slug": "page-size-markdown",
       "label": "Markdown size",
       "source": "AFDocs",
-      "weight": 7
+      "weight": 7,
+      "measures": "Character count of page when served as markdown.",
+      "why": "Agents read about 100,000 characters per fetch and have to page or give up beyond it.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: page-size-markdown",
+          "url": "https://agentdocsspec.com/spec/web/page-size/#page-size-markdown"
+        }
+      ]
     },
     {
       "id": "page-size-html",
+      "slug": "page-size-html",
       "label": "HTML size",
       "source": "AFDocs",
-      "weight": 7
+      "weight": 7,
+      "measures": "Character count of HTML response and post-conversion size.",
+      "why": "Agents that read HTML convert it to text; past about 100,000 characters the rest is cut off.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: page-size-html",
+          "url": "https://agentdocsspec.com/spec/web/page-size/#page-size-html"
+        }
+      ]
     },
     {
       "id": "page-size-transfer",
+      "slug": "page-size-transfer",
       "label": "Download size",
       "source": "AFDocs",
-      "weight": 4
+      "weight": 4,
+      "measures": "Served byte size of the HTML document after transfer decoding.",
+      "why": "Very large documents can exceed an agent's fetch buffer before any text is read.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: page-size-transfer",
+          "url": "https://agentdocsspec.com/spec/web/page-size/#page-size-transfer"
+        }
+      ]
     },
     {
       "id": "content-start-position",
+      "slug": "content-start-position",
       "label": "Content starts near the top",
       "source": "AFDocs",
-      "weight": 4
+      "weight": 4,
+      "measures": "How far into content the actual documentation begins.",
+      "why": "Navigation before the content uses up the part of the page an agent reads first.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: content-start-position",
+          "url": "https://agentdocsspec.com/spec/web/page-size/#content-start-position"
+        }
+      ]
     },
     {
       "id": "single-fetch-completeness",
+      "slug": "single-fetch-completeness",
       "label": "Complete in one fetch",
       "source": "AFDocs",
-      "weight": 4
+      "weight": 4,
+      "measures": "Whether markdown responses are complete in one fetch or declare a working continuation.",
+      "why": "An agent that gets half a page and no way to the rest works from half the facts.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: single-fetch-completeness",
+          "url": "https://agentdocsspec.com/spec/web/page-size/#single-fetch-completeness"
+        }
+      ]
     },
     {
       "id": "tabbed-content-serialization",
+      "slug": "tabbed-content-serialization",
       "label": "Tabbed content readable",
       "source": "AFDocs",
-      "weight": 4
+      "weight": 4,
+      "measures": "Whether tabbed/accordion content serializes into oversized output.",
+      "why": "Tabs flatten into one long text for an agent; every variant counts toward the size limit.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: tabbed-content-serialization",
+          "url": "https://agentdocsspec.com/spec/web/content-structure/#tabbed-content-serialization"
+        }
+      ]
     },
     {
       "id": "section-header-quality",
+      "slug": "section-header-quality",
       "label": "Headers inside tabs",
       "source": "AFDocs",
-      "weight": 2
+      "weight": 2,
+      "measures": "Whether headers in tabbed sections include variant context.",
+      "why": "Flattened tabs repeat the same headings; without the variant name an agent can't tell them apart.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: section-header-quality",
+          "url": "https://agentdocsspec.com/spec/web/content-structure/#section-header-quality"
+        }
+      ]
     },
     {
       "id": "markdown-code-fence-validity",
+      "slug": "markdown-code-fence-validity",
       "label": "Code fences closed",
       "source": "AFDocs",
-      "weight": 4
+      "weight": 4,
+      "measures": "Whether markdown contains unclosed code fences.",
+      "why": "An unclosed fence turns the rest of the page into code for the agent.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: markdown-code-fence-validity",
+          "url": "https://agentdocsspec.com/spec/web/content-structure/#markdown-code-fence-validity"
+        }
+      ]
     },
     {
       "id": "markdown-link-portability",
+      "slug": "markdown-link-portability",
       "label": "Links work outside the site",
       "source": "AFDocs",
-      "weight": 4
+      "weight": 4,
+      "measures": "Whether links in served markdown are absolute and resolve to what they promise.",
+      "why": "Relative links break once the Markdown is read outside the site, as agents do.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: markdown-link-portability",
+          "url": "https://agentdocsspec.com/spec/web/content-structure/#markdown-link-portability"
+        }
+      ]
     },
     {
       "id": "embedded-data-serialization",
+      "slug": "embedded-data-serialization",
       "label": "Embedded data size",
       "source": "AFDocs",
-      "weight": 4
+      "weight": 4,
+      "measures": "Whether machine-generated bulk data (large tables, data blobs) dominates oversized pages.",
+      "why": "Bulk data can push the actual explanation past what an agent reads.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: embedded-data-serialization",
+          "url": "https://agentdocsspec.com/spec/web/content-structure/#embedded-data-serialization"
+        }
+      ]
     },
     {
       "id": "http-status-codes",
+      "slug": "http-status-codes",
       "label": "Real 404s for missing pages",
       "source": "AFDocs",
-      "weight": 7
+      "weight": 7,
+      "measures": "Whether error pages return correct HTTP status codes.",
+      "why": "A \"not found\" page served with 200 looks like real content to an agent.",
+      "host": "Status codes for missing pages are set by your web server or host. A local build (`--dir` or a localhost URL) doesn't count this check.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: http-status-codes",
+          "url": "https://agentdocsspec.com/spec/web/url-stability/#http-status-codes"
+        }
+      ]
     },
     {
       "id": "redirect-behavior",
+      "slug": "redirect-behavior",
       "label": "Redirects",
       "source": "AFDocs",
-      "weight": 4
+      "weight": 4,
+      "measures": "Whether redirects are same-host HTTP redirects.",
+      "why": "Cross-host or JavaScript redirects lose agents that follow links.",
+      "host": "Redirects are configured on your host or CDN. A local build (`--dir` or a localhost URL) doesn't count this check.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: redirect-behavior",
+          "url": "https://agentdocsspec.com/spec/web/url-stability/#redirect-behavior"
+        }
+      ]
     },
     {
       "id": "llms-txt-coverage",
+      "slug": "llms-txt-coverage",
       "label": "llms.txt covers the sitemap",
       "source": "AFDocs",
-      "weight": 4
+      "weight": 4,
+      "measures": "How much of the site is represented in llms.txt.",
+      "why": "Pages missing from the index are found less often. Lensy skips it: it is about the whole site, not the page.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: llms-txt-coverage",
+          "url": "https://agentdocsspec.com/spec/web/observability/#llms-txt-coverage"
+        }
+      ]
     },
     {
       "id": "markdown-content-parity",
+      "slug": "markdown-content-parity",
       "label": "Markdown matches HTML",
       "source": "AFDocs",
-      "weight": 4
+      "weight": 4,
+      "measures": "Whether markdown and HTML versions contain equivalent content.",
+      "why": "A Markdown copy that drops content gives agents a different page than people see.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: markdown-content-parity",
+          "url": "https://agentdocsspec.com/spec/web/observability/#markdown-content-parity"
+        }
+      ]
     },
     {
       "id": "cache-header-hygiene",
+      "slug": "cache-header-hygiene",
       "label": "Cache headers",
       "source": "AFDocs",
-      "weight": 2
+      "weight": 2,
+      "measures": "Whether cache headers allow timely updates.",
+      "why": "Long caching keeps agents reading old versions after you fix a page.",
+      "host": "Cache headers are set by your web server or CDN. A local build (`--dir` or a localhost URL) doesn't count this check.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: cache-header-hygiene",
+          "url": "https://agentdocsspec.com/spec/web/observability/#cache-header-hygiene"
+        }
+      ]
     },
     {
       "id": "auth-gate-detection",
+      "slug": "auth-gate-detection",
       "label": "Public without login",
       "source": "AFDocs",
-      "weight": 10
+      "weight": 10,
+      "measures": "Whether documentation pages require authentication to access content.",
+      "why": "Agents can't log in, so gated docs are invisible to them.",
+      "host": "Login walls are enforced by your host. A local build (`--dir` or a localhost URL) doesn't count this check.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: auth-gate-detection",
+          "url": "https://agentdocsspec.com/spec/web/authentication/#auth-gate-detection"
+        }
+      ]
     },
     {
       "id": "auth-alternative-access",
+      "slug": "auth-alternative-access",
       "label": "Alternative access to gated docs",
       "source": "AFDocs",
-      "weight": 4
+      "weight": 4,
+      "measures": "Whether an auth-gated documentation site provides alternative access paths for agents.",
+      "why": "When docs need a login, an alternative path lets agents read them anyway.",
+      "host": "Access rules are enforced by your host. A local build (`--dir` or a localhost URL) doesn't count this check.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: auth-alternative-access",
+          "url": "https://agentdocsspec.com/spec/web/authentication/#auth-alternative-access"
+        }
+      ]
     },
     {
       "id": "bot-protection-interference",
+      "slug": "bot-protection-interference",
       "label": "Bot protection lets agents in",
       "source": "AFDocs",
-      "weight": 7
+      "weight": 7,
+      "measures": "Whether bot-protection systems interfere with automated fetching of documentation content.",
+      "why": "Bot protection that refuses honest agents keeps the docs out of their answers.",
+      "host": "Bot protection runs on your host or CDN, not in your build. A local build (`--dir` or a localhost URL) doesn't count this check.",
+      "evidence": [
+        {
+          "title": "Agent-Friendly Documentation Spec: bot-protection-interference",
+          "url": "https://agentdocsspec.com/spec/web/authentication/#bot-protection-interference"
+        }
+      ]
     },
     {
       "id": "lensy-headings",
+      "slug": "lensy-headings",
       "label": "Headings an agent can navigate",
       "source": "Lensy",
-      "weight": 4
+      "weight": 4,
+      "measures": "On what an agent receives: exactly one H1 (half the points; more than one, a fifth) and an outline with no skipped heading levels (half; one skip, a quarter), counted only with at least 2 headings.",
+      "why": "A URL #fragment never reaches the server, so agents find sections by heading text. AFDocs' section-header-quality only looks inside tabs.",
+      "evidence": [
+        {
+          "title": "How Claude Code eats the web",
+          "url": "https://giuseppegurgone.com/claude-webfetch"
+        }
+      ]
+    }
+  ],
+  "fallback": [
+    {
+      "id": "C1",
+      "slug": "c1",
+      "label": "Content without JavaScript",
+      "points": 20,
+      "measures": "Words in the raw HTML after removing scripts, styles, navigation, asides and site-chrome headers. 150 or more words with no empty app root: full points. 40 to 149 words: half. Fewer: none.",
+      "why": "AI crawlers and most coding agents fetch the HTML and do not run JavaScript, so content rendered in the browser is invisible to them.",
+      "evidence": [
+        {
+          "title": "Do AI crawlers render JavaScript (Vercel and MERJ data, via SearchOptimo)",
+          "url": "https://searchoptimo.com/blog/do-ai-crawlers-render-javascript"
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "slug": "c2",
+      "label": "Markdown on request",
+      "points": 15,
+      "measures": "A GET of the page with Accept: text/markdown returns Markdown (a Markdown or plain-text content type, Markdown structure, not HTML).",
+      "why": "Claude Code, Cursor and OpenCode ask for Markdown first. Markdown is far smaller than the HTML of the same page, so more of it fits in what the agent reads.",
+      "host": "Your web server or CDN decides what to return for Accept: text/markdown. A local build (`--dir` or a localhost URL) doesn't count this check.",
+      "evidence": [
+        {
+          "title": "Do AI agents read Markdown (Checkly data, via GoodBarber)",
+          "url": "https://www.goodbarber.com/blog/do-ai-agents-read-markdown-what-two-weeks-of-our-own-server-logs-say-a1622/"
+        },
+        {
+          "title": "Cloudflare: Markdown for Agents",
+          "url": "https://blog.cloudflare.com/markdown-for-agents/"
+        },
+        {
+          "title": "Vercel: Markdown and agent discovery",
+          "url": "https://vercel.com/docs/agent-resources/markdown-access"
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "slug": "c3",
+      "label": ".md version discoverable",
+      "points": 15,
+      "measures": "A Markdown copy exists (rel=alternate, a Link header, or <url>.md) and is advertised (rel=alternate, a Link header, or listed in llms.txt): full points. Exists but not advertised: 8.",
+      "why": "Agents guess .md URLs and follow llms.txt. A copy nothing points to is found less often.",
+      "host": "A Link header advertising the Markdown copy, or a rewrite to <page>.md, is set by your host. A local build (`--dir` or a localhost URL) counts this check, but your host can change the result.",
+      "evidence": [
+        {
+          "title": "Inside Mintlify's agent stack",
+          "url": "https://theairuntime.com/p/inside-mintlifys-agent-stack"
+        },
+        {
+          "title": "Vercel: Markdown and agent discovery",
+          "url": "https://vercel.com/docs/agent-resources/markdown-access"
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "slug": "c4",
+      "label": "llms.txt usable",
+      "points": 20,
+      "measures": "llms.txt found at the root or docs path and not HTML: 8. Valid format (an H1 and Markdown links): 4. Sampled links resolve, up to 8 checked: 4 times the share. Size up to 50K characters: 4; up to 100K: 2.",
+      "why": "Coding agents use llms.txt to find the right page. AI crawlers do not request it, so it counts for coding agents only.",
+      "evidence": [
+        {
+          "title": "Inside Mintlify's agent stack",
+          "url": "https://theairuntime.com/p/inside-mintlifys-agent-stack"
+        },
+        {
+          "title": "llms.txt server-log study (Saaslinks)",
+          "url": "https://saaslinks.net/blog/llms-txt-server-log-study"
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "slug": "c5",
+      "label": "Page fits one fetch",
+      "points": 15,
+      "measures": "Size of what an agent receives (Markdown when offered, otherwise the HTML text): up to 50K characters 15, up to 100K 10, more 0. Under 40 words received: 0.",
+      "why": "Agents read a limited window per fetch, about 100,000 characters, and have to page or give up beyond it.",
+      "evidence": [
+        {
+          "title": "How Claude Code eats the web",
+          "url": "https://giuseppegurgone.com/claude-webfetch"
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "slug": "c6",
+      "label": "Sections findable",
+      "points": 15,
+      "measures": "On what the agent receives: exactly one H1 5 (more than one 2). No heading-level skips 6 (one skip 3), counted only with at least 2 headings. Share of H2/H3 with id attributes times 4.",
+      "why": "A URL #fragment never reaches the server, so agents fetch the whole page and find sections by heading text.",
+      "evidence": [
+        {
+          "title": "How Claude Code eats the web",
+          "url": "https://giuseppegurgone.com/claude-webfetch"
+        }
+      ]
     }
   ],
   "aiSearch": [
     {
       "id": "S1",
+      "slug": "s1",
       "label": "AI search bots allowed",
-      "points": 20
+      "points": 20,
+      "measures": "20 times the share of six AI search and retrieval bots (OAI-SearchBot, ChatGPT-User, PerplexityBot, Perplexity-User, Claude-SearchBot, Claude-User) that robots.txt allows for this path. Most specific group, longest matching rule wins.",
+      "why": "These bots fetch pages for ChatGPT search, Perplexity and Claude answers. A page they may not fetch cannot be cited.",
+      "evidence": [
+        {
+          "title": "48 days of AI bot logs (Wislr)",
+          "url": "https://www.wislr.com/articles/ai-bot-behavior-log-analysis/"
+        }
+      ]
     },
     {
       "id": "S2",
+      "slug": "s2",
       "label": "Content without JavaScript",
-      "points": 20
+      "points": 20,
+      "measures": "Words in the raw HTML after removing scripts, styles, navigation, asides and site-chrome headers. 150 or more words with no empty app root: full points. 40 to 149 words: half. Fewer: none.",
+      "why": "AI crawlers and most coding agents fetch the HTML and do not run JavaScript, so content rendered in the browser is invisible to them.",
+      "evidence": [
+        {
+          "title": "Do AI crawlers render JavaScript (Vercel and MERJ data, via SearchOptimo)",
+          "url": "https://searchoptimo.com/blog/do-ai-crawlers-render-javascript"
+        }
+      ]
     },
     {
       "id": "S3",
+      "slug": "s3",
       "label": "Indexable",
-      "points": 25
+      "points": 25,
+      "measures": "Not noindex (meta robots or X-Robots-Tag): 10, and noindex makes the whole check 0. Canonical present: 7. Page listed in the sitemap: 8. Sitemaps named in robots.txt are used; without one, Lensy tries <link rel=\"sitemap\">, /sitemap.xml and /sitemap-index.xml, then the same under the page's first path segment (for example /docs/sitemap.xml). Sitemap indexes are followed, at most 12 files.",
+      "why": "A page that asks not to be indexed, or that search engines cannot find in the sitemap, is less likely to be retrieved for an answer.",
+      "host": "An X-Robots-Tag noindex header is set by your host. A local build (`--dir` or a localhost URL) counts this check, but your host can change the result.",
+      "evidence": [
+        {
+          "title": "arXiv 2609.35077: what drives citations in production LLMs",
+          "url": "https://arxiv.org/html/2609.35077v1"
+        }
+      ]
     },
     {
       "id": "S4",
+      "slug": "s4",
       "label": "Freshness declared",
-      "points": 15
+      "points": 15,
+      "measures": "A date in the raw HTML (dateModified, article:modified_time, <time datetime> or visible \"Last updated\" text): 6. This URL's sitemap entry has lastmod: 4. Sitemap lastmod values are not all identical: 3. Page date and lastmod agree within 7 days: 2. Age is shown, not scored.",
+      "why": "Recency is a consistent secondary signal for AI citations, and search engines use sitemap lastmod only when it is believable.",
+      "evidence": [
+        {
+          "title": "arXiv 2605.25517: what gets cited (competitive GEO)",
+          "url": "https://arxiv.org/html/2605.25517v1"
+        },
+        {
+          "title": "Freshness signals for answer engines (Stackmatix)",
+          "url": "https://www.stackmatix.com/blog/content-freshness-signals-answer-engines"
+        }
+      ]
     },
     {
       "id": "S5",
+      "slug": "s5",
       "label": "Answer-ready sections",
-      "points": 15
+      "points": 15,
+      "measures": "On the HTML: one H1 4 (more than one 2). No heading skips 4 (one skip 2), counted only with at least 2 headings. Median words per H2/H3 section: 40 to 500 7; under 40 or 501 to 900 4; over 900 1; no sections 0.",
+      "why": "AI search retrieves passages of about a heading plus its paragraphs, so each section should answer one question on its own.",
+      "evidence": [
+        {
+          "title": "Passage-level retrieval (Paz.ai)",
+          "url": "https://www.paz.ai/glossary/passage-level-retrieval"
+        }
+      ]
     },
     {
       "id": "S6",
+      "slug": "s6",
       "label": "JSON-LD",
-      "points": 5
+      "points": 5,
+      "measures": "Parseable JSON-LD with an @type: 3. Has dateModified: 2.",
+      "why": "Controlled studies found structured data barely moves AI citations, so it carries few points. dateModified also declares freshness.",
+      "evidence": [
+        {
+          "title": "Ahrefs: we tracked 1,885 pages adding schema",
+          "url": "https://ahrefs.com/blog/schema-ai-citations/"
+        },
+        {
+          "title": "Otterly: schema markup's real impact on AI search",
+          "url": "https://otterly.ai/blog/schema-markup-real-impact-ai-search/"
+        },
+        {
+          "title": "arXiv 2609.35077: what drives citations in production LLMs",
+          "url": "https://arxiv.org/html/2609.35077v1"
+        }
+      ]
     }
   ]
 }

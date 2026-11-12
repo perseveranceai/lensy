@@ -39,7 +39,7 @@ export function CookieBanner() {
         <button type="button" onClick={() => choose("granted")} className={buttonCls}>Accept</button>
         <button type="button" onClick={() => choose("denied")} className={buttonCls}>Decline</button>
       </div>
-      <Link to="/privacy" className="mt-3 inline-block text-[12px] text-[var(--ink-soft)] underline underline-offset-2 hover:text-[var(--ink)]">
+      <Link to="/legal/privacy" className="mt-3 inline-block text-[12px] text-[var(--ink-soft)] underline underline-offset-2 hover:text-[var(--ink)]">
         Privacy policy
       </Link>
     </div>

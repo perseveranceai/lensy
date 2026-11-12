@@ -162,7 +162,7 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
             </p>
           </div>
           <div className="p-6 sm:p-8">
-            <div className="flex items-center justify-between text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">
+            <div data-md-skip="true" className="flex items-center justify-between text-[11px] font-medium tracking-[-.025em] text-[var(--muted)]">
               <span>Paste a documentation URL</span>{" "}
               <span>{allowanceText(remaining)}</span>
             </div>
@@ -419,21 +419,28 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
             read the page. AI search is how well ChatGPT search, Perplexity
             and Claude can find it and cite it. Each fix says what to change
             and how many points it is worth. This is a real result: our own
-            home page before we rebuilt it.
+            home page before we rebuilt it, and after we made these fixes.
           </p>
         </div>
         <div className="min-w-0 lg:col-span-7 lg:col-start-6">
           <div className="rounded-[var(--radius-lg)] border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7" aria-label="Example result">
-            <p className="text-[12px] text-[var(--muted)]">perseveranceai.com, Nov 10, 2026</p>
+            <p className="text-[12px] text-[var(--muted)]">perseveranceai.com: before (Nov 10, 2026) and after (Nov 12, 2026)</p>
             <div className="mt-4 grid grid-cols-2 gap-3">
-              {[["Coding agents", 39], ["AI search", 55]].map(([label, score]) => (
+              {([["Coding agents", 39, 100], ["AI search", 55, 100]] as const).map(([label, before, after]) => (
                 <div key={label} className="rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--bg)] px-4 py-3">
                   <p className="text-[12px] text-[var(--muted)]">{label}</p>
-                  <p className="mt-1 text-[36px] font-medium leading-none tracking-[-.05em] tabular-nums">{score}<span className="ml-1 text-[12px] font-normal tracking-normal text-[var(--muted)]">/100</span></p>
+                  <p className="mt-1 flex flex-wrap items-baseline gap-x-1.5 tabular-nums sm:gap-x-2">
+                    <span className="sr-only">Before:</span>
+                    <span className="text-[16px] font-medium tracking-[-.04em] text-[var(--muted)] line-through decoration-1 sm:text-[20px]">{before}</span>
+                    <span aria-hidden="true" className="text-[14px] text-[var(--muted)]">→</span>
+                    <span className="sr-only">after:</span>
+                    <span className="text-[28px] font-medium leading-none tracking-[-.05em] sm:text-[36px]">{after}</span>
+                    <span className="text-[12px] font-normal tracking-normal text-[var(--muted)]">/100</span>
+                  </p>
                 </div>
               ))}
             </div>
-            <p className="mt-6 text-[13px] font-medium text-[var(--ink)]">Fix these first</p>
+            <p className="mt-6 text-[13px] font-medium text-[var(--ink)]">The fixes Lensy listed first</p>
             <ul className="mt-2 divide-y divide-[var(--line)] border-y border-[var(--line)]">
               {[
                 ["Content without JavaScript", 29, "Coding agents", "The page is a JavaScript shell, so agents and crawlers get no text. Render the content into the HTML."],
@@ -473,7 +480,7 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
           </p>
           {/* D-05: ink, not the muted --accent grey, so an active link actually reads as active. */}
           <Link
-            to="/how-it-works"
+            to="/docs/scores"
             className="group mt-2 inline-flex w-fit items-center gap-2 border-b border-[var(--ink)] pb-1 text-[12px] font-medium tracking-[-.025em] text-[var(--ink)]"
           >
             See how Lensy checks{" "}
@@ -501,7 +508,7 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
             so nothing about your pages is sent to us.
           </p>
           <Link
-            to="/cli"
+            to="/docs/cli"
             className="group mt-2 inline-flex w-fit items-center gap-2 border-b border-[var(--ink)] pb-1 text-[12px] font-medium tracking-[-.025em] text-[var(--ink)]"
           >
             Read the CLI guide{" "}
@@ -525,7 +532,7 @@ export function Home({ onScan, analysisState }: { onScan?: (urlOrOptions: any, o
             your docs get.
           </p>
           <Link
-            to="/cli"
+            to="/docs/cli"
             className="group mt-6 inline-flex w-fit items-center gap-2 border-b border-[var(--ink)] pb-1 text-[12px] font-medium tracking-[-.025em] text-[var(--ink)]"
           >
             Run the same check{" "}

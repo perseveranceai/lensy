@@ -224,7 +224,8 @@ export function ScoreChart({ runs }: { runs: ReadinessRun[] }) {
           className={`rounded-full px-3 py-1 transition-colors ${range === r.id ? "bg-[var(--ink)] text-[var(--bg)]" : "text-[var(--ink-soft)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"}`}>{r.label}</button>)}
       </div>}
     </div>
-    <p className="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-[12px] text-[var(--ink-soft)]">
+    {runs.length > 0 && <p className="sr-only">Latest run, {lastChecked}: Coding agents {runs[runs.length - 1].codingAgents}, AI search {runs[runs.length - 1].aiSearch}{runs.length > 1 ? `. First run, ${formatRunDate(runs[0].date)}: Coding agents ${runs[0].codingAgents}, AI search ${runs[0].aiSearch}` : ""}.</p>}
+    <p data-md-skip="true" className="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-[12px] text-[var(--ink-soft)]">
       <span className="inline-flex items-center gap-2"><svg width="18" height="6" aria-hidden="true"><line x1="0" y1="3" x2="18" y2="3" style={{ stroke: "var(--ink)" }} strokeWidth="2" /></svg>Coding agents: solid line</span>{" "}
       <span className="inline-flex items-center gap-2"><svg width="18" height="6" aria-hidden="true"><line x1="0" y1="3" x2="18" y2="3" style={{ stroke: "var(--accent)" }} strokeWidth="2" strokeDasharray="4 3" /></svg>AI search: dashed line</span>
     </p>
