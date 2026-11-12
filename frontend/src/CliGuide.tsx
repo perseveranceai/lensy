@@ -25,7 +25,7 @@ const SECTIONS: [string, string][] = [
 // A command or sample output. It scrolls sideways inside its own box, so a long
 // line never widens the page, and it takes keyboard focus so it can be scrolled
 // without a mouse.
-function Block({ label, children }: { label: string; children: string }) {
+export function Block({ label, children }: { label: string; children: string }) {
   return (
     <pre
       tabIndex={0}

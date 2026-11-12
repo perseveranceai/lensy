@@ -5,12 +5,13 @@
 //
 // Check pages come from src/checks.json, which scripts/checks-from-docs.mjs
 // builds from packages/docs/checks.md, the same text `lensy explain <id>` prints.
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Check, Copy } from "lucide-react";
 import CHECKS from "./checks.json";
 import { NotFound, Page } from "./AppRoutes";
+import { Block } from "./CliGuide";
 import { breadcrumbFor, pagesInGroup } from "./site";
 import { usePageMeta } from "./usePageMeta";
 
@@ -102,42 +103,98 @@ export function DocsNav() {
 }
 
 function Card({ to, title, children }: { to: string; title: string; children: ReactNode }) {
-  return <Link to={to} className="soft-card group flex flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--line)] p-5 transition-colors hover:border-[var(--accent)]">
-    <span className="flex items-center justify-between gap-3 text-[16px] font-medium tracking-[-.03em] text-[var(--ink)]">{title}<ArrowRight className="arrow-nudge size-3.5 text-[var(--accent)]" strokeWidth={1.8} aria-hidden="true" /></span>
-    <span className="text-[13px] leading-relaxed text-[var(--ink-soft)]">{children}</span>
+  return <Link to={to} className="soft-card group flex h-full flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface)] p-5 transition-colors hover:border-[var(--accent)]">
+    <h3 className="flex items-center justify-between gap-3 text-[16px] font-medium tracking-[-.03em] text-[var(--ink)]">{title}<ArrowRight className="arrow-nudge size-3.5 shrink-0 text-[var(--accent)]" strokeWidth={1.8} aria-hidden="true" /></h3>
+    <div className="text-[13px] leading-relaxed text-[var(--ink-soft)]">{children}</div>
   </Link>;
 }
 
+/** Copies a command. A button with no aria-expanded, so the Markdown copy leaves it out. */
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return <button type="button" onClick={() => {
+    try {
+      navigator.clipboard?.writeText(text).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1600); }, () => undefined);
+    } catch { /* no clipboard: the command can still be selected */ }
+  }} className="inline-flex items-center gap-1.5 rounded-[var(--radius-xs)] border border-[var(--line)] px-2.5 py-1.5 text-[12px] font-medium tracking-[-.02em] text-[var(--ink-soft)] transition-colors hover:border-[var(--accent)] hover:text-[var(--ink)]">
+    {copied ? <Check className="size-3" strokeWidth={2} aria-hidden="true" /> : <Copy className="size-3" strokeWidth={1.8} aria-hidden="true" />}{copied ? "Copied" : "Copy"}
+  </button>;
+}
+
+function SectionHead({ id, title, children }: { id: string; title: string; children: ReactNode }) {
+  return <div className="max-w-[640px]">
+    <h2 id={id} className="scroll-mt-28 text-[clamp(1.6rem,2.6vw,2.2rem)] font-medium leading-[1.05] tracking-[-.05em]">{title}</h2>
+    <p className="mt-3 text-[14px] leading-relaxed text-[var(--ink-soft)]">{children}</p>
+  </div>;
+}
+
+const CLI_COMMAND = "npx @perseverance-ai/lensy@next check https://docs.example.com/guide";
+/** The checks people ask about most: the biggest points in each score. */
+const POPULAR = ["llms-txt-exists", "rendering-strategy", "markdown-url-support", "http-status-codes", "S1", "S3"];
+
 export function DocsHome() {
+  const popular = POPULAR.map((id) => findCheck(id)).filter((x): x is { check: CheckEntry; score: Score } => Boolean(x));
+  const step = "border-t border-[var(--line)] py-3.5 pl-1 text-[14px] leading-relaxed text-[var(--ink-soft)] marker:text-[12px] marker:font-medium marker:text-[var(--accent)]";
   return <Page title={<>Lensy{" "}<span className="text-[var(--accent)]">docs.</span></>} intro="Check a documentation page on the website or from your terminal, see what the two scores mean, and fix what they find.">
-    <article className="legal-prose prose-lensy max-w-[760px] py-12 sm:py-16">
-      <h2>Check a page on the website</h2>
-      <ol>
-        <li>Paste the address of one documentation page, such as a guide or an API reference, into the box on the <Link to="/#scan">home page</Link>.</li>
-        <li>Lensy fetches the page the way AI tools do, without running JavaScript, along with your robots.txt, sitemap and llms.txt.</li>
-        <li>You get a Coding agents score and an AI search score, each out of 100, and the fixes worth the most points first.</li>
-      </ol>
-      <p>The website is free, with a daily limit on scans.</p>
+    <div className="grid gap-16 py-12 sm:gap-20 sm:py-16">
 
-      <h2>Check pages from your terminal</h2>
-      <p>The open source <code className={code}>lensy</code> command gives the same two scores. It needs Node 22 or newer:</p>
-      <pre><code>npx @perseverance-ai/lensy@next check https://docs.example.com/guide</code></pre>
-      <p>It checks live pages or a local build, runs in CI, and sends nothing about your pages to us. The <Link to="/docs/cli">command line guide</Link> covers every option.</p>
+      <section aria-labelledby="start" className="grid gap-8">
+        <SectionHead id="start" title="Start here">Pick how you want to check a page. Both give the same two scores, Coding agents and AI search, each out of 100, with the fixes worth the most points first.</SectionHead>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="flex flex-col rounded-[var(--radius-lg)] border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7">
+            <h3 className="text-[19px] font-medium tracking-[-.035em]">On the website</h3>
+            <p className="mt-2 text-[13px] leading-relaxed text-[var(--muted)]">Free, with a daily limit on scans. Nothing to install.</p>
+            <ol className="mt-5 list-decimal border-b border-[var(--line)] pl-5">
+              <li className={step}>Paste the address of one docs page, such as a guide or an API reference.</li>
+              <li className={step}>Lensy fetches it the way AI tools do, without running JavaScript, with your robots.txt, sitemap and llms.txt.</li>
+              <li className={step}>Read the two scores and fix the top items first.</li>
+            </ol>
+            <Link to="/#scan" className="btn-ink group mt-6 inline-flex w-fit items-center gap-2 bg-[var(--panel-bg)] px-4 py-3 text-[12px] font-medium tracking-[-.025em] text-[var(--panel-fg)]">Start a free scan <ArrowRight className="arrow-nudge size-3" strokeWidth={1.8} aria-hidden="true" /></Link>
+          </div>
+          <div className="flex min-w-0 flex-col rounded-[var(--radius-lg)] border border-[var(--line)] bg-[var(--surface)] p-5 sm:p-7">
+            <h3 className="text-[19px] font-medium tracking-[-.035em]">From your terminal</h3>
+            <p className="mt-2 text-[13px] leading-relaxed text-[var(--muted)]">Open source. Needs Node 22 or newer. Sends nothing about your pages to us.</p>
+            <div className="mt-5 min-w-0">
+              <Block label="Check a page from your terminal">{CLI_COMMAND}</Block>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <CopyButton text={CLI_COMMAND} />
+              <span className="text-[13px] leading-relaxed text-[var(--ink-soft)]">Also checks a local build before you publish, and runs in CI.</span>
+            </div>
+            <Link to="/docs/cli" className="group mt-6 inline-flex w-fit items-center gap-2 border-b border-[var(--ink)] pb-1 text-[12px] font-medium tracking-[-.025em] text-[var(--ink)]">Read the command line guide <ArrowRight className="arrow-nudge size-3" strokeWidth={1.8} aria-hidden="true" /></Link>
+          </div>
+        </div>
+      </section>
 
-      <h2>Understand the scores</h2>
-      <p><strong>Coding agents</strong> is how well tools such as Claude Code and Cursor can find and read the page. <strong>AI search</strong> is how well ChatGPT search, Perplexity and Claude can find the page and cite it. <Link to="/docs/scores">How Lensy scores a page</Link> explains both, and <Link to="/docs/checks">every check</Link> has its own page with what it measures, why it matters and the evidence behind it.</p>
+      <section aria-labelledby="browse" className="grid gap-8">
+        <SectionHead id="browse" title="Browse the docs">Everything Lensy measures is written down here: how the two scores add up, what each check looks for and why it matters, every command line option, and how to let the checker through your bot protection.</SectionHead>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Card to="/docs/scores" title="How Lensy scores a page">What Lensy fetches, how the two scores add up, and how a local build is scored.</Card>
+          <Card to="/docs/checks" title="Every check">All {entries("aiSearch").length + entries("codingAgents").length + entries("fallback").length} checks, each with its points, what it measures and the evidence.</Card>
+          <Card to="/docs/cli" title="Command line tool">Install, check pages and local builds, save and compare runs, exit codes for CI.</Card>
+          <Card to="/docs/bot" title="The Lensy checker">Its user agent and IP address, and how to allow or block it on your site.</Card>
+        </div>
+      </section>
 
-      <h2>Let the checker in</h2>
-      <p>If your site blocks bots, a scan may be refused. <Link to="/docs/bot">The Lensy checker</Link> page gives its user agent and IP address, and how to allow or block it.</p>
+      <section aria-labelledby="popular" className="grid gap-8">
+        <SectionHead id="popular" title="Checks people look up most">These carry the most points, so fixing them usually moves a score the furthest. Each page says what the check measures, why it matters and how it adds to the score.</SectionHead>
+        <ul className="grid gap-x-8 border-t border-[var(--line)] sm:grid-cols-2 lg:grid-cols-3">
+          {popular.map(({ check, score }) => <li key={check.id} className="border-b border-[var(--line)]">
+            <Link to={`/docs/checks/${check.slug}`} className="group flex items-baseline justify-between gap-4 py-4">
+              <span className="text-[15px] tracking-[-.03em] text-[var(--ink)] transition-colors group-hover:text-[var(--accent)]">{check.label}</span>
+              {" "}
+              <span className="shrink-0 text-[12px] tabular-nums text-[var(--muted)]">{score === "aiSearch" ? `AI search, ${check.points} pts` : `Coding agents, weight ${check.weight}`}</span>
+            </Link>
+          </li>)}
+        </ul>
+      </section>
 
-      <h2>Get help</h2>
-      <p>Found a problem with the command line tool? <a className={link} href="https://github.com/perseveranceai/lensy/issues/new?template=cli-bug.yml">Open an issue on GitHub</a>. For anything else, email <a className={link} href="mailto:hello@perseveranceai.com">hello@perseveranceai.com</a>.</p>
-    </article>
-    <div data-md-skip="true" className="grid gap-4 pb-16 sm:grid-cols-2 lg:grid-cols-4">
-      <Card to="/docs/scores" title="How Lensy scores a page">The two scores, the reachability line and local builds.</Card>
-      <Card to="/docs/checks" title="Every check">{entries("aiSearch").length + entries("codingAgents").length} checks, each with its points and evidence.</Card>
-      <Card to="/docs/cli" title="Command line tool">Install, check pages and builds, save and compare runs.</Card>
-      <Card to="/docs/bot" title="The Lensy checker">User agent, IP address, allow or block it.</Card>
+      <section aria-labelledby="help" className="grid gap-6 border-t border-[var(--line)] pt-10 sm:pt-12 lg:grid-cols-12">
+        <h2 id="help" className="text-[clamp(1.6rem,2.6vw,2.2rem)] font-medium leading-[1.05] tracking-[-.05em] lg:col-span-4">Get help</h2>
+        <div className="prose-lensy max-w-[640px] text-[14px] lg:col-span-8">
+          <p>Found a problem with the command line tool? <a className={link} href="https://github.com/perseveranceai/lensy/issues/new?template=cli-bug.yml">Open an issue on GitHub</a>; the form asks for your version and the command you ran. For anything else, email <a className={link} href="mailto:hello@perseveranceai.com">hello@perseveranceai.com</a>. What changed recently is in the <Link className={link} to="/changelog">changelog</Link>.</p>
+        </div>
+      </section>
     </div>
   </Page>;
 }
