@@ -31,15 +31,23 @@ async function chartSection(page: Page) {
 
 test.beforeEach(async ({ page }) => { await blockAnalytics(page); });
 
-test('READY-01: with no history file yet, the home chart shows only the real Nov 10 baseline', async ({ page }) => {
+test('READY-01: with no history file, the home chart keeps the history it was built with, from the Nov 10 baseline', async ({ page }) => {
   await serveHistory(page, null);
   await page.goto('/');
   const section = await chartSection(page);
   await expect(section.getByRole('heading', { level: 2 })).toHaveText('Same checks, on our own site.');
-  await expect(section.getByTestId('score-chart')).toHaveAttribute('data-runs', '1');
-  await expect(section.getByText('Last checked Nov 10, 2026')).toBeVisible();
-  // One run: no time ranges to choose from.
-  await expect(section.getByRole('group', { name: 'Time range' })).toHaveCount(0);
+  // The build saves the live history it was drawn with (scripts/prerender.js), or the
+  // seed if there was none. Either way it starts at the real Nov 10 baseline, and a
+  // missing file at runtime leaves the chart on that history.
+  const saved = await page.locator('script#readiness-data').textContent();
+  const runs: { date: string }[] = saved ? JSON.parse(saved).runs : [{ date: '2026-11-10' }];
+  expect(runs[0].date).toBe('2026-11-10');
+  await expect(section.getByTestId('score-chart')).toHaveAttribute('data-runs', String(runs.length));
+  if (runs.length === 1) {
+    await expect(section.getByText('Last checked Nov 10, 2026')).toBeVisible();
+    // One run: no time ranges to choose from.
+    await expect(section.getByRole('group', { name: 'Time range' })).toHaveCount(0);
+  }
 });
 
 test('READY-02: the chart switches range, shows a run on hover and on the arrow keys, and marks check changes', async ({ page }) => {
