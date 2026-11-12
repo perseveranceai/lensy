@@ -257,3 +257,26 @@ test('DOCS-02: Markdown copies carry page content, not widget labels', async ({ 
   const learn = await (await request.get('/learn.md')).text();
   expect(learn).not.toMatch(/Reading list|\n0\d\n|\nRead\n/);
 });
+
+// SEO-01: what search engines and AI search read about a page must agree. The
+// static index.html head carries the home page's values; every prerendered page
+// has to replace them, and the sitemap's lastmod has to be the page's own date.
+test('SEO-01: every page\'s head, Open Graph tags, JSON-LD date and sitemap date agree', async ({ request }) => {
+  const xml = await (await request.get('/sitemap.xml')).text();
+  const lastmod = new Map([...xml.matchAll(/<loc>([^<]+)<\/loc>\s*<lastmod>([^<]+)<\/lastmod>/g)].map((m) => [new URL(m[1]).pathname, m[2]]));
+  const attr = (html: string, re: RegExp) => html.match(re)?.[1]?.replace(/&amp;/g, '&');
+  const titles = new Set<string>();
+  for (const [p, date] of lastmod) {
+    const html = await (await request.get(p)).text();
+    const title = attr(html, /<title>([^<]+)<\/title>/);
+    expect(title, p).toBeTruthy();
+    expect(titles.has(title!), `${p} title is not unique`).toBe(false);
+    titles.add(title!);
+    expect(attr(html, /<meta name="title" content="([^"]*)"/), `${p} meta title`).toBe(title);
+    expect(attr(html, /<meta property="og:title" content="([^"]*)"/), `${p} og:title`).toBe(title);
+    const canonical = attr(html, /<link rel="canonical" href="([^"]+)"/);
+    expect(attr(html, /<meta property="og:url" content="([^"]*)"/), `${p} og:url`).toBe(canonical);
+    expect(attr(html, /<meta name="description" content="([^"]*)"/), `${p} description`).toBe(attr(html, /<meta property="og:description" content="([^"]*)"/));
+    expect(html, `${p} JSON-LD date matches the sitemap`).toContain(`"dateModified":"${date}"`);
+  }
+});

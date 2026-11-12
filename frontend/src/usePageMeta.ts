@@ -87,6 +87,8 @@ export function usePageMeta(meta: PageMeta | null) {
     const url = absolute(meta.path);
     const fullTitle = /\bLensy\b/.test(meta.title) ? meta.title : `${meta.title} - Lensy`;
     document.title = fullTitle;
+    // index.html ships the home page's title here; every page sets its own.
+    setMeta("name", "title", fullTitle);
     setMeta("name", "description", meta.description);
     setMeta("name", "robots", meta.noindex ? "noindex" : "index, follow");
     setMeta("property", "og:title", fullTitle);

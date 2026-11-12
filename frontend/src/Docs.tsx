@@ -12,7 +12,7 @@ import { ArrowRight, Check, Copy } from "lucide-react";
 import CHECKS from "./checks.json";
 import { NotFound, Page } from "./AppRoutes";
 import { Block } from "./CliGuide";
-import { breadcrumbFor, pagesInGroup } from "./site";
+import { SITE_PAGES, breadcrumbFor, pagesInGroup } from "./site";
 import { usePageMeta } from "./usePageMeta";
 
 const code = "rounded-[var(--radius-xs)] bg-[var(--surface-2)] px-1.5 py-0.5 text-[13px]";
@@ -59,6 +59,8 @@ const GROUPS: { score: Score; title: string; unit: "Weight" | "Points"; intro: s
     intro: "If AFDocs can't run on a page, the Coding agents score comes from these six Lensy checks instead, worth 100 points between them.",
   },
 ];
+
+const CHECKS_UPDATED = SITE_PAGES.find((p) => p.path === "/docs/checks")?.updated;
 
 const entries = (score: Score) => (CHECKS[score] as CheckEntry[]);
 const value = (c: CheckEntry) => c.weight ?? c.points ?? 0;
@@ -247,7 +249,8 @@ export function CheckPage() {
     title: `${found.check.label}: ${found.score === "fallback" ? "fallback" : group!.title} check`,
     description: `What the ${found.check.label} check measures, why it matters, and the evidence behind it. Worth ${value(found.check)} ${group!.unit.toLowerCase()} in the ${group!.title} score.`,
     schema: "TechArticle",
-    updated: "2026-11-12",
+    // One date for every check page: bump "updated" for /docs/checks in site-pages.json when packages/docs/checks.md changes.
+    updated: CHECKS_UPDATED,
     markdown: true,
     breadcrumb: breadcrumbFor(path, found.check.label),
   } : null);
